@@ -14,7 +14,7 @@
 //   (PowerShell 里先 . .env.deploy 载入两个变量,或直接 set-a 后 source)
 
 import { spawnSync } from 'node:child_process';
-import { entryHosts } from './wrangler-config.mjs';
+import { entryHosts, readWranglerText, writeWranglerConfig } from './wrangler-config.mjs';
 
 const TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -82,5 +82,49 @@ if (put.status !== 0) {
   process.exit(1);
 }
 
-console.log('\n完成。把下面这行 sitekey 发给 Claude(它是公开值,可写进配置):');
-console.log(`\n  TURNSTILE_SITEKEY = ${sitekey}\n`);
+// 3) Write the sitekey into wrangler.jsonc under vars. It is a public value, so it
+//    belongs in the config rather than in a secret -- and doing it here means nobody
+//    has to copy and paste it by hand.
+// 3) 把 sitekey 写进 wrangler.jsonc 的 vars。它是公开值,本来就该放配置里;
+//    脚本自己写,省得用户手动粘贴。
+const original = readWranglerText();
+const LINE = `    "TURNSTILE_SITEKEY": "${sitekey}"`;
+let cfg;
+
+// One code path: drop any existing entry (live or commented -- the template ships it
+// commented), then append a fresh one. Doing it in two steps means the comma handling
+// below is the only place that has to be right.
+// 统一走一条路径:先把已有的那行删掉(可能是生效的,也可能是注释状态 —— 模板里就是注释),
+// 再统一追加一行。这样"补逗号"的逻辑只有一处,不会两个分支各错一半。
+const EXISTING = /^[ \t]*(?:\/\/[ \t]*)?"TURNSTILE_SITEKEY"[ \t]*:.*(\r?\n)?/m;
+const stripped = original.replace(EXISTING, '');
+
+const m = /("vars"\s*:\s*\{)([\s\S]*?)(\n[ \t]*\})/.exec(stripped);
+if (!m) {
+  console.error('✗ wrangler.jsonc 里找不到 vars 段,请手动加一行:');
+  console.error(`  "TURNSTILE_SITEKEY": "${sitekey}"`);
+  process.exit(1);
+}
+const lines = m[2].split('\n');
+// Walk back to the last real entry (skipping blanks and comments) and give it a comma.
+// The template leaves DEV_MODE without one precisely because the next line is commented out.
+// 从后往前找最后一个"有内容且不是注释"的行给它补逗号 —— 模板里 DEV_MODE 正是因为
+// 下一行被注释掉了才没有逗号。
+for (let i = lines.length - 1; i >= 0; i--) {
+  const t = lines[i].trim();
+  if (!t || t.startsWith('//')) continue;
+  if (!t.endsWith(',')) lines[i] = lines[i].replace(/\s*$/, ',');
+  break;
+}
+cfg = stripped.slice(0, m.index) + m[1] + lines.join('\n') + '\n' + LINE + m[3] +
+      stripped.slice(m.index + m[0].length);
+
+const bad = writeWranglerConfig(cfg, (p) => p?.vars?.TURNSTILE_SITEKEY === sitekey);
+if (bad) {
+  console.error('✗ 改写 wrangler.jsonc 会产生非法配置,已放弃改动:' + bad);
+  console.error(`  请手动在 vars 里加一行:  "TURNSTILE_SITEKEY": "${sitekey}"`);
+  process.exit(1);
+}
+
+console.log(`\n✓ sitekey 已写入 wrangler.jsonc:${sitekey}`);
+console.log('  下一步:npm run deploy —— 部署后人机验证即生效。');

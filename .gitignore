@@ -63,5 +63,19 @@ $RECYCLE.BIN/
 coverage/
 .nyc_output/
 
+# AI 助手 / 一次性脚本的落地物。这类东西本来就该写在仓库外的临时目录里,
+# 万一落在了工作区,这几条兜住,别让它们混进公开仓库。
+# Scratch output from AI assistants and one-off scripts. These belong in a temp
+# directory outside the repo; these patterns are the backstop if one lands here.
+*.tmp.*
+tmp/
+.tmp/
+scratch/
+scratchpad/
+.claude-scratch/
+wrangler.tmp*.jsonc
+*.local.mjs
+*.verify.mjs
+
 # 早先误建的 0 字节野文件(字体走 R2 缓存,不落仓库)
 /fonts
