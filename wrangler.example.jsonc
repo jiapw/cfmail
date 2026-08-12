@@ -45,12 +45,12 @@
     { "binding": "RAW", "bucket_name": "cfmail-raw" }
   ],
 
-  // AI assistant: Workers AI + Agents SDK (one Durable Object per chat session).
-  // Optional at runtime — the assistant is off by default and enabled per domain
-  // in the admin console. The bindings must stay here either way.
+  // Experimental chat agent: Workers AI + Agents SDK (one Durable Object per session).
+  // Off by default and enabled per domain in the admin console, but the bindings
+  // must stay here either way or the Worker will not start.
   //
-  // AI 助手:Workers AI + Agents SDK(每个聊天会话一个 DO 实例)。
-  // 功能本身可选 —— 默认关闭,在管理后台按域名启用;但这几项绑定要一直留着。
+  // 实验性会话 agent:Workers AI + Agents SDK(每个会话一个 DO 实例)。
+  // 默认关闭,在管理后台按域名启用;但这几项绑定要一直留着,否则 Worker 起不来。
   "ai": { "binding": "AI" },
   "durable_objects": {
     "bindings": [
@@ -84,8 +84,10 @@
     // 发信通道:cf = Cloudflare Email Sending,dev = 不真实外发,还可选 ses / resend。
     "MAIL_PROVIDER": "cf",
 
-    // The address users visit. Keep this in sync with the first entry in "routes".
-    // 用户访问的入口地址,与下面 routes 的第一条保持一致。
+    // The address users visit, used to build invite and password-reset links.
+    // Keep it in sync with the first entry in "routes" below.
+    // 用户访问的入口地址,邀请链接和密码重置链接都由它拼出来。
+    // 与下面 routes 的第一条保持一致。
     "APP_ORIGIN": "https://<entry-subdomain>.<your-domain>",
 
     "DEV_MODE": "0"
@@ -105,16 +107,22 @@
   },
 
   // Custom domains bound to the web interface (DNS records are created on deploy).
-  // Add one entry per company domain. Every domain must be on the SAME Cloudflare
-  // account, using Cloudflare DNS (a full zone — partial/CNAME setups will not work).
-  // The setup script derives the zone by stripping the first label, so the pattern
-  // must be <entry-subdomain>.<zone>.
+  // Leave this empty for the very first deploy -- `node scripts/setup-zone.mjs <domain>
+  // <entry-subdomain>` appends one entry per company domain as you connect them, and
+  // every later run reuses the prefix it finds here.
   //
-  // Web 界面绑定的自定义域名(部署时自动创建 DNS)。每接入一个企业域名就加一条。
+  // Every domain must be on the SAME Cloudflare account, using Cloudflare DNS (a full
+  // zone -- partial/CNAME setups will not work). The scripts derive the zone by stripping
+  // the first label, so the pattern must be <entry-subdomain>.<zone>. `deploy` reconciles
+  // live custom domains against this array: removing an entry detaches that domain.
+  //
+  // Web 界面绑定的自定义域名(部署时自动创建 DNS)。第一次部署时留空即可 ——
+  // 每接入一个企业域名,`node scripts/setup-zone.mjs <域名> <入口子域>` 会往这里加一条,
+  // 之后再跑就沿用这里已有的前缀。
+  //
   // 域名必须托管在同一个 Cloudflare 账号下,且用 Cloudflare DNS(完整 zone,
-  // partial/CNAME 接入不行)。配置脚本按"去掉最左一段"推导 zone,
-  // 所以格式必须是 <入口子域>.<域名>。
+  // partial/CNAME 接入不行)。脚本按"去掉最左一段"推导 zone,所以格式必须是
+  // <入口子域>.<域名>。deploy 会拿这个数组跟线上自定义域对账:删掉一条就等于下线该域名。
   "routes": [
-    { "pattern": "<entry-subdomain>.<your-domain>", "custom_domain": true }
   ]
 }

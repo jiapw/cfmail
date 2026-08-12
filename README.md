@@ -1,8 +1,8 @@
 # CFMail — Enterprise Webmail on Cloudflare / 基于 Cloudflare 的企业 Webmail
 
-Run your company's email on your own Cloudflare account. Receiving, storage, the web client and the optional AI assistant all live inside **your** account — nothing is hosted by anyone else.
+Run your company's email on your own Cloudflare account. Receiving, storage and the web client all live inside **your** account — nothing is hosted by anyone else.
 
-把公司的邮件系统跑在**你自己的** Cloudflare 账号里。收信、存储、网页客户端、可选的 AI 助手,全部在你的账号内,没有任何一部分托管在别人那里。
+把公司的邮件系统跑在**你自己的** Cloudflare 账号里。收信、存储、网页客户端,全部在你的账号内,没有任何一部分托管在别人那里。
 
 MIT licensed ([LICENSE](LICENSE)). Data-flow and privacy details in [PRIVACY.md](PRIVACY.md).
 MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
@@ -24,10 +24,8 @@ MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
   管理员生成链接,同事自助注册并验证邮箱。
 - **Admin console / 管理后台** — per-domain stats, mailbox and alias management, branding, unrouted-mail inspection, audit log.
   分域名统计、邮箱与别名管理、品牌设置、未匹配来信查看、审计日志。
-- **Migration tools / 迁移工具** — import `.eml` from Zoho / Outlook / anywhere, export mailboxes back to a local folder. Includes a PowerShell script that pulls a Microsoft 365 mailbox via Graph.
-  从 Zoho / Outlook 等导入 `.eml`,也能把邮箱导出回本地。附带一个用 Graph 拉取 Microsoft 365 邮箱的 PowerShell 脚本。
-- **Optional AI assistant / 可选 AI 助手** — runs on Workers AI, off by default, per-domain switch.
-  跑在 Workers AI 上,默认关闭,按域名开关。
+- **Migration tools / 迁移工具** — import `.eml` from Zoho / Outlook / anywhere, export mailboxes back to a local folder. Includes a PowerShell script that pulls a Microsoft 365 mailbox via the Microsoft Graph API.
+  从 Zoho / Outlook 等导入 `.eml`,也能把邮箱导出回本地。附带一个用 Microsoft Graph API 拉取 Microsoft 365 邮箱的 PowerShell 脚本。
 - **9 UI languages / 9 种界面语言**, 30 built-in themes, light/dark/auto.
   30 套内置主题,明暗自动切换。
 
@@ -47,50 +45,85 @@ MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
 |---|---|---|
 | Receiving mail (Email Routing) / 收信 | ✅ Free, unlimited / 免费无限 | |
 | Web client, API, D1, R2 / 网页端、API、D1、R2 | ✅ Generous free tier / 免费额度很宽 | D1 5 GB, R2 10 GB |
-| AI assistant (Durable Objects) / AI 助手 | ✅ Works / 可用 | [SQLite-backed DOs run on the free plan](https://developers.cloudflare.com/durable-objects/platform/limits/) — this project uses those / 本项目正是这种 |
 | **Sending to outside recipients / 发信给外部收件人** | ❌ **Needs Workers Paid / 需要付费版** | [Email Sending requires the paid plan](https://developers.cloudflare.com/email-service/platform/pricing/) for arbitrary recipients / 发给任意收件人要求付费版 |
 
-Internal mail and receiving work on the free plan. To send to the outside world you need **Workers Paid ($5/mo, 3,000 emails included)** — or plug in SES / Resend and stay free. Rough cost for a small team: **$5/month** plus R2 overage beyond 10 GB ($0.015/GB·month). Mail between mailboxes in the same deployment never touches a sending provider and is not billed.
+Internal mail and receiving work on the free plan. To send to the outside world you need **Workers Paid ($5/mo, 3,000 emails included)** — or plug in SES / Resend and stay free. **If you already pay for Cloudflare Workers, this adds no new subscription** — CFMail runs inside the plan you have. Rough cost for a small team starting fresh: **$5/month** plus R2 overage beyond 10 GB ($0.015/GB·month). Mail between mailboxes in the same deployment never touches a sending provider and is not billed.
 
-收信和站内互发在免费版上完全可用。要给外部世界发信,需要 **Workers 付费版(每月 $5,含 3000 封)** —— 或者改接 SES / Resend,继续留在免费版。小团队大致成本:**每月 $5**,加上 R2 超过 10 GB 的部分。同一部署内邮箱之间的往来邮件不走发信通道,不计费。
+收信和站内互发在免费版上完全可用。要给外部世界发信,需要 **Workers 付费版(每月 $5,含 3000 封)** —— 或者改接 SES / Resend,继续留在免费版。**如果你本来就在用 Cloudflare Workers 付费版,那么不会增加任何订阅费用** —— CFMail 跑在你已有的套餐里。从零开始的小团队大致成本:**每月 $5**,加上 R2 超过 10 GB 的部分。同一部署内邮箱之间的往来邮件不走发信通道,不计费。
 
 ---
 
 ## Quick start / 快速开始
 
+Everything below is **shell commands** — type them in a terminal, one line at a time. They are written for bash/zsh (macOS, Linux, Git Bash, WSL) and work as-is in PowerShell too, except that Windows PowerShell 5.1 does not understand `&&` — run those two commands separately.
+
+下面全部是**终端命令**,在命令行里一行一行敲。写法按 bash/zsh(macOS、Linux、Git Bash、WSL),PowerShell 里也能直接用,只有一点:Windows PowerShell 5.1 不认 `&&`,把那两条拆开分别执行。
+
 ```bash
-git clone <this repo> && cd cfmail
+git clone https://github.com/jiapw/cfmail.git
+cd cfmail
 npm install                              # also syncs public/vendor/ from node_modules
 cp wrangler.example.jsonc wrangler.jsonc # then fill in the <placeholders>
 ```
 
-Create an API token (permissions below) and put it in `.env.deploy`:
-创建 API Token(权限见下),写进 `.env.deploy`:
+> **What are `npx` and `wrangler`?** `npx` ships with Node.js (18+) — it runs a command-line tool out of `node_modules` without installing anything globally. `wrangler` is Cloudflare's official CLI; it is listed in this project's `devDependencies`, so `npm install` already put it there. That is why every command below is `npx wrangler …` and why there is nothing extra to install. First run may ask you to log in — you don't need to: the token in `.env.deploy` is what authenticates.
+>
+> **`npx` 和 `wrangler` 是什么?** `npx` 是 Node.js(18+)自带的命令,作用是直接运行 `node_modules` 里的命令行工具,不用全局安装。`wrangler` 是 Cloudflare 官方 CLI,已写在本项目的 `devDependencies` 里,`npm install` 时就装好了 —— 所以下面一律写成 `npx wrangler …`,不需要你另外装任何东西。首次运行它可能提示登录,不用管:认证走 `.env.deploy` 里的 token。
 
-```bash
+Create an API token (permissions below) and put it in `.env.deploy` — that is a plain text file you create in the project root, not a command:
+创建 API Token(权限见下),写进 `.env.deploy` —— 这是你在项目根目录新建的一个纯文本文件,不是命令:
+
+```ini
 CLOUDFLARE_API_TOKEN=<your token>
 CLOUDFLARE_ACCOUNT_ID=<your account id>
 ```
 
-Create the resources and ship it:
-创建资源并上线:
+Load it into the current shell, then create the resources and ship it:
+把它载入当前终端,然后创建资源并上线:
 
 ```bash
-npx wrangler d1 create cfmail            # paste the database_id into wrangler.jsonc
+set -a && . ./.env.deploy && set +a       # PowerShell: Get-Content .env.deploy | %{ $k,$v = $_ -split '=',2; Set-Item "env:$k" $v }
+npx wrangler d1 create cfmail             # paste the database_id it prints into wrangler.jsonc
 npx wrangler r2 bucket create cfmail-raw
 npm run migrate:remote
-npm run deploy
+npm run deploy                            # first deploy has no domains yet — that is expected
 ```
 
-Wire up each domain (once per domain):
-接入域名(每个域名跑一次):
+Wire up each domain (once per domain). The second argument is the **entry subdomain** — the host people will actually visit:
+接入域名(每个域名跑一次)。第二个参数是**入口子域**,也就是用户实际访问的那个主机名:
 
 ```bash
-node scripts/setup-zone.mjs example.com
+node scripts/setup-zone.mjs example.com mail    # -> https://mail.example.com
+node scripts/setup-zone.mjs another.com         # reuses "mail", no need to repeat it
+npm run deploy                                  # publish the routes the script just added
 ```
 
-Open `https://<entry-subdomain>.<your-domain>` and create the first admin account. Done.
-打开 `https://<入口子域>.<你的域名>`,创建第一个管理员账号。完成。
+Open `https://mail.example.com` and create the first admin account. Done.
+打开 `https://mail.example.com`,创建第一个管理员账号。完成。
+
+### Where the entry subdomain is set / 入口子域在哪里指定
+
+There is **one** source of truth: the `routes` array in `wrangler.jsonc`. Everything else follows from it.
+只有**一处**权威来源:`wrangler.jsonc` 里的 `routes` 数组,其余都跟着它走。
+
+```jsonc
+"vars": {
+  "APP_ORIGIN": "https://mail.example.com"      // used in invite and reset links / 邀请、重置链接里用它
+},
+"routes": [
+  { "pattern": "mail.example.com", "custom_domain": true },
+  { "pattern": "mail.another.com", "custom_domain": true }
+]
+```
+
+- You pick the prefix the first time you run `setup-zone.mjs` (the optional second argument). The script binds the custom domain and appends the route to `wrangler.jsonc` for you; later runs read the prefix back out of `routes`, so every domain gets the same one.
+  前缀由你第一次跑 `setup-zone.mjs` 时的第二个参数决定。脚本会绑定自定义域并把 route 追加进 `wrangler.jsonc`;之后再跑就从 `routes` 里读回同一个前缀,保证各域名一致。
+- `npm run deploy` reconciles live custom domains against `routes`. A domain missing from that array gets detached on the next deploy — which is also how you remove one.
+  `npm run deploy` 会拿 `routes` 跟线上自定义域对账。不在数组里的域名,下次部署就会被摘掉 —— 想下线某个域名,也正是这么做。
+- `APP_ORIGIN` must match the first entry; it is what invite and password-reset links point at.
+  `APP_ORIGIN` 要和第一条保持一致 —— 邀请链接和密码重置链接都指向它。
+- The pattern must be `<subdomain>.<zone>`: the scripts derive the Cloudflare zone by dropping the leftmost label.
+  格式必须是 `<子域>.<域名>`:脚本靠"去掉最左一段"推导 Cloudflare zone。
 
 ---
 
@@ -114,7 +147,6 @@ Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom
 
 | Scope | Permission | Access | Needed when / 什么时候需要 |
 |---|---|---|---|
-| Account | **Workers AI** | Read | AI assistant, **local development only** — production uses the native binding / AI 助手,**仅本地开发**需要 |
 | Account | **Turnstile Sites** | Edit | Running `scripts/setup-turnstile.mjs`. The dashboard calls it "Turnstile Sites" / Dashboard 里就叫这个名字 |
 | Zone | **Zone WAF** | Edit | Running `scripts/push-ratelimit.mjs` |
 
@@ -128,21 +160,25 @@ Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom
 
 ### 1. Configuration / 配置文件
 
-`wrangler.jsonc` is **not** in the repository — it holds your account id, database id and domains. Copy the template and edit it.
-`wrangler.jsonc` **不在仓库里** —— 它含你的 account_id、database_id 和域名。从模板复制一份再改。
+`wrangler.jsonc` is **not** in the repository — it holds your account id, database id and domains. Copy the template and replace every `<placeholder>`: `account_id`, `database_id` and `APP_ORIGIN`. Leave `routes` empty; `setup-zone.mjs` fills it in as you connect domains.
+`wrangler.jsonc` **不在仓库里** —— 它含你的 account_id、database_id 和域名。从模板复制一份,把所有 `<占位符>` 替换掉:`account_id`、`database_id`、`APP_ORIGIN`。`routes` 留空即可,接域名时由 `setup-zone.mjs` 自动填。
 
 ```bash
 cp wrangler.example.jsonc wrangler.jsonc
 ```
 
+Since it is not in git, **keep your own copy somewhere safe** — losing it means rebuilding the account and database ids by hand.
+因为它不入库,**自己另存一份** —— 丢了就得手工把 account_id、database_id 一个个找回来。
+
 ### 2. Connect a domain / 接入域名
 
 ```bash
-node scripts/setup-zone.mjs example.com
+node scripts/setup-zone.mjs example.com [entry-subdomain]
+npm run deploy
 ```
 
-The script does three things: enables Email Routing (publishing MX/SPF), points the catch-all rule at the cfmail Worker, and binds `<entry-subdomain>.<domain>` as a custom domain.
-脚本做三件事:启用 Email Routing(下发 MX/SPF)、把 catch-all 指向 cfmail Worker、绑定 `<入口子域>.<域名>` 自定义域。
+The script does four things: enables Email Routing (publishing MX/SPF), points the catch-all rule at the cfmail Worker, binds `<entry-subdomain>.<domain>` as a custom domain, and writes that route into `wrangler.jsonc`. The second argument is only needed the first time — after that the prefix is read back out of `routes`. Deploy afterwards so the new route is published.
+脚本做四件事:启用 Email Routing(下发 MX/SPF)、把 catch-all 指向 cfmail Worker、绑定 `<入口子域>.<域名>` 自定义域、把这条 route 写进 `wrangler.jsonc`。第二个参数只有第一次需要,之后从 `routes` 里读回同一个前缀。跑完记得部署一次,新 route 才会生效。
 
 > **Careful**: enabling Email Routing takes over that domain's MX records. If the domain already has mail service, confirm before switching.
 > **注意**:启用 Email Routing 会接管该域名的 MX 记录。如域名原有邮件服务,切换前先确认。
@@ -150,12 +186,13 @@ The script does three things: enables Email Routing (publishing MX/SPF), points 
 ### 3. Hardening / 加固(可选,但建议做)
 
 ```bash
-node scripts/setup-turnstile.mjs   # create a Turnstile widget, secret goes into the Worker
+node scripts/setup-turnstile.mjs   # create the widget, wire up both halves
 node scripts/push-ratelimit.mjs    # push edge rate-limit rules to every zone
+npm run deploy
 ```
 
-- **Turnstile** protects login, password reset and invite signup. The sitekey goes in `wrangler.jsonc` under `vars`, the secret via `wrangler secret`. **Both must be present for it to activate** — to disable in a hurry, delete `TURNSTILE_SITEKEY` and redeploy.
-  保护登录、密码重置、邀请注册三处。**两者齐了才启用** —— 想紧急停用,删掉 `TURNSTILE_SITEKEY` 重新部署即可。
+- **Turnstile** protects login, password reset and invite signup. The script handles both halves itself: the secret goes into the Worker via `wrangler secret` (never printed, never on disk) and the public sitekey is written into `wrangler.jsonc` under `vars` — nothing to copy by hand. **Both must be present for it to activate**, so to disable in a hurry, delete `TURNSTILE_SITEKEY` and redeploy.
+  保护登录、密码重置、邀请注册三处。两半都由脚本自己搞定:secret 经 `wrangler secret` 灌进 Worker(不打印、不落盘),公开的 sitekey 由脚本写进 `wrangler.jsonc` 的 `vars`,不需要手动粘贴。**两者齐了才启用** —— 想紧急停用,删掉 `TURNSTILE_SITEKEY` 重新部署即可。
 - **Rate limiting**: 5 requests / 10 s per IP on the auth endpoints. The free plan allows one rule per zone with a fixed 10-second window; the script is written to that constraint.
   认证接口每 IP 5 次/10 秒。免费版每 zone 只允许 1 条规则、窗口固定 10 秒,脚本已按这个限制写好。
 
@@ -177,7 +214,6 @@ Open `https://<entry-subdomain>.<your-domain>/#/admin`.
 | **Import / 导入工具** | Bring in `.eml` archives from an old provider / 把旧服务商导出的 `.eml` 搬进来 |
 | **Export / 导出工具** | Write mailboxes back out to a local folder as `.eml` / 把邮箱写回本地目录 |
 | **Audit log / 审计日志** | Who did what, downloadable as CSV or JSONL / 谁做了什么,可下载 CSV 或 JSONL |
-| **AI assistant / AI 助手** | Per-domain switch, model selection, internet access toggle / 按域名开关、挑模型、联网开关 |
 
 ### As a user / 普通用户
 
@@ -192,39 +228,6 @@ Beyond ordinary mail: full-text search, conversation threading, rich-text compos
 1. Admin console → **Invites** → generate a link / 管理后台 → **邀请** → 生成链接
 2. Send the link to your colleague / 把链接发给同事
 3. They set a password, confirm a code sent to their personal email, and they're in / 对方设密码、输入发到其个人邮箱的验证码,就进来了
-
----
-
-## Local development / 本地开发
-
-```bash
-npm install          # also syncs third-party browser libraries into public/vendor/
-npm run migrate:local
-npm run dev          # http://127.0.0.1:8787
-```
-
-> `public/vendor/` (Web Awesome / Quill / postal-mime) is synced from `node_modules` and **is not committed**. `npm install` syncs it; after upgrading dependencies run `npm run vendor`.
-> `public/vendor/` 从 `node_modules` 同步而来,**不入库**。`npm install` 会自动同步;升级依赖后手动跑 `npm run vendor`。
->
-> `npm run dev` and `npm run deploy` verify it first and stop if anything is missing — don't bypass with `npx wrangler deploy`, you may ship a site with no frontend libraries.
-> 两个命令都会先校验,缺文件会直接停下 —— 别用 `npx wrangler deploy` 绕过。
->
-> **postal-mime must be the same version on both sides**: the Worker bundles it from `node_modules`, the browser loads `public/vendor/`. A version drift misaligns attachment `part_index`. Generating both from one `node_modules` is why vendor isn't committed.
-> **postal-mime 必须两端同版本**:Worker 侧从 `node_modules` 打包,浏览器侧用 `public/vendor/`。版本漂移会让附件的 `part_index` 错位 —— 这是不把 vendor 入库的主要原因。
-
-There is no real inbound path locally, so inject messages directly (needs `DEV_MODE=1` in `.dev.vars`):
-本地没有真实收信入口,用注入接口模拟(需 `.dev.vars` 里 `DEV_MODE=1`):
-
-```bash
-curl -X POST --data-binary @test.eml "http://127.0.0.1:8787/api/dev/ingest?rcpt=you@example.com&from=someone@example.com"
-```
-
-Trigger cron by hand (outbound queue, retries, cleanup):
-手动触发 cron(发件队列、重试、清理):
-
-```bash
-curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled"
-```
 
 ---
 
@@ -246,10 +249,22 @@ browser ◀──HTTPS──▶ Worker (static SPA + Hono API) ──▶ D1 / R2
   一个 Worker,三个入口:`fetch`、`email`、`scheduled`(每分钟:发件队列 / 解析重试 / 清理)。
 - Storage: one D1 database (accounts, permissions, message metadata, FTS5 index, audit log), one R2 bucket (raw MIME, attachments, uploads, font cache).
   存储:D1 一个库,R2 一个桶。
-- No Queues — an outbox table plus Cron is simpler at this scale. The AI assistant uses one Durable Object per chat session.
-  不用 Queues,当前量级 outbox 表 + Cron 更简单。AI 助手每个会话一个 Durable Object。
+- No Queues — an outbox table plus Cron is simpler at this scale.
+  不用 Queues,当前量级 outbox 表 + Cron 更简单。
 - **IMAP-ready schema**: `folders` carry `uidvalidity`/`uidnext`, `messages` carry a per-folder monotonic `uid` and standard IMAP flags. Adding an IMAP gateway later needs no data migration.
   **数据模型 IMAP-ready**,将来加 IMAP 网关不用迁数据。
+- **The API returns error codes, never prose.** A failure is `{"error": "e_bad_email"}`, with an `args` array when the message has values in it. The browser renders the sentence in the reader's language. One translation table serves the whole product, and the API stays usable from any client.
+  **API 只回错误码,不回句子。** 失败一律是 `{"error": "e_bad_email"}`,句子里要填值时带一个 `args` 数组,由浏览器按使用者的语言渲染成文字。全产品只有一份翻译表,API 也便于被其他客户端使用。
+
+### Error codes / 错误码
+
+```
+src/errors.ts             HttpError(status, code, ...args) and E(code, ...args)
+public/assets/i18n.js     the e_* entries, nine languages, at the end of the file
+```
+
+Adding one: throw `new HttpError(400, 'e_your_code', value)`, then add `e_your_code` to all nine dictionaries. A code with no entry falls back to a generic line rather than leaking `e_your_code` to the user.
+新增一个:`throw new HttpError(400, 'e_your_code', value)`,再把 `e_your_code` 加进九套词典。没有词条的码会退回一句通用提示,不会把 `e_your_code` 直接显示给用户。
 
 ### Account model / 账号模型
 
@@ -306,27 +321,10 @@ Both are implemented in `src/send.ts`; switching is a config change.
 
 ---
 
-## AI assistant (optional) / AI 助手(可选)
-
-Runs on Workers AI. **Off by default**, enabled per domain in the admin console along with which models are offered.
-跑在 Workers AI 上。**默认关闭**,在管理后台按域名启用并挑选可用模型。
-
-- It can only read mailboxes **the signed-in user already has access to**. Admins cannot use it to read other people's mail — that is a deliberate design line.
-  只能读**当前登录用户已有权限的**邮箱。管理员无法借它读别人的邮件 —— 这是有意的设计红线。
-- **Internet access is off by default.** Turning it on gives the model `web_search` / `open_url`; queries are written by the model from conversation content and sent to a search engine (Brave if you supply a key, otherwise DuckDuckGo). This is the only feature that sends mail-derived content to a third party.
-  **联网能力默认关闭。** 打开后模型才有 `web_search` / `open_url`,搜索词由模型根据对话内容生成并发往搜索引擎。这是唯一会把邮件衍生内容发给第三方的功能。
-- Cloudflare states it [does not train models on customer content](https://developers.cloudflare.com/workers-ai/platform/data-usage/).
-  Cloudflare 声明不使用客户内容训练模型。
-
-**Local development note**: `wrangler dev`'s remote AI binding proxy returns `internal error`, so locally the code falls back to REST — set `AI_DEV_ACCOUNT_ID` and `AI_DEV_API_TOKEN` in `.dev.vars`. Production uses the native binding and is unaffected.
-**本地开发注意**:`wrangler dev` 的远程 AI binding 代理会报 `internal error`,所以本地改走 REST。线上用原生 binding,不受影响。
-
----
-
 ## Migration and admin tools / 迁移与管理工具
 
-- **Import / 导入** — point it at a folder of `.eml` files. Parsing happens entirely in the browser, so it costs no Worker CPU. Ships with [Export-Mailbox.ps1](public/tools/Export-Mailbox.ps1), a PowerShell script that pulls a Microsoft 365 mailbox through Graph (read-only scopes, resumable, 9 languages).
-  指向一个装着 `.eml` 的目录。解析全在浏览器做,不烧 Worker CPU。附带用 Graph 只读权限拉取 Microsoft 365 邮箱的 PowerShell 脚本(可断点续传)。
+- **Import / 导入** — point it at a folder of `.eml` files. Parsing happens entirely in the browser, so it costs no Worker CPU. Ships with [Export-Mailbox.ps1](public/tools/Export-Mailbox.ps1), a PowerShell script that pulls a Microsoft 365 mailbox through the Microsoft Graph API (read-only scopes, resumable, 9 languages).
+  指向一个装着 `.eml` 的目录。解析全在浏览器做,不烧 Worker CPU。附带用 Microsoft Graph API 只读权限拉取 Microsoft 365 邮箱的 PowerShell 脚本(可断点续传)。
 - **Export / 导出** — writes selected mailboxes to a local folder as `<address>/<folder>/*.eml`. The server never builds an archive.
   把选中邮箱写成 `<邮箱地址>/<文件夹>/*.eml` 落到本地目录。服务端不打包。
 - **Audit log / 审计日志** — mailbox creation and deletion, erasure, export, session revocation, unrouted-mail viewing. Downloadable as CSV or JSONL.
@@ -365,8 +363,8 @@ See [PRIVACY.md](PRIVACY.md) for exactly what data lives where and what can leav
   入站单封上限 25MB,超限对方会收到退信。
 - Outbound caps at 3.6 MB — derived from Cloudflare's 5 MiB hard limit and base64's ~1.37× expansion. Over-sized mail fails to send but still saves as a draft.
   外发单封上限 3.6MB。超限只在发送时报错,草稿照常保存。
-- Webmail only. No IMAP/POP/SMTP client access yet — the schema is ready for it.
-  纯 webmail,暂无 IMAP/POP/SMTP 客户端接入。
+- Webmail only. No IMAP/POP/SMTP client access yet — the schema is already built for it and support is planned.
+  纯 webmail,暂无 IMAP/POP/SMTP 客户端接入;数据模型已为此预留,后续计划开发支持。
 - Trash and spam self-purge after 30 days; temporary uploads after 48 hours. **Regular mail is never auto-deleted** — an admin has to do it explicitly.
   回收站和垃圾邮件 30 天后自动清空,临时上传 48 小时清理。**正文邮件不会自动删除。**
 - CJK search uses LIKE, Latin search uses FTS5.
@@ -380,8 +378,8 @@ See [PRIVACY.md](PRIVACY.md) for exactly what data lives where and what can leav
 
 - Components are Web Awesome v3.11 (Web Components), self-hosted in `public/vendor/wa/` and synced by `scripts/sync-vendor.mjs`. Icons are a hand-built set in `public/assets/icons.js` — no Font Awesome icon assets are involved.
   控件层是 Web Awesome v3.11,自托管并由脚本同步。图标是自建的,不涉及 Font Awesome 的图标资源。
-- Themes: `node scripts/build-themes.mjs` generates 30 light/dark pairs from `@radix-ui/colors`. Edit the script, not the output.
-  主题由脚本从 `@radix-ui/colors` 生成 30 套明暗成对。改脚本,别改产物。
+- Themes: `node scripts/build-themes.mjs` generates 30 light/dark pairs from `@radix-ui/colors`.
+  主题由脚本从 `@radix-ui/colors` 生成 30 套明暗成对。
 - Domain admins pick a theme per domain; users pick light/dark/auto and their own interface and body fonts.
   域管理员按域名选主题;用户自己选明暗和字体。
 - Interface strings live in `public/assets/i18n.js` — all 9 dictionaries must stay in sync.
@@ -396,6 +394,8 @@ See [PRIVACY.md](PRIVACY.md) for exactly what data lives where and what can leav
 
 Release checklist / 发布清单: edit code → run `build-themes.mjs` if themes changed → `npm run typecheck` → `npm run migrate:remote` if there are new migrations → `npm run deploy`.
 
+---
+
 ## Layout / 目录结构
 
 ```
@@ -406,23 +406,26 @@ src/
   admin.ts                     # admin API: stats, members, invites, export, audit / 管理后台 API
   auth.ts                      # sessions, PBKDF2 passwords, CSRF / 会话、密码、CSRF
   audit.ts                     # admin action audit trail / 管理员操作审计
+  errors.ts                    # error codes + HttpError / 错误码与 HttpError
   parse.ts                     # inbound parsing and storage / 收信解析入库
   send.ts                      # send pipeline + CF/SES/Resend/dev / 发送管道
   mime.ts                      # outbound MIME building / 出站 MIME 构建
   fonts.ts                     # server-side Google Fonts proxy / 字体服务端代理
-  chat/                        # AI assistant (Durable Object + tools) / AI 助手
+  chat/                        # experimental chat agent (Durable Object) / 实验性会话 agent
 public/                        # Gmail-style SPA, no bundler / 无打包无转译
   vendor/                      # third-party browser libs, not committed / 不入库
   tools/Export-Mailbox.ps1     # Microsoft 365 mailbox exporter / M365 导出脚本
 scripts/
   sync-vendor.mjs              # sync public/vendor/ from node_modules (postinstall)
   wrangler-config.mjs          # reads wrangler.jsonc, feeds domains/zones to other scripts
-  setup-zone.mjs               # connect a domain / 域名一键接入
+  setup-zone.mjs               # connect a domain, write its route / 接入域名并写回 route
   setup-turnstile.mjs          # create the Turnstile widget / 建 Turnstile widget
   push-ratelimit.mjs           # push edge rate-limit rules / 推限速规则
   build-themes.mjs             # generate themes / 生成主题
   import-eml.mjs               # command-line import / 命令行导入
 ```
+
+---
 
 ## License / 许可
 
