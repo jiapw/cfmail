@@ -1,0 +1,120 @@
+// Wrangler configuration template for CFMail.
+// CFMail 的 Wrangler 配置模板。
+//
+// The real wrangler.jsonc is NOT committed — it holds your own account_id,
+// database_id and domain names. Copy this file and replace every <placeholder>:
+//
+// 真正的 wrangler.jsonc 不入库(里面有你自己的 account_id、database_id 和域名),
+// 复制本文件成 wrangler.jsonc,把所有 <尖括号> 占位符替换掉:
+//
+//     cp wrangler.example.jsonc wrangler.jsonc
+//
+// See README.md for the full deployment walkthrough.
+// 完整部署步骤见 README.md。
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cfmail",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Static frontend assets. SPA mode; /api/* always hits the Worker first.
+  // 前端静态资产:SPA 模式,/api/* 永远先走 Worker。
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Create with `wrangler d1 create cfmail`, then paste the returned uuid here.
+  // 用 `wrangler d1 create cfmail` 创建,把返回的 uuid 填进 database_id。
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cfmail",
+      "database_id": "<your D1 database_id / 你的 D1 database_id>",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Create with `wrangler r2 bucket create cfmail-raw`.
+  // 用 `wrangler r2 bucket create cfmail-raw` 创建。
+  "r2_buckets": [
+    { "binding": "RAW", "bucket_name": "cfmail-raw" }
+  ],
+
+  // AI assistant: Workers AI + Agents SDK (one Durable Object per chat session).
+  // Optional at runtime — the assistant is off by default and enabled per domain
+  // in the admin console. The bindings must stay here either way.
+  //
+  // AI 助手:Workers AI + Agents SDK(每个聊天会话一个 DO 实例)。
+  // 功能本身可选 —— 默认关闭,在管理后台按域名启用;但这几项绑定要一直留着。
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [
+      { "name": "CHAT_AGENT", "class_name": "ChatAgent" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] }
+  ],
+
+  // Cloudflare Email Sending (public beta). Sending to outside recipients
+  // requires the Workers Paid plan; local dev never sends for real.
+  //
+  // Cloudflare Email Sending(public beta)。发信给外部收件人需要 Workers 付费版;
+  // 本地 dev 默认模拟不真发。
+  "send_email": [
+    { "name": "EMAIL" }
+  ],
+
+  // Every minute: process the send queue, retry failed parses, run cleanup.
+  // 每分钟:处理发件队列、重试解析失败、定期清理。
+  "triggers": { "crons": ["* * * * *"] },
+
+  // Visible in the right-hand sidebar of the Cloudflare dashboard.
+  // 在 Cloudflare 控制台右侧栏可以看到。
+  "account_id": "<your Cloudflare account_id / 你的 Cloudflare account_id>",
+
+  "vars": {
+    // Sending channel: cf = Cloudflare Email Sending, dev = never send externally,
+    // ses / resend also supported (see README).
+    // 发信通道:cf = Cloudflare Email Sending,dev = 不真实外发,还可选 ses / resend。
+    "MAIL_PROVIDER": "cf",
+
+    // The address users visit. Keep this in sync with the first entry in "routes".
+    // 用户访问的入口地址,与下面 routes 的第一条保持一致。
+    "APP_ORIGIN": "https://<entry-subdomain>.<your-domain>",
+
+    "DEV_MODE": "0"
+
+    // Optional: Turnstile human verification on login / password reset / invite signup.
+    // The sitekey is a public value and belongs here; the secret goes in
+    // `wrangler secret put TURNSTILE_SECRET`. BOTH must be present for it to activate,
+    // so deleting this line and redeploying disables it instantly.
+    // Create the widget with: node scripts/setup-turnstile.mjs
+    //
+    // 可选:登录 / 密码重置 / 邀请注册三处的 Turnstile 人机验证。
+    // sitekey 是公开值可以写在这里,secret 用 `wrangler secret put TURNSTILE_SECRET` 设置。
+    // 两者齐了才生效 —— 删掉这行重新部署就等于紧急停用。
+    // 建 widget:node scripts/setup-turnstile.mjs
+    //
+    // "TURNSTILE_SITEKEY": "<your Turnstile sitekey / 你的 Turnstile sitekey>"
+  },
+
+  // Custom domains bound to the web interface (DNS records are created on deploy).
+  // Add one entry per company domain. Every domain must be on the SAME Cloudflare
+  // account, using Cloudflare DNS (a full zone — partial/CNAME setups will not work).
+  // The setup script derives the zone by stripping the first label, so the pattern
+  // must be <entry-subdomain>.<zone>.
+  //
+  // Web 界面绑定的自定义域名(部署时自动创建 DNS)。每接入一个企业域名就加一条。
+  // 域名必须托管在同一个 Cloudflare 账号下,且用 Cloudflare DNS(完整 zone,
+  // partial/CNAME 接入不行)。配置脚本按"去掉最左一段"推导 zone,
+  // 所以格式必须是 <入口子域>.<域名>。
+  "routes": [
+    { "pattern": "<entry-subdomain>.<your-domain>", "custom_domain": true }
+  ]
+}

@@ -1,0 +1,19 @@
+# Normalise line endings so the repository stays LF regardless of who commits.
+# 统一换行符:仓库里一律存 LF,不管是谁在什么系统上提交。
+* text=auto eol=lf
+
+# Windows-only tooling that should keep CRLF when checked out.
+# 只在 Windows 上用的脚本,检出时保留 CRLF。
+*.ps1 text eol=crlf
+
+# Binary-ish assets: never touch them.
+# 二进制资产:一律不做任何转换。
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.eml binary

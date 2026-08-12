@@ -1,0 +1,770 @@
+/* CFMail — 布局与自定义组件样式(颜色全部走主题 token,控件层为 Web Awesome) */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-body: var(--font-ui);
+  --font-brand: var(--font-ui);
+}
+body {
+  margin: 0;
+  font: 14px/1.5 var(--font-ui);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+/* ---------- 滚动条:全站统一 ----------
+   之前各面板都是浏览器默认样式(Windows 上带上下箭头、方角槽),这里统一成圆角。
+   18px = 系统默认 15px 的 120%;thumb 用透明 border + background-clip:content-box
+   往里收 5px,于是看到的是一条 8px 的居中细条,外框仍是一整条圆角槽。
+   Firefox 只认 scrollbar-color/width,做不了圆角,退化成同色系的原生滚动条。 */
+:root { scrollbar-color: var(--border-2) var(--hover); }
+::-webkit-scrollbar { width: 18px; height: 18px; }
+::-webkit-scrollbar-track { background: var(--hover); border-radius: 999px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 999px;
+  border: 5px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
+/* 上下两端的箭头按钮去掉 */
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* 界面字体作用于所有原生控件 */
+input, textarea, select, button { font-family: var(--font-ui); }
+/* 品牌名字体 */
+.logo span, .auth-logo span { font-family: var(--font-brand); }
+/* 邮件正文字体(纯文本正文;HTML 正文在 iframe 内单独注入) */
+.plainbody, .msg-body { font-family: var(--font-body); }
+a { color: var(--link); text-decoration: none; }
+[hidden] { display: none !important; }
+.flex1 { flex: 1; }
+.dim { color: var(--text-2); font-size: 12.5px; }
+.nowrap { white-space: nowrap; }
+.boot-loading, .loading { padding: 40px; text-align: center; color: var(--text-2); }
+.empty { padding: 64px 24px; text-align: center; color: var(--text-2); font-size: 15px; }
+
+/* ---------- Web Awesome 全局密度/形状调校 ---------- */
+:root {
+  --wa-border-radius-scale: 1.25;
+  --wa-font-family-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 全局取消聚焦高亮 */
+  --wa-focus-ring-width: 0;
+  --wa-focus-ring-style: none;
+  --wa-focus-ring: none;
+  --wa-focus-ring-offset: 0;
+}
+/* 原生元素与 WA 组件内部一并去掉聚焦环/高亮 */
+:focus, :focus-visible { outline: none !important; }
+input:focus, textarea:focus, select:focus, button:focus,
+.searchbar:focus-within input:focus {
+  outline: none !important; box-shadow: none !important;
+}
+wa-button::part(base):focus, wa-button::part(base):focus-visible,
+wa-input::part(base):focus-within, wa-select::part(combobox):focus-within,
+wa-textarea::part(base):focus-within, wa-checkbox::part(control):focus-visible {
+  outline: none !important; box-shadow: none !important;
+}
+wa-button { font-weight: 500; }
+wa-button.icon::part(base) {
+  border-radius: 50%;
+  width: 40px; height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+wa-button.icon.sm::part(base) { width: 32px; height: 32px; }
+wa-button.icon wa-icon { font-size: 20px; }
+wa-button.icon.sm wa-icon { font-size: 18px; }
+wa-button.danger::part(base) { color: var(--wa-color-danger-on-quiet); }
+wa-button.starred::part(base) { color: var(--star); }
+wa-dialog { --width: 480px; }
+wa-dialog::part(dialog) { border-radius: 20px; }
+wa-dropdown::part(menu) { border-radius: 14px; min-width: 240px; }
+wa-dropdown-item::part(base) { font-size: 14px; }
+wa-toast { z-index: 600; }
+
+/* 平铺型输入(撰写窗 Gmail 风格,无边框) */
+wa-input.flat::part(base), wa-select.flat::part(combobox), wa-textarea.flat::part(base) {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+wa-input.flat, wa-select.flat { flex: 1; }
+wa-input.flat::part(input) { padding: 0; font-size: 14px; }
+wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height: 1.65; }
+
+/* ---------- 通用元素 ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--wa-color-neutral-fill-quiet); color: var(--wa-color-neutral-on-quiet);
+  border-radius: 8px;
+  padding: 2px 8px; font-size: 12px; line-height: 18px; vertical-align: middle;
+}
+.chip-ok { background: var(--wa-color-success-fill-quiet); color: var(--wa-color-success-on-quiet); }
+.chip-warn { background: var(--wa-color-warning-fill-quiet); color: var(--wa-color-warning-on-quiet); }
+.chip-err { background: var(--wa-color-danger-fill-quiet); color: var(--wa-color-danger-on-quiet); }
+.chip-x { margin-left: 2px; color: inherit; opacity: .6; font-size: 13px; border: none; background: none; cursor: pointer; padding: 0; }
+.chip-x:hover { opacity: 1; }
+
+.badge { margin-left: auto; color: var(--text); font-size: 12px; font-weight: 700; }
+.side-item.active .badge { color: var(--accent-text); }
+
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; color: #fff; font-weight: 500; flex: none; user-select: none;
+}
+
+/* ---------- 顶栏 ---------- */
+.shell { display: flex; flex-direction: column; height: 100vh; }
+/* 上留白比下多 8px:下方还有"写邮件"按钮自己的 margin,这样两侧看起来才一样宽 */
+.topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px 6px; height: 60px; flex: none; }
+.logo { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 20px; margin-right: 24px; user-select: none; }
+.logo span { font-weight: 400; }
+.logo wa-icon { color: var(--primary); font-size: 24px; }
+.searchbar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--accent-soft); border-radius: 999px;
+  height: 40px; padding: 0 18px; width: min(680px, 46vw);
+  color: var(--text-2);
+}
+.searchbar:focus-within { background: var(--panel); }
+.searchbar input { flex: 1; border: none; outline: none; background: transparent; font-size: 15px; color: var(--text); }
+.searchbar wa-icon { font-size: 20px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+/* 只限定高度,宽度按原图比例自适应;过宽时封顶,避免挤压顶栏其余部分 */
+.brand-logo {
+  display: block; width: auto; object-fit: contain; border-radius: 5px;
+  max-width: 200px; flex: none;
+}
+.auth-brand-logo { max-width: 240px; border-radius: 6px; }
+/* logo 只在"非原生模式"下翻转明度(保留色相/饱和度):
+   在浅色模式上传的 logo → 暗色下反转;在暗色模式上传的 → 浅色下反转 */
+.wa-dark .brand-logo[data-logo-mode='light'] { filter: invert(1) hue-rotate(180deg); }
+.wa-light .brand-logo[data-logo-mode='dark'] { filter: invert(1) hue-rotate(180deg); }
+
+.um-head { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.um-name { font-weight: 500; }
+.um-mail { color: var(--text-2); font-size: 12.5px; }
+.um-version { color: var(--text-2); font-size: 12px; padding: 10px 14px 6px; border-top: 1px solid var(--border); margin-top: 6px; }
+
+/* ---------- 侧栏 ---------- */
+.body { display: flex; flex: 1; min-height: 0; }
+.sidebar { width: 256px; flex: none; padding: 0 8px 16px 8px; overflow-y: auto; }
+.sidebar.hidden { display: none; }
+.compose-btn { margin: 8px 8px 16px 4px; }
+.compose-btn::part(base) {
+  height: 44px; padding: 0 20px; border-radius: 14px;
+  background: var(--selected); color: var(--accent-text);
+  border: none; font-size: 14.5px; font-weight: 500;
+  transition: box-shadow .15s;
+}
+.compose-btn::part(base):hover { box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 30%, transparent), 0 4px 8px color-mix(in srgb, var(--text) 15%, transparent); }
+.compose-btn wa-icon { font-size: 20px; }
+.side-group { display: flex; flex-direction: column; }
+.side-item {
+  display: flex; align-items: center; gap: 14px;
+  height: 36px; padding: 0 12px 0 14px; margin-right: 8px;
+  border-radius: 0 999px 999px 0; color: var(--text); font-size: 14px;
+  overflow: hidden; white-space: nowrap;
+}
+.side-item:hover { background: var(--hover-2); }
+.side-item.active { background: var(--selected); color: var(--accent-text); font-weight: 700; }
+.side-item wa-icon { color: var(--text-2); font-size: 20px; flex: none; }
+.side-item.active wa-icon { color: var(--accent-text); }
+.side-name { overflow: hidden; text-overflow: ellipsis; }
+.side-sep { height: 1px; background: var(--border); margin: 12px 16px 8px 8px; }
+.side-title { color: var(--text-2); font-size: 12.5px; padding: 6px 16px; }
+.side-item.acct { gap: 10px; }
+
+/* ---------- 内容区 ---------- */
+.content {
+  flex: 1; min-width: 0; background: var(--panel);
+  border-radius: 16px;
+  /* 上边距使第一封邮件上边缘与侧栏「写邮件」按钮下边缘对齐:
+     按钮下边缘 = 上边距 8 + 按钮高 44 = 52;减去工具栏高 40 → 12 */
+  margin: 12px 16px 16px 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidebar.hidden + .content { margin-left: 16px; }
+.list-toolbar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 12px; flex: none;
+}
+.list-toolbar wa-button.icon::part(base) { width: 34px; height: 34px; }
+/* 多选工具栏 */
+.sel-toolbar { background: var(--selected); }
+.sel-all-wrap { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin-left: 4px; }
+.sel-all-wrap input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+.row-check { width: 32px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.row-check input { width: 16px; height: 16px; accent-color: var(--primary); pointer-events: none; }
+.rows.sel-mode .row { cursor: default; }
+.rows.sel-mode .row .row-actions { display: none !important; }
+.row.selected { background: var(--selected-2); }
+
+/* 右键上下文菜单 */
+.ctx-menu {
+  position: fixed; z-index: 400; min-width: 190px; padding: 6px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 6px 24px color-mix(in srgb, #000 24%, transparent);
+}
+.ctx-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 12px; border: none; background: none; cursor: pointer;
+  border-radius: 8px; color: var(--text); font: inherit; font-size: 13.5px;
+  text-align: left; justify-content: flex-start;
+}
+.ctx-item:hover { background: var(--hover-2); }
+.ctx-item > span { flex: 1; text-align: left; }
+.ctx-item wa-icon { font-size: 18px; color: var(--text-2); flex: none; width: 18px; }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 8px; }
+.ctx-title { padding: 6px 12px 4px; color: var(--text-2); font-size: 12px; }
+.ctx-item.danger { color: var(--wa-color-danger-on-quiet); }
+.ctx-item.danger wa-icon { color: inherit; }
+.list-title { font-size: 14px; color: var(--text-2); margin-left: 6px; font-weight: 500; }
+.pageinfo { color: var(--text-2); font-size: 12.5px; margin-right: 4px; }
+.rows { overflow-y: auto; flex: 1; }
+
+.row {
+  display: flex; align-items: center; gap: 4px;
+  height: 36px; padding: 0 16px 0 8px;
+  border-bottom: 1px solid var(--hover);
+  cursor: pointer; position: relative;
+  background: var(--tint);
+}
+.row.unread { background: var(--panel); }
+.row:hover { box-shadow: inset 1px 0 0 var(--border-2), inset -1px 0 0 var(--border-2), 0 1px 2px 0 color-mix(in srgb, var(--text) 30%, transparent); z-index: 1; }
+.row-star { flex: none; }
+.row wa-button.row-star::part(base) { color: var(--text-3); }
+.row wa-button.row-star.starred::part(base) { color: var(--star); }
+/* margin 36 + 行内 gap 4 = 发件人与主题之间正好 40px */
+.row-from { width: 190px; margin-right: 36px; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.row.unread .row-from { font-weight: 700; }
+.row-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-subj { color: var(--text); }
+.row.unread .row-subj { font-weight: 700; }
+.row-snip { color: var(--text-3); }
+.cnt { color: var(--text-2); font-weight: 400; font-size: 12.5px; }
+.row-clip { color: var(--text-2); flex: none; display: inline-flex; font-size: 16px; }
+.row-date { flex: none; width: 84px; text-align: right; font-size: 12px; color: var(--text-2); }
+.row.unread .row-date { color: var(--text); font-weight: 700; }
+.row-actions {
+  display: none; position: absolute; right: 8px; top: 0; bottom: 0;
+  align-items: center; gap: 2px; background: inherit; padding-left: 8px;
+}
+.row:hover .row-actions { display: flex; }
+.row:hover .row-date { visibility: hidden; }
+.draft-red { color: var(--wa-color-danger-on-quiet); }
+.disabled-row { opacity: .55; }
+
+/* ---------- 会话视图 ---------- */
+.thread { overflow-y: auto; flex: 1; padding: 0 16px 24px; }
+.t-subject { font-size: 22px; font-weight: 400; margin: 16px 8px 8px 44px; }
+.msgs { display: flex; flex-direction: column; }
+.msg { border-bottom: 1px solid var(--hover); padding: 12px 4px; }
+.msg:last-child { border-bottom: none; }
+.msg-head { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.msg-meta { min-width: 0; flex: 1; }
+.msg-line1 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.msg-from { font-weight: 700; font-size: 14px; }
+.msg-addr { color: var(--text-2); font-size: 12.5px; }
+.msg-line2 { color: var(--text-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+.msg-right { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--text-2); flex: none; }
+.msg-right > wa-icon { font-size: 16px; }
+.msg-date { font-size: 12.5px; }
+.msg-collapsed { color: var(--text-2); margin: 4px 0 0 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.msg.open .msg-collapsed { display: none; }
+.msg-bodywrap { display: none; margin: 12px 0 0 52px; }
+.msg.open .msg-bodywrap { display: block; }
+/* 正文画布透明:发件方自己画的面(卡片/色带)原样保留且不反色,
+   其余(转发头、纯文字段落)透出主题背景 */
+.mailframe { width: 100%; border: none; display: block; min-height: 60px; background: transparent; border-radius: 8px; }
+.plainbody { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.65; }
+.msg-actions { display: flex; gap: 8px; margin-top: 16px; }
+.atts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+/* 收信侧的附件条:填充块 + 悬停下载箭头,刻意不用描边,免得和「回复/转发」那类按钮撞脸 */
+.atts .att-chip {
+  border: none; background: var(--hover);
+  border-radius: 8px; padding: 6px 8px 6px 10px; gap: 8px;
+  max-width: 320px; transition: background .15s;
+}
+.atts .att-chip:hover { background: var(--selected); color: var(--accent-text); }
+.atts .att-chip .att-size { margin-left: 2px; }
+.att-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border-2); border-radius: 10px; padding: 6px 10px;
+  color: var(--text); font-size: 13px; max-width: 280px; background: var(--panel);
+}
+.att-chip:hover { background: var(--hover); }
+.att-chip wa-icon { font-size: 15px; color: var(--text-2); }
+.att-chip .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-chip .att-size { color: var(--text-2); font-size: 12px; flex: none; }
+.att-chip.uploading { opacity: .6; }
+.att-chip[data-prev] { cursor: pointer; }
+
+/* 附件大窗预览 */
+wa-dialog.attprev-dlg { --width: min(1100px, 94vw); }
+.attprev { display: flex; flex-direction: column; gap: 12px; }
+.attprev-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.attprev-head wa-icon { font-size: 18px; color: var(--text-2); flex: none; }
+.attprev-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attprev-size { color: var(--text-2); font-size: 12.5px; flex: none; }
+.attprev-body {
+  height: min(76vh, 900px); border-radius: 10px; overflow: auto;
+  background: var(--hover); display: flex; align-items: center; justify-content: center;
+}
+/* 图片按原始比例塞进框里,不放大小图 */
+.attprev-body img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.attprev-body iframe { width: 100%; height: 100%; border: none; display: block; border-radius: 10px; }
+/* 全窗:撑满视口。WA 默认给 dialog 留了 --wa-space-2xl 的边距和圆角,这里一并去掉。
+   正文高度 = 视口 - (上下 padding 10x2 + 头部 32 + 间距 12),留几像素余量免得溢出 */
+wa-dialog.attprev-dlg.full { --width: 100vw; --spacing: 10px; }
+wa-dialog.attprev-dlg.full::part(dialog) { max-width: 100%; max-height: 100%; border-radius: 0; }
+wa-dialog.attprev-dlg.full .attprev-body { height: calc(100vh - 72px); border-radius: 0; }
+wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
+/* 附件类型标记:统一的圆角小正方形,认识的放图标,不认识的写扩展名 */
+.fileicon {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px; color: #fff; flex: none;
+  font-weight: 700; line-height: 1; letter-spacing: .02em;
+}
+.fileicon wa-icon { color: #fff; }
+.att-x { display: inline-flex; color: var(--text-2); border: none; background: none; cursor: pointer; padding: 0; }
+.att-x:hover { color: var(--wa-color-danger-on-quiet); }
+.att-x wa-icon { font-size: 14px; }
+
+.replybox { margin: 20px 0 0 8px; }
+.replybox-inner { display: flex; gap: 12px; }
+.reply-main { flex: 1; border: 1px solid var(--border-2); border-radius: 16px; padding: 12px; }
+.reply-main textarea {
+  width: 100%; border: none; outline: none; resize: vertical; min-height: 60px;
+  font: inherit; font-size: 14px; line-height: 1.6; background: transparent; color: var(--text);
+}
+.reply-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.reply-main.dragover, .compose.dragover .compose-body {
+  outline: 2px dashed var(--primary); outline-offset: -6px;
+  background: var(--tint); border-radius: 12px;
+}
+#reply-atts { border-top: 1px solid var(--hover); margin-top: 6px; padding-top: 8px; }
+
+/* ---------- 撰写窗口 ---------- */
+.compose {
+  position: fixed; right: 60px; bottom: 0; z-index: 200;
+  width: min(500px, calc(100vw - 32px));
+  background: var(--panel); border-radius: 12px 12px 0 0;
+  box-shadow: 0 8px 28px color-mix(in srgb, #000 28%, transparent);
+  display: flex; flex-direction: column;
+  max-height: min(70vh, 620px);
+}
+/* 全屏:铺满页面(再点一次还原) */
+.compose.maximized {
+  inset: 24px; right: 24px; bottom: 24px;
+  width: auto; max-height: none; border-radius: 12px;
+}
+.compose.minimized .compose-body { display: none; }
+.compose-head {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--accent-soft); color: var(--text);
+  font-size: 14px; font-weight: 500;
+  border-radius: 12px 12px 0 0; padding: 6px 8px 6px 16px; cursor: pointer; user-select: none;
+}
+.compose.maximized .compose-head { border-radius: 12px 12px 0 0; }
+.compose-head wa-button.icon::part(base) { color: var(--text-2); }
+.compose-head wa-button.icon::part(base):hover { color: var(--text); }
+.compose-head wa-button.icon.sm::part(base) { width: 28px; height: 28px; }
+.cp-status { color: var(--text-2); font-size: 12px; font-weight: 400; margin-right: 6px; }
+.compose-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0 16px 12px; overflow-y: auto; position: relative; }
+.cp-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding: 8px 0; }
+.cp-row > label { color: var(--text-2); font-size: 13px; flex: none; width: 44px; }
+/* 撰写窗内的输入框:无边框、无 focus 高亮 */
+.cp-row input, .compose-body textarea {
+  flex: 1; min-width: 0; border: none; outline: none; box-shadow: none;
+  background: transparent; color: var(--text);
+  font: inherit; font-size: 14px; padding: 0;
+}
+.cp-row input:focus, .compose-body textarea:focus { border: none; outline: none; box-shadow: none; }
+.cp-row input::placeholder, .compose-body textarea::placeholder { color: var(--text-3); }
+.compose-body textarea { flex: 1; min-height: 200px; padding: 14px 0; line-height: 1.65; resize: none; }
+.cp-atts { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); }
+.compose-foot { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+/* 邮件总大小:只在有附件/内联图时显示,超限转红 */
+.cp-size { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cp-size.over { color: var(--wa-color-danger-on-quiet); font-weight: 600; }
+
+/* ---------- 富文本编辑器(Quill snow 主题接到本站变量上) ---------- */
+.cp-editwrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.cp-toolbar[hidden] { display: none !important; }
+.cp-toolbar.ql-toolbar {
+  border: none !important; border-bottom: 1px solid var(--border) !important;
+  padding: 4px 0 6px; font-family: inherit;
+}
+.cp-toolbar.ql-toolbar .ql-formats { margin-right: 10px; }
+.cp-toolbar.ql-toolbar button { width: 26px; height: 24px; padding: 3px 4px; }
+.cp-toolbar.ql-toolbar button:hover .ql-stroke,
+.cp-toolbar.ql-toolbar button.ql-active .ql-stroke,
+.cp-toolbar.ql-toolbar .ql-picker-label:hover { stroke: var(--primary); color: var(--primary); }
+.cp-toolbar.ql-toolbar button:hover .ql-fill,
+.cp-toolbar.ql-toolbar button.ql-active .ql-fill { fill: var(--primary); }
+.cp-toolbar.ql-toolbar .ql-stroke { stroke: var(--text-2); }
+.cp-toolbar.ql-toolbar .ql-fill { fill: var(--text-2); }
+.cp-toolbar.ql-toolbar .ql-picker { color: var(--text-2); }
+.cp-toolbar.ql-toolbar .ql-picker-options { background: var(--panel-2); border-color: var(--border); }
+/* 容器本身不滚动也不裁剪,滚动交给 .ql-editor —— 否则链接气泡会被切掉 */
+.cp-editor.ql-container {
+  border: none !important; flex: 1; min-height: 180px; overflow: visible;
+  display: flex; flex-direction: column;
+  font: inherit; font-size: 14px; color: var(--text);
+}
+.compose.maximized .cp-editor.ql-container { min-height: 240px; }
+.cp-editor .ql-editor { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 0; line-height: 1.65; }
+.cp-editor .ql-editor.ql-blank::before { color: var(--text-3); font-style: normal; left: 0; right: 0; }
+/* 2px 透明边:给悬停/选中态预留位置,加边框时不会引起版面跳动 */
+.cp-editor .ql-editor img { max-width: 100%; height: auto; border: 2px solid transparent; }
+.cp-editor .ql-editor blockquote { border-left: 2px solid var(--border); padding-left: 12px; margin-left: 0; color: var(--text-2); }
+.cp-editor .ql-editor pre { background: var(--hover); border-radius: 6px; }
+/* 插入链接的气泡 */
+.cp-editor .ql-tooltip {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 6px 12px; z-index: 300;
+  box-shadow: 0 4px 18px color-mix(in srgb, #000 22%, transparent);
+}
+.cp-editor .ql-tooltip::before { color: var(--text-2); font-size: 13px; }
+.cp-editor .ql-tooltip input[type=text] {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); font: inherit; font-size: 13px; height: 26px; width: 190px; outline: none;
+}
+.cp-editor .ql-tooltip input[type=text]:focus { border-color: var(--primary); }
+.cp-editor .ql-tooltip a { color: var(--link); font-size: 13px; }
+.cp-editor .ql-tooltip a.ql-action::after { border-right-color: var(--border); }
+.cp-editor .ql-tooltip a.ql-preview { color: var(--link); }
+
+/* 内联图片的缩放条:hover 到图上才出现 */
+.cp-editwrap { position: relative; }
+.cp-imgbar {
+  position: absolute; z-index: 40; display: flex; gap: 2px;
+  background: color-mix(in srgb, var(--panel-2) 92%, transparent);
+  border: 1px solid var(--border); border-radius: 8px; padding: 2px;
+  box-shadow: 0 2px 10px color-mix(in srgb, #000 22%, transparent);
+}
+.cp-imgbar button {
+  border: none; background: none; color: var(--text-2); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 22px; padding: 0; border-radius: 6px;
+}
+.cp-imgbar button:hover { background: var(--hover); color: var(--text); }
+.cp-imgbar button.on { background: var(--selected); color: var(--accent-text); }
+.cp-imgbar button.del:hover { background: var(--wa-color-danger-fill-quiet); color: var(--wa-color-danger-on-quiet); }
+.cp-imgbar-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--border); }
+
+/* 回复引用:默认折成一个 ··· ,点开看,也可以整块丢掉 */
+.cp-quote { border-top: 1px solid var(--border); padding: 6px 0; }
+.cp-quote-bar { display: flex; align-items: center; gap: 8px; }
+.cp-quote-toggle {
+  border: 1px solid var(--border); background: var(--hover); color: var(--text-2);
+  border-radius: 6px; padding: 0 8px; height: 20px; line-height: 16px; cursor: pointer; font-size: 13px;
+}
+.cp-quote-toggle:hover { background: var(--selected); }
+.cp-quote-label { color: var(--text-3); font-size: 12px; }
+.cp-quote-x { border: none; background: none; color: var(--text-3); cursor: pointer; display: flex; padding: 2px; }
+.cp-quote-x:hover { color: var(--text); }
+.cp-quote-body { max-height: 220px; overflow-y: auto; margin-top: 6px; padding-left: 10px; border-left: 2px solid var(--border); }
+.cp-quote-attr { color: var(--text-2); font-size: 12.5px; white-space: pre-wrap; }
+.cp-quote-text { color: var(--text-2); font-size: 12.5px; white-space: pre-wrap; margin: 4px 0 0; font-family: inherit; }
+
+/* ---------- 远程图片拦截提示 ---------- */
+.imgblock {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--accent-soft); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; margin-bottom: 8px;
+}
+.imgblock-txt { color: var(--text-2); font-size: 12.5px; }
+
+/* ---------- 收件人自动补全 ---------- */
+.ac-drop {
+  position: absolute; z-index: 260; left: 52px; right: 16px;
+  background: var(--panel-2); border-radius: 12px;
+  box-shadow: 0 4px 18px color-mix(in srgb, #000 22%, transparent);
+  overflow: hidden; max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--border);
+}
+.ac-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer; }
+.ac-item.sel, .ac-item:hover { background: var(--selected); }
+.ac-main { min-width: 0; flex: 1; display: flex; gap: 8px; align-items: baseline; }
+.ac-name { font-weight: 500; white-space: nowrap; }
+.ac-addr { color: var(--text-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 通讯录 ---------- */
+.contacts-page { overflow-y: auto; flex: 1; padding: 8px 16px 32px; }
+.contact-group { margin-bottom: 12px; }
+.contact-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px; cursor: pointer; }
+.contact-row:hover { background: var(--hover); }
+.contact-main { min-width: 0; flex: 1; }
+.contact-name { font-weight: 500; }
+.contact-addr { color: var(--text-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+.ct-safe { flex: none; }
+.ct-safe svg { width: 13px; height: 13px; }
+.ct-safe.ok::part(base) { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); }
+.ct-safe-reset {
+  border: none; background: none; color: var(--text-3); cursor: pointer;
+  display: flex; align-items: center; padding: 2px; margin-left: -6px; flex: none;
+}
+.ct-safe-reset:hover { color: var(--text); }
+
+/* 自取邮箱名:输入框 + 固定的 @域名 后缀 */
+.name-pick {
+  display: flex; align-items: center; gap: 2px;
+  border: 1px solid var(--border-2); border-radius: 10px; padding: 0 10px;
+  background: var(--panel); min-height: 38px;
+}
+.name-pick input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 8px 0; }
+.name-suffix { color: var(--text-2); font-size: 14px; white-space: nowrap; flex: none; }
+.name-hint { font-size: 12.5px; min-height: 18px; padding: 2px 2px 0; color: var(--text-3); }
+.name-hint.ok { color: var(--wa-color-success-on-quiet); }
+.name-hint.bad { color: var(--wa-color-danger-on-quiet); }
+
+/* 导入进度条 */
+.imp-bar { height: 8px; border-radius: 999px; background: var(--hover); overflow: hidden; margin: 4px 0 8px; }
+.imp-bar-fill { height: 100%; background: var(--primary); border-radius: 999px; transition: width .2s linear; }
+.imp-status { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
+.imp-status .imp-eta { font-variant-numeric: tabular-nums; }
+/* 导入/导出跑完后的一行结果:跟在按钮右边,不另起一行 */
+.run-summary { margin-left: 12px; font-weight: 600; color: var(--text); }
+.run-summary:empty { display: none; }
+.imp-steps { margin: 10px 0 0; padding-left: 22px; color: var(--text-2); font-size: 13px; line-height: 1.9; }
+.imp-steps li { margin: 2px 0; }
+.imp-cmd { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.imp-cmd code {
+  flex: 1; min-width: 0; overflow-x: auto; white-space: pre;
+  padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--hover); color: var(--text); font-size: 12.5px;
+}
+
+/* ---------- 登录/邀请 ---------- */
+.auth-wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+.auth-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 24px;
+  width: min(420px, 100%); padding: 40px 40px 32px;
+}
+.auth-logo { display: flex; align-items: center; gap: 10px; font-size: 24px; color: var(--text-2); margin-bottom: 18px; }
+.auth-logo wa-icon { color: var(--primary); font-size: 34px; }
+.auth-card h2 { margin: 0 0 6px; font-weight: 500; font-size: 22px; }
+.auth-sub { color: var(--text-2); margin: 0 0 12px; font-size: 13.5px; }
+.auth-sub b { color: var(--text); }
+.auth-form { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.auth-err { color: var(--wa-color-danger-on-quiet); font-size: 13px; min-height: 18px; }
+.auth-foot { color: var(--text-2); font-size: 12.5px; margin-top: 18px; }
+.invite-boxes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.invite-url {
+  background: var(--hover); border-radius: 8px; padding: 12px; font-size: 13px;
+  word-break: break-all; font-family: ui-monospace, Consolas, monospace; margin: 8px 0;
+  user-select: all;
+}
+
+/* ---------- 独立页面(设置/管理) ---------- */
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+.page-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+.page-head h1 { font-size: 20px; font-weight: 500; margin: 0; }
+.tabs { display: flex; gap: 4px; margin-left: 24px; }
+.tab { padding: 8px 16px; border-radius: 999px; color: var(--text-2); font-size: 14px; }
+.tab:hover { background: var(--hover); }
+.tab.active { background: var(--selected); color: var(--accent-text); font-weight: 500; }
+/* 后台/设置页统一:控件基准高度 34px(原生控件与 WA 组件共用这个令牌) */
+.page { --wa-form-control-height: 34px; }
+.page-body { padding: 20px 24px 60px; max-width: 960px; width: 100%; margin: 0 auto; }
+/* 后台是数据密集页,表格列多,放宽;设置页仍保持窄栏 */
+.page-body.wide { max-width: 1400px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 20px 24px; margin-bottom: 16px;
+}
+.card h3 { margin: 0 0 14px; font-size: 16px; font-weight: 500; }
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.table th { text-align: left; color: var(--text-2); font-weight: 500; font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+/* 单元格内容垂直居中:纯文字与 34px 高的按钮才能对齐到同一中线 */
+.table td { padding: 8px 10px; border-bottom: 1px solid var(--hover); vertical-align: middle; }
+/* 表格里的按钮压扁一点,避免把行撑高 */
+.table td wa-button:not(.icon)::part(base) { height: 28px; min-height: 28px; }
+.table td .chip { margin: 1px 0; }
+.table tfoot td { color: var(--text-2); border-bottom: none; font-size: 12.5px; }
+/* 带标签的行统一:垂直居中、不换行、首个标签固定列宽以便跨行对齐 */
+.form-row, .row-flex {
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
+}
+.form-row { padding: 5px 0; }
+.form-row > label, .row-flex > label {
+  color: var(--text-2); font-size: 13px; white-space: nowrap; flex: none;
+  line-height: 34px;
+}
+.form-row > label:first-child,
+.row-flex > label:first-child { width: 120px; }
+/* 同一行里的后续标签(如「角色 …  有效期 …」)只留间距,不占固定列 */
+.form-row > label:not(:first-child),
+.row-flex > label:not(:first-child) { margin-left: 8px; }
+/* WA 的 native.css 会给 <form> 内的控件加上外边距,行内布局下会破坏垂直居中 —— 一律清零 */
+.form-row > *, .row-flex > * { margin-block: 0; }
+.form-col { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+
+/* 邀请记录:授予内容列收窄到原来的 3/5 */
+.invites-table th.col-grants, .invites-table td:nth-child(2) { max-width: 200px; white-space: normal; }
+
+/* Members 表格列宽:邮箱账号列收窄(chip 自动换行),最近登录列加宽不换行 */
+.members-table th:nth-child(3), .members-table td:nth-child(3) { max-width: 340px; white-space: normal; }
+.members-table th:nth-child(6), .members-table td:nth-child(6) { min-width: 150px; white-space: nowrap; }
+
+/* 全局统一按钮文字尺寸(侧栏写邮件按钮除外,它是刻意放大的主操作) */
+wa-button:not(.icon):not(.compose-btn)::part(base) { font-size: 13.5px; min-height: 32px; height: auto; padding-block: 4px; }
+/* 后台/设置页:按钮与输入框严格同高 34px */
+.page wa-button:not(.icon)::part(base) {
+  height: 34px; min-height: 34px; padding-block: 0;
+}
+.page wa-select, .page wa-checkbox { font-size: 13.5px; }
+
+/* 表单里保留的原生 input / select —— 与按钮统一高度和外观 */
+.auth-form input, .form-col input,
+.row-flex input:not([type=checkbox]),
+.page select, #f-profile input, #f-pw input {
+  border: 1px solid var(--border-2); border-radius: 8px;
+  padding: 0 11px; height: 34px; box-sizing: border-box;
+  font: inherit; font-size: 13.5px; outline: none;
+  background: var(--panel); color: var(--text);
+}
+/* 登录/邀请页是纵向表单,输入框略高更舒展 */
+.auth-form input { height: 38px; }
+/* Web Awesome 的 native.css 给原生 input 设了 width:100%,
+   行内表单里会顶满并换行 —— 这里给个合理定宽,保持与前面的文字同一行 */
+.row-flex input:not([type=checkbox]) {
+  width: 260px; max-width: 100%;
+}
+.auth-form input::placeholder, input::placeholder { color: var(--text-3); }
+
+/* 主题选择器 */
+.theme-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.theme-swatch {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid transparent; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none;
+}
+.theme-swatch .dot { width: 24px; height: 24px; border-radius: 50%; border: 1px solid color-mix(in srgb, #000 12%, transparent); }
+.theme-swatch:hover { border-color: var(--border-2); }
+.theme-swatch.active { border-color: var(--primary); }
+.theme-swatch.default-swatch .dot {
+  background: var(--panel);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-2); font-size: 11px;
+}
+
+/* ---------- toast 兜底(WA 未就绪时) ---------- */
+.toast-fallback {
+  position: fixed; left: 24px; bottom: 24px; z-index: 500;
+  background: var(--wa-color-neutral-fill-loud); color: var(--wa-color-neutral-on-loud);
+  border-radius: 8px; padding: 12px 20px; font-size: 14px;
+}
+
+/* ---------- 界面文字不可选中/拖拽 ---------- */
+.topbar, .sidebar, .list-toolbar, .page-head, .tabs, .compose-head, .row, .side-title {
+  user-select: none; -webkit-user-select: none;
+}
+.topbar a, .sidebar a, .logo, .brand-logo, .side-item, .tab { -webkit-user-drag: none; }
+
+/* ---------- 字体选择器 ---------- */
+.font-dialog { --width: 940px; }
+.fp-body { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: start; }
+.fp-left, .fp-right { min-width: 0; display: flex; flex-direction: column; }
+.fp-right {
+  border-left: 1px solid var(--border); padding-left: 14px;
+}
+.fp-right-head { font-size: 13px; color: var(--text-2); padding: 2px 2px 8px; font-weight: 500; }
+.fp-shortlist { border: 1px dashed var(--border-2); border-radius: 10px; padding: 4px; }
+.fp-foot { display: flex; align-items: center; gap: 8px; width: 100%; }
+.fp-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.fp-head input {
+  border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 12px;
+  font-size: 13.5px; background: var(--panel); color: var(--text); outline: none;
+  width: 100%;
+}
+.fp-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.fp-cat {
+  border: 1px solid var(--border); background: none; color: var(--text-2);
+  border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer;
+}
+.fp-cat:hover { background: var(--hover); }
+.fp-cat.active { background: var(--selected); color: var(--accent-text); border-color: transparent; }
+.fp-list { max-height: 48vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+/* 两处覆盖缺一不可:
+   1) WA 的 native.css 给原生 button 定了固定 height 和 nowrap
+   2) .fp-list 是带最大高度的 flex 纵向容器,子项默认会被压缩 → 必须 flex:none */
+.fp-item {
+  display: flex; flex-direction: column; gap: 5px; align-items: flex-start;
+  width: 100%; text-align: left; padding: 10px 34px 10px 12px; border: none; background: none;
+  border-radius: 10px; cursor: pointer; color: var(--text);
+  height: auto; white-space: normal; overflow: visible;
+  flex: none; position: relative;
+}
+/* 加入预选 / 移出预选 的小按钮 */
+.fp-act {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 24px; height: 24px; border-radius: 50%;
+  display: none; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 1; color: var(--text-2);
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.fp-item:hover .fp-act { display: inline-flex; }
+.fp-act:hover { color: var(--accent-text); border-color: var(--primary); }
+.fp-item:hover { background: var(--hover); }
+.fp-item.sel { background: var(--selected); }
+.fp-name { font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+.fp-item.sel .fp-name { color: var(--accent-text); }
+.fp-preview {
+  font-size: 19px; line-height: 1.75; color: var(--text);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 窄屏:双栏改为上下堆叠 */
+@media (max-width: 820px) {
+  .font-dialog { --width: calc(100vw - 32px); }
+  .fp-body { grid-template-columns: 1fr; }
+  .fp-right { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; }
+  .fp-shortlist { max-height: 26vh; }
+}
+
+/* 字体设置行里的当前值按钮 */
+.font-btn::part(base) { width: 260px; justify-content: flex-start; }
+/* 行内说明文字过长时省略,避免把控件挤到换行 */
+.ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ellip-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 未匹配来信:弹窗内的正文区 */
+.unrouted-body {
+  margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px;
+  max-height: 420px; overflow-y: auto;
+}
+/* 完全沙箱的 iframe 拿不到内容高度,给固定高度并让其内部滚动 */
+.unrouted-body .mailframe { border-radius: 6px; height: 340px; min-height: 340px; }
+.font-btn .fb-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed; left: 0; top: 60px; bottom: 0; z-index: 150;
+    background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
+  }
+  .sidebar.hidden { display: none; }
+  .content { margin-left: 16px; }
+  .row-from { width: 120px; margin-right: 16px; }
+  .searchbar { width: 40vw; }
+  .logo span { display: none; }
+}
+@media (max-width: 640px) {
+  .row-snip { display: none; }
+  .searchbar { width: 100%; }
+  .compose { right: 0; }
+  .t-subject { margin-left: 8px; }
+  .msg-collapsed, .msg-bodywrap { margin-left: 0; }
+}

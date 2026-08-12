@@ -1,0 +1,14 @@
+# 静态资产缓存策略(Workers Assets 的 _headers 配置,本文件不会被直接对外提供)
+# assets 下的 JS/CSS 迭代频繁:no-cache = 每次带 ETag 协商,内容没变回 304,变了立即生效
+/assets/*
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+# 第三方自托管库(Web Awesome/Quill/postal-mime)基本不变,缓存一天
+/vendor/*
+  Cache-Control: public, max-age=86400

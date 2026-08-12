@@ -1,0 +1,142 @@
+import type { Addr } from './types';
+
+export const uid = () => crypto.randomUUID();
+export const now = () => Date.now();
+
+export function b64encode(bytes: Uint8Array): string {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+export function b64decode(s: string): Uint8Array {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+export function b64url(bytes: Uint8Array): string {
+  return b64encode(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function sha256Hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export function randomToken(bytes = 32): string {
+  return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
+export const isEmail = (s: string) => EMAIL_RE.test(s);
+
+/** Lowercase and trim; used for every address comparison
+ *  小写、去空白;用于所有地址比较 */
+export function normalizeAddr(addr: string): string {
+  return addr.trim().toLowerCase();
+}
+
+/** Delivery address with any +tag removed, used to match a mailbox account
+ *  去掉 +tag 的投递地址,用于匹配邮箱账号 */
+export function routingAddr(addr: string): string {
+  const a = normalizeAddr(addr);
+  const at = a.lastIndexOf('@');
+  if (at < 0) return a;
+  let local = a.slice(0, at);
+  const plus = local.indexOf('+');
+  if (plus > 0) local = local.slice(0, plus);
+  return `${local}@${a.slice(at + 1)}`;
+}
+
+/** Parse an address list shaped like "Name <a@b>, c@d"
+ *  解析 "Name <a@b>, c@d" 形式的地址串 */
+export function parseAddrList(input: string): Addr[] {
+  const out: Addr[] = [];
+  if (!input) return out;
+  const re = /(?:"([^"]*)"\s*|([^<>,;"]*?)\s*)?<([^<>\s,;]+@[^<>\s,;]+)>|([^\s<>,;"]+@[^\s<>,;"]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(input))) {
+    const addr = normalizeAddr(m[3] || m[4] || '');
+    if (!isEmail(addr)) continue;
+    const name = (m[1] || m[2] || '').trim();
+    out.push({ name, addr });
+  }
+  return out;
+}
+
+export function snippetOf(text: string | undefined, html: string | undefined): string {
+  let t = (text || '').trim();
+  if (!t && html) t = htmlToText(html);
+  return t.replace(/\s+/g, ' ').trim().slice(0, 180);
+}
+
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/&#?\w+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+export function jsonTry<T>(s: string | null | undefined, fallback: T): T {
+  if (!s) return fallback;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Subject normalisation: repeatedly strip "short prefix + colon" (Re: / Fwd: / and their
+ * Chinese equivalents, Re[2]: and so on, full-width colons included).
+ * prefixed=true means the original subject carried a prefix, i.e. it is a reply or forward
+ * and may take part in subject-based conversation merging.
+ * 主题归一化:循环剥掉"短前缀 + 冒号"(Re: / Fwd: / 回复: / 转发: / Re[2]: 等,支持全角冒号)。
+ * prefixed=true 表示原主题带前缀(是回复/转发类),可参与按主题归并会话。
+ */
+const SUBJECT_PREFIX_RE = /^(?:re|fw|fwd|aw|wg|sv|回复|回覆|答复|答覆|转发|轉發|回信)(?:\s*\[\d+\])?\s*[:：]\s*/i;
+export function normalizeSubject(s: string): { norm: string; prefixed: boolean } {
+  let t = (s || '').trim();
+  let prefixed = false;
+  while (SUBJECT_PREFIX_RE.test(t)) {
+    t = t.replace(SUBJECT_PREFIX_RE, '');
+    prefixed = true;
+  }
+  return { norm: t.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300), prefixed };
+}
+
+/** Queries containing CJK, or too short, go through LIKE; everything else through FTS
+ *  含 CJK 或过短的查询走 LIKE,其余走 FTS */
+export function hasCJK(s: string): boolean {
+  return /[぀-ヿ㐀-鿿가-힯豈-﫿]/.test(s);
+}
+
+/** Build a safe FTS5 MATCH expression: quote each term and make it a prefix match
+ *  组一个安全的 FTS5 MATCH 表达式:每个词加引号做前缀匹配 */
+export function ftsQuery(q: string): string {
+  return q
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 8)
+    .map((t) => `"${t.replace(/"/g, '""')}"*`)
+    .join(' ');
+}
