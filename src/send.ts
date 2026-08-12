@@ -7,6 +7,7 @@ import { buildMime, type MimeAttachment } from './mime';
 // 内联图片与普通附件都用 MimeAttachment 结构,区别在于是否带 cid
 import { findMailboxByAddress, getFolder, allocUid, ingestEml, recordContacts } from './parse';
 import { b64encode, jsonTry, now, snippetOf, uid } from './util';
+import { HttpError, storedErr } from './errors';
 
 const MAX_ATTEMPTS = 8;
 // Cloudflare Email Sending per-message hard limit (a platform limit, not configurable)
@@ -53,13 +54,13 @@ export interface SendResult {
  *  发送入口:构 MIME → 站内直投 → 外部进 outbox → 写已发送副本 */
 export async function queueSend(env: Env, user: User, mailbox: MailboxRow, req: SendRequest): Promise<SendResult> {
   const allRcpts = [...req.to, ...req.cc, ...req.bcc];
-  if (!allRcpts.length) throw new HttpError(400, '缺少收件人');
+  if (!allRcpts.length) throw new HttpError(400, 'e_no_recipients');
 
   // Suppression list
   // 黑名单
   for (const r of allRcpts) {
     const sup = await env.DB.prepare('SELECT reason FROM suppressions WHERE email=?1').bind(r.addr).first<any>();
-    if (sup) throw new HttpError(400, `收件人 ${r.addr} 曾退信/投诉,已被拦截(${sup.reason})`);
+    if (sup) throw new HttpError(400, 'e_suppressed', r.addr, sup.reason);
   }
 
   // Reply context
@@ -88,9 +89,9 @@ export async function queueSend(env: Env, user: User, mailbox: MailboxRow, req: 
   let attBytes = 0;
   for (const aid of req.attachmentIds || []) {
     const up = await env.DB.prepare('SELECT * FROM uploads WHERE id=?1 AND user_id=?2').bind(aid, user.id).first<any>();
-    if (!up) throw new HttpError(400, '附件不存在或已过期');
+    if (!up) throw new HttpError(400, 'e_upload_gone');
     const obj = await env.RAW.get(up.r2_key);
-    if (!obj) throw new HttpError(400, '附件已过期,请重新上传');
+    if (!obj) throw new HttpError(400, 'e_upload_expired');
     const data = new Uint8Array(await obj.arrayBuffer());
     attBytes += data.byteLength;
     atts.push({ filename: up.filename, mime: up.mime, data });
@@ -116,7 +117,7 @@ export async function queueSend(env: Env, user: User, mailbox: MailboxRow, req: 
   if (contentBytes > MAX_CONTENT_BYTES) {
     throw new HttpError(
       400,
-      `邮件总大小 ${fmtMB(contentBytes)} 超过 ${fmtMB(MAX_CONTENT_BYTES)} 上限,无法发送;内容已保留,可存为草稿后精简附件`
+      'e_mail_too_big', fmtMB(contentBytes), fmtMB(MAX_CONTENT_BYTES)
     );
   }
 
@@ -137,7 +138,7 @@ export async function queueSend(env: Env, user: User, mailbox: MailboxRow, req: 
     domain: mailbox.domain_name,
   });
   if (built.raw.byteLength > MAX_MESSAGE_BYTES) {
-    throw new HttpError(400, `邮件编码后 ${fmtMB(built.raw.byteLength)},超过通道单封上限,无法发送`);
+    throw new HttpError(400, 'e_encoded_too_big', fmtMB(built.raw.byteLength));
   }
 
   const outboxId = uid();
@@ -231,13 +232,10 @@ export async function queueSend(env: Env, user: User, mailbox: MailboxRow, req: 
   return { sentMessageRowId: sentRowId, internalDelivered: delivered, external: external.length, queued: external.length > 0 };
 }
 
-export class HttpError extends Error {
-  status: number;
-  constructor(status: number, msg: string) {
-    super(msg);
-    this.status = status;
-  }
-}
+// HttpError now lives in errors.ts alongside the code helpers; re-exported here so the
+// existing import sites keep working.
+// HttpError 已挪到 errors.ts,和错误码工具放在一起;这里再导出一次,原有 import 路径不用改。
+export { HttpError };
 
 interface ProviderResult {
   ok: boolean;
@@ -258,9 +256,9 @@ async function sendViaCf(
   rcpts: string[],
   raw: ArrayBuffer
 ): Promise<ProviderResult & { remaining?: string[] }> {
-  if (!env.EMAIL) return { ok: false, error: 'EMAIL binding 未配置(wrangler.jsonc send_email)', permanent: false };
+  if (!env.EMAIL) return { ok: false, error: storedErr('e_no_email_binding'), permanent: false };
   if (raw.byteLength > CF_MAX_RAW_BYTES) {
-    return { ok: false, error: `超过 CF 发信 5MB 单封上限(${raw.byteLength} 字节)`, permanent: true };
+    return { ok: false, error: storedErr('e_cf_too_big', raw.byteLength), permanent: true };
   }
   const rawStr = new TextDecoder().decode(raw);
   const remaining = [...rcpts];
@@ -277,7 +275,7 @@ async function sendViaCf(
       const permanent = /E_SENDER_NOT_VERIFIED|E_VALIDATION/i.test(code + String(e?.message || ''));
       return {
         ok: false,
-        error: permanent ? msg + ';如为域名未验证,请在 Dashboard → Email Service → Email Sending 里 Onboard 该域名' : msg,
+        error: permanent ? storedErr('e_cf_send_failed', msg) : msg,
         permanent,
         remaining,
       };
@@ -288,7 +286,7 @@ async function sendViaCf(
 
 async function sendViaSes(env: Env, fromAddr: string, rcpts: string[], raw: Uint8Array): Promise<ProviderResult> {
   if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY || !env.AWS_REGION) {
-    return { ok: false, error: 'SES 未配置(AWS_REGION/AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)', permanent: false };
+    return { ok: false, error: storedErr('e_ses_not_configured'), permanent: false };
   }
   const aws = new AwsClient({
     accessKeyId: env.AWS_ACCESS_KEY_ID,
@@ -314,7 +312,7 @@ async function sendViaSes(env: Env, fromAddr: string, rcpts: string[], raw: Uint
 }
 
 async function sendViaResend(env: Env, payload: any, rcpts: string[]): Promise<ProviderResult> {
-  if (!env.RESEND_API_KEY) return { ok: false, error: 'Resend 未配置(RESEND_API_KEY)', permanent: false };
+  if (!env.RESEND_API_KEY) return { ok: false, error: storedErr('e_resend_not_configured'), permanent: false };
   const attachments: any[] = [];
   for (const aid of payload.attachment_uploads || []) {
     const up = await env.DB.prepare('SELECT * FROM uploads WHERE id=?1').bind(aid).first<any>();
@@ -376,7 +374,7 @@ export async function sendSystemMail(
       const r = await sendViaResend(env, { from, to: [{ name: '', addr: to }], cc: [], bcc: [], subject, text }, [to]);
       return { ok: r.ok, error: r.error };
     }
-    console.log('[dev provider] 验证邮件未真实发送 ->', to, subject);
+    console.log('[dev provider] verification mail not actually sent ->', to, subject);
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: String(e?.message || e).slice(0, 300) };
@@ -417,7 +415,7 @@ export async function processOutbox(env: Env): Promise<void> {
       } else if (env.MAIL_PROVIDER === 'resend') {
         result = await sendViaResend(env, payload, rcpts);
       } else {
-        console.log('[dev provider] 假装发送', job.id, 'rcpts=', rcpts.join(','));
+        console.log('[dev provider] pretending to send', job.id, 'rcpts=', rcpts.join(','));
         result = { ok: true };
       }
     } catch (e: any) {
@@ -425,7 +423,7 @@ export async function processOutbox(env: Env): Promise<void> {
     }
 
     if (result.ok) {
-      const note = env.MAIL_PROVIDER === 'dev' ? 'dev 通道:未真实外发' : null;
+      const note = env.MAIL_PROVIDER === 'dev' ? storedErr('e_dev_channel') : null;
       await env.DB.prepare("UPDATE outbox SET status='sent', last_error=?2, attempts=attempts+1 WHERE id=?1")
         .bind(job.id, note)
         .run();

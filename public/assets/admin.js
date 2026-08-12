@@ -826,7 +826,7 @@ async function renderAIDomain(domainId) {
       <label class="ai-mc">
         <input type="checkbox" data-mid="${esc(m.id)}" ${data.enabled_models.includes(m.id) ? 'checked' : ''}>
         <span>${esc(m.label)}</span>${capBadges(m)}
-        <span class="mc-desc">${esc(m.desc)}</span>
+        <span class="mc-desc">${esc(t(m.desc))}</span>
       </label>`).join('')}
     </div>
     <p class="dim" style="margin:10px 0 12px">${esc(t('ai_models_note'))}</p>

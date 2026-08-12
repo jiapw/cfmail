@@ -4,7 +4,7 @@
 // 流式协议:POST /api/chat/sessions/:id/send 返回 SSE,事件见 src/chat/agent.ts
 import { api } from '../api.js';
 import { esc, icon, qs, toast, confirmDialog, showModal, closeModal, fmtDate, fileIcon, copyText } from '../ui.js';
-import { t, lang } from '../i18n.js';
+import { t, tErr, lang } from '../i18n.js';
 import { store, navigate, show } from '../app.js';
 import { renderMarkdown } from './markdown.js';
 
@@ -419,7 +419,7 @@ function aiAnswerHtml(m) {
     if (p.type === 'text' && i > lastToolIdx) bubble += `<div class="md-part">${renderMarkdown(p.text)}</div>`;
     else if (p.type === 'tool' && p.name === 'generate_image' && p.output?.file_id) {
       images += `<img class="gen-img" src="${fileUrl(p.output.file_id)}" alt="" loading="lazy">`;
-    } else if (p.type === 'error') bubble += `<div class="chat-err">${esc(p.text)}</div>`;
+    } else if (p.type === 'error') bubble += `<div class="chat-err">${esc(p.code ? tErr(p.code) : p.text)}</div>`;
   });
   return { bubble, images };
 }
@@ -556,7 +556,7 @@ function renderModelPicker() {
     item.checked = x.id === (m?.id || '');
     item.innerHTML = `<div class="model-item">
       <span class="mi-name">${esc(x.label)}<span class="model-caps">${x.reasoning ? `<span class="cap">${esc(t('c_cap_think'))}</span>` : ''}${x.vision ? `<span class="cap">${esc(t('c_cap_vision'))}</span>` : ''}${x.tools ? `<span class="cap">${esc(t('c_cap_tools'))}</span>` : ''}</span></span>
-      <span class="mi-desc">${esc(x.desc)}</span></div>`;
+      <span class="mi-desc">${esc(t(x.desc))}</span></div>`;
     dd.appendChild(item);
   }
   if (!dd._bound) {

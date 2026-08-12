@@ -20,7 +20,10 @@ export type MsgPart =
   | { type: 'reasoning'; text: string }
   | { type: 'tool'; call_id: string; name: string; input: unknown; output?: unknown; error?: string }
   | { type: 'file'; file_id: string; kind: string; filename: string; mime: string }
-  | { type: 'error'; text: string }
+  // text = verbatim text (usually a third-party or runtime error, which we cannot translate);
+  // code = an e_* key the client renders in the reader's language.
+  // text = 原样文本(多为第三方或运行时报错,翻不了);code = e_* 词条码,由前端按语言渲染。
+  | { type: 'error'; text?: string; code?: string }
   // Per-turn statistics (not rendered as content): thinking time and token usage, shown by the frontend on the "reasoning" row
   // 本轮统计(不渲染为内容):思考耗时 + token 用量,前端在"思考过程"行上展示
   | { type: 'meta'; think_ms?: number; usage?: { input?: number; output?: number; reasoning?: number } };
@@ -120,7 +123,7 @@ export class ChatAgent extends Agent<Env> {
         await this.destroy();
         return json({ ok: true });
       }
-      return json({ error: 'not found' }, 404);
+      return json({ error: 'e_not_found' }, 404);
     } catch (e: any) {
       console.log('chat agent error', path, e);
       return json({ error: String(e?.message || e) }, 500);
@@ -131,10 +134,10 @@ export class ChatAgent extends Agent<Env> {
   // ---------- 发送与流式执行 ----------
 
   private handleSend(body: SendBody): Response {
-    if (this.running) return json({ error: '上一条回复还在生成中' }, 409);
+    if (this.running) return json({ error: 'e_reply_in_progress' }, 409);
     const text = String(body.text || '').slice(0, 32_000);
     const files = Array.isArray(body.files) ? body.files.slice(0, 8) : [];
-    if (!text.trim() && !files.length) return json({ error: '消息为空' }, 400);
+    if (!text.trim() && !files.length) return json({ error: 'e_empty_message' }, 400);
 
     this.kvSet('owner', body.user.id);
     this.kvSet('session_id', body.session_id);
@@ -219,18 +222,18 @@ export class ChatAgent extends Agent<Env> {
     const tools: Record<string, any> | undefined = model.tools
       ? {
           generate_image: tool({
-            description: '按文字描述生成一张图片。生成后会自动展示给用户,不要再编造图片链接。',
+            description: 'Generate an image from a text description. The result is shown to the user automatically -- never invent an image URL.',
             inputSchema: z.object({
-              prompt: z.string().describe('图片内容的英文描述,细节越多效果越好'),
+              prompt: z.string().describe('English description of the image; more detail gives a better result'),
             }),
             execute: async ({ prompt }: { prompt: string }) => {
               const r = await generateImageFile(env, body.user.id, sessionId, prompt, imageModel);
-              return { ok: true, file_id: r.file_id, filename: r.filename, note: '图片已生成并展示给用户' };
+              return { ok: true, file_id: r.file_id, filename: r.filename, note: 'Image generated and shown to the user' };
             },
           }),
           save_memory: tool({
-            description: '把关于用户的重要信息存入长期记忆(用户明确要求记住,或透露了稳定的个人信息/偏好时)。',
-            inputSchema: z.object({ fact: z.string().describe('一句话事实,少于 60 字') }),
+            description: 'Store something important about the user in long-term memory (when they ask you to remember it, or reveal a stable fact or preference).',
+            inputSchema: z.object({ fact: z.string().describe('A single-sentence fact, under 60 characters') }),
             execute: async ({ fact }: { fact: string }) => {
               const saved = await saveMemory(env, body.user.id, fact, 'tool');
               return { saved };
@@ -245,19 +248,19 @@ export class ChatAgent extends Agent<Env> {
     // 不挂 = 模型压根看不到这两个工具,其余工具都在本账号内闭环。
     if (tools && webSearchOn) {
       tools.web_search = tool({
-        description: '联网搜索。需要最新信息、新闻、不确定的事实时使用。',
+        description: 'Search the web. Use it for current information, news, or facts you are unsure about.',
         inputSchema: z.object({
-          query: z.string().describe('搜索关键词'),
-          count: z.number().int().min(1).max(8).optional().describe('结果条数,默认 5'),
+          query: z.string().describe('Search keywords'),
+          count: z.number().int().min(1).max(8).optional().describe('How many results, default 5'),
         }),
         execute: async ({ query, count }: { query: string; count?: number }) => {
           const hits = await webSearch(env, searchKey, query, count || 5);
-          return hits.length ? hits : { note: '没有搜到结果,可换关键词重试' };
+          return hits.length ? hits : { note: 'No results; try different keywords' };
         },
       });
       tools.open_url = tool({
-        description: '打开一个网页并读取正文文本。常配合 web_search 的结果使用。',
-        inputSchema: z.object({ url: z.string().describe('http/https 网址') }),
+        description: 'Open a web page and read its text. Usually used on a web_search result.',
+        inputSchema: z.object({ url: z.string().describe('http/https URL') }),
         execute: async ({ url }: { url: string }) => await openUrl(url),
       });
     }
@@ -337,7 +340,7 @@ export class ChatAgent extends Agent<Env> {
           }
           case 'tool-error': {
             const p = parts.find((x) => x.type === 'tool' && x.call_id === part.toolCallId) as any;
-            const msg = String((part as any).error?.message || (part as any).error || '工具执行失败').slice(0, 300);
+            const msg = String((part as any).error?.message || (part as any).error || 'e_tool_failed').slice(0, 300);
             if (p) p.error = msg;
             await emit({ t: 'tool_error', call_id: part.toolCallId, name: part.toolName, error: msg });
             break;
@@ -360,13 +363,13 @@ export class ChatAgent extends Agent<Env> {
     }
     if (splitter) for (const seg of splitter.end()) await appendDelta(seg.kind, seg.text);
     noteKind('other'); // 收尾:思考段可能一直持续到结束
-    if (aborted) parts.push({ type: 'error', text: '已停止生成' });
+    if (aborted) parts.push({ type: 'error', code: 'e_stopped' });
 
-    if (!parts.length) parts.push({ type: 'error', text: '模型没有返回内容' });
+    if (!parts.length) parts.push({ type: 'error', code: 'e_no_content' });
     // Some reasoning models occasionally emit thinking and no answer (seen with gpt-oss on short tasks); show a visible note instead of nothing
     // 个别推理模型偶尔只出思考不出正文(gpt-oss 短任务踩过),给一句可见的提示
     else if (!aborted && !parts.some((p) => p.type === 'text' || p.type === 'error')) {
-      parts.push({ type: 'error', text: '模型这次只输出了思考过程没有给出回答,可以回一句"请直接回答"' });
+      parts.push({ type: 'error', code: 'e_thinking_only' });
     }
     if (thinkMs > 300 || usage) parts.push({ type: 'meta', think_ms: thinkMs || undefined, usage: usage || undefined });
     const assistantMsg = this.saveMsg('assistant', parts, model.id);
@@ -402,31 +405,34 @@ export class ChatAgent extends Agent<Env> {
   }
 
   private buildSystem(user: SendBody['user'], model: ChatModel, memoryBlock: string, webSearchOn: boolean): string {
+    // UTC only. A fixed offset would be wrong for everyone outside that one zone, and the
+    // server does not know the reader's -- if the local time matters, the user can say so.
+    // 只给 UTC。写死某个时区对其他地方的人一律是错的,而服务端并不知道使用者在哪;
+    // 真要用本地时间,用户自己说一声即可。
     const t = new Date();
-    const bj = new Date(t.getTime() + 8 * 3600 * 1000);
     const lines = [
-      '你是企业邮箱系统 CFMail 内置的 AI 助手,运行在 Cloudflare Workers AI 上。',
-      `当前用户:${user.name || user.email} <${user.email}>。`,
-      `当前时间:${t.toISOString()}(UTC) / 北京时间 ${bj.toISOString().slice(0, 16).replace('T', ' ')}。`,
-      '始终用用户使用的语言回答。回答用 Markdown 排版,代码放代码块,适当分段。',
-      '如果你会先思考再回答:思考结束后必须输出正式回答,不要把答案只留在思考里。',
+      'You are the assistant built into CFMail, a company webmail system, running on Cloudflare Workers AI.',
+      `Current user: ${user.name || user.email} <${user.email}>.`,
+      `Current time: ${t.toISOString()} (UTC).`,
+      'Always answer in the language the user writes in. Format with Markdown, put code in code blocks, and break the text into paragraphs.',
+      'If you reason before answering: always produce the actual answer afterwards. Never leave the answer inside the reasoning.',
     ];
     if (model.tools) {
       // When the internet tools are not mounted, do not mention them in the prompt, or the model will try to call a tool that does not exist
       // 联网工具没挂载时别在提示词里提它,否则模型会去调一个不存在的工具
       lines.push(
-        '工具使用:' +
+        'Tools: ' +
           (webSearchOn
-            ? '需要最新信息或不确定的事实时用 web_search 搜索,必要时用 open_url 打开搜索结果细读;'
-            : '本站未开启联网功能,没有 web_search/open_url 可用,遇到需要实时信息的问题直接说明查不到;') +
-          '用户要求画图/生成图片时用 generate_image(生成后自动展示,不要输出编造的链接);' +
-          '用户要求"记住"某事或透露稳定的个人信息/偏好时用 save_memory。'
+            ? 'use web_search for current information or facts you are unsure about, and open_url to read a result in full; '
+            : 'internet access is switched off on this deployment, so web_search/open_url are unavailable -- say plainly that you cannot look it up; ') +
+          'use generate_image when the user asks for a picture (it is displayed automatically -- never output a made-up link); ' +
+          'use save_memory when the user asks you to remember something or reveals a stable fact or preference about themselves.'
       );
     } else {
-      lines.push('当前模型不支持工具调用(没有联网搜索/生成图片能力),涉及实时信息时说明这一点。');
+      lines.push('This model cannot call tools, so you have no web search or image generation. Say so when a question needs live information.');
     }
     const summary = this.kvGet('summary');
-    if (summary) lines.push(`\n[本会话较早内容的摘要]\n${summary}`);
+    if (summary) lines.push(`\n[Summary of earlier messages in this chat]\n${summary}`);
     if (memoryBlock) lines.push(memoryBlock);
     return lines.join('\n');
   }
@@ -444,7 +450,7 @@ export class ChatAgent extends Agent<Env> {
         const text = m.parts
           .map((p) => {
             if (p.type === 'text') return p.text;
-            if (p.type === 'tool' && p.name === 'generate_image') return '[已生成一张图片并展示给用户]';
+            if (p.type === 'tool' && p.name === 'generate_image') return '[an image was generated and shown to the user]';
             return '';
           })
           .filter(Boolean)
@@ -470,7 +476,7 @@ export class ChatAgent extends Agent<Env> {
       if (imageParts.length) {
         out.push({ role: 'user', content: [...(text ? [{ type: 'text' as const, text }] : []), ...imageParts] });
       } else {
-        out.push({ role: 'user', content: text || '(空)' });
+        out.push({ role: 'user', content: text || '(empty)' });
       }
     }
     return out;
@@ -487,7 +493,7 @@ export class ChatAgent extends Agent<Env> {
     const env = this.env;
     const row = await env.DB.prepare('SELECT kind, filename, mime, r2_key, extract FROM chat_files WHERE id=?1')
       .bind(p.file_id).first<any>();
-    if (!row) return { text: `[附件 ${p.filename} 已不存在]` };
+    if (!row) return { text: `[attachment ${p.filename} no longer exists]` };
 
     if (row.kind === 'image' || row.kind === 'gen') {
       if (model.vision && isCurrent) {
@@ -495,15 +501,15 @@ export class ChatAgent extends Agent<Env> {
         if (obj) return { image: new Uint8Array(await obj.arrayBuffer()) };
       }
       const caption = row.extract || (await this.captionImage(p.file_id, row, visionModel).catch(() => null));
-      return { text: caption ? `[图片 ${row.filename}]:${caption}` : `[图片 ${row.filename}(当前模型无法查看)]` };
+      return { text: caption ? `[image ${row.filename}]: ${caption}` : `[image ${row.filename} (this model cannot see it)]` };
     }
     if (row.kind === 'audio') {
-      return { text: row.extract ? `[语音 ${row.filename} 的转写]:\n${row.extract}` : `[语音 ${row.filename},转写失败]` };
+      return { text: row.extract ? `[transcript of audio ${row.filename}]:\n${row.extract}` : `[audio ${row.filename}, transcription failed]` };
     }
     if (row.extract) {
-      return { text: `[文件 ${row.filename} 内容]:\n${String(row.extract).slice(0, HIST_FILE_TEXT_CAP)}` };
+      return { text: `[contents of ${row.filename}]:\n${String(row.extract).slice(0, HIST_FILE_TEXT_CAP)}` };
     }
-    return { text: `[文件 ${row.filename}(${row.mime}),无法读取内容,只能按文件名讨论]` };
+    return { text: `[file ${row.filename} (${row.mime}); contents unreadable, only the name is known]` };
   }
 
   /** When a non-vision model needs one, generate the image description with the domain's configured vision model and cache it on chat_files.extract
@@ -519,7 +525,7 @@ export class ChatAgent extends Agent<Env> {
         {
           role: 'user',
           content: [
-            { type: 'text', text: '用两三句话客观描述这张图片的内容,包括其中的文字(如有)。直接输出描述。' },
+            { type: 'text', text: 'Describe this image factually in two or three sentences, including any text it contains. Output the description only.' },
             { type: 'image', image: new Uint8Array(await obj.arrayBuffer()) },
           ],
         },
@@ -537,8 +543,8 @@ export class ChatAgent extends Agent<Env> {
     const workersai = getWorkersAI(this.env);
     const { text } = await generateText({
       model: workersai(UTILITY_MODEL, { reasoning_effort: null }),
-      system: '为这段对话起一个简短标题,不超过 16 个字,与对话同语言,不要引号和标点,直接输出标题本身。',
-      prompt: `用户:${body.text.slice(0, 500)}\n助手:${assistantText.slice(0, 300)}`,
+      system: 'Give this conversation a short title: at most 16 characters, in the same language as the conversation, no quotes and no punctuation. Output the title only.',
+      prompt: `User: ${body.text.slice(0, 500)}\nAssistant: ${assistantText.slice(0, 300)}`,
       abortSignal: AbortSignal.timeout(30_000),
     });
     return (text || '').trim().replace(/^["'「『]|["'」』]$/g, '').split('\n')[0].slice(0, 24);
@@ -576,10 +582,10 @@ export class ChatAgent extends Agent<Env> {
     const transcript = toSummarize
       .map((m) => {
         const text = m.parts
-          .map((p) => (p.type === 'text' ? p.text : p.type === 'file' ? `[附件:${p.filename}]` : p.type === 'tool' ? `[工具:${p.name}]` : ''))
+          .map((p) => (p.type === 'text' ? p.text : p.type === 'file' ? `[attachment: ${p.filename}]` : p.type === 'tool' ? `[tool: ${p.name}]` : ''))
           .filter(Boolean)
           .join(' ');
-        return `${m.role === 'user' ? '用户' : '助手'}:${text.slice(0, 1500)}`;
+        return `${m.role === 'user' ? 'User' : 'Assistant'}: ${text.slice(0, 1500)}`;
       })
       .join('\n');
 
@@ -587,9 +593,9 @@ export class ChatAgent extends Agent<Env> {
     const { text } = await generateText({
       model: workersai(UTILITY_MODEL, { reasoning_effort: null }),
       system:
-        '把对话记录压缩成摘要,保留:讨论过的话题与结论、用户的要求与偏好、重要事实与数字、未完成的事项。' +
-        '用与对话相同的语言,列表形式,总长不超过 1500 字。直接输出摘要。',
-      prompt: (oldSummary ? `[已有摘要]\n${oldSummary}\n\n[新增对话]\n` : '') + transcript.slice(0, 60_000),
+        'Compress the transcript into a summary. Keep: topics discussed and their conclusions, the user requests and preferences, important facts and figures, and anything left unfinished. ' +
+        'Use the same language as the conversation, as a list, under 1500 characters. Output the summary only.',
+      prompt: (oldSummary ? `[existing summary]\n${oldSummary}\n\n[new messages]\n` : '') + transcript.slice(0, 60_000),
       abortSignal: AbortSignal.timeout(90_000),
     });
     const summary = (text || '').trim().slice(0, 6000);
@@ -615,7 +621,7 @@ function compactToolOutput(name: string, output: unknown): unknown {
       ? JSON.parse(JSON.stringify(output).slice(0, 2000) + '') // 截断防超大
       : output;
   } catch {
-    return { note: '(结果过大,已省略)' };
+    return { note: '(result too large, omitted)' };
   }
 }
 

@@ -1,6 +1,6 @@
 import { api } from './api.js';
 import { esc, icon, qs, qsa, toast, fmtDate, fmtDateTime, fmtSize, fileIcon, avatar, confirmDialog, cleanSnippet, showModal, closeModal } from './ui.js';
-import { t } from './i18n.js';
+import { t, tStored } from './i18n.js';
 import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName } from './app.js';
 import { openCompose } from './compose.js';
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
@@ -106,7 +106,7 @@ function rowHtml(th, folder) {
     ${lead}
     <span class="row-from">${senderLine(th, folder)}${cntSuffix}</span>
     <span class="row-main">
-      <span class="row-subj">${esc(th.subject || t('no_subject'))}</span>${snipHtml}
+      <span class="row-subj">${esc(th.subject || t(th.parse_status === 'failed' ? 'parsing' : 'no_subject'))}</span>${snipHtml}
     </span>
     ${th.hasatt ? `<span class="row-clip">${icon('attach', 16)}</span>` : ''}
     <span class="row-date">${fmtDate(th.last_date)}</span>
@@ -354,9 +354,9 @@ function lastInboundFrom(msgs) {
 function outboxChip(m) {
   if (m.direction !== 'out' || !m.outbox_status) return '';
   if (m.outbox_status === 'sent') {
-    return m.outbox_error ? `<span class="chip chip-warn" title="${esc(m.outbox_error)}">${esc(t('chip_dev'))}</span>` : `<span class="chip chip-ok">${esc(t('chip_delivered'))}</span>`;
+    return m.outbox_error ? `<span class="chip chip-warn" title="${esc(tStored(m.outbox_error))}">${esc(t('chip_dev'))}</span>` : `<span class="chip chip-ok">${esc(t('chip_delivered'))}</span>`;
   }
-  if (m.outbox_status === 'failed') return `<span class="chip chip-err" title="${esc(m.outbox_error || '')}">${esc(t('chip_failed'))}</span>`;
+  if (m.outbox_status === 'failed') return `<span class="chip chip-err" title="${esc(tStored(m.outbox_error))}">${esc(t('chip_failed'))}</span>`;
   return `<span class="chip">${esc(t('chip_sending'))}</span>`;
 }
 

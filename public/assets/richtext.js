@@ -198,7 +198,7 @@ export function deltaToPlainText(delta) {
       const a = line.attrs || {};
       let s = line.parts
         .map((p) => {
-          if (p.image) return '[图片]';
+          if (p.image) return t('img_placeholder');
           const t = p.text;
           const link = p.attr?.link ? safeUrl(p.attr.link) : '';
           return link && link !== t ? `${t} (${link})` : t;

@@ -15,7 +15,8 @@ import {
   verifyPassword,
 } from './auth';
 import { createSystemFolders, deleteMessageDerived, findMailboxByAddress, getFolder, allocUid, ingestEml, insertFailedPlaceholder, logUnrouted, type MailboxRow } from './parse';
-import { HttpError, queueSend, sendSystemMail, MAX_CONTENT_BYTES } from './send';
+import { queueSend, sendSystemMail, MAX_CONTENT_BYTES } from './send';
+import { HttpError, E } from './errors';
 import { adminApp, LOCAL_PART_RE } from './admin';
 import { verifyMail, resetMail } from './mailtpl';
 import { fontsApp, isKnownFont } from './fonts';
@@ -32,11 +33,15 @@ export const app = new Hono<Ctx>();
 
 app.use('/api/*', originCheck);
 
+// Every failure leaves here as an e_* code plus whatever values belong inside the sentence.
+// The browser turns that into text in the reader's own language -- see src/errors.ts.
+// 所有失败都以 e_* 错误码 + 句子里要用到的值的形式回出去,
+// 由浏览器按使用者的语言渲染成文字,详见 src/errors.ts。
 app.onError((err, c) => {
-  if (err instanceof HttpError) return c.json({ error: err.message }, err.status as any);
-  if (err instanceof SyntaxError) return c.json({ error: '请求格式错误' }, 400);
+  if (err instanceof HttpError) return c.json(E(err.message, ...err.args), err.status as any);
+  if (err instanceof SyntaxError) return c.json(E('e_bad_request'), 400);
   console.log('unhandled', err);
-  return c.json({ error: '服务器内部错误' }, 500);
+  return c.json(E('e_server'), 500);
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, version: VERSION }));
@@ -108,7 +113,7 @@ async function verifyTurnstile(env: Env, token: unknown, ip?: string): Promise<b
   }
 }
 
-const CAPTCHA_FAIL = { error: '人机验证未通过,请重试' };
+const CAPTCHA_FAIL = { error: 'e_captcha' };
 
 app.get('/api/brand/logo', async (c) => {
   const d: any = await brandDomain(c, c.req.query('d'));
@@ -137,13 +142,13 @@ app.get('/api/bootstrap', async (c) => {
 
 app.post('/api/bootstrap', async (c) => {
   const r = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
-  if ((r?.n || 0) > 0) return c.json({ error: '系统已初始化' }, 400);
+  if ((r?.n || 0) > 0) return c.json({ error: 'e_already_setup' }, 400);
   const body = await c.req.json<any>();
   const email = normalizeAddr(String(body.email || ''));
   const name = String(body.name || '').trim().slice(0, 80);
   const password = String(body.password || '');
-  if (!isEmail(email)) return c.json({ error: '邮箱格式不正确' }, 400);
-  if (password.length < 8) return c.json({ error: '密码至少 8 位' }, 400);
+  if (!isEmail(email)) return c.json({ error: 'e_bad_email' }, 400);
+  if (password.length < 8) return c.json({ error: 'e_password_too_short' }, 400);
   const id = await createUser(c.env, email, name || email.split('@')[0], password, true);
   await createSession(c as any, id);
   return c.json({ ok: true });
@@ -184,9 +189,9 @@ app.post('/api/auth/login', async (c) => {
   }
   const password = String(body.password || '');
   const u = await findUserByLoginId(c.env, String(body.email || ''));
-  if (!u) return c.json({ error: '邮箱或密码错误' }, 401);
-  if (u.disabled) return c.json({ error: '账号已被停用' }, 403);
-  if (u.locked_until && u.locked_until > now()) return c.json({ error: '尝试次数过多,请 15 分钟后再试' }, 429);
+  if (!u) return c.json({ error: 'e_bad_credentials' }, 401);
+  if (u.disabled) return c.json({ error: 'e_account_disabled' }, 403);
+  if (u.locked_until && u.locked_until > now()) return c.json({ error: 'e_locked_15m' }, 429);
   // The lockout window has passed: clear the failure counter first, otherwise it stays at >=10 forever and a single failure after the window re-locks the account instantly
   // 锁定窗口已过:先把失败计数清零,否则计数永远停在 >=10,窗口一过随便一次失败又立刻重新锁上
   if (u.locked_until && u.locked_until <= now()) {
@@ -196,7 +201,7 @@ app.post('/api/auth/login', async (c) => {
   const ok = await verifyPassword(password, u.pw_hash);
   if (!ok) {
     await registerLoginFailure(c.env, u.id, u.failed_logins || 0);
-    return c.json({ error: '邮箱或密码错误' }, 401);
+    return c.json({ error: 'e_bad_credentials' }, 401);
   }
   await clearLoginFailures(c.env, u.id);
   await createSession(c as any, u.id);
@@ -269,7 +274,7 @@ app.post('/api/auth/reset/request', async (c) => {
 app.get('/api/auth/reset/:token', async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM password_resets WHERE token_hash=?1')
     .bind(await sha256Hex(c.req.param('token'))).first<any>();
-  if (!row || row.used_at || row.expires_at < now()) return c.json({ error: '链接无效或已过期' }, 400);
+  if (!row || row.used_at || row.expires_at < now()) return c.json({ error: 'e_link_invalid' }, 400);
   const u = await c.env.DB.prepare('SELECT email FROM users WHERE id=?1').bind(row.user_id).first<any>();
   return c.json({ ok: true, email: u?.email || '' });
 });
@@ -277,15 +282,15 @@ app.get('/api/auth/reset/:token', async (c) => {
 app.post('/api/auth/reset/confirm', async (c) => {
   const body = await c.req.json<any>().catch(() => ({}));
   const pw = String(body.password || '');
-  if (pw.length < 8) return c.json({ error: '密码至少 8 位' }, 400);
+  if (pw.length < 8) return c.json({ error: 'e_password_too_short' }, 400);
   const row = await c.env.DB.prepare('SELECT * FROM password_resets WHERE token_hash=?1')
     .bind(await sha256Hex(String(body.token || ''))).first<any>();
-  if (!row || row.used_at || row.expires_at < now()) return c.json({ error: '链接无效或已过期' }, 400);
+  if (!row || row.used_at || row.expires_at < now()) return c.json({ error: 'e_link_invalid' }, 400);
   // Atomic consumption: under concurrency only one request can flip used_at away from NULL, and a failed claim never changes the password
   // 原子消费:并发下只有一次能把 used_at 从 NULL 翻上,认领失败就不改密码
   const claim = await c.env.DB.prepare('UPDATE password_resets SET used_at=?1 WHERE id=?2 AND used_at IS NULL')
     .bind(now(), row.id).run();
-  if (!(claim.meta as any)?.changes) return c.json({ error: '链接无效或已过期' }, 400);
+  if (!(claim.meta as any)?.changes) return c.json({ error: 'e_link_invalid' }, 400);
   await c.env.DB.prepare('UPDATE users SET pw_hash=?1, failed_logins=0, locked_until=NULL WHERE id=?2')
     .bind(await hashPassword(pw), row.user_id).run();
   // A password change signs every device out, including any session that may already have been stolen
@@ -300,14 +305,14 @@ app.post('/api/auth/reset/confirm', async (c) => {
 async function loadInvite(env: Env, token: string) {
   const hash = await sha256Hex(token);
   const inv = await env.DB.prepare('SELECT * FROM invites WHERE token_hash=?1').bind(hash).first<any>();
-  if (!inv) return { error: '邀请不存在' };
-  if (inv.revoked) return { error: '邀请已被撤销' };
-  if (inv.used_by) return { error: '邀请已被使用' };
-  if (inv.expires_at < now()) return { error: '邀请已过期' };
+  if (!inv) return { error: 'e_invite_not_found' };
+  if (inv.revoked) return { error: 'e_invite_revoked' };
+  if (inv.used_by) return { error: 'e_invite_used' };
+  if (inv.expires_at < now()) return { error: 'e_invite_expired' };
   // Links issued before the rework (attached to an existing mailbox) are all refused; ask the administrator for a new one
   // 改造前发出的链接(挂在已存在邮箱上)一律不认,请管理员重新生成
   if ((inv.mailbox_mode || 'fixed') === 'fixed' && !inv.local_part) {
-    return { error: '该邀请链接已失效,请向管理员索取新的链接' };
+    return { error: 'e_invite_dead' };
   }
   return { inv };
 }
@@ -337,7 +342,7 @@ app.get('/api/invites/:token', async (c) => {
  *  不限定邮箱名时,注册页实时查重 */
 app.get('/api/invites/:token/check', async (c) => {
   const { inv } = await loadInvite(c.env, c.req.param('token'));
-  if (!inv || (inv.mailbox_mode || 'fixed') !== 'choose') return c.json({ error: '不适用' }, 400);
+  if (!inv || (inv.mailbox_mode || 'fixed') !== 'choose') return c.json({ error: 'e_not_applicable' }, 400);
   const lp = String(c.req.query('name') || '').trim().toLowerCase();
   if (!LOCAL_PART_RE.test(lp)) return c.json({ ok: false, reason: 'format' });
   const taken = await mailboxNameTaken(c.env, inv.domain_id, lp);
@@ -381,11 +386,11 @@ app.post('/api/invites/:token/register', async (c) => {
   const password = String(body.password || '');
   const lang = String(body.lang || 'en');
 
-  if (!isEmail(email)) return c.json({ error: '邮箱格式不正确' }, 400);
-  if (inv.email && normalizeAddr(inv.email) !== email) return c.json({ error: `该邀请仅限 ${inv.email} 使用` }, 403);
+  if (!isEmail(email)) return c.json({ error: 'e_bad_email' }, 400);
+  if (inv.email && normalizeAddr(inv.email) !== email) return c.json(E('e_invite_email_only', inv.email), 403);
   const exists = await c.env.DB.prepare('SELECT id FROM users WHERE email=?1').bind(email).first<any>();
-  if (exists) return c.json({ error: '该邮箱已注册,请先登录后再打开此邀请链接' }, 409);
-  if (password.length < 8) return c.json({ error: '密码至少 8 位' }, 400);
+  if (exists) return c.json({ error: 'e_email_registered_login_first' }, 409);
+  if (password.length < 8) return c.json({ error: 'e_password_too_short' }, 400);
 
   // A code was already sent for this invite+email within 60 seconds: reuse the pending record instead of
   // sending again or re-running PBKDF2. This sits ahead of the expensive hashing and mailing, so duplicate
@@ -401,7 +406,7 @@ app.post('/api/invites/:token/register', async (c) => {
   // Cap the total codes one invite may send: an invite is single-use, so it has no business mailing many different addresses. This blocks using one link to blast codes at arbitrary mailboxes.
   // 单个邀请的发码总数封顶:邀请单次使用,不该给一堆不同邮箱发码;拦住向任意邮箱轰炸验证码
   if ((inv.send_count || 0) >= 10) {
-    return c.json({ error: '该邀请的验证码发送次数已达上限,请让管理员重新生成邀请' }, 429);
+    return c.json({ error: 'e_invite_code_limit' }, 429);
   }
 
   // Mailbox name not pinned: settle and check the name here, so we do not discover it was taken only after verification
@@ -409,14 +414,14 @@ app.post('/api/invites/:token/register', async (c) => {
   let mailboxName: string | null = null;
   if ((inv.mailbox_mode || 'fixed') === 'choose') {
     mailboxName = String(body.mailbox_name || '').trim().toLowerCase();
-    if (!LOCAL_PART_RE.test(mailboxName)) return c.json({ error: '邮箱名格式不正确' }, 400);
-    if (await mailboxNameTaken(c.env, inv.domain_id, mailboxName)) return c.json({ error: '该邮箱名已被占用' }, 409);
+    if (!LOCAL_PART_RE.test(mailboxName)) return c.json({ error: 'e_bad_mailbox_name' }, 400);
+    if (await mailboxNameTaken(c.env, inv.domain_id, mailboxName)) return c.json({ error: 'e_mailbox_name_taken' }, 409);
   }
 
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const id = uid();
   const { domain, brand } = await inviteBrand(c.env, inv);
-  if (!domain) return c.json({ error: '系统尚未配置发信域名,无法发送验证码' }, 500);
+  if (!domain) return c.json({ error: 'e_no_send_domain' }, 500);
 
   // Keep only the newest pending record per invite+email
   // 同一邀请+邮箱只保留最新一条待验证记录
@@ -433,7 +438,7 @@ app.post('/api/invites/:token/register', async (c) => {
   const sent = await sendSystemMail(c.env, domain, email, tpl.subject, tpl.text);
   if (!sent.ok) {
     await c.env.DB.prepare('DELETE FROM pending_regs WHERE id=?1').bind(id).run();
-    return c.json({ error: `验证码发送失败:${sent.error || '未知错误'}` }, 502);
+    return c.json(E('e_code_send_failed', sent.error || 'e_unknown'), 502);
   }
   await c.env.DB.prepare('UPDATE invites SET send_count=send_count+1 WHERE id=?1').bind(inv.id).run();
   // Local development returns the code directly, which makes self-testing easy
@@ -451,25 +456,25 @@ app.post('/api/invites/:token/verify', async (c) => {
   const code = String(body.code || '').trim();
 
   const reg = await c.env.DB.prepare('SELECT * FROM pending_regs WHERE id=?1 AND invite_id=?2').bind(regId, inv.id).first<any>();
-  if (!reg) return c.json({ error: '验证会话不存在,请重新提交' }, 400);
+  if (!reg) return c.json({ error: 'e_verify_session_gone' }, 400);
   if (reg.expires_at < now()) {
     await c.env.DB.prepare('DELETE FROM pending_regs WHERE id=?1').bind(regId).run();
-    return c.json({ error: '验证码已过期,请重新获取' }, 400);
+    return c.json({ error: 'e_code_expired' }, 400);
   }
   if (reg.attempts >= CODE_MAX_ATTEMPTS) {
     await c.env.DB.prepare('DELETE FROM pending_regs WHERE id=?1').bind(regId).run();
-    return c.json({ error: '尝试次数过多,请重新获取验证码' }, 429);
+    return c.json({ error: 'e_code_attempts' }, 429);
   }
   if ((await sha256Hex(code)) !== reg.code_hash) {
     await c.env.DB.prepare('UPDATE pending_regs SET attempts=attempts+1 WHERE id=?1').bind(regId).run();
-    return c.json({ error: '验证码不正确', remaining: CODE_MAX_ATTEMPTS - reg.attempts - 1 }, 400);
+    return c.json({ error: 'e_code_wrong', remaining: CODE_MAX_ATTEMPTS - reg.attempts - 1 }, 400);
   }
   // Race backstop: the address may have been registered while verification was in flight
   // 竞态兜底:验证期间该邮箱可能已被注册
   const exists = await c.env.DB.prepare('SELECT id FROM users WHERE email=?1').bind(reg.email).first<any>();
   if (exists) {
     await c.env.DB.prepare('DELETE FROM pending_regs WHERE id=?1').bind(regId).run();
-    return c.json({ error: '该邮箱已注册,请直接登录' }, 409);
+    return c.json({ error: 'e_email_registered' }, 409);
   }
 
   const userId = uid();
@@ -483,7 +488,7 @@ app.post('/api/invites/:token/verify', async (c) => {
     // Creating the mailbox failed (say the name was taken in the meantime): roll the freshly created account back rather than leaving half a user behind
     // 建邮箱这一步失败(比如名字刚好被人抢走),把刚建的账号回滚掉,不留半个用户
     await c.env.DB.prepare('DELETE FROM users WHERE id=?1').bind(userId).run();
-    return c.json({ error: e?.message || '开通邮箱失败,请重试' }, e?.status || 400);
+    return c.json(E(e?.message || 'e_open_mailbox_failed', ...(e?.args || [])), e?.status || 400);
   }
   await createSession(c as any, userId);
   return c.json({ ok: true });
@@ -495,9 +500,9 @@ app.post('/api/invites/:token/accept', async (c) => {
   const { inv, error } = await loadInvite(c.env, c.req.param('token'));
   if (!inv) return c.json({ error }, 400);
   const me = await userFromRequest(c as any);
-  if (!me) return c.json({ error: '请先登录,或使用注册流程' }, 401);
+  if (!me) return c.json({ error: 'e_login_or_register' }, 401);
   if (inv.email && normalizeAddr(inv.email) !== me.email) {
-    return c.json({ error: `该邀请指定给 ${inv.email},当前登录的是 ${me.email}` }, 403);
+    return c.json(E('e_invite_other_user', inv.email, me.email), 403);
   }
   const body = await c.req.json<any>().catch(() => ({}));
   await applyInvite(c.env, inv, me.id, body.mailbox_name);
@@ -512,22 +517,22 @@ app.post('/api/invites/:token/accept', async (c) => {
  */
 async function applyInvite(env: Env, inv: any, userId: string, chosenName?: string) {
   const mode = inv.mailbox_mode || 'fixed';
-  if (!inv.domain_id) throw new HttpError(400, '邀请数据不完整,请重新生成链接');
+  if (!inv.domain_id) throw new HttpError(400, 'e_invite_incomplete');
   // Atomic claim: under concurrency only one request can flip used_by from NULL to this user, so one invite can never be redeemed into several accounts
   // 原子认领:并发下只有一个请求能把 used_by 从 NULL 翻成本人,杜绝一条邀请被同时兑换成多个账号
   const claim = await env.DB.prepare(
     'UPDATE invites SET used_by=?1, used_at=?2 WHERE id=?3 AND used_by IS NULL AND revoked=0'
   ).bind(userId, now(), inv.id).run();
-  if (!(claim.meta as any)?.changes) throw new HttpError(409, '邀请已被使用');
+  if (!(claim.meta as any)?.changes) throw new HttpError(409, 'e_invite_used');
   try {
     const localPart = mode === 'choose' ? String(chosenName || '').trim().toLowerCase() : String(inv.local_part || '');
-    if (!LOCAL_PART_RE.test(localPart)) throw new HttpError(400, '邮箱名格式不正确');
+    if (!LOCAL_PART_RE.test(localPart)) throw new HttpError(400, 'e_bad_mailbox_name');
     const role = mode === 'choose' ? 'owner' : ['owner', 'member', 'readonly'].includes(inv.role) ? inv.role : 'owner';
 
     let mb = await env.DB.prepare('SELECT id FROM mailboxes WHERE domain_id=?1 AND local_part=?2')
       .bind(inv.domain_id, localPart).first<any>();
     if (!mb) {
-      if (await mailboxNameTaken(env, inv.domain_id, localPart)) throw new HttpError(409, '该邮箱名已被占用');
+      if (await mailboxNameTaken(env, inv.domain_id, localPart)) throw new HttpError(409, 'e_mailbox_name_taken');
       const mbId = uid();
       await env.DB.prepare(
         'INSERT INTO mailboxes (id, domain_id, local_part, display_name, created_at) VALUES (?1,?2,?3,?4,?5)'
@@ -535,7 +540,7 @@ async function applyInvite(env: Env, inv: any, userId: string, chosenName?: stri
       await createSystemFolders(env, mbId);
       mb = { id: mbId };
     } else if (mode === 'choose') {
-      throw new HttpError(409, '该邮箱名已被占用'); // 自取名时撞上已存在的邮箱,必须换一个
+      throw new HttpError(409, 'e_mailbox_name_taken'); // 自取名时撞上已存在的邮箱,必须换一个
     }
     await env.DB.prepare(
       'INSERT INTO grants (user_id, mailbox_id, role, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(user_id, mailbox_id) DO UPDATE SET role=?3'
@@ -615,7 +620,7 @@ app.post('/api/me/fonts', async (c) => {
   };
   const ui = pick(body.ui_font);
   const bodyFont = pick(body.body_font);
-  if (ui === undefined || bodyFont === undefined) return c.json({ error: 'unknown font' }, 400);
+  if (ui === undefined || bodyFont === undefined) return c.json({ error: 'e_unknown_font' }, 400);
   await c.env.DB.prepare('UPDATE users SET ui_font=?1, body_font=?2 WHERE id=?3')
     .bind(ui, bodyFont, c.get('user').id).run();
   return c.json({ ok: true });
@@ -624,7 +629,7 @@ app.post('/api/me/fonts', async (c) => {
 app.post('/api/me/appearance', async (c) => {
   const body = await c.req.json<any>();
   const v = String(body.appearance || '');
-  if (!['light', 'dark', 'auto'].includes(v)) return c.json({ error: 'bad appearance' }, 400);
+  if (!['light', 'dark', 'auto'].includes(v)) return c.json({ error: 'e_bad_appearance' }, 400);
   await c.env.DB.prepare('UPDATE users SET appearance=?1 WHERE id=?2').bind(v, c.get('user').id).run();
   return c.json({ ok: true });
 });
@@ -632,7 +637,7 @@ app.post('/api/me/appearance', async (c) => {
 app.post('/api/me/lang', async (c) => {
   const body = await c.req.json<any>();
   const lang = String(body.lang || '');
-  if (!UI_LANGS.includes(lang)) return c.json({ error: 'unsupported language' }, 400);
+  if (!UI_LANGS.includes(lang)) return c.json({ error: 'e_unsupported_language' }, 400);
   await c.env.DB.prepare('UPDATE users SET lang=?1 WHERE id=?2').bind(lang, c.get('user').id).run();
   return c.json({ ok: true });
 });
@@ -640,9 +645,9 @@ app.post('/api/me/lang', async (c) => {
 app.post('/api/me/password', async (c) => {
   const body = await c.req.json<any>();
   const u = await c.env.DB.prepare('SELECT pw_hash FROM users WHERE id=?1').bind(c.get('user').id).first<any>();
-  if (!u || !(await verifyPassword(String(body.old || ''), u.pw_hash))) return c.json({ error: '原密码错误' }, 400);
+  if (!u || !(await verifyPassword(String(body.old || ''), u.pw_hash))) return c.json({ error: 'e_old_password_wrong' }, 400);
   const npw = String(body.new || '');
-  if (npw.length < 8) return c.json({ error: '新密码至少 8 位' }, 400);
+  if (npw.length < 8) return c.json({ error: 'e_new_password_too_short' }, 400);
   const uidNow = c.get('user').id;
   await c.env.DB.prepare('UPDATE users SET pw_hash=?1 WHERE id=?2').bind(await hashPassword(npw), uidNow).run();
   // Changing the password signs every device out; issue this one a fresh session so the user does not lock themselves out
@@ -662,14 +667,14 @@ async function requireGrant(c: any, mailboxId: string, write = false): Promise<{
      FROM grants g JOIN mailboxes mb ON mb.id=g.mailbox_id JOIN domains d ON d.id=mb.domain_id
      WHERE g.user_id=?1 AND g.mailbox_id=?2`
   ).bind(user.id, mailboxId).first();
-  if (!row || row.disabled) throw new HttpError(403, '无权访问该邮箱');
-  if (write && row.role === 'readonly') throw new HttpError(403, '只读权限,不能执行此操作');
+  if (!row || row.disabled) throw new HttpError(403, 'e_no_mailbox_access');
+  if (write && row.role === 'readonly') throw new HttpError(403, 'e_readonly');
   return { mb: row as MailboxRow, role: row.role };
 }
 
 async function requireMessage(c: any, messageId: string, write = false) {
   const msg = await c.env.DB.prepare('SELECT * FROM messages WHERE id=?1').bind(messageId).first();
-  if (!msg) throw new HttpError(404, '邮件不存在');
+  if (!msg) throw new HttpError(404, 'e_message_not_found');
   const g = await requireGrant(c, msg.mailbox_id, write);
   return { msg, ...g };
 }
@@ -749,9 +754,9 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
       return {
         draft_id: r.id,
         thread_id: null,
-        subject: p.subject || '(无主题)',
+        subject: p.subject || '',
         snippet: (p.text || '').slice(0, 120),
-        from_name: '草稿',
+        from_name: '',
         from_addr: '',
         last_date: r.updated_at,
         cnt: 1, unread: 0, starred: 0, hasatt: (p.attachment_ids || []).length ? 1 : 0,
@@ -783,7 +788,7 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
       SELECT t.thread_id, t.last_date, t.cnt,
         (SELECT SUM(CASE WHEN flag_seen=0 THEN 1 ELSE 0 END) FROM messages WHERE mailbox_id=?1 AND thread_id=t.thread_id) AS unread,
         (SELECT MAX(flag_flagged) FROM messages WHERE mailbox_id=?1 AND thread_id=t.thread_id) AS starred,
-        MAX(m.has_attachments) AS hasatt, m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json
+        MAX(m.has_attachments) AS hasatt, m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json, m.parse_status
       FROM t JOIN messages m ON m.mailbox_id=?1 AND m.thread_id=t.thread_id AND m.date=t.last_date
       GROUP BY t.thread_id ORDER BY t.last_date DESC LIMIT ?3 OFFSET ?4`;
     binds = [mb.id, like || ftsQuery(q), PAGE_SIZE + 1, page * PAGE_SIZE];
@@ -802,7 +807,7 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
         FROM messages m JOIN folders f ON f.id=m.folder_id
         WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam')
         GROUP BY m.thread_id HAVING MAX(m.flag_flagged)=1)
-      SELECT tw.*, m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json
+      SELECT tw.*, m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json, m.parse_status
       FROM tw JOIN messages m ON m.mailbox_id=?1 AND m.thread_id=tw.thread_id AND m.date=tw.last_date
       GROUP BY tw.thread_id ORDER BY tw.last_date DESC LIMIT ?2 OFFSET ?3`;
     binds = [mb.id, PAGE_SIZE + 1, page * PAGE_SIZE];
@@ -828,7 +833,7 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
         WHERE m.mailbox_id=?1 AND ${twWhere} AND m.thread_id IN (SELECT thread_id FROM t)
         GROUP BY m.thread_id)
       SELECT tw.thread_id, tw.last_date, tw.cnt, tw.starred, tw.hasatt, t.unread,
-        m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json
+        m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json, m.parse_status
       FROM tw JOIN t ON t.thread_id=tw.thread_id
       JOIN messages m ON m.mailbox_id=?1 AND m.thread_id=tw.thread_id AND m.date=tw.last_date
       GROUP BY tw.thread_id ORDER BY tw.last_date DESC LIMIT ?3 OFFSET ?4`;
@@ -866,7 +871,7 @@ app.get('/api/mailboxes/:mb/threads/:tid', async (c) => {
      WHERE m.mailbox_id=?1 AND m.thread_id=?2 ORDER BY m.date ASC LIMIT 200`
   ).bind(mb.id, tid).all<any>();
   const msgs = rows.results || [];
-  if (!msgs.length) throw new HttpError(404, '会话不存在');
+  if (!msgs.length) throw new HttpError(404, 'e_thread_not_found');
 
   const attByMsg: Record<string, any[]> = {};
   for (let i = 0; i < msgs.length; i += 50) {
@@ -898,7 +903,7 @@ app.get('/api/mailboxes/:mb/threads/:tid', async (c) => {
 
 async function loadParsed(c: any, msg: any) {
   const obj = await c.env.RAW.get(msg.r2_key);
-  if (!obj) throw new HttpError(404, '原始邮件已不存在');
+  if (!obj) throw new HttpError(404, 'e_raw_gone');
   const buf = await obj.arrayBuffer();
   return await new PostalMime().parse(buf);
 }
@@ -956,7 +961,7 @@ app.post('/api/mailboxes/:mb/contacts/safe', async (c) => {
   const { mb } = await requireGrant(c, c.req.param('mb'), true);
   const body = await c.req.json<any>();
   const addr = normalizeAddr(String(body.addr || ''));
-  if (!isEmail(addr)) return c.json({ error: '地址格式不正确' }, 400);
+  if (!isEmail(addr)) return c.json({ error: 'e_bad_address' }, 400);
   const safe = body.safe === null ? null : body.safe ? 1 : 0;
   const exists = await c.env.DB.prepare('SELECT id FROM contacts WHERE mailbox_id=?1 AND addr=?2')
     .bind(mb.id, addr).first<any>();
@@ -974,7 +979,7 @@ app.post('/api/mailboxes/:mb/contacts/safe', async (c) => {
 app.get('/api/messages/:id/raw', async (c) => {
   const { msg } = await requireMessage(c, c.req.param('id'));
   const obj = await c.env.RAW.get(msg.r2_key);
-  if (!obj) throw new HttpError(404, '原始邮件已不存在');
+  if (!obj) throw new HttpError(404, 'e_raw_gone');
   c.header('Content-Type', 'message/rfc822');
   c.header('Content-Disposition', `attachment; filename="${msg.id}.eml"`);
   return c.body(obj.body as any);
@@ -995,11 +1000,11 @@ app.get('/api/messages/:id/att/:idx', async (c) => {
   const idx = parseInt(c.req.param('idx'), 10);
   const meta = await c.env.DB.prepare('SELECT * FROM attachments WHERE message_id=?1 AND part_index=?2')
     .bind(msg.id, idx).first<any>();
-  if (!meta) throw new HttpError(404, '附件不存在');
+  if (!meta) throw new HttpError(404, 'e_attachment_not_found');
   const parsed: any = await loadParsed(c, msg);
   const atts = (parsed.attachments || []).filter((a: any) => a && a.content);
   const att = atts[idx];
-  if (!att) throw new HttpError(404, '附件不存在');
+  if (!att) throw new HttpError(404, 'e_attachment_not_found');
   const fname = meta.filename || 'attachment';
   const mime = String(meta.mime || '').toLowerCase().split(';')[0].trim();
   // Anything outside the whitelist is served as a download, no matter what the frontend asked for
@@ -1117,7 +1122,7 @@ app.post('/api/mailboxes/:mb/threads/:tid/action', async (c) => {
       break;
     }
     default:
-      throw new HttpError(400, '未知操作');
+      throw new HttpError(400, 'e_unknown_action');
   }
   return c.json({ ok: true });
 });
@@ -1173,7 +1178,7 @@ app.get('/api/mailboxes/:mb/drafts/:id', async (c) => {
   await requireGrant(c, c.req.param('mb'));
   const row = await c.env.DB.prepare('SELECT * FROM drafts WHERE id=?1 AND user_id=?2')
     .bind(c.req.param('id'), c.get('user').id).first<any>();
-  if (!row) throw new HttpError(404, '草稿不存在');
+  if (!row) throw new HttpError(404, 'e_draft_not_found');
   return c.json({ id: row.id, payload: jsonTry(row.payload, {}), updated_at: row.updated_at });
 });
 
@@ -1187,7 +1192,7 @@ app.post('/api/mailboxes/:mb/drafts', async (c) => {
   // 不能对序列化后的 JSON 做 slice —— 从中间截断会产生非法 JSON,读回时整条草稿静默变空。
   // 超限直接拒绝,让前端能提示,而不是悄悄丢数据。
   const payload = JSON.stringify(body.payload || {});
-  if (payload.length > 900000) return c.json({ error: '草稿内容过大,请精简后再保存' }, 413);
+  if (payload.length > 900000) return c.json({ error: 'e_draft_too_big' }, 413);
   await c.env.DB.prepare(
     `INSERT INTO drafts (id, mailbox_id, user_id, payload, updated_at) VALUES (?1,?2,?3,?4,?5)
      ON CONFLICT(id) DO UPDATE SET payload=?4, updated_at=?5`
@@ -1204,8 +1209,8 @@ app.post('/api/uploads', async (c) => {
   const user = c.get('user');
   const body = await c.req.parseBody();
   const f = body['file'];
-  if (!(f instanceof File)) throw new HttpError(400, '缺少文件');
-  if (f.size > 20 * 1024 * 1024) throw new HttpError(400, '单个附件不能超过 20MB');
+  if (!(f instanceof File)) throw new HttpError(400, 'e_missing_file');
+  if (f.size > 20 * 1024 * 1024) throw new HttpError(400, 'e_attach_too_big');
   const id = uid();
   const key = `uploads/${id}`;
   await c.env.RAW.put(key, await f.arrayBuffer());
@@ -1221,9 +1226,9 @@ app.get('/api/uploads/:id', async (c) => {
   const row: any = await c.env.DB.prepare('SELECT * FROM uploads WHERE id=?1 AND user_id=?2')
     .bind(c.req.param('id'), c.get('user').id)
     .first();
-  if (!row) throw new HttpError(404, '文件不存在');
+  if (!row) throw new HttpError(404, 'e_file_not_found');
   const obj = await c.env.RAW.get(row.r2_key);
-  if (!obj) throw new HttpError(404, '文件不存在');
+  if (!obj) throw new HttpError(404, 'e_file_not_found');
   return new Response(obj.body, {
     headers: {
       'Content-Type': row.mime || 'application/octet-stream',
@@ -1237,7 +1242,7 @@ app.get('/api/uploads/:id', async (c) => {
 // ---------- 开发辅助:注入一封原始邮件 ----------
 
 app.post('/api/dev/ingest', async (c) => {
-  if (c.env.DEV_MODE !== '1') return c.json({ error: 'not available' }, 404);
+  if (c.env.DEV_MODE !== '1') return c.json({ error: 'e_not_available' }, 404);
   const rcpt = String(c.req.query('rcpt') || '');
   const mb = await findMailboxByAddress(c.env, rcpt);
   const envFrom = String(c.req.query('from') || 'unknown@example.com');

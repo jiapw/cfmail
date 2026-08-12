@@ -7,7 +7,7 @@ import { getAgentByName } from 'agents';
 import { generateSpeech } from 'ai';
 import type { Env, User } from '../types';
 import { requireAuth } from '../auth';
-import { HttpError } from '../send';
+import { HttpError } from '../errors';
 import { now, uid } from '../util';
 import {
   ASR_MODELS, CHAT_MODELS, IMAGE_MODELS, TTS_MODELS, VISION_MODELS, getChatModel,
@@ -28,7 +28,7 @@ async function agentStub(env: Env, sessionId: string) {
 async function ownedSession(c: any, id: string): Promise<any> {
   const row = await c.env.DB.prepare('SELECT * FROM chat_sessions WHERE id=?1 AND user_id=?2')
     .bind(id, c.get('user').id).first();
-  if (!row) throw new HttpError(404, '会话不存在');
+  if (!row) throw new HttpError(404, 'e_chat_not_found');
   return row;
 }
 
@@ -56,7 +56,7 @@ chatApp.use('*', requireAuth);
 // 按访问域名(intl-mail.<域名>)取该域的开关与配置,未开启一律 403
 chatApp.use('*', async (c, next) => {
   const d = await chatDomainForHost(c.env, new URL(c.req.url).hostname);
-  if (!d || !d.enabled) return c.json({ error: 'AI 助手未开启' }, 403);
+  if (!d || !d.enabled) return c.json({ error: 'e_chat_disabled' }, 403);
   (c as any).set('chatDomain', d);
   await next();
 });
@@ -80,7 +80,7 @@ chatApp.post('/sessions', async (c) => {
   const body = await c.req.json<any>().catch(() => ({}));
   const cnt = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM chat_sessions WHERE user_id=?1')
     .bind(user.id).first<{ n: number }>();
-  if ((cnt?.n || 0) >= MAX_SESSIONS) throw new HttpError(400, '会话数量已达上限,请先删除一些旧会话');
+  if ((cnt?.n || 0) >= MAX_SESSIONS) throw new HttpError(400, 'e_chat_limit');
   const grp = String(body.grp || '').trim().slice(0, 40);
   const modelId = resolveAllowedModel(chatDom(c), String(body.model || ''));
   const id = uid();
@@ -106,7 +106,7 @@ chatApp.patch('/sessions/:id', async (c) => {
   }
   if (typeof body.model === 'string') {
     const m = getChatModel(body.model);
-    if (!m) throw new HttpError(400, '模型无效');
+    if (!m) throw new HttpError(400, 'e_bad_model');
     sets.push(`model=?${vals.length + 1}`);
     vals.push(m.id);
   }
@@ -143,11 +143,11 @@ chatApp.post('/groups', async (c) => {
   const user = c.get('user');
   const body = await c.req.json<any>();
   const from = String(body.from || '').trim().slice(0, 40);
-  if (!from) throw new HttpError(400, '缺少分组名');
+  if (!from) throw new HttpError(400, 'e_missing_group');
   const action = String(body.action || '');
   const to = action === 'rename' ? String(body.to || '').trim().slice(0, 40) : '';
-  if (action === 'rename' && !to) throw new HttpError(400, '缺少新分组名');
-  if (!['rename', 'dissolve'].includes(action)) throw new HttpError(400, '不支持的操作');
+  if (action === 'rename' && !to) throw new HttpError(400, 'e_missing_new_group');
+  if (!['rename', 'dissolve'].includes(action)) throw new HttpError(400, 'e_unsupported_action');
   await c.env.DB.prepare('UPDATE chat_sessions SET grp=?1 WHERE user_id=?2 AND grp=?3')
     .bind(to, user.id, from).run();
   return c.json({ ok: true });
@@ -175,7 +175,7 @@ chatApp.post('/sessions/:id/send', async (c) => {
   const files: any[] = [];
   for (const fid of fileIds) {
     const f = await getChatFile(c.env, user.id, fid);
-    if (!f) throw new HttpError(400, '附件无效或已过期');
+    if (!f) throw new HttpError(400, 'e_chat_file_gone');
     files.push({ id: f.id, kind: f.kind, filename: f.filename, mime: f.mime, extract: f.extract });
     // Attachments belong to a session, so they are cleaned up when the session is deleted
     // 附件归属会话,会话删除时一并清理
@@ -238,7 +238,7 @@ chatApp.post('/tts', async (c) => {
   const d = chatDom(c);
   const body = await c.req.json<any>();
   const text = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
-  if (!text) throw new HttpError(400, '没有可朗读的内容');
+  if (!text) throw new HttpError(400, 'e_nothing_to_speak');
   const workersai = getWorkersAI(c.env);
   try {
     const { audio } = await generateSpeech({
@@ -253,7 +253,7 @@ chatApp.post('/tts', async (c) => {
     });
   } catch (e: any) {
     console.log('tts failed', d.tts_model, e);
-    throw new HttpError(502, '语音合成失败,请稍后再试或让管理员更换语音模型');
+    throw new HttpError(502, 'e_tts_failed');
   }
 });
 
@@ -263,9 +263,9 @@ const INLINE_IMAGE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i;
 
 chatApp.get('/files/:id', async (c) => {
   const f = await getChatFile(c.env, c.get('user').id, c.req.param('id'));
-  if (!f) throw new HttpError(404, '文件不存在');
+  if (!f) throw new HttpError(404, 'e_file_not_found');
   const obj = await c.env.RAW.get(f.r2_key);
-  if (!obj) throw new HttpError(404, '文件不存在');
+  if (!obj) throw new HttpError(404, 'e_file_not_found');
   const headers: Record<string, string> = {
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'private, max-age=3600',
@@ -311,12 +311,12 @@ async function checkChatAdmin(c: any, domainId: string): Promise<void> {
   if (user.is_admin) return;
   const row = await c.env.DB.prepare('SELECT 1 AS x FROM domain_admins WHERE user_id=?1 AND domain_id=?2')
     .bind(user.id, domainId).first();
-  if (!row) throw new HttpError(403, '无权管理该域名');
+  if (!row) throw new HttpError(403, 'e_no_domain_perm');
 }
 
 chatAdminApp.get('/:domainId/settings', async (c) => {
   const d = await chatDomainById(c.env, c.req.param('domainId'));
-  if (!d) throw new HttpError(404, '域名不存在');
+  if (!d) throw new HttpError(404, 'e_domain_not_found');
   await checkChatAdmin(c, d.id);
   const out: any = {
     domain: d.name,
@@ -355,14 +355,14 @@ chatAdminApp.get('/:domainId/settings', async (c) => {
 
 chatAdminApp.put('/:domainId/settings', async (c) => {
   const d = await chatDomainById(c.env, c.req.param('domainId'));
-  if (!d) throw new HttpError(404, '域名不存在');
+  if (!d) throw new HttpError(404, 'e_domain_not_found');
   await checkChatAdmin(c, d.id);
   const body = await c.req.json<any>();
   const patch: ChatDomainPatch = {};
   if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
   if (Array.isArray(body.models)) {
     const ids = [...new Set(body.models.map(String))].filter((id) => CHAT_MODELS.some((m) => m.id === id));
-    if (!ids.length) throw new HttpError(400, '至少保留一个可选模型');
+    if (!ids.length) throw new HttpError(400, 'e_keep_one_model');
     patch.models = ids as string[];
     // When the default model is removed from the list, switch automatically to the first one still on it
     // 默认模型被移出清单时,自动切到清单里的第一个
@@ -370,9 +370,9 @@ chatAdminApp.put('/:domainId/settings', async (c) => {
   }
   if (typeof body.default_model === 'string') {
     const m = getChatModel(body.default_model);
-    if (!m) throw new HttpError(400, '模型无效');
+    if (!m) throw new HttpError(400, 'e_bad_model');
     const allowed = patch.models || d.models;
-    if (!allowed.includes(m.id)) throw new HttpError(400, '默认模型必须在勾选的模型里');
+    if (!allowed.includes(m.id)) throw new HttpError(400, 'e_default_model_not_allowed');
     patch.default_model = m.id;
   }
   // search_key: an empty string clears it; omitting the field leaves it untouched
@@ -382,7 +382,7 @@ chatAdminApp.put('/:domainId/settings', async (c) => {
   const cap = (field: 'vision_model' | 'asr_model' | 'tts_model' | 'image_model', list: { id: string }[]) => {
     const v = body[field];
     if (typeof v !== 'string') return;
-    if (!list.some((m) => m.id === v)) throw new HttpError(400, '模型无效');
+    if (!list.some((m) => m.id === v)) throw new HttpError(400, 'e_bad_model');
     patch[field] = v;
   };
   cap('vision_model', VISION_MODELS);

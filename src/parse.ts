@@ -289,8 +289,10 @@ export async function ingestEml(env: Env, o: IngestOptions & { pre?: PreParsed }
   return id;
 }
 
-/** Placeholder row for a failed parse; cron retries it later
- *  解析失败时的占位行,cron 会重试 */
+/** Placeholder row for a failed parse; cron retries it later. The subject is left empty on
+ *  purpose -- the client labels the row from parse_status, so no language is baked in here.
+ *  解析失败时的占位行,cron 会重试。主题故意留空:前端按 parse_status 打标签,
+ *  这里不写死任何一种语言的文字。 */
 export async function insertFailedPlaceholder(
   env: Env,
   o: { mailboxId: string; r2Key: string; size: number; envelopeFrom: string }
@@ -302,7 +304,7 @@ export async function insertFailedPlaceholder(
   await env.DB.prepare(
     `INSERT INTO messages (id, mailbox_id, folder_id, uid, thread_id, subject, from_addr, snippet, date, internal_date,
        size, r2_key, direction, parse_status, parse_attempts)
-     VALUES (?1,?2,?3,?4,?1,'(邮件解析中)',?5,'',?6,?6,?7,?8,'in','failed',1)`
+     VALUES (?1,?2,?3,?4,?1,'',?5,'',?6,?6,?7,?8,'in','failed',1)`
   )
     .bind(id, o.mailboxId, folder.id, u, normalizeAddr(o.envelopeFrom), now(), o.size, o.r2Key)
     .run();
