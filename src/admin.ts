@@ -5,7 +5,7 @@ import { THEME_NAMES } from './themes-list';
 import { isKnownFont } from './fonts';
 import { requireAuth, revokeAllSessions } from './auth';
 import { createSystemFolders, ingestEml, type PreParsed } from './parse';
-import { HttpError } from './send';
+import { HttpError, E } from './errors';
 import { isEmail, jsonTry, normalizeAddr, now, randomToken, sha256Hex, uid } from './util';
 import { chatAdminApp } from './chat/routes';
 import { audit } from './audit';
@@ -49,19 +49,19 @@ async function adminScope(c: any): Promise<Set<string> | null> {
   if (user.is_admin) return null;
   const rows = await c.env.DB.prepare('SELECT domain_id FROM domain_admins WHERE user_id=?1').bind(user.id).all();
   const set = new Set<string>((rows.results || []).map((r: any) => r.domain_id));
-  if (!set.size) throw new HttpError(403, '没有管理权限');
+  if (!set.size) throw new HttpError(403, 'e_not_admin');
   return set;
 }
 
 function requireGlobalAdmin(c: any): User {
   const user: User = c.get('user');
-  if (!user.is_admin) throw new HttpError(403, '仅全局管理员可操作');
+  if (!user.is_admin) throw new HttpError(403, 'e_global_admin_only');
   return user;
 }
 
 async function checkDomainScope(c: any, domainId: string): Promise<void> {
   const scope = await adminScope(c);
-  if (scope && !scope.has(domainId)) throw new HttpError(403, '无权管理该域名');
+  if (scope && !scope.has(domainId)) throw new HttpError(403, 'e_no_domain_perm');
 }
 
 // ---------- Overview: statistics per domain ----------
@@ -108,9 +108,9 @@ adminApp.post('/domains', async (c) => {
   const user = requireGlobalAdmin(c);
   const body = await c.req.json<any>();
   const name = normalizeAddr(String(body.name || ''));
-  if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/.test(name)) return c.json({ error: '域名格式不正确' }, 400);
+  if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/.test(name)) return c.json({ error: 'e_bad_domain' }, 400);
   const exists = await c.env.DB.prepare('SELECT id FROM domains WHERE name=?1').bind(name).first<any>();
-  if (exists) return c.json({ error: '域名已存在' }, 409);
+  if (exists) return c.json({ error: 'e_domain_exists' }, 409);
   const id = uid();
   await c.env.DB.prepare('INSERT INTO domains (id, name, created_at) VALUES (?1,?2,?3)').bind(id, name, now()).run();
   // Whoever creates a domain automatically becomes one of its domain admins
@@ -133,7 +133,7 @@ adminApp.post('/domains/:id/admins', async (c) => {
   const body = await c.req.json<any>();
   const email = normalizeAddr(String(body.email || ''));
   const u = await c.env.DB.prepare('SELECT id FROM users WHERE email=?1').bind(email).first<any>();
-  if (!u) return c.json({ error: '用户不存在(需先注册)' }, 404);
+  if (!u) return c.json({ error: 'e_user_not_registered' }, 404);
   await c.env.DB.prepare('INSERT OR IGNORE INTO domain_admins (user_id, domain_id) VALUES (?1,?2)').bind(u.id, domainId).run();
   return c.json({ ok: true });
 });
@@ -175,13 +175,13 @@ adminApp.post('/domains/:id/mailboxes', async (c) => {
   await checkDomainScope(c, domainId);
   const body = await c.req.json<any>();
   const local = normalizeAddr(String(body.local_part || ''));
-  if (!LOCAL_PART_RE.test(local)) return c.json({ error: '地址格式不正确(小写字母/数字/._-)' }, 400);
+  if (!LOCAL_PART_RE.test(local)) return c.json({ error: 'e_bad_local_part' }, 400);
   const exists = await c.env.DB.prepare('SELECT id FROM mailboxes WHERE domain_id=?1 AND local_part=?2')
     .bind(domainId, local).first<any>();
-  if (exists) return c.json({ error: '该地址已存在' }, 409);
+  if (exists) return c.json({ error: 'e_address_exists' }, 409);
   const aliasTaken = await c.env.DB.prepare('SELECT id FROM aliases WHERE domain_id=?1 AND local_part=?2')
     .bind(domainId, local).first<any>();
-  if (aliasTaken) return c.json({ error: '该地址已被别名占用' }, 409);
+  if (aliasTaken) return c.json({ error: 'e_address_is_alias' }, 409);
   const id = uid();
   await c.env.DB.prepare(
     'INSERT INTO mailboxes (id, domain_id, local_part, display_name, created_at) VALUES (?1,?2,?3,?4,?5)'
@@ -200,7 +200,7 @@ adminApp.get('/domains/:id/brand', async (c) => {
   const d = await c.env.DB.prepare(
     'SELECT name, brand_name, brand_theme, brand_font, brand_logo_key, brand_logo_mode FROM domains WHERE id=?1'
   ).bind(domainId).first<any>();
-  if (!d) throw new HttpError(404, '域名不存在');
+  if (!d) throw new HttpError(404, 'e_domain_not_found');
   return c.json({
     domain: d.name, brand_name: d.brand_name || '', brand_theme: d.brand_theme || '',
     brand_font: d.brand_font || '', has_logo: !!d.brand_logo_key, logo_mode: d.brand_logo_mode || 'light',
@@ -217,12 +217,12 @@ adminApp.post('/domains/:id/brand', async (c) => {
   }
   if (typeof body.theme === 'string') {
     const theme = body.theme.trim();
-    if (theme && !THEME_NAMES.includes(theme)) return c.json({ error: 'unknown theme' }, 400);
+    if (theme && !THEME_NAMES.includes(theme)) return c.json({ error: 'e_unknown_theme' }, 400);
     await c.env.DB.prepare('UPDATE domains SET brand_theme=?1 WHERE id=?2').bind(theme || null, domainId).run();
   }
   if (typeof body.font === 'string') {
     const font = body.font.trim();
-    if (font && !isKnownFont(font)) return c.json({ error: 'unknown font' }, 400);
+    if (font && !isKnownFont(font)) return c.json({ error: 'e_unknown_font' }, 400);
     await c.env.DB.prepare('UPDATE domains SET brand_font=?1 WHERE id=?2').bind(font || null, domainId).run();
   }
   return c.json({ ok: true });
@@ -233,9 +233,9 @@ adminApp.post('/domains/:id/brand/logo', async (c) => {
   await checkDomainScope(c, domainId);
   const body = await c.req.parseBody();
   const f = body['file'];
-  if (!(f instanceof File)) throw new HttpError(400, '缺少文件');
-  if (f.size > 512 * 1024) throw new HttpError(400, 'Logo 不能超过 512KB');
-  if (!/^image\/(png|jpeg|webp|svg\+xml|gif)$/.test(f.type)) throw new HttpError(400, '仅支持 PNG/JPG/WebP/SVG/GIF');
+  if (!(f instanceof File)) throw new HttpError(400, 'e_missing_file');
+  if (f.size > 512 * 1024) throw new HttpError(400, 'e_logo_too_big');
+  if (!/^image\/(png|jpeg|webp|svg\+xml|gif)$/.test(f.type)) throw new HttpError(400, 'e_logo_type');
   // The mode the admin was in when uploading is the logo's native mode, and it is never inverted there
   // 上传时管理员所处的模式 = logo 的原生模式(该模式下不反色)
   const mode = String(body['mode'] || 'light') === 'dark' ? 'dark' : 'light';
@@ -285,18 +285,18 @@ adminApp.post('/domains/:id/aliases', async (c) => {
   await checkDomainScope(c, domainId);
   const body = await c.req.json<any>();
   const local = normalizeAddr(String(body.local_part || ''));
-  if (!LOCAL_PART_RE.test(local)) return c.json({ error: '地址格式不正确(小写字母/数字/._-)' }, 400);
+  if (!LOCAL_PART_RE.test(local)) return c.json({ error: 'e_bad_local_part' }, 400);
   const target = await c.env.DB.prepare('SELECT id, domain_id, disabled FROM mailboxes WHERE id=?1')
     .bind(String(body.mailbox_id || '')).first<any>();
-  if (!target || target.disabled) return c.json({ error: '目标邮箱不存在或已停用' }, 400);
+  if (!target || target.disabled) return c.json({ error: 'e_target_mailbox_bad' }, 400);
   const scope = await adminScope(c);
-  if (scope && !scope.has(target.domain_id)) return c.json({ error: '目标邮箱不在你管理的域名内' }, 403);
+  if (scope && !scope.has(target.domain_id)) return c.json({ error: 'e_target_out_of_scope' }, 403);
   const mbTaken = await c.env.DB.prepare('SELECT id FROM mailboxes WHERE domain_id=?1 AND local_part=?2')
     .bind(domainId, local).first<any>();
-  if (mbTaken) return c.json({ error: '该地址已是一个邮箱账号' }, 409);
+  if (mbTaken) return c.json({ error: 'e_address_is_mailbox' }, 409);
   const exists = await c.env.DB.prepare('SELECT id FROM aliases WHERE domain_id=?1 AND local_part=?2')
     .bind(domainId, local).first<any>();
-  if (exists) return c.json({ error: '该别名已存在' }, 409);
+  if (exists) return c.json({ error: 'e_alias_exists' }, 409);
   const id = uid();
   await c.env.DB.prepare('INSERT INTO aliases (id, domain_id, local_part, mailbox_id, created_at) VALUES (?1,?2,?3,?4,?5)')
     .bind(id, domainId, local, target.id, now()).run();
@@ -305,7 +305,7 @@ adminApp.post('/domains/:id/aliases', async (c) => {
 
 adminApp.delete('/aliases/:id', async (c) => {
   const alias = await c.env.DB.prepare('SELECT domain_id FROM aliases WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!alias) throw new HttpError(404, '别名不存在');
+  if (!alias) throw new HttpError(404, 'e_alias_not_found');
   await checkDomainScope(c, alias.domain_id);
   await c.env.DB.prepare('DELETE FROM aliases WHERE id=?1').bind(c.req.param('id')).run();
   return c.json({ ok: true });
@@ -327,7 +327,7 @@ adminApp.get('/mailbox-options', async (c) => {
 
 adminApp.post('/mailboxes/:id', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
   const body = await c.req.json<any>();
   if (typeof body.display_name === 'string') {
@@ -352,7 +352,7 @@ const PURGE_BATCH = 300;
 
 adminApp.post('/mailboxes/:id/purge', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
 
   const rows = await c.env.DB.prepare('SELECT id, r2_key FROM messages WHERE mailbox_id=?1 LIMIT ?2')
@@ -410,11 +410,11 @@ adminApp.post('/mailboxes/:id/purge', async (c) => {
  */
 adminApp.delete('/mailboxes/:id', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
 
   const left = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM messages WHERE mailbox_id=?1').bind(mb.id).first<any>();
-  if (Number(left?.n || 0) > 0) throw new HttpError(409, '请先清空邮箱内容再注销');
+  if (Number(left?.n || 0) > 0) throw new HttpError(409, 'e_empty_mailbox_first');
 
   const addr = await addrOf(c.env, mb);
   const withUser = c.req.query('with_user') === '1';
@@ -461,13 +461,13 @@ adminApp.delete('/mailboxes/:id', async (c) => {
 
 adminApp.post('/mailboxes/:id/grants', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
   const body = await c.req.json<any>();
   const email = normalizeAddr(String(body.email || ''));
   const role = ['owner', 'member', 'readonly'].includes(body.role) ? body.role : 'member';
   const u = await c.env.DB.prepare('SELECT id FROM users WHERE email=?1').bind(email).first<any>();
-  if (!u) return c.json({ error: '用户不存在。对方还没注册的话,请用"邀请"生成链接' }, 404);
+  if (!u) return c.json({ error: 'e_user_not_found_invite' }, 404);
   await c.env.DB.prepare(
     'INSERT INTO grants (user_id, mailbox_id, role, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(user_id, mailbox_id) DO UPDATE SET role=?3'
   ).bind(u.id, mb.id, role, now()).run();
@@ -476,7 +476,7 @@ adminApp.post('/mailboxes/:id/grants', async (c) => {
 
 adminApp.delete('/mailboxes/:id/grants/:userId', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
   await c.env.DB.prepare('DELETE FROM grants WHERE mailbox_id=?1 AND user_id=?2')
     .bind(mb.id, c.req.param('userId')).run();
@@ -524,7 +524,7 @@ adminApp.get('/users', async (c) => {
 adminApp.post('/users/:id/status', async (c) => {
   requireGlobalAdmin(c);
   const targetId = c.req.param('id');
-  if (targetId === c.get('user').id) throw new HttpError(400, '不能停用自己');
+  if (targetId === c.get('user').id) throw new HttpError(400, 'e_cannot_disable_self');
   const body = await c.req.json<any>();
   const disabled = body.disabled ? 1 : 0;
   await c.env.DB.prepare('UPDATE users SET disabled=?1 WHERE id=?2').bind(disabled, targetId).run();
@@ -554,15 +554,15 @@ adminApp.post('/import', async (c) => {
   requireGlobalAdmin(c);
   const addr = normalizeAddr(String(c.req.query('mailbox') || ''));
   const at = addr.lastIndexOf('@');
-  if (at < 1) throw new HttpError(400, 'mailbox 参数不是合法地址');
+  if (at < 1) throw new HttpError(400, 'e_bad_mailbox_param');
   const mb = await c.env.DB.prepare(
     `SELECT mb.id FROM mailboxes mb JOIN domains d ON d.id=mb.domain_id
      WHERE mb.local_part=?1 AND d.name=?2`
   ).bind(addr.slice(0, at), addr.slice(at + 1)).first<any>();
-  if (!mb) throw new HttpError(404, `邮箱 ${addr} 不存在,请先在后台创建`);
+  if (!mb) throw new HttpError(404, 'e_mailbox_missing_create', addr);
 
   const folder = String(c.req.query('folder') || 'inbox');
-  if (!IMPORT_FOLDERS.includes(folder as any)) throw new HttpError(400, '未知的目标文件夹');
+  if (!IMPORT_FOLDERS.includes(folder as any)) throw new HttpError(400, 'e_unknown_folder');
 
   // Deduplication: skip when this Message-ID already exists in the mailbox, without writing to R2 again
   // 去重:同一邮箱里 Message-ID 已存在就跳过,不再写 R2
@@ -584,19 +584,19 @@ adminApp.post('/import', async (c) => {
   if ((c.req.header('Content-Type') || '').startsWith('multipart/form-data')) {
     const form = await c.req.parseBody();
     const f = form['eml'];
-    if (!(f instanceof File)) throw new HttpError(400, '缺少 eml 部分');
+    if (!(f instanceof File)) throw new HttpError(400, 'e_missing_eml');
     buf = await f.arrayBuffer();
     if (form['meta']) {
       try {
         pre = JSON.parse(String(form['meta']));
       } catch {
-        throw new HttpError(400, 'meta 不是合法 JSON');
+        throw new HttpError(400, 'e_meta_bad_json');
       }
     }
   } else {
     buf = await c.req.arrayBuffer();
   }
-  if (!buf.byteLength) throw new HttpError(400, '请求体为空');
+  if (!buf.byteLength) throw new HttpError(400, 'e_empty_body');
   const key = `import/${uid()}.eml`;
   await c.env.RAW.put(key, buf);
   try {
@@ -615,7 +615,7 @@ adminApp.post('/import', async (c) => {
     return c.json({ ok: true, id });
   } catch (e: any) {
     await c.env.RAW.delete(key).catch(() => {});
-    throw new HttpError(400, '解析失败:' + (e?.message || 'unknown'));
+    throw new HttpError(400, 'e_parse_failed', e?.message || 'unknown');
   }
 });
 
@@ -632,7 +632,7 @@ adminApp.post('/users/:id/logout-all', async (c) => {
 adminApp.delete('/users/:id', async (c) => {
   requireGlobalAdmin(c);
   const targetId = c.req.param('id');
-  if (targetId === c.get('user').id) throw new HttpError(400, '不能删除自己');
+  if (targetId === c.get('user').id) throw new HttpError(400, 'e_cannot_delete_self');
   const tu = await c.env.DB.prepare('SELECT email FROM users WHERE id=?1').bind(targetId).first<any>();
   const uploads = await c.env.DB.prepare('SELECT r2_key FROM uploads WHERE user_id=?1').bind(targetId).all<any>();
   for (const u of uploads.results || []) await c.env.RAW.delete(u.r2_key).catch(() => {});
@@ -676,10 +676,10 @@ adminApp.get('/unrouted', async (c) => {
 adminApp.get('/unrouted/:id/body', async (c) => {
   const scope = await adminScope(c);
   const row = await c.env.DB.prepare('SELECT * FROM unrouted WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!row) throw new HttpError(404, '记录不存在');
-  if (scope && !(row.domain_id && scope.has(row.domain_id))) throw new HttpError(403, '无权查看');
+  if (!row) throw new HttpError(404, 'e_record_not_found');
+  if (scope && !(row.domain_id && scope.has(row.domain_id))) throw new HttpError(403, 'e_no_view_perm');
   const obj = await c.env.RAW.get(row.r2_key);
-  if (!obj) throw new HttpError(404, '原件已不存在');
+  if (!obj) throw new HttpError(404, 'e_raw_gone');
   const parsed: any = await new PostalMime().parse(await obj.arrayBuffer());
   let html: string | null = parsed.html || null;
   if (html) {
@@ -698,8 +698,8 @@ adminApp.get('/unrouted/:id/body', async (c) => {
 adminApp.delete('/unrouted/:id', async (c) => {
   const scope = await adminScope(c);
   const row = await c.env.DB.prepare('SELECT * FROM unrouted WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!row) throw new HttpError(404, '记录不存在');
-  if (scope && !(row.domain_id && scope.has(row.domain_id))) throw new HttpError(403, '无权操作');
+  if (!row) throw new HttpError(404, 'e_record_not_found');
+  if (scope && !(row.domain_id && scope.has(row.domain_id))) throw new HttpError(403, 'e_no_perm_action');
   await c.env.RAW.delete(row.r2_key).catch(() => {});
   await c.env.DB.prepare('DELETE FROM unrouted WHERE id=?1').bind(row.id).run();
   await audit(c.env, c.get('user'), 'unrouted.delete', row.to_addr, undefined, row.domain_id);
@@ -719,7 +719,7 @@ adminApp.delete('/unrouted/:id', async (c) => {
  */
 adminApp.get('/mailboxes/:id/export-list', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
   const page = Math.max(0, parseInt(c.req.query('page') || '0', 10) || 0);
   const PAGE = 2000;
@@ -743,10 +743,10 @@ adminApp.get('/messages/:id/raw', async (c) => {
   const msg = await c.env.DB.prepare(
     'SELECT m.id, m.r2_key, mb.domain_id FROM messages m JOIN mailboxes mb ON mb.id=m.mailbox_id WHERE m.id=?1'
   ).bind(c.req.param('id')).first<any>();
-  if (!msg) throw new HttpError(404, '邮件不存在');
+  if (!msg) throw new HttpError(404, 'e_message_not_found');
   await checkDomainScope(c, msg.domain_id);
   const obj = await c.env.RAW.get(msg.r2_key);
-  if (!obj) throw new HttpError(404, '原件已不存在');
+  if (!obj) throw new HttpError(404, 'e_raw_gone');
   c.header('Content-Type', 'message/rfc822');
   c.header('X-Content-Type-Options', 'nosniff');
   return c.body(obj.body as any);
@@ -756,7 +756,7 @@ adminApp.get('/messages/:id/raw', async (c) => {
  *  导出结束后由前端回报一次,把这次导出留痕(导出等于把全部通信内容带离系统) */
 adminApp.post('/mailboxes/:id/export-done', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!mb) throw new HttpError(404, '邮箱不存在');
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
   const body = await c.req.json<any>().catch(() => ({}));
   await audit(c.env, c.get('user'), 'mail.export', await addrOf(c.env, mb), {
@@ -883,10 +883,10 @@ adminApp.post('/invites', async (c) => {
   const body = await c.req.json<any>();
 
   const domainId = String(body.domain_id || '');
-  if (!domainId) return c.json({ error: '请选择域名' }, 400);
-  if (scope && !scope.has(domainId)) return c.json({ error: '无权在该域名下发出邀请' }, 403);
+  if (!domainId) return c.json({ error: 'e_pick_domain' }, 400);
+  if (scope && !scope.has(domainId)) return c.json({ error: 'e_no_invite_perm' }, 403);
   const dom = await c.env.DB.prepare('SELECT id, name FROM domains WHERE id=?1').bind(domainId).first<any>();
-  if (!dom) return c.json({ error: '域名不存在' }, 400);
+  if (!dom) return c.json({ error: 'e_domain_not_found' }, 400);
 
   // fixed = a pinned address (created at signup when absent); choose = the registrant picks the name and always becomes owner
   // fixed = 限定邮箱地址(不存在则注册时新建);choose = 注册者自己取名,角色固定所有者
@@ -895,7 +895,7 @@ adminApp.post('/invites', async (c) => {
   let role = 'owner';
   if (mode === 'fixed') {
     localPart = String(body.local_part || '').trim().toLowerCase();
-    if (!LOCAL_PART_RE.test(localPart)) return c.json({ error: '邮箱名格式不正确' }, 400);
+    if (!LOCAL_PART_RE.test(localPart)) return c.json({ error: 'e_bad_mailbox_name' }, 400);
     role = ['owner', 'member', 'readonly'].includes(body.role) ? body.role : 'owner';
     // A mailbox that exists and already has an owner cannot be handed out with an "owner" invite, or it would silently change hands
     // 已存在且已有所有者的邮箱,不能再用"所有者"邀请别人,免得默默换主
@@ -904,12 +904,12 @@ adminApp.post('/invites', async (c) => {
     if (existing && role === 'owner') {
       const owner = await c.env.DB.prepare("SELECT user_id FROM grants WHERE mailbox_id=?1 AND role='owner'")
         .bind(existing.id).first<any>();
-      if (owner) return c.json({ error: `${localPart}@${dom.name} 已有所有者,请改用成员或只读权限` }, 400);
+      if (owner) return c.json(E('e_owner_exists', `${localPart}@${dom.name}`), 400);
     }
   }
 
   const email = body.email ? normalizeAddr(String(body.email)) : null;
-  if (email && !isEmail(email)) return c.json({ error: '邮箱格式不正确' }, 400);
+  if (email && !isEmail(email)) return c.json({ error: 'e_bad_email' }, 400);
   // Three lifetimes: 2 hours / 48 hours / 7 days (168 hours)
   // 有效期三挡:2 小时 / 48 小时 / 7 天(168 小时)
   const ALLOWED_HOURS = [2, 48, 168];
@@ -937,8 +937,8 @@ adminApp.post('/invites', async (c) => {
 adminApp.delete('/invites/:id', async (c) => {
   const scope = await adminScope(c);
   const inv = await c.env.DB.prepare('SELECT domain_id FROM invites WHERE id=?1').bind(c.req.param('id')).first<any>();
-  if (!inv) throw new HttpError(404, '邀请不存在');
-  if (scope && !(inv.domain_id && scope.has(inv.domain_id))) throw new HttpError(403, '无权操作');
+  if (!inv) throw new HttpError(404, 'e_invite_not_found');
+  if (scope && !(inv.domain_id && scope.has(inv.domain_id))) throw new HttpError(403, 'e_no_perm_action');
   await c.env.DB.prepare('UPDATE invites SET revoked=1 WHERE id=?1').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });

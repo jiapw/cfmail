@@ -96,7 +96,7 @@ export async function originCheck(c: Context<any>, next: Next) {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
     const origin = c.req.header('Origin');
     if (!origin || origin !== new URL(c.req.url).origin) {
-      return c.json({ error: 'origin check failed' }, 403);
+      return c.json({ error: 'e_origin_check' }, 403);
     }
   }
   await next();
@@ -104,7 +104,7 @@ export async function originCheck(c: Context<any>, next: Next) {
 
 export async function requireAuth(c: Context<Vars>, next: Next) {
   const user = await userFromRequest(c);
-  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  if (!user) return c.json({ error: 'e_unauthorized' }, 401);
   c.set('user', user);
   await next();
 }

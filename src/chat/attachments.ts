@@ -3,7 +3,7 @@
 import { transcribe } from 'ai';
 import { getWorkersAI } from './provider';
 import type { Env, User } from '../types';
-import { HttpError } from '../send';
+import { HttpError } from '../errors';
 import { now, uid } from '../util';
 import { DEFAULT_ASR } from './models';
 
@@ -37,12 +37,12 @@ export function classifyKind(mime: string, filename: string): ChatFileKind {
 
 export async function handleChatUpload(env: Env, user: User, form: FormData, asrModel?: string): Promise<any> {
   const f = form.get('file');
-  if (!(f instanceof File)) throw new HttpError(400, '缺少文件');
+  if (!(f instanceof File)) throw new HttpError(400, 'e_missing_file');
   const filename = (f.name || 'file').slice(0, 160);
   const mime = f.type || 'application/octet-stream';
   const kind = classifyKind(mime, filename);
   const cap = kind === 'image' ? MAX_IMAGE : kind === 'audio' ? MAX_AUDIO : MAX_FILE;
-  if (f.size > cap) throw new HttpError(413, `文件超过上限 ${(cap / 1024 / 1024).toFixed(0)}MB`);
+  if (f.size > cap) throw new HttpError(413, 'e_file_too_big', (cap / 1024 / 1024).toFixed(0));
   const buf = await f.arrayBuffer();
 
   const id = uid();

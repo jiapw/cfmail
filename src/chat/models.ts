@@ -6,7 +6,7 @@
 export interface ChatModel {
   id: string;
   label: string;
-  desc: string;        // 选择器里的一句话说明
+  desc: string;        // i18n key, resolved client-side / 词条码,前端取词
   ctx: number;
   tools: boolean;      // 支持函数调用(联网搜索/画图等工具)
   vision: boolean;     // 支持图片输入
@@ -18,61 +18,61 @@ export const CHAT_MODELS: ChatModel[] = [
   {
     id: '@cf/moonshotai/kimi-k2.6',
     label: 'Kimi K2.6',
-    desc: '旗舰全能:推理 + 识图 + 工具',
+    desc: 'md_flagship_all',
     ctx: 200_000, tools: true, vision: true, reasoning: true,
   },
   {
     id: '@cf/zai-org/glm-4.7-flash',
     label: 'GLM 4.7 Flash',
-    desc: '快速轻量:推理 + 工具,日常首选',
+    desc: 'md_fast_light',
     ctx: 131_000, tools: true, vision: false, reasoning: true,
   },
   {
     id: '@cf/openai/gpt-oss-120b',
     label: 'GPT-OSS 120B',
-    desc: 'OpenAI 开源旗舰:深度推理 + 工具',
+    desc: 'md_openai_oss',
     ctx: 128_000, tools: true, vision: false, reasoning: true,
   },
   {
     id: '@cf/meta/llama-4-scout-17b-16e-instruct',
     label: 'Llama 4 Scout',
-    desc: '多模态:识图 + 工具',
+    desc: 'md_multimodal',
     ctx: 131_000, tools: true, vision: true, reasoning: false,
   },
   {
     id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
     label: 'Llama 3.3 70B',
-    desc: '经典稳定:工具调用成熟',
+    desc: 'md_classic',
     ctx: 24_000, tools: true, vision: false, reasoning: false,
   },
   {
     id: '@cf/qwen/qwen3-30b-a3b-fp8',
     label: 'Qwen3 30B',
-    desc: '混合推理 + 工具',
+    desc: 'md_hybrid_reason',
     ctx: 32_000, tools: true, vision: false, reasoning: true, thinkTag: true,
   },
   {
     id: '@cf/mistralai/mistral-small-3.1-24b-instruct',
     label: 'Mistral Small 3.1',
-    desc: '识图 + 工具',
+    desc: 'md_vision_tools',
     ctx: 128_000, tools: true, vision: true, reasoning: false,
   },
   {
     id: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
     label: 'DeepSeek R1 Distill',
-    desc: '纯推理模型(不带工具)',
+    desc: 'md_reason_only',
     ctx: 80_000, tools: false, vision: false, reasoning: true, thinkTag: true,
   },
   {
     id: '@cf/google/gemma-4-26b-a4b-it',
     label: 'Gemma 4 26B',
-    desc: '谷歌开源:多语言对话',
+    desc: 'md_google_oss',
     ctx: 80_000, tools: false, vision: false, reasoning: false,
   },
   {
     id: '@cf/qwen/qwen2.5-coder-32b-instruct',
     label: 'Qwen2.5 Coder 32B',
-    desc: '代码专精',
+    desc: 'md_code',
     ctx: 32_000, tools: false, vision: false, reasoning: false,
   },
 ];
@@ -111,27 +111,27 @@ export const ASR_MODELS: CapModel[] = [
   { id: '@cf/openai/whisper-large-v3-turbo', label: 'Whisper Large v3 Turbo' },
   { id: '@cf/openai/whisper', label: 'Whisper' },
   { id: '@cf/deepgram/nova-3', label: 'Deepgram Nova 3' },
-  { id: '@cf/openai/whisper-tiny-en', label: 'Whisper Tiny (英文)' },
+  { id: '@cf/openai/whisper-tiny-en', label: 'Whisper Tiny (English)' },
 ];
 export const DEFAULT_ASR = '@cf/openai/whisper-large-v3-turbo';
 
 // Speech synthesis (reading assistant replies aloud)
 // 语音合成(朗读助手回复)
 export const TTS_MODELS: CapModel[] = [
-  { id: '@cf/deepgram/aura-1', label: 'Deepgram Aura 1 (英文)' },
-  { id: '@cf/deepgram/aura-2-en', label: 'Deepgram Aura 2 (英文)' },
-  { id: '@cf/deepgram/aura-2-es', label: 'Deepgram Aura 2 (西语)' },
-  { id: '@cf/myshell-ai/melotts', label: 'MeloTTS (多语言)' },
+  { id: '@cf/deepgram/aura-1', label: 'Deepgram Aura 1 (English)' },
+  { id: '@cf/deepgram/aura-2-en', label: 'Deepgram Aura 2 (English)' },
+  { id: '@cf/deepgram/aura-2-es', label: 'Deepgram Aura 2 (Spanish)' },
+  { id: '@cf/myshell-ai/melotts', label: 'MeloTTS (multilingual)' },
 ];
 export const DEFAULT_TTS = '@cf/deepgram/aura-1';
 
 // Text to image (the generate_image tool)
 // 文生图(generate_image 工具)
 export const IMAGE_MODELS: CapModel[] = [
-  { id: '@cf/black-forest-labs/flux-1-schnell', label: 'FLUX.1 Schnell (快)' },
+  { id: '@cf/black-forest-labs/flux-1-schnell', label: 'FLUX.1 Schnell (fast)' },
   { id: '@cf/black-forest-labs/flux-2-klein-4b', label: 'FLUX.2 Klein 4B' },
   { id: '@cf/black-forest-labs/flux-2-klein-9b', label: 'FLUX.2 Klein 9B' },
-  { id: '@cf/black-forest-labs/flux-2-dev', label: 'FLUX.2 Dev (高质量)' },
+  { id: '@cf/black-forest-labs/flux-2-dev', label: 'FLUX.2 Dev (high quality)' },
   { id: '@cf/leonardo/lucid-origin', label: 'Leonardo Lucid Origin' },
   { id: '@cf/leonardo/phoenix-1.0', label: 'Leonardo Phoenix' },
   { id: '@cf/stabilityai/stable-diffusion-xl-base-1.0', label: 'SDXL Base' },

@@ -27,7 +27,7 @@ export async function loadMemories(env: Env, userId: string, limit = INJECT_LIMI
 export function memoryPromptBlock(memories: MemoryRow[]): string {
   if (!memories.length) return '';
   const lines = memories.map((m) => `- ${m.content}`).join('\n');
-  return `\n\n[关于该用户的长期记忆,来自过往对话,供参考]\n${lines}`;
+  return `\n\n[Long-term memory about this user, gathered from earlier chats, for reference]\n${lines}`;
 }
 
 export async function saveMemory(env: Env, userId: string, content: string, source: string): Promise<boolean> {
@@ -63,12 +63,12 @@ export async function extractMemories(env: Env, userId: string, userText: string
   const { text } = await generateText({
     model: workersai(UTILITY_MODEL, { reasoning_effort: null }),
     system:
-      '你是记忆提取器。从下面这轮对话中提取"值得长期记住的关于用户本人的信息"(身份、偏好、正在做的事、明确要求记住的内容)。' +
-      '只提取用户主动透露的稳定事实,不要提取一次性问题、常识、助手的回答内容。' +
-      '每条不超过 60 字,用用户使用的语言。最多 2 条,没有就输出空数组。' +
-      '已有记忆里出现过的意思不要重复。只输出 JSON 数组,如 ["用户是设计师"] 或 []。' +
-      (existing.length ? `\n已有记忆:\n${existing.map((m) => `- ${m.content}`).join('\n')}` : ''),
-    prompt: `用户说:\n${userText}\n\n助手答(节选):\n${assistantText}`,
+      'You are a memory extractor. From the exchange below, pull out what is worth remembering long-term about the user themselves: who they are, their preferences, what they are working on, and anything they explicitly asked you to remember. ' +
+      'Only take stable facts the user volunteered. Skip one-off questions, general knowledge, and anything the assistant said. ' +
+      'Each entry under 60 characters, in the language the user writes in. At most 2 entries; output an empty array if there are none.' +
+      'Do not repeat anything already covered by an existing memory. Output only a JSON array, e.g. ["the user is a designer"] or [].' +
+      (existing.length ? `\nExisting memories:\n${existing.map((m) => `- ${m.content}`).join('\n')}` : ''),
+    prompt: `User said:\n${userText}\n\nAssistant replied (excerpt):\n${assistantText}`,
   });
   const arr = parseJsonArray(text);
   for (const item of arr.slice(0, 2)) {

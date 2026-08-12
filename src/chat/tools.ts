@@ -85,10 +85,10 @@ export async function openUrl(url: string): Promise<{ url: string; title: string
   try {
     u = new URL(url);
   } catch {
-    throw new Error('URL 无效');
+    throw new Error('Invalid URL');
   }
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('只支持 http/https');
-  if (BLOCKED_HOST.test(u.hostname)) throw new Error('该地址不允许访问');
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('Only http/https is supported');
+  if (BLOCKED_HOST.test(u.hostname)) throw new Error('That address is not allowed');
   const res = await fetch(u.toString(), {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
@@ -97,9 +97,9 @@ export async function openUrl(url: string): Promise<{ url: string; title: string
     signal: AbortSignal.timeout(15000),
     redirect: 'follow',
   });
-  if (!res.ok) throw new Error(`网页返回 ${res.status}`);
+  if (!res.ok) throw new Error(`The page returned ${res.status}`);
   const ct = (res.headers.get('Content-Type') || '').toLowerCase();
-  if (!/text\/|json|xml|xhtml/.test(ct)) throw new Error('不是文本类型的网页');
+  if (!/text\/|json|xml|xhtml/.test(ct)) throw new Error('Not a text page');
   let body = await res.text();
   if (body.length > 800_000) body = body.slice(0, 800_000);
   const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] || '').trim().slice(0, 200);
@@ -134,7 +134,7 @@ export async function generateImageFile(
     prompt: prompt.slice(0, 2000),
   });
   const img = images[0];
-  if (!img) throw new Error('图片生成失败');
+  if (!img) throw new Error('Image generation failed');
   const bytes = img.uint8Array;
   const id = uid();
   const filename = `gen-${id.slice(0, 8)}.png`;
