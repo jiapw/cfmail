@@ -60,6 +60,17 @@ MIT License
 Copyright 2011 Jon Leighton
 ```
 
+### pdf.js → `public/vendor/pdfjs/`
+
+```
+Apache License 2.0
+Copyright Mozilla Foundation
+```
+
+From the npm package `pdfjs-dist` v6.2.108: `build/pdf.min.mjs`, `build/pdf.worker.min.mjs`, plus the `cmaps/` and `standard_fonts/` assets (needed for CJK and non-embedded-font PDFs). Used by the Drive feature to render PDF thumbnails and previews in the browser. The full licence text ships alongside at `public/vendor/pdfjs/LICENSE`; the package contains no NOTICE file, and this project does not modify its code.
+
+自 npm 包 `pdfjs-dist` v6.2.108:`build/pdf.min.mjs`、`build/pdf.worker.min.mjs`,及 `cmaps/`、`standard_fonts/` 资源(中日韩与未内嵌字体的 PDF 需要)。网盘功能用它在浏览器渲染 PDF 缩略图与预览。完整许可文本随包分发于 `public/vendor/pdfjs/LICENSE`;该包无 NOTICE 文件,本项目未修改其源码。
+
 ---
 
 ## 2. Build and runtime dependencies / 构建与运行期依赖
@@ -76,6 +87,7 @@ Copyright 2011 Jon Leighton
 | `@awesome.me/webawesome` | 3.11.0 | MIT | Copyright (c) 2025 Fonticons, Inc. |
 | `@radix-ui/colors` | 3.0.0 | MIT | Copyright (c) 2021 Radix |
 | `quill` | 2.0.3 | BSD-3-Clause | Copyright (c) 2017-2024, Slab |
+| `pdfjs-dist` | 6.2.108 | **Apache-2.0** | Copyright Mozilla Foundation |
 
 ### Note on the Apache-2.0 component (`ai`) / 关于 Apache-2.0 组件
 

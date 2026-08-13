@@ -1,0 +1,437 @@
+// Shared document extraction for Drive previews and thumbnails: type detection, docx and pptx
+// unpacking (via unzip.js, no libraries), drawio decompression and drawing, mhtml via the
+// already-vendored postal-mime. Every function is defensive -- a parse failure means "no
+// preview", never a broken page.
+// 网盘预览与缩略图共用的文档解析层:类型判定、docx/pptx 解包(走 unzip.js,零依赖)、
+// drawio 解压与绘制、mhtml 复用已自托管的 postal-mime。所有函数都保守处理 ——
+// 解析失败等于"没有预览",绝不炸页面。
+import { unzip } from './unzip.js';
+
+// ---------- Type detection ----------
+// ---------- 类型判定 ----------
+
+// Code-ish extensions rendered in monospace, as broad as reasonable
+// 等宽字体渲染的代码类扩展名。尽量宽
+const CODE_EXTS = new Set([
+  'c', 'cpp', 'cc', 'cxx', 'h', 'hpp', 'hh', 'ino',
+  'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'jsonc', 'map',
+  'xml', 'xsl', 'xsd', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'env', 'properties',
+  'sh', 'bash', 'zsh', 'fish', 'bat', 'cmd', 'ps1', 'psm1', 'psd1',
+  'py', 'pyw', 'rb', 'php', 'go', 'rs', 'java', 'kt', 'kts', 'swift', 'cs', 'fs', 'vb',
+  'm', 'mm', 'lua', 'pl', 'pm', 'r', 'jl', 'scala', 'dart', 'groovy', 'gradle',
+  'sql', 'graphql', 'gql', 'proto', 'thrift', 'tf', 'hcl',
+  'css', 'scss', 'less', 'styl', 'vue', 'svelte', 'astro',
+  'asm', 's', 'f', 'f90', 'f95', 'ex', 'exs', 'erl', 'hs', 'elm', 'clj', 'cljs', 'edn',
+  'lisp', 'scm', 'ml', 'mli', 'nim', 'zig', 'v', 'd', 'pas', 'vbs', 'ahk',
+  'diff', 'patch', 'cmake', 'mk', 'ninja', 'bazel', 'bzl', 'nix', 'dockerfile',
+  'csv', 'tsv', 'log', 'lock', 'ipynb', 'rst', 'tex', 'bib',
+]);
+// Files that are code by NAME rather than extension / 按文件名而非扩展名识别的代码文件
+const CODE_NAMES = new Set(['makefile', 'dockerfile', 'cmakelists.txt', 'rakefile', 'gemfile', 'procfile', 'vagrantfile', 'jenkinsfile', '.gitignore', '.gitattributes', '.editorconfig', '.env']);
+
+export const ext = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
+
+// Audio by extension, for files the browser gives no MIME type (.aac and friends)
+// 按扩展名识别音频。浏览器对 .aac 之类常常不给 MIME
+export const AUD_EXTS = new Set(['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'oga', 'opus', 'weba', 'wma', 'mka', 'aiff', 'aif']);
+
+/** Document kind for preview/thumbnail dispatch; media types (image/video/audio/pdf) are
+ *  handled by the callers themselves. null = no rich handling.
+ *  预览/缩略图分发用的文档类型。媒体类(图/音/视频/PDF)由调用方自行处理。null=不认识。 */
+export function kindOf(name, mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0];
+  const e = ext(name);
+  const base = String(name || '').toLowerCase();
+  if (m.startsWith('audio/') || AUD_EXTS.has(e)) return 'audio';
+  if (e === 'md' || e === 'markdown' || m === 'text/markdown') return 'md';
+  if (e === 'docx' || m === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+  if (e === 'pptx' || m === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return 'pptx';
+  if (e === 'svg' || m === 'image/svg+xml') return 'svg';
+  if (e === 'drawio') return 'drawio';
+  if (e === 'mht' || e === 'mhtml' || m === 'multipart/related' || m === 'message/rfc822') return 'mhtml';
+  if (e === 'html' || e === 'htm' || e === 'xhtml' || m === 'text/html') return 'html';
+  if (CODE_EXTS.has(e) || CODE_NAMES.has(base)) return 'code';
+  if (e === 'txt' || e === 'text' || m.startsWith('text/')) return 'txt';
+  return null;
+}
+
+// ---------- Small helpers ----------
+// ---------- 小工具 ----------
+
+/** Visible text of an HTML string, without executing or loading anything (DOMParser documents
+ *  are inert: no scripts run, no subresources fetch).
+ *  从 HTML 字符串提取可见文本。不执行不加载(DOMParser 的文档是惰性的:脚本不跑、资源不取)。 */
+export function htmlText(html) {
+  try {
+    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    doc.querySelectorAll('script,style,noscript,template').forEach((n) => n.remove());
+    return (doc.body?.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  } catch {
+    return '';
+  }
+}
+
+const NS = (root, local) => [...root.getElementsByTagNameNS('*', local)];
+
+// ---------- docx ----------
+
+/**
+ * Paragraph model out of word/document.xml. Enough for a readable sheet: heading levels,
+ * bold and italic runs, list bullets, simple tables.
+ * 从 word/document.xml 抽段落模型。读得下去就够:标题层级、粗斜体、列表圆点、简单表格。
+ * @returns {Promise<{blocks: any[], text: string}|null>}
+ */
+export async function docxParse(buf) {
+  try {
+    const zip = unzip(buf);
+    const docEntry = zip.get('word/document.xml');
+    if (!docEntry) return null;
+    const xml = new DOMParser().parseFromString(await docEntry.text(), 'application/xml');
+    const body = NS(xml, 'body')[0];
+    if (!body) return null;
+    const blocks = [];
+    const texts = [];
+    const readPara = (p) => {
+      const styleEl = NS(p, 'pStyle')[0];
+      const style = styleEl?.getAttribute('w:val') || styleEl?.getAttributeNS('*', 'val') || '';
+      const listed = NS(p, 'numPr').length > 0;
+      const runs = [];
+      for (const r of NS(p, 'r')) {
+        const t = NS(r, 't').map((x) => x.textContent).join('');
+        if (!t) continue;
+        // w:sz is in half-points; carry it so the preview can restore the document's own sizes
+        // w:sz 的单位是半磅。带出来让预览按文档自己的字号还原
+        const szEl = NS(r, 'sz')[0];
+        const sz = szEl ? parseInt(szEl.getAttribute('w:val') || '0', 10) / 2 : 0;
+        runs.push({ t, b: NS(r, 'b').length > 0, i: NS(r, 'i').length > 0, sz });
+      }
+      const text = runs.map((x) => x.t).join('');
+      if (text) texts.push(text);
+      const h = /^Heading([1-6])$/i.exec(style) || /^[1-6]$/.exec(style);
+      return { kind: 'p', h: h ? parseInt(h[1] || h[0], 10) : 0, listed, runs };
+    };
+    for (const el of body.children) {
+      const local = el.localName;
+      if (local === 'p') {
+        blocks.push(readPara(el));
+      } else if (local === 'tbl') {
+        const rows = [];
+        for (const tr of NS(el, 'tr')) {
+          const cells = [];
+          for (const tc of [...tr.children].filter((x) => x.localName === 'tc')) {
+            const parts = NS(tc, 'p').map((p) => NS(p, 't').map((x) => x.textContent).join(''));
+            const cellText = parts.filter(Boolean).join('\n');
+            cells.push(cellText);
+            if (cellText) texts.push(cellText);
+          }
+          if (cells.length) rows.push(cells);
+        }
+        if (rows.length) blocks.push({ kind: 'table', rows });
+      }
+      if (blocks.length > 2000) break; // enough for any preview / 预览用途足够了
+    }
+    return { blocks, text: texts.join('\n') };
+  } catch {
+    return null;
+  }
+}
+// ---------- pptx: moved to pptx.js, loaded on demand ----------
+// ---------- pptx引擎已移到 pptx.js。按需加载 ----------
+// ---------- drawio ----------
+
+/** Inflate one <diagram> payload: base64 -> raw-deflate -> URI-decode (that is how drawio
+ *  packs it). Uncompressed child XML passes straight through.
+ *  解一个 <diagram>:base64 → raw-deflate 解压 → URI 解码(drawio 就是这么打包的)。
+ *  未压缩的子 XML 直接透传。 */
+async function drawioInflate(diagramEl) {
+  const inner = diagramEl.querySelector('mxGraphModel');
+  if (inner) return inner;
+  const b64 = (diagramEl.textContent || '').trim();
+  if (!b64) return null;
+  const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const ds = new DecompressionStream('deflate-raw');
+  const buf = await new Response(new Blob([raw]).stream().pipeThrough(ds)).arrayBuffer();
+  const xml = decodeURIComponent(new TextDecoder().decode(buf).replace(/\+/g, '%20')
+    .replace(/%(?![0-9a-fA-F]{2})/g, '%25'));
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  return doc.querySelector('mxGraphModel');
+}
+
+/**
+ * Pages of a .drawio file as flat cell lists ready to draw.
+ * 把 .drawio 文件的每一页解析成可直接绘制的图元列表。
+ * @returns {Promise<Array<{name: string, cells: any[]}>>}
+ */
+export async function drawioPages(text, maxPages = 20) {
+  const out = [];
+  try {
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    let diagrams = [...doc.querySelectorAll('diagram')].slice(0, maxPages);
+    // A bare mxGraphModel file (no mxfile wrapper) is also valid
+    // 也有不带 mxfile 外壳、直接就是 mxGraphModel 的文件
+    const models = diagrams.length
+      ? await Promise.all(diagrams.map((d) => drawioInflate(d).catch(() => null)))
+      : [doc.querySelector('mxGraphModel')];
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i];
+      if (!model) continue;
+      const cells = [];
+      const byId = new Map();
+      for (const c of model.querySelectorAll('mxCell')) {
+        const g = c.querySelector(':scope > mxGeometry');
+        const cell = {
+          id: c.getAttribute('id') || '',
+          vertex: c.getAttribute('vertex') === '1',
+          edge: c.getAttribute('edge') === '1',
+          style: c.getAttribute('style') || '',
+          label: htmlText(c.getAttribute('value') || ''),
+          source: c.getAttribute('source') || '',
+          target: c.getAttribute('target') || '',
+          x: g ? parseFloat(g.getAttribute('x') || '0') : 0,
+          y: g ? parseFloat(g.getAttribute('y') || '0') : 0,
+          w: g ? parseFloat(g.getAttribute('width') || '0') : 0,
+          h: g ? parseFloat(g.getAttribute('height') || '0') : 0,
+          points: g
+            ? [...g.querySelectorAll('mxPoint')]
+                .filter((p) => p.getAttribute('as') !== 'sourcePoint' || true)
+                .map((p) => ({
+                  x: parseFloat(p.getAttribute('x') || '0'),
+                  y: parseFloat(p.getAttribute('y') || '0'),
+                  as: p.getAttribute('as') || '',
+                }))
+            : [],
+        };
+        cells.push(cell);
+        byId.set(cell.id, cell);
+      }
+      out.push({ name: diagrams[i]?.getAttribute('name') || `Page ${i + 1}`, cells, byId });
+    }
+  } catch {}
+  return out;
+}
+
+const styleVal = (style, key) => {
+  const m = new RegExp(`(?:^|;)${key}=([^;]*)`).exec(style || '');
+  return m ? m[1] : null;
+};
+
+/** Draw one drawio page onto a canvas, scaled to fit. Vertices become rectangles, ellipses or
+ *  rhombi with centred labels; edges become lines through their waypoints. Faithful enough to
+ *  recognise a diagram, deliberately nothing more.
+ *  把一页 drawio 画到 canvas 上并缩放适配。节点画成矩形/椭圆/菱形加居中标签,连线沿途经点画折线。
+ *  以"认得出是哪张图"为度,有意不做更多。 */
+export function drawioDraw(page, canvas, cssWidth, dpr = 1) {
+  const verts = page.cells.filter((c) => c.vertex && c.w > 0 && c.h > 0);
+  const edges = page.cells.filter((c) => c.edge);
+  if (!verts.length && !edges.length) return false;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const v of verts) {
+    x0 = Math.min(x0, v.x);
+    y0 = Math.min(y0, v.y);
+    x1 = Math.max(x1, v.x + v.w);
+    y1 = Math.max(y1, v.y + v.h);
+  }
+  for (const e of edges) {
+    for (const p of e.points) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+  }
+  if (!Number.isFinite(x0)) return false;
+  const pad = 20;
+  const bw = x1 - x0 + pad * 2;
+  const bh = y1 - y0 + pad * 2;
+  const scale = Math.min(cssWidth / bw, 4000 / bh, 2);
+  const W = Math.round(bw * scale * dpr);
+  const H = Math.round(bh * scale * dpr);
+  canvas.width = W;
+  canvas.height = H;
+  canvas.style.width = Math.round(bw * scale) + 'px';
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, W, H);
+  g.scale(scale * dpr, scale * dpr);
+  g.translate(-x0 + pad, -y0 + pad);
+  const center = (c) => ({ cx: c.x + c.w / 2, cy: c.y + c.h / 2 });
+  g.strokeStyle = '#666';
+  g.lineWidth = 1.2;
+  for (const e of edges) {
+    const s = page.byId.get(e.source);
+    const t = page.byId.get(e.target);
+    const way = e.points.filter((p) => !p.as);
+    const pts = [];
+    if (s) pts.push(center(s));
+    else {
+      const sp = e.points.find((p) => p.as === 'sourcePoint');
+      if (sp) pts.push({ cx: sp.x, cy: sp.y });
+    }
+    for (const p of way) pts.push({ cx: p.x, cy: p.y });
+    if (t) pts.push(center(t));
+    else {
+      const tp = e.points.find((p) => p.as === 'targetPoint');
+      if (tp) pts.push({ cx: tp.x, cy: tp.y });
+    }
+    if (pts.length < 2) continue;
+    g.beginPath();
+    g.moveTo(pts[0].cx, pts[0].cy);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].cx, pts[i].cy);
+    g.stroke();
+  }
+  for (const v of verts) {
+    const fill = styleVal(v.style, 'fillColor') || '#ffffff';
+    const stroke = styleVal(v.style, 'strokeColor') || '#36393d';
+    g.fillStyle = fill === 'none' ? 'rgba(0,0,0,0)' : fill;
+    g.strokeStyle = stroke === 'none' ? 'rgba(0,0,0,0)' : stroke;
+    g.lineWidth = 1.3;
+    g.beginPath();
+    if (/(^|;)ellipse/.test(v.style)) {
+      g.ellipse(v.x + v.w / 2, v.y + v.h / 2, v.w / 2, v.h / 2, 0, 0, Math.PI * 2);
+    } else if (/(^|;)rhombus/.test(v.style)) {
+      g.moveTo(v.x + v.w / 2, v.y);
+      g.lineTo(v.x + v.w, v.y + v.h / 2);
+      g.lineTo(v.x + v.w / 2, v.y + v.h);
+      g.lineTo(v.x, v.y + v.h / 2);
+      g.closePath();
+    } else if (styleVal(v.style, 'rounded') === '1') {
+      g.roundRect(v.x, v.y, v.w, v.h, Math.min(8, v.h / 4));
+    } else {
+      g.rect(v.x, v.y, v.w, v.h);
+    }
+    if (fill !== 'none') g.fill();
+    if (stroke !== 'none') g.stroke();
+    if (v.label) {
+      g.fillStyle = styleVal(v.style, 'fontColor') || '#1f1f1f';
+      const fs = Math.min(14, Math.max(9, v.h / 3));
+      g.font = `${fs}px system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const label = v.label.length > 40 ? v.label.slice(0, 39) + '…' : v.label;
+      g.fillText(label, v.x + v.w / 2, v.y + v.h / 2, Math.max(v.w - 6, 20));
+    }
+  }
+  return true;
+}
+
+// ---------- mhtml ----------
+
+// A dedicated MHTML parser. Mail parsers are the wrong tool here: saved pages use
+// Content-Transfer-Encoding: binary (which mail never has, and which byte-mangles through a
+// text pipeline) and reference parts by Content-Location URL (which mail parsers do not
+// surface) -- often via RELATIVE src attributes that need resolving against the document's
+// own location. Latin1 string round-trips are byte-exact, so splitting happens on a latin1
+// view and bodies convert back losslessly.
+// 专用的 MHTML 解析器。邮件解析器干不了这活:网页存档用 binary 编码(邮件世界没有,
+// 走文本管道字节会坏),部件靠 Content-Location URL 引用(邮件解析器不暴露),
+// 而且 HTML 里常是相对路径,要按主文档位置换算。latin1 字符串与字节一一对应,
+// 切分在 latin1 视图上做,正文可无损还原成字节。
+
+const latin1Of = (u8) => {
+  let s = '';
+  const CH = 0x8000;
+  for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode(...u8.subarray(i, i + CH));
+  return s;
+};
+const bytesOf = (latin1) => {
+  const out = new Uint8Array(latin1.length);
+  for (let i = 0; i < latin1.length; i++) out[i] = latin1.charCodeAt(i) & 0xff;
+  return out;
+};
+const b64Of = (u8) => btoa(latin1Of(u8));
+
+function mhtmlHeaders(raw) {
+  const h = {};
+  let last = null;
+  for (const line of raw.split(/\r?\n/)) {
+    if (/^[ \t]/.test(line) && last) {
+      h[last] += ' ' + line.trim();
+    } else {
+      const m = /^([\w-]+):\s*(.*)$/.exec(line);
+      if (m) {
+        last = m[1].toLowerCase();
+        h[last] = m[2];
+      }
+    }
+  }
+  return h;
+}
+
+function mhtmlDecode(body, cte) {
+  if (cte === 'base64') {
+    try {
+      return bytesOf(atob(body.replace(/[\s\r\n]+/g, '')));
+    } catch {
+      return bytesOf(body);
+    }
+  }
+  if (cte === 'quoted-printable') {
+    const qp = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, x) => String.fromCharCode(parseInt(x, 16)));
+    return bytesOf(qp);
+  }
+  // binary / 8bit / 7bit: the bytes are already the bytes / 字节本身就是内容
+  return bytesOf(body);
+}
+
+/**
+ * The main HTML document of an .mht/.mhtml archive with its image parts swapped to data: URLs.
+ * Matches cid: references, absolute Content-Location URLs AND the relative form those URLs take
+ * against the main document's own location. Returns { html, text }.
+ * 取 .mht/.mhtml 的主 HTML 文档,图片部件换成 data: URL。同时匹配 cid: 引用、
+ * Content-Location 绝对 URL、以及相对主文档位置的相对写法。返回 { html, text }。
+ */
+export async function mhtmlParse(buf) {
+  try {
+    const bin = latin1Of(new Uint8Array(buf));
+    const bm = /boundary="?([^"\r\n;]+)"?/i.exec(bin.slice(0, 8192));
+    if (!bm) return null;
+    const bound = '--' + bm[1];
+    const parts = [];
+    for (const chunk of bin.split(bound).slice(1)) {
+      if (chunk.startsWith('--')) break; // terminator / 结束标记
+      const c = chunk.replace(/^\r?\n/, '');
+      const he = c.search(/\r?\n\r?\n/);
+      if (he < 0) continue;
+      const headers = mhtmlHeaders(c.slice(0, he));
+      // The CRLF before the next boundary belongs to the boundary, not the body
+      // 下一个 boundary 前的换行属于 boundary,不属于正文
+      const body = c.slice(he).replace(/^\r?\n\r?\n/, '').replace(/\r?\n$/, '');
+      const ctype = headers['content-type'] || '';
+      parts.push({
+        type: ctype.split(';')[0].trim().toLowerCase(),
+        charset: /charset="?([\w-]+)/i.exec(ctype)?.[1] || 'utf-8',
+        location: (headers['content-location'] || '').trim(),
+        cid: (headers['content-id'] || '').replace(/[<>\s]/g, ''),
+        bytes: mhtmlDecode(body, (headers['content-transfer-encoding'] || 'binary').toLowerCase()),
+      });
+    }
+    const main = parts.find((p) => p.type === 'text/html');
+    if (!main) return null;
+    let html;
+    try {
+      html = new TextDecoder(main.charset).decode(main.bytes);
+    } catch {
+      html = new TextDecoder().decode(main.bytes);
+    }
+    // Base directory of the main document, for resolving relative src references
+    // 主文档所在目录。用于换算相对 src 引用
+    const baseDir = main.location.includes('/') ? main.location.slice(0, main.location.lastIndexOf('/') + 1) : '';
+    for (const p of parts) {
+      if (!/^image\//.test(p.type) || !p.bytes.length) continue;
+      const dataUrl = `data:${p.type};base64,${b64Of(p.bytes)}`;
+      if (p.cid) html = html.split(`cid:${p.cid}`).join(dataUrl);
+      if (p.location) {
+        html = html.split(p.location).join(dataUrl);
+        if (baseDir && p.location.startsWith(baseDir)) {
+          html = html.split(p.location.slice(baseDir.length)).join(dataUrl);
+        }
+      }
+    }
+    return { html, text: htmlText(html) };
+  } catch {
+    return null;
+  }
+}

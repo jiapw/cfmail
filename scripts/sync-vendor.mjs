@@ -73,6 +73,17 @@ const SPECS = [
     roots: null,          // 整个 src
     exts: ['.js'],        // 排除包自带的 package.json
   },
+  {
+    // Renders PDF page 1 for Drive thumbnails (loaded on demand by assets/drive/thumb.js).
+    // cmaps and standard_fonts keep CJK and non-embedded-font PDFs rendering.
+    // 网盘缩略图渲染 PDF 首页用(assets/drive/thumb.js 按需加载)。
+    // cmaps 与 standard_fonts 保证中日韩及未内嵌字体的 PDF 也能渲出来。
+    name: 'pdf.js',
+    from: 'pdfjs-dist',
+    to: 'pdfjs',
+    roots: ['build/pdf.min.mjs', 'build/pdf.worker.min.mjs', 'cmaps', 'standard_fonts', 'LICENSE'],
+    exts: null,
+  },
 ];
 
 let copied = 0;

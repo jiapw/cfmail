@@ -29,6 +29,7 @@ const TABS = () => [
   { key: 'export', name: t('a_export') },
   { key: 'audit', name: t('a_audit') },
   { key: 'ai', name: t('a_ai') },
+  { key: 'drive', name: t('a_drive') },
 ];
 
 export async function renderAdmin(tab) {
@@ -61,6 +62,7 @@ export async function renderAdmin(tab) {
     else if (tab === 'export') await tabExport(body);
     else if (tab === 'audit') await tabAudit(body);
     else if (tab === 'ai') await tabAI(body);
+    else if (tab === 'drive') await tabDrive(body);
   } catch (e) {
     body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
@@ -1032,4 +1034,160 @@ async function tabAudit(body) {
     qs('#au-jsonl').addEventListener('click', () => dl('jsonl'));
   }
   await render();
+}
+
+// ---------- Drive (per-domain switch, default quota, per-user quota) ----------
+// ---------- 网盘。按域名开关与默认配额。可单独调整用户配额 ----------
+
+async function tabDrive(body) {
+  const data = await api('GET', '/api/admin/drive/domains');
+  const domains = data.domains || [];
+  if (!domains.length) {
+    body.innerHTML = `<div class="empty">${esc(t('no_domains'))}</div>`;
+    return;
+  }
+  const cap = data.hard_cap_mb || 10240;
+  const sel = currentDomainId(domains);
+  const domOptions = domains
+    .map((d) => `<option value="${esc(d.id)}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`)
+    .join('');
+  body.innerHTML = `
+  <section class="card">
+    <h3>${esc(t('a_drive'))}</h3>
+    <div class="form-row">
+      <label>${esc(t('domain_label'))}</label>
+      <select id="drv-dom" style="width:260px">${domOptions}</select>
+    </div>
+    <p class="dim" style="margin:8px 0 0">${esc(t('drv_a_enable_note'))}</p>
+  </section>
+  <div id="drv-dom-body"></div>
+  <section class="card">
+    <h3>${esc(t('drv_a_users'))}</h3>
+    <div class="form-row">
+      <input id="drv-uq" type="search" placeholder="${esc(t('drv_a_search_user'))}" style="width:280px">
+    </div>
+    <div id="drv-users"><div class="loading">${esc(t('loading'))}</div></div>
+  </section>`;
+
+  const paintDomain = () => {
+    const d = domains.find((x) => x.id === qs('#drv-dom').value) || domains[0];
+    qs('#drv-dom-body').innerHTML = `
+    <section class="card">
+      <div class="form-row">
+        <label>${esc(t('drv_a_enable'))}</label>
+        <wa-switch id="drv-enabled" ${d.drive_enabled ? 'checked' : ''}></wa-switch>
+        <span class="dim">${esc(d.name)}</span>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('drv_a_default_quota'))}</label>
+        <input id="drv-quota" type="number" min="1" max="${cap}" value="${d.drive_quota_mb}" style="width:120px"> MB
+        <wa-button id="drv-quota-save" size="small">${esc(t('save'))}</wa-button>
+        <span class="dim">${esc(t('drv_a_quota_cap', fmtSize(cap * 1024 * 1024)))}</span>
+      </div>
+    </section>`;
+    // wa-switch dispatches a plain 'change' -- there is no 'wa-change'. Listening for the wrong
+    // name left the toggle flipping visually while nothing was ever saved.
+    // wa-switch 派发的是普通的 'change',没有 'wa-change'。监听错名字会让开关看着翻转了、
+    // 实际什么都没保存。
+    qs('#drv-enabled').addEventListener('change', async (e) => {
+      try {
+        await api('POST', `/api/admin/drive/domains/${d.id}`, { enabled: !!e.target.checked });
+        d.drive_enabled = e.target.checked ? 1 : 0;
+        toast(t('t_saved'));
+        // The top-bar entry only changes immediately when the domain being edited is the one
+        // being visited; other domains take effect on the next visit.
+        // 只有改的是当前访问域名时,顶栏入口才会即时出现;其余域下次访问生效。
+        await refreshMe();
+        loadUsers();
+      } catch (err) {
+        toast(err.message, true);
+        paintDomain();
+      }
+    });
+    qs('#drv-quota-save').addEventListener('click', async () => {
+      const v = parseInt(qs('#drv-quota').value, 10);
+      try {
+        await api('POST', `/api/admin/drive/domains/${d.id}`, { quota_mb: v });
+        d.drive_quota_mb = v;
+        toast(t('t_saved'));
+        loadUsers();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  };
+
+  const fmtMb = (mb) => fmtSize((mb || 0) * 1024 * 1024);
+  const loadUsers = async () => {
+    const box = qs('#drv-users');
+    if (!box) return;
+    const q = qs('#drv-uq')?.value.trim() || '';
+    try {
+      const r = await api('GET', `/api/admin/drive/users${q ? '?q=' + encodeURIComponent(q) : ''}`);
+      const rows = (r.users || []).map((u) => `
+        <tr>
+          <td><b>${esc(u.name || u.email)}</b><div class="dim" style="font-size:12px">${esc(u.email)}</div></td>
+          <td>${u.enabled ? fmtSize(u.used) : `<span class="dim">${fmtSize(u.used)}</span>`}</td>
+          <td>${u.files}</td>
+          <td>${u.enabled
+            ? (u.quota_mb != null
+              ? `${fmtMb(u.effective_mb)} <span class="chip">${esc(t('drv_a_quota_custom'))}</span>`
+              : esc(t('drv_a_quota_default', fmtMb(u.effective_mb))))
+            : `<span class="chip chip-warn">${esc(t('drv_a_disabled_chip'))}</span>`}</td>
+          <td><wa-button size="small" appearance="outlined" data-uid="${esc(u.id)}" data-uname="${esc(u.name || u.email)}" data-umb="${u.quota_mb ?? ''}">${esc(t('drv_a_set_quota'))}</wa-button></td>
+        </tr>`).join('');
+      box.innerHTML = `
+      <table class="table">
+        <thead><tr><th>${esc(t('drv_a_th_user'))}</th><th>${esc(t('drv_a_th_used'))}</th><th>${esc(t('drv_a_th_files'))}</th><th>${esc(t('drv_a_th_quota'))}</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" class="dim">—</td></tr>`}</tbody>
+      </table>`;
+      qsa('[data-uid]', box).forEach((b) => b.addEventListener('click', () => quotaDialog(b.dataset)));
+    } catch (e) {
+      box.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    }
+  };
+
+  const quotaDialog = (ds) => {
+    const d = showModal(`
+      <div class="modal-body">
+        <h3 style="margin:0 0 14px">${esc(t('drv_a_quota_title', ds.uname))}</h3>
+        <div class="form-row">
+          <label>${esc(t('drv_a_th_quota'))}</label>
+          <input id="drv-user-quota" type="number" min="1" max="${cap}" value="${esc(ds.umb || '')}" placeholder="${esc(t('drv_a_quota_default', ''))}" style="width:130px"> MB
+        </div>
+        <p class="dim" style="margin:8px 0 0;font-size:12.5px">${esc(t('drv_a_quota_cap', fmtSize(cap * 1024 * 1024)))}</p>
+      </div>
+      <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <wa-button appearance="plain" data-x="clear">${esc(t('drv_a_quota_clear'))}</wa-button>
+        <wa-button appearance="plain" data-x="cancel">${esc(t('cancel'))}</wa-button>
+        <wa-button variant="brand" data-x="ok">${esc(t('save'))}</wa-button>
+      </div>`);
+    d.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-x]');
+      if (!b) return;
+      const x = b.dataset.x;
+      if (x === 'cancel') {
+        closeModal();
+        return;
+      }
+      const v = x === 'clear' ? null : parseInt(qs('#drv-user-quota', d).value, 10);
+      try {
+        await api('POST', `/api/admin/drive/users/${ds.uid}`, { quota_mb: v });
+        closeModal();
+        toast(t('t_saved'));
+        loadUsers();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  };
+
+  qs('#drv-dom').addEventListener('change', paintDomain);
+  let qtimer = null;
+  qs('#drv-uq').addEventListener('input', () => {
+    clearTimeout(qtimer);
+    qtimer = setTimeout(loadUsers, 300);
+  });
+  paintDomain();
+  await loadUsers();
 }

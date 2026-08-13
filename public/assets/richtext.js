@@ -198,10 +198,14 @@ export function deltaToPlainText(delta) {
       const a = line.attrs || {};
       let s = line.parts
         .map((p) => {
+          // Not named `t`: that is the i18n function imported at the top of this file, and
+          // shadowing it here put the import in the temporal dead zone for the whole block.
+          // 别叫 `t`:文件顶部导入的 i18n 函数就叫这个名字,在这里遮蔽它会让整个块里的
+          // 那个导入落进暂时性死区。
+          const txt = p.text;
           if (p.image) return t('img_placeholder');
-          const t = p.text;
           const link = p.attr?.link ? safeUrl(p.attr.link) : '';
-          return link && link !== t ? `${t} (${link})` : t;
+          return link && link !== txt ? `${txt} (${link})` : txt;
         })
         .join('');
       if (a.list === 'ordered') { n += 1; s = `${n}. ${s}`; } else { n = 0; }
