@@ -1,0 +1,457 @@
+/* Drive (cloud storage), Google-Drive-flavoured. Everything lives under .drv-* and
+   follows the theme variables from themes.css; no colours of its own.
+   网盘界面,Google Drive 风格。全部类名在 .drv-* 下,颜色一律取 themes.css 的主题变量。 */
+
+/* Cap the page at the viewport so all scrolling stays inside .drv-scroll -- the document
+   itself never grows a scrollbar that would poke into the preview overlay.
+   把页面钉在视口高度。滚动全部发生在 .drv-scroll 内部,文档自身永远不长出滚动条,
+   预览层打开时也就不会有一条页面滚动条戳在旁边。 */
+.drv-page { height: 100vh; }
+.drv-body { display: flex; flex: 1; min-height: 0; }
+
+/* ---------- Left rail ---------- */
+/* ---------- 左侧栏 ---------- */
+.drv-nav {
+  width: 232px; flex: none; padding: 12px 8px 16px 12px;
+  display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
+}
+/* Compact pill that hugs its label, not a full-width slab / 紧贴文字的胶囊按钮,不再通栏 */
+.drv-new { margin: 0 12px 14px 4px; width: fit-content; }
+.drv-new::part(base) { border-radius: 16px; min-height: 40px; font-size: 14.5px; padding: 0 20px 0 16px; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+/* Slotted children lay out inline by default, so the icon aligned to the text baseline and
+   sat ~1.5px high. Make the label slot a centred flex row and let the text box hug its glyphs. */
+/* 插槽内容默认按行内基线排布,图标会贴着文字基线、比文字中线高约 1.5px。
+   把 label 插槽改成居中的 flex 行,并让文字盒紧贴字形。 */
+.drv-new::part(label) { display: flex; align-items: center; gap: 8px; }
+.drv-new span { line-height: 1; }
+.drv-nav-item {
+  display: flex; align-items: center; gap: 12px; padding: 5px 12px 5px 16px;
+  border-radius: 0 16px 16px 0; color: var(--text); text-decoration: none;
+  font-size: 14px; cursor: pointer; user-select: none;
+}
+.drv-nav-item:hover { background: var(--hover); }
+.drv-nav-item.active { background: var(--selected); color: var(--accent-text); font-weight: 600; }
+.drv-quota { margin: auto 12px 0 16px; padding-top: 16px; font-size: 12.5px; color: var(--text-2); }
+.drv-quota-bar { height: 4px; border-radius: 2px; background: var(--border); margin: 8px 0 6px; overflow: hidden; }
+.drv-quota-bar > i { display: block; height: 100%; background: var(--primary); border-radius: 2px; }
+.drv-quota-bar > i.warn { background: #e5484d; }
+
+/* ---------- Content ---------- */
+/* ---------- 内容区 ---------- */
+.drv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 16px 0 8px; }
+/* The bar's centreline matches the New button's (nav padding 12 + button 40/2 = 32px)
+   路径条的垂直中线对齐左侧新建按钮(导航内边距 12 + 按钮高 40 的一半 = 32px) */
+/* The bar is chrome, not content: its text neither selects nor drags
+   路径条是界面件不是内容。文字既不可选中也不可拖拽 */
+#drv-bar { margin-top: 7px; user-select: none; }
+#drv-bar .drv-crumb, #drv-bar .drv-crumb-sep { -webkit-user-drag: none; }
+.drv-crumbbar { display: flex; align-items: center; min-height: 40px; gap: 4px; padding: 2px 8px; }
+.drv-crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex-wrap: wrap; }
+.drv-crumb {
+  font-size: 15.5px; padding: 3px 9px; border-radius: 13px; color: var(--text);
+  cursor: pointer; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+}
+.drv-crumb:hover { background: var(--hover); }
+.drv-crumb.here { cursor: default; }
+.drv-crumb.here:hover { background: none; }
+.drv-crumb-sep { color: var(--text-3); flex: none; }
+.drv-crumbbar .sp { flex: 1; }
+.drv-selbar { display: flex; align-items: center; gap: 4px; min-height: 40px; padding: 2px 8px; }
+.drv-selbar .cnt { font-size: 14px; margin: 0 10px 0 4px; }
+
+/* Shared-context banner (viewing someone else's folder) / 共享上下文提示条 */
+.drv-ctx {
+  display: flex; align-items: center; gap: 8px; margin: 0 8px 8px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--text-2);
+}
+.drv-ctx wa-icon { color: var(--text-3); }
+
+.drv-scroll { flex: 1; overflow-y: auto; padding: 0 8px 40px; position: relative; }
+.drv-scroll.droppable::after {
+  content: ''; position: absolute; inset: 4px; border: 2px dashed var(--primary);
+  border-radius: 12px; background: var(--accent-soft); opacity: .55; pointer-events: none;
+}
+
+/* ---------- List view ---------- */
+/* ---------- 列表视图 ---------- */
+.drv-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.drv-table th {
+  text-align: left; font-size: 12.5px; font-weight: 500; color: var(--text-2);
+  padding: 5px 12px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.drv-table th .arr { font-size: 10px; margin-left: 4px; }
+.drv-table col.c-time { width: 150px; }
+.drv-table col.c-size { width: 96px; }
+.drv-table col.c-menu { width: 52px; }
+.drv-table col.c-owner { width: 200px; }
+.drv-row td {
+  padding: 0 12px; height: 38px; border-bottom: 1px solid var(--border);
+  font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* A global rule sets table cells to vertical-align:top, which left the icon and the
+     name sitting above the row's middle. Put it back to centred. */
+  /* 全局把表格单元格设成了 vertical-align:top,导致图标和文件名浮在行的上半部。改回居中。 */
+  vertical-align: middle;
+}
+.drv-row { cursor: default; user-select: none; }
+.drv-row:hover td { background: var(--hover); }
+.drv-row.sel td { background: var(--selected); }
+.drv-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.drv-name .nm { overflow: hidden; text-overflow: ellipsis; }
+.drv-name wa-icon.fold { color: var(--text-2); flex: none; }
+.drv-name .fileicon { flex: none; }
+.drv-badges { display: inline-flex; gap: 6px; margin-left: 8px; color: var(--text-3); flex: none; }
+.drv-dim { color: var(--text-2); }
+.drv-row .rowbtn { visibility: hidden; }
+.drv-row:hover .rowbtn, .drv-row.sel .rowbtn { visibility: visible; }
+/* The menu cell: 52px minus 12px padding each side leaves 28px, and the 30px button's 2px
+   overflow made the cell paint a literal text-overflow "...". Give the button room and never
+   ellipsize this cell. */
+/* 菜单列:52px 去掉两侧 12px padding 只剩 28px,30px 按钮溢出 2px 让单元格画出了字面意义的
+   省略号。给按钮留够位置,该列永不省略。 */
+.drv-row td:last-child { padding: 0 8px; text-overflow: clip; }
+/* Same story as the grid caption: keep the 40px global circle from inflating the 38px rows */
+/* 与网格标题条同理,别让全局 40px 圆按钮把 38px 的行撑高 */
+.drv-row .rowbtn::part(base) { width: 30px; height: 30px; }
+
+/* ---------- Grid view ---------- */
+/* ---------- 网格视图 ---------- */
+.drv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; padding-top: 8px; }
+.drv-card {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: default;
+  user-select: none; background: var(--panel);
+}
+.drv-card:hover { background: var(--hover); }
+.drv-card.sel { background: var(--selected); border-color: var(--primary); }
+.drv-card .thumb {
+  height: 160px; display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2); overflow: hidden;
+}
+/* A global rule rounds every img by ~7.5px, which shaved the thumbnail's corners inside the
+   card; the image must reach its edges square (the card's own radius still shapes the top).
+   全局规则给所有 img 加了约 7.5px 圆角,缩略图四角在卡片里被削掉;图像必须方正到边
+   (卡片自身的圆角仍负责外轮廓)。 */
+.drv-card .thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 0 !important; }
+.drv-card .thumb > wa-icon { color: var(--text-3); }
+.drv-card .cap { display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 12px; font-size: 13px; min-height: 34px; }
+/* The 22px type icon sits ON the 45-degree line of the card's bottom-left corner: left inset
+   equals bottom inset (6px each, from vertical centring in the 34px bar). The -6px pulls it
+   from the 12px padding to x=6; the 2px right margin keeps the filename at its old x=38.
+   22px 类型图标落在卡片左下角的 45 度线上:左距与底距相等(各 6px,由 34px 条内垂直居中得出)。
+   -6px 把它从 12px 内边距拉到 x=6;右侧 2px 让文件名保持原来的 x=38 不动。 */
+.drv-card .cap > .fileicon, .drv-card .cap > wa-icon.fold { margin-left: -6px; margin-right: 2px; flex: none; }
+.drv-card .cap .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The global icon button is a 40px circle and would dictate the bar's height; cap it here
+   so the caption stays slim. */
+/* 全局图标按钮是 40px 圆形,会把整条 bar 撑高。在卡片里压到 28px,标题条才能瘦下来。 */
+.drv-card .cap .rowbtn::part(base) { width: 28px; height: 28px; }
+/* Folders look like thumbnail-less files: a big icon centred in the media area, name below
+   文件夹与无缩略图文件同构:媒体区居中一枚大图标,名字在下方 */
+
+/* ---------- Empty state ---------- */
+/* ---------- 空状态 ---------- */
+.drv-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 80px 20px; color: var(--text-3); font-size: 14px; text-align: center;
+}
+.drv-empty wa-icon { font-size: 64px; opacity: .5; }
+
+/* ---------- Context menu ---------- */
+/* ---------- 右键菜单 ---------- */
+.drv-menu {
+  position: fixed; z-index: 1000; min-width: 220px; padding: 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.22); font-size: 13.5px;
+}
+.drv-menu .mi {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+}
+.drv-menu .mi:hover { background: var(--hover); }
+.drv-menu .mi wa-icon { color: var(--text-2); font-size: 18px; }
+.drv-menu .sep { height: 1px; background: var(--border); margin: 5px 8px; }
+.drv-menu .mi.danger, .drv-menu .mi.danger wa-icon { color: #e5484d; }
+
+/* ---------- Upload panel ---------- */
+/* ---------- 上传面板 ---------- */
+.drv-up {
+  position: fixed; right: 20px; bottom: 20px; width: 440px; max-width: calc(100vw - 40px); z-index: 900;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.25); overflow: hidden; font-size: 13px;
+}
+.drv-up-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 16px;
+  background: var(--panel-2); font-weight: 600;
+}
+/* Aggregate bandwidth and whole-batch ETA, shown once a batch runs past 5 seconds.
+   Styled exactly like the caption it extends -- everything inherits.
+   聚合带宽与整批完成预估。批次跑满 5 秒后出现。与它所延续的标题完全同款 —— 全部继承。 */
+.drv-up-stats { font: inherit; color: inherit; }
+.drv-up-head .sp { flex: 1; }
+.drv-up-list { max-height: 280px; overflow-y: auto; }
+.drv-up.min .drv-up-list { display: none; }
+/* One flex row per file: tile, name, ring or status, cancel. A single line keeps every
+   piece on the same vertical centre by construction. */
+/* 每个文件一行 flex。色块、文件名、圆环或状态、取消按钮。单行结构天然共享同一条垂直中线。 */
+.drv-up-item { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 16px; min-height: 42px; }
+.drv-up-item .fileicon { flex: none; }
+.drv-up-item .nm {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 14px;
+}
+.drv-up-item .st { flex: none; display: inline-flex; align-items: center; font-size: 12.5px; }
+/* Folder-upload group item: folder glyph and the x/n counter
+   目录上传的组条目:文件夹图标与 x/n 计数 */
+.drv-up-item .gfold { flex: none; display: inline-flex; color: var(--text-2); }
+.drv-up-item .gcnt { flex: none; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.drv-up-item .st-ok { color: #12a150; }
+.drv-up-item .st-err { color: #e5484d; }
+.drv-up-item .st-cancel { color: var(--text-3); }
+/* The ring starts at 12 o'clock (rotate) and closes clockwise as dashoffset approaches 0 */
+/* 圆环从 12 点方向起笔。dashoffset 趋近 0 时顺时针闭合 */
+.drv-up-item .ring { flex: none; width: 20px; height: 20px; transform: rotate(-90deg); }
+.drv-up-item .ring .tr { fill: none; stroke: var(--border); stroke-width: 2.5; }
+.drv-up-item .ring .pr {
+  fill: none; stroke: var(--primary); stroke-width: 2.5; stroke-linecap: round;
+  transition: stroke-dashoffset .15s linear;
+}
+.drv-up-item wa-button.icon::part(base) { width: 26px; height: 26px; }
+
+/* ---------- Preview overlay ---------- */
+/* ---------- 预览层 ---------- */
+.drv-view {
+  position: fixed; inset: 0; z-index: 950; background: rgba(15, 15, 18, .92);
+  display: flex; flex-direction: column; color: #fff;
+}
+.drv-view-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
+.drv-view-head .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.drv-view-head wa-button::part(base) { color: #fff; }
+.drv-view-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 64px 24px; position: relative; }
+.drv-view-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.drv-view-body video { max-width: 100%; max-height: 100%; }
+/* The document window: one rounded dark surface per preview, scrolling INSIDE itself -- the
+   scrollbar hugs the window's right edge instead of floating at the overlay's. White "paper"
+   cards (pdf pages, docx sheets, slides) stack within; text and code render directly on it.
+   Chrome is fixed dark to match the overlay, independent of the site theme.
+   文档窗口:每个预览一块圆角深色面板,滚动发生在面板内部 —— 滚动条贴着窗口右缘,
+   不再飘在遮罩边上。白纸卡片(PDF 页、docx、幻灯片)叠放其中;文本与代码直接渲在面板上。
+   窗口外观恒定深色随预览层,不随站点主题。 */
+.drv-view-body .drv-doc {
+  width: min(100%, 960px); max-width: calc(100% - 8px); height: 100%; min-height: 0;
+  display: flex; flex-direction: column; position: relative;
+}
+/* Width grips on both edges. Dragging one edge mirrors the other, so the window stays centred;
+   the chosen width persists in localStorage.
+   两侧的宽度手柄。拖一边另一边镜像变化,窗口始终居中;选定的宽度存进 localStorage。 */
+.drv-docc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.drv-rsz { position: absolute; top: 0; bottom: 0; width: 16px; cursor: ew-resize; z-index: 5; touch-action: none; }
+.drv-rsz.l { left: -18px; }
+.drv-rsz.r { right: -18px; }
+.drv-rsz::after {
+  content: ''; position: absolute; top: 50%; transform: translateY(-50%); left: 6px;
+  width: 4px; height: 64px; border-radius: 999px; background: rgba(255,255,255,.24);
+  opacity: 0; transition: opacity .15s;
+}
+.drv-rsz:hover::after, .drv-rsz.drag::after { opacity: 1; background: rgba(255,255,255,.45); }
+/* Inset the scrollbar from the window's rounded corners -- a full-length track pokes past the
+   radius and reads as a little spike at each corner.
+   滚动条从窗口圆角处内缩 —— 通长的轨道会越过圆角,在角上戳出一个小尖。 */
+.drv-view ::-webkit-scrollbar-track { background: transparent; margin-block: 14px; }
+.drv-up-list::-webkit-scrollbar-track { margin-block: 8px; }
+/* Audio: cover art (the stored thumbnail), name, player -- floats on the mask like images do
+   音频:封面(存好的缩略图)、文件名、播放器 —— 与图片一样浮在遮罩上 */
+.drv-audio { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 18px; width: min(520px, 92%); }
+.drv-audio .art {
+  width: 280px; height: 280px; border-radius: 16px; object-fit: cover;
+  box-shadow: 0 8px 32px rgba(0,0,0,.55);
+}
+.drv-audio .art.fallback {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #2c2f36, #1c1e23); color: #7aa9f8;
+}
+.drv-audio .anm {
+  color: #e8eaed; font-size: 15px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.drv-audio audio { width: 100%; color-scheme: dark; }
+/* The window frame is square -- the scrollbar meets its corners cleanly; the pages INSIDE
+   carry the rounding instead.
+   窗口外框直角 —— 滚动条与四角干净相接;圆角改由内部的页面卡片承担。 */
+.drv-docwin {
+  flex: 1; min-height: 0; overflow-y: auto; border-radius: 0;
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 24px 28px 32px; text-align: center;
+}
+.drv-docwin:has(> .drv-loading) { display: flex; }
+/* The window follows the site theme, so the app's themed scrollbars apply inside it as-is;
+   only the dark mask around it stays fixed.
+   窗口跟随站点主题,应用的主题滚动条在窗口里原样生效;只有四周的深色遮罩保持不变。 */
+/* Centered loading spinner while a preview fetches and parses
+   预览拉取解析期间居中的加载转圈 */
+.drv-loading { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--text-2); font-size: 13px; }
+.drv-spin {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--primary);
+  animation: drvspin .8s linear infinite;
+}
+@keyframes drvspin { to { transform: rotate(360deg); } }
+/* pdf fills the resizable .drv-doc wrapper / pdf 充满可调宽的 .drv-doc 容器 */
+.drv-pdf-page {
+  background: #fff; margin: 0 auto 16px; border-radius: 8px; max-width: 100%;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45); display: inline-block;
+}
+.drv-pdf-page canvas { display: block; width: 100%; height: auto; border-radius: 8px; }
+.drv-trunc {
+  display: inline-block; margin: 0 auto 14px; padding: 4px 14px; border-radius: 999px;
+  background: var(--hover); color: var(--text-2); font-size: 12px;
+}
+/* Plain text and code render directly on the themed window, theme ink, no inner box.
+   txt reads in the interface font, code in monospace.
+   纯文本与代码直接渲在主题色窗口上,用主题文字色,不再套内框。txt 用界面字体,代码用等宽。 */
+.drv-txt {
+  background: none; color: var(--text); margin: 0 auto; max-width: none; width: 100%;
+  font-size: 13.5px; line-height: 1.7; padding: 2px 4px;
+  white-space: pre-wrap; word-break: break-word; text-align: left;
+}
+.drv-txt.uif { font-family: var(--font-ui); font-size: 14.5px; }
+.drv-txt.mono { font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace; }
+/* A white "paper" sheet for rendered documents (md, docx) -- paper stays paper in any theme
+   渲染类文档(md、docx)的白纸卡片 —— 纸在任何主题下都是纸 */
+.drv-sheet {
+  background: #fff; color: #1f1f1f; border-radius: 8px; margin: 0 auto 16px;
+  max-width: none; padding: 44px 52px; text-align: left; font-size: 14.5px; line-height: 1.7;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+.drv-sheet h1, .drv-sheet h2, .drv-sheet h3, .drv-sheet h4 { margin: 1.1em 0 .45em; line-height: 1.3; }
+/* Word-like heading scale, independent of whatever the app sets elsewhere
+   类 Word 的标题字阶,不受应用其它地方的设置影响 */
+.drv-sheet h1 { font-size: 26px; }
+.drv-sheet h2 { font-size: 21px; }
+.drv-sheet h3 { font-size: 17.5px; }
+.drv-sheet h4, .drv-sheet h5, .drv-sheet h6 { font-size: 15.5px; }
+.drv-sheet h1:first-child, .drv-sheet h2:first-child, .drv-sheet p:first-child { margin-top: 0; }
+.drv-sheet p { margin: .55em 0; }
+.drv-sheet ul, .drv-sheet ol { margin: .55em 0; padding-left: 1.6em; }
+/* Web Awesome's adopted stylesheets give native blockquote a ui-serif face; pin it back.
+   Web Awesome 的 adoptedStyleSheets 会给原生 blockquote 塞衬线字体。钉回正文字体。 */
+.drv-sheet blockquote {
+  margin: .7em 0; padding: 2px 14px; border-left: 3px solid #d5d7db; color: #555;
+  font-family: inherit; font-size: inherit; font-style: normal;
+}
+.drv-sheet table { border-collapse: collapse; margin: .8em 0; width: 100%; font-size: 13.5px; }
+.drv-sheet td, .drv-sheet th { border: 1px solid #d5d7db; padding: 6px 10px; vertical-align: top; }
+.drv-sheet a { color: #0b57d0; }
+/* Named monospace faces plus a CJK sans tail. The generic `monospace` keyword must stay OUT of
+   the stack: its CJK fallback is a Song-style serif, which made quoted Chinese inside backticks
+   look like a different typeface altogether. Fixed pixel size dodges the UA monospace-scaling quirk.
+   具名等宽字体加中文无衬线兜底。栈里绝不能出现 generic 的 monospace 关键字。它的中文回退是
+   宋体系衬线,反引号里的中文看起来就像换了字体。字号定死像素,绕开 UA 对 monospace 的缩放怪癖。 */
+.drv-sheet code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 13px; background: #f0f1f3; border-radius: 4px; padding: 1px 5px;
+}
+/* The chat markdown renderer demotes headings two levels on purpose (# becomes h3). Give the
+   md sheet its own scale matched to that mapping, or ### lands SMALLER than body text.
+   chat 的 Markdown 渲染器有意把标题降两级。# 即 h3。给 md 白纸配一套对齐该映射的字阶,
+   否则 ### 会比正文还小。 */
+.drv-md h3 { font-size: 24px; }
+.drv-md h4 { font-size: 19.5px; }
+.drv-md h5 { font-size: 16.5px; }
+.drv-md h6 { font-size: 15px; }
+.drv-md blockquote { font-size: 14.5px; color: #444; }
+.drv-md .md-code { background: #f6f7f9; border: 1px solid #e3e5e8; border-radius: 8px; margin: .8em 0; overflow: auto; }
+.drv-md .md-code code { display: block; background: none; padding: 12px 14px; white-space: pre; font-size: 13px; }
+.drv-md .md-code-head { display: flex; padding: 6px 12px 0; color: #888; font-size: 11.5px; }
+.drv-md .md-copy { display: none; }
+.drv-md img { max-width: 100%; }
+/* pptx slide cards: absolute shapes in percent coords; cqw font sizes scale with the card
+   pptx 幻灯片卡片:形状按百分比绝对定位,字号用 cqw 随卡片等比缩放 */
+.drv-slidewrap { width: 100%; margin: 0 auto 18px; }
+.drv-slide {
+  position: relative; width: 100%; background: #fff; color: #1f1f1f; border-radius: 8px;
+  overflow: hidden; text-align: left; container-type: inline-size;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+.drv-slide .shp { position: absolute; overflow: hidden; line-height: 1.25; box-sizing: border-box; }
+/* Geometry layer: custGeom SVG or preset fill/border div. Flips are applied here so the
+   text layer above stays readable / 几何层:custGeom SVG 或预设填充边框 div。翻转打在这层,上面的文字层保持可读 */
+.drv-slide .shp .geo { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; }
+/* Text layer inside a shape; vertical anchor from the shape's bodyPr
+   形状内的文字层。垂直锚点来自形状的 bodyPr */
+.drv-slide .stext {
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; justify-content: flex-start;
+  overflow: hidden; padding: 0.35cqw 0.8cqw;
+}
+.drv-slide .stext.mid { justify-content: center; }
+.drv-slide .stext.low { justify-content: flex-end; }
+.drv-slide .bu { margin-right: 0.5em; }
+.drv-slide.broken {
+  display: flex; align-items: center; justify-content: center;
+  color: #9aa0a6; font-size: 14px; background: #f4f5f7;
+}
+.drv-slide-flow {
+  background: #fff; color: #1f1f1f; border-radius: 0 0 8px 8px; margin-top: 2px;
+  padding: 12px 20px; text-align: left; font-size: 13.5px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+.drv-slide-flow .flowtxt { margin: 4px 0; }
+.drv-slide-flow .flowtxt.title { font-weight: 600; font-size: 16px; }
+.drv-slide-flow .flowimg { max-width: 100%; max-height: 260px; display: block; margin: 8px 0; }
+/* Sandboxed HTML / MHTML frame -- white page, fills the window column
+   沙箱化的 HTML/MHTML 框 —— 白底,充满窗口列 */
+.drv-html { display: block; width: 100%; flex: 1; min-height: 0; border: 0; border-radius: 0; background: #fff; }
+.drv-svgwrap {
+  background: #fff; border-radius: 8px; padding: 24px; margin: 0 auto; width: 100%; box-sizing: border-box;
+  min-height: 200px; display: flex; align-items: center; justify-content: center;
+}
+.drv-svgimg { max-width: 100%; max-height: 70vh; }
+/* drawio canvases, one white card per page / drawio 画布,每页一张白卡 */
+.drv-canvaspage {
+  display: inline-block; background: #fff; border-radius: 8px; padding: 14px;
+  margin: 0 auto 18px; box-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+.drv-canvaspage canvas { display: block; max-width: 100%; }
+.drv-pagecap { color: var(--text-2); font-size: 12px; margin-bottom: 8px; text-align: left; }
+.drv-view-body .noprev { display: flex; flex-direction: column; align-items: center; gap: 14px; color: #ccc; }
+.drv-view-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+}
+.drv-view-nav.prev { left: 12px; }
+.drv-view-nav.next { right: 12px; }
+.drv-view-nav::part(base) { color: #fff; background: rgba(255,255,255,.12); border-radius: 50%; }
+
+/* ---------- Share dialog ---------- */
+/* ---------- 共享对话框 ---------- */
+.drv-share-link { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.drv-share-link input {
+  flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-2); color: var(--text); font-size: 12.5px;
+}
+.drv-member { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13.5px; }
+.drv-member .who { flex: 1; min-width: 0; }
+.drv-member .who .em { color: var(--text-2); font-size: 12px; }
+
+/* ---------- Move dialog ---------- */
+/* ---------- 移动对话框 ---------- */
+.drv-move-crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
+.drv-move-list { border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow-y: auto; }
+.drv-move-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; font-size: 13.5px; }
+.drv-move-item:hover { background: var(--hover); }
+.drv-move-item wa-icon { color: var(--text-2); }
+.drv-move-item.dis { opacity: .45; cursor: default; }
+.drv-move-empty { padding: 24px; text-align: center; color: var(--text-3); font-size: 13px; }
+
+/* Trash banner / 回收站提示条 */
+.drv-trashbar {
+  display: flex; align-items: center; gap: 10px; margin: 0 8px 8px; padding: 8px 14px;
+  border-radius: 10px; background: var(--accent-soft); color: var(--accent-text); font-size: 13px;
+}
+.drv-trashbar .sp { flex: 1; }
+
+@media (max-width: 900px) {
+  .drv-nav { width: 68px; padding-left: 6px; }
+  .drv-nav-item .lbl, .drv-quota, .drv-new span { display: none; }
+  .drv-nav-item { justify-content: center; padding: 10px; border-radius: 12px; }
+  .drv-table col.c-time { width: 0; }
+  .drv-table .c-time, .drv-row td.c-time { display: none; }
+}

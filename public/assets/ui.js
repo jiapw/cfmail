@@ -165,7 +165,8 @@ export function fmtSize(n) {
   if (n < 1024) return '1 KB'; // 不足 1KB 一律按 1KB 显示,不出现字节数
   if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
   if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
-  return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  if (n < 1024 * 1024 * 1024 * 1024) return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  return (n / 1024 / 1024 / 1024 / 1024).toFixed(2) + ' TB';
 }
 
 // Every ASCII punctuation character (0x21-0x2F / 0x3A-0x40 / 0x5B-0x60 / 0x7B-0x7E)

@@ -2,6 +2,7 @@ import type { Env } from './types';
 import { app } from './api';
 export { ChatAgent } from './chat/agent';
 import { backfillContacts, backfillSubjectNorm, findMailboxByAddress, ingestEml, insertFailedPlaceholder, logUnrouted, purgeOldUnrouted, retryFailedParses, deleteMessageDerived } from './parse';
+import { driveCronDaily, driveCronHourly } from './drive';
 import { processOutbox } from './send';
 import { now, uid } from './util';
 
@@ -64,6 +65,9 @@ async function runCron(env: Env): Promise<void> {
       await env.RAW.delete(u.r2_key).catch(() => {});
       await env.DB.prepare('DELETE FROM uploads WHERE id=?1').bind(u.id).run();
     }
+    // Drive: abort multipart uploads that never completed
+    // 网盘:中止一直没完成的分片上传
+    await driveCronHourly(env);
 
     // Daily at 19:00 UTC: empty trash and spam older than 30 days
     // 每天(UTC 19 点 = 北京时间凌晨 3 点):清空 30 天前的垃圾箱/垃圾邮件
@@ -85,6 +89,9 @@ async function runCron(env: Env): Promise<void> {
       await env.DB.prepare("DELETE FROM outbox WHERE status IN ('sent','failed') AND created_at < ?1")
         .bind(now() - 90 * 24 * 3600 * 1000).run();
       await purgeOldUnrouted(env);
+      // Drive: trash older than 30 days goes away for good
+      // 网盘:回收站超过 30 天的内容彻底清除
+      await driveCronDaily(env);
     }
   }
 }

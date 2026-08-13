@@ -196,6 +196,7 @@ export function renderShell(contentHtml) {
       </form>
       <div class="topbar-right">
         ${me.send_enabled ? '' : `<span class="chip chip-warn" title="${esc(t('no_channel_tip'))}">${esc(t('no_channel_chip'))}</span>`}
+        ${me.drive_enabled ? `<wa-button class="icon" appearance="plain" href="#/drive" aria-label="${esc(t('drv_title'))}" title="${esc(t('drv_title'))}">${icon('cloud', 20)}</wa-button>` : ''}
         ${me.chat_enabled ? `<wa-button class="icon" appearance="plain" href="#/chat" aria-label="${esc(t('c_title'))}" title="${esc(t('c_title'))}">${icon('sparkle', 20)}</wa-button>` : ''}
         ${canAdmin ? `<wa-button class="icon" appearance="plain" href="#/admin" aria-label="${esc(t('admin'))}">${icon('shield', 20)}</wa-button>` : ''}
         <wa-button class="icon" appearance="plain" href="#/settings" aria-label="${esc(t('settings'))}">${icon('gear', 20)}</wa-button>
@@ -284,6 +285,13 @@ async function route() {
     if (!store.me.chat_enabled) return navigate('#/');
     const mod = await import('./chat/chat.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderChat(seg[1] || null);
+  }
+  if (seg[0] === 'drive') {
+    // Drive loads on demand too, gated by the per-domain switch resolved in /api/me
+    // 网盘同样按需加载。开关在 /api/me 里按域名解析
+    if (!store.me.drive_enabled) return navigate('#/');
+    const mod = await import('./drive/drive.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderDrive(seg.slice(1));
   }
 
   if (seg[0] === 'mb' && seg[1]) {

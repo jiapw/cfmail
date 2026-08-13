@@ -8,6 +8,9 @@ import { createSystemFolders, ingestEml, type PreParsed } from './parse';
 import { HttpError, E } from './errors';
 import { isEmail, jsonTry, normalizeAddr, now, randomToken, sha256Hex, uid } from './util';
 import { chatAdminApp } from './chat/routes';
+// Circular on purpose (drive.ts imports adminScope back); both sides only use hoisted function declarations
+// 有意的循环引用(drive.ts 反向引 adminScope);两边用到的都是提升的函数声明,安全
+import { driveAdminApp } from './drive';
 import { audit } from './audit';
 
 type Ctx = { Bindings: Env; Variables: { user: User } };
@@ -35,6 +38,10 @@ adminApp.use('*', requireAuth);
 // AI 助手设置(仅全局管理员,chatAdminApp 内部自查)
 adminApp.route('/chat', chatAdminApp);
 
+// Drive settings (domain admins manage their own domains; scoping inside)
+// 网盘设置(域管理员可管自己的域,内部自查权限范围)
+adminApp.route('/drive', driveAdminApp);
+
 /** Invite links live on the matching company domain's entry host; local development uses APP_ORIGIN
  *  邀请链接挂在对应企业域名的 intl-mail.<domain> 上;本地开发用 APP_ORIGIN */
 export function inviteUrl(env: Env, domainName: string | null, token: string): string {
@@ -44,7 +51,7 @@ export function inviteUrl(env: Env, domainName: string | null, token: string): s
 
 /** Returns null for a global admin (no domain limit); otherwise the set of manageable domain ids
  *  返回 null 表示全局管理员(不限域);否则为可管理的域名 id 集合 */
-async function adminScope(c: any): Promise<Set<string> | null> {
+export async function adminScope(c: any): Promise<Set<string> | null> {
   const user: User = c.get('user');
   if (user.is_admin) return null;
   const rows = await c.env.DB.prepare('SELECT domain_id FROM domain_admins WHERE user_id=?1').bind(user.id).all();
@@ -59,7 +66,7 @@ function requireGlobalAdmin(c: any): User {
   return user;
 }
 
-async function checkDomainScope(c: any, domainId: string): Promise<void> {
+export async function checkDomainScope(c: any, domainId: string): Promise<void> {
   const scope = await adminScope(c);
   if (scope && !scope.has(domainId)) throw new HttpError(403, 'e_no_domain_perm');
 }

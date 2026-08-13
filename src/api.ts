@@ -22,6 +22,7 @@ import { verifyMail, resetMail } from './mailtpl';
 import { fontsApp, isKnownFont } from './fonts';
 import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
+import { driveApp } from './drive';
 import { VERSION } from './version';
 import { ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
 
@@ -589,6 +590,13 @@ app.get('/api/me', async (c) => {
   // The AI assistant switch is per entry host
   // AI 助手开关按访问域名生效(intl-mail.<域名>)
   const chatDom = await chatDomainForHost(c.env, new URL(c.req.url).hostname).catch(() => null);
+  // Drive follows the user, not the host: it is one cross-domain store per user,
+  // available as soon as any of their domains switches it on
+  // 网盘跟人不跟 Host:每用户跨域名一份,所属任一域名开启即可用
+  const driveDom = await c.env.DB.prepare(
+    `SELECT 1 AS ok FROM domains d WHERE d.drive_enabled=1 AND d.id IN
+     (SELECT mb.domain_id FROM grants g JOIN mailboxes mb ON mb.id=g.mailbox_id WHERE g.user_id=?1) LIMIT 1`
+  ).bind(user.id).first();
   return c.json({
     user: {
       id: user.id, email: user.email, name: user.name, is_admin: !!user.is_admin,
@@ -601,6 +609,7 @@ app.get('/api/me', async (c) => {
     provider: c.env.MAIL_PROVIDER,
     max_content_bytes: MAX_CONTENT_BYTES, // 前端实时估算用,和发送校验同一个数
     chat_enabled: !!chatDom?.enabled, // 当前访问域名是否开启 AI 助手
+    drive_enabled: !!driveDom,
   });
 });
 
@@ -1277,5 +1286,7 @@ app.post('/api/dev/ingest', async (c) => {
 // AI assistant (signed-in users, gated by the admin switch)
 // AI 助手(登录用户,受后台全局开关限制)
 app.route('/api/chat', chatApp);
+
+app.route('/api/drive', driveApp);
 
 app.route('/api/admin', adminApp);
