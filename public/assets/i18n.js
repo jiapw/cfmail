@@ -1258,10 +1258,19 @@ export function lang() {
   return current;
 }
 
-export function setLang(l) {
-  if (!DICTS[l]) return;
+/** `persist` is what separates a choice from a borrowing. The public share page renders in the
+ *  sharer's language, but that is this one page speaking, not the visitor changing their mind --
+ *  writing it down would leave a stranger's link having reset the visitor's own interface.
+ *  Returns the language in effect before the call, so a borrower can hand it back.
+ *  persist 区分的是"选择"与"借用"。公开分享页用分享者的语言渲染,但那是这一个页面在说话,
+ *  不是访问者改了主意 —— 若记下来,一条陌生人的链接就把访问者自己的界面语言改掉了。
+ *  返回调用前生效的语言,以便借用者归还。 */
+export function setLang(l, persist = true) {
+  const prev = current;
+  if (!DICTS[l]) return prev;
   current = l;
-  localStorage.setItem('cfmail_lang', l);
+  if (persist) localStorage.setItem('cfmail_lang', l);
+  return prev;
 }
 
 export function t(key, ...args) {
@@ -3550,7 +3559,7 @@ Object.assign(DICTS['zh-CN'], {
   drv_open: "打开",
   drv_preview: "预览",
   drv_download: "下载",
-  drv_share: "共享",
+  drv_share: "分享",
   drv_rename: "重命名",
   drv_move: "移动",
   drv_star: "添加星标",
@@ -3580,9 +3589,9 @@ Object.assign(DICTS['zh-CN'], {
   drv_move_title: "移动 {0} 项",
   drv_move_here: "移动到这里",
   drv_move_no_sub: "没有子文件夹",
-  drv_share_title: "共享「{0}」",
+  drv_share_title: "分享「{0}」",
   drv_share_none: "创建共享链接后，与你同域名的同事打开链接即可访问此文件夹。",
-  drv_share_create: "创建共享链接",
+  drv_share_create: "创建分享链接",
   drv_copy_link: "复制链接",
   drv_link_copied: "链接已复制",
   drv_role: "权限",
@@ -3590,8 +3599,8 @@ Object.assign(DICTS['zh-CN'], {
   drv_role_editor: "编辑者",
   drv_share_members: "已加入的成员",
   drv_share_nobody: "还没有人打开过这个链接",
-  drv_share_stop: "停止共享",
-  drv_share_stop_confirm: "停止共享后链接立即失效，已加入的成员将失去访问权限。",
+  drv_share_stop: "停止分享",
+  drv_share_stop_confirm: "停止分享后链接立即失效，已加入的成员将失去访问权限。",
   drv_share_joined: "已加入共享文件夹「{0}」",
   drv_member_remove: "移除",
   drv_up_title: "正在上传 {0} 个文件",
@@ -4707,3 +4716,34 @@ Object.assign(DICTS.de, { e_arc_no_worker: 'Die Entpack-Komponente ist noch nich
 Object.assign(DICTS.fr, { e_arc_no_worker: "Le composant d'extraction n'est pas prêt — rechargez la page" });
 Object.assign(DICTS.es, { e_arc_no_worker: 'El extractor aún no está listo: recarga la página e inténtalo de nuevo' });
 Object.assign(DICTS.ru, { e_arc_no_worker: 'Компонент распаковки ещё не готов — обновите страницу' });
+
+// ---------- Share links v2 / 分享链接 v2 ----------
+Object.assign(DICTS['zh-CN'], { drv_share_audience: '分享给', drv_share_aud_internal: '内部分享', drv_share_aud_public: '公开分享', drv_share_domain: '限定域名', drv_share_domain_any: '不限（本企业全体）', drv_share_dom_only: '仅 {0}', drv_share_expires: '有效期', drv_share_exp_1d: '1 天后', drv_share_exp_7d: '7 天后', drv_share_exp_30d: '30 天后', drv_share_exp_never: '永不过期', drv_share_until: '有效至 {0}', drv_share_n_items: '{0} 个项目', drv_share_n_members: '{0} 人已打开', drv_share_created: '创建于 {0}', drv_share_revoked: '已撤销', drv_share_expired: '已过期', drv_share_forget: '从列表移除', drv_share_items_gone: '所分享的内容已不存在', drv_share_none_yet: '还没有创建过分享链接', drv_share_root: '分享给我的内容', drv_share_readonly_note: '只读分享', drv_share_hint_internal: '只有本企业的登录用户能打开;选定域名后,还必须拥有该域名的公司邮箱。', drv_share_hint_public: '任何拿到链接的人都能打开,无需登录。因此这类链接只读。', drv_links: '分享链接', e_drive_share_revoked: '该分享链接已被撤销', e_drive_share_expired: '该分享链接已过期', e_drive_share_public_readonly: '公开链接只能是只读' });
+Object.assign(DICTS['zh-TW'], { drv_share_audience: '分享給', drv_share_aud_internal: '內部分享', drv_share_aud_public: '公開分享', drv_share_domain: '限定網域', drv_share_domain_any: '不限（本企業全體）', drv_share_dom_only: '僅 {0}', drv_share_expires: '有效期', drv_share_exp_1d: '1 天後', drv_share_exp_7d: '7 天後', drv_share_exp_30d: '30 天後', drv_share_exp_never: '永不過期', drv_share_until: '有效至 {0}', drv_share_n_items: '{0} 個項目', drv_share_n_members: '{0} 人已開啟', drv_share_created: '建立於 {0}', drv_share_revoked: '已撤銷', drv_share_expired: '已過期', drv_share_forget: '從列表移除', drv_share_items_gone: '所分享的內容已不存在', drv_share_none_yet: '還沒有建立過分享連結', drv_share_root: '分享給我的內容', drv_share_readonly_note: '唯讀分享', drv_share_hint_internal: '只有本企業的登入使用者能開啟;選定網域後,還必須擁有該網域的公司信箱。', drv_share_hint_public: '任何拿到連結的人都能開啟,無需登入。因此這類連結唯讀。', drv_links: '分享連結', e_drive_share_revoked: '該分享連結已被撤銷', e_drive_share_expired: '該分享連結已過期', e_drive_share_public_readonly: '公開連結只能是唯讀' });
+Object.assign(DICTS.en, { drv_share_audience: 'Share with', drv_share_aud_internal: 'Internal', drv_share_aud_public: 'Public', drv_share_domain: 'Limit to domain', drv_share_domain_any: 'Any (everyone in the company)', drv_share_dom_only: '{0} only', drv_share_expires: 'Expires', drv_share_exp_1d: 'In 1 day', drv_share_exp_7d: 'In 7 days', drv_share_exp_30d: 'In 30 days', drv_share_exp_never: 'Never', drv_share_until: 'Until {0}', drv_share_n_items: '{0} items', drv_share_n_members: '{0} opened it', drv_share_created: 'Created {0}', drv_share_revoked: 'Revoked', drv_share_expired: 'Expired', drv_share_forget: 'Remove from list', drv_share_items_gone: 'The shared items are gone', drv_share_none_yet: 'No share links yet', drv_share_root: 'Shared items', drv_share_readonly_note: 'Read-only share', drv_share_hint_internal: 'Only signed-in users in this company can open it. With a domain selected, they must also hold a mailbox on that domain.', drv_share_hint_public: 'Anyone holding the link can open it without signing in, so these links are read-only.', drv_links: 'Share links', e_drive_share_revoked: 'This share link has been revoked', e_drive_share_expired: 'This share link has expired', e_drive_share_public_readonly: 'Public links are read-only' });
+Object.assign(DICTS.ja, { drv_share_audience: '共有先', drv_share_aud_internal: '社内', drv_share_aud_public: '公開', drv_share_domain: 'ドメイン限定', drv_share_domain_any: '制限なし（社内全員）', drv_share_dom_only: '{0} のみ', drv_share_expires: '有効期限', drv_share_exp_1d: '1 日後', drv_share_exp_7d: '7 日後', drv_share_exp_30d: '30 日後', drv_share_exp_never: '無期限', drv_share_until: '{0} まで', drv_share_n_items: '{0} 件', drv_share_n_members: '{0} 人が開封', drv_share_created: '作成 {0}', drv_share_revoked: '取り消し済み', drv_share_expired: '期限切れ', drv_share_forget: '一覧から削除', drv_share_items_gone: '共有した項目は存在しません', drv_share_none_yet: '共有リンクはまだありません', drv_share_root: '共有された項目', drv_share_readonly_note: '読み取り専用の共有', drv_share_hint_internal: 'この会社のログインユーザーのみ開けます。ドメインを指定した場合、そのドメインのメールボックスも必要です。', drv_share_hint_public: 'リンクを知っていれば誰でもログインなしで開けます。そのため読み取り専用です。', drv_links: '共有リンク', e_drive_share_revoked: 'この共有リンクは取り消されました', e_drive_share_expired: 'この共有リンクは期限切れです', e_drive_share_public_readonly: '公開リンクは読み取り専用です' });
+Object.assign(DICTS.ko, { drv_share_audience: '공유 대상', drv_share_aud_internal: '내부', drv_share_aud_public: '공개', drv_share_domain: '도메인 제한', drv_share_domain_any: '제한 없음(회사 전체)', drv_share_dom_only: '{0} 전용', drv_share_expires: '유효 기간', drv_share_exp_1d: '1일 후', drv_share_exp_7d: '7일 후', drv_share_exp_30d: '30일 후', drv_share_exp_never: '무기한', drv_share_until: '{0}까지', drv_share_n_items: '{0}개 항목', drv_share_n_members: '{0}명이 열어봄', drv_share_created: '생성 {0}', drv_share_revoked: '취소됨', drv_share_expired: '만료됨', drv_share_forget: '목록에서 제거', drv_share_items_gone: '공유한 항목이 없습니다', drv_share_none_yet: '아직 공유 링크가 없습니다', drv_share_root: '공유된 항목', drv_share_readonly_note: '읽기 전용 공유', drv_share_hint_internal: '이 회사에 로그인한 사용자만 열 수 있습니다. 도메인을 지정하면 해당 도메인의 메일함도 있어야 합니다.', drv_share_hint_public: '링크만 있으면 로그인 없이 누구나 열 수 있으므로 읽기 전용입니다.', drv_links: '공유 링크', e_drive_share_revoked: '이 공유 링크는 취소되었습니다', e_drive_share_expired: '이 공유 링크는 만료되었습니다', e_drive_share_public_readonly: '공개 링크는 읽기 전용입니다' });
+Object.assign(DICTS.de, { drv_share_audience: 'Freigeben für', drv_share_aud_internal: 'Intern', drv_share_aud_public: 'Öffentlich', drv_share_domain: 'Auf Domain begrenzen', drv_share_domain_any: 'Beliebig (alle im Unternehmen)', drv_share_dom_only: 'Nur {0}', drv_share_expires: 'Läuft ab', drv_share_exp_1d: 'In 1 Tag', drv_share_exp_7d: 'In 7 Tagen', drv_share_exp_30d: 'In 30 Tagen', drv_share_exp_never: 'Nie', drv_share_until: 'Bis {0}', drv_share_n_items: '{0} Elemente', drv_share_n_members: '{0} haben geöffnet', drv_share_created: 'Erstellt {0}', drv_share_revoked: 'Widerrufen', drv_share_expired: 'Abgelaufen', drv_share_forget: 'Aus Liste entfernen', drv_share_items_gone: 'Die geteilten Elemente sind weg', drv_share_none_yet: 'Noch keine Freigabelinks', drv_share_root: 'Geteilte Elemente', drv_share_readonly_note: 'Schreibgeschützte Freigabe', drv_share_hint_internal: 'Nur angemeldete Nutzer dieses Unternehmens können ihn öffnen. Mit gewählter Domain ist zusätzlich ein Postfach dieser Domain nötig.', drv_share_hint_public: 'Jeder mit dem Link kann ihn ohne Anmeldung öffnen — deshalb sind diese Links schreibgeschützt.', drv_links: 'Freigabelinks', e_drive_share_revoked: 'Dieser Freigabelink wurde widerrufen', e_drive_share_expired: 'Dieser Freigabelink ist abgelaufen', e_drive_share_public_readonly: 'Öffentliche Links sind schreibgeschützt' });
+Object.assign(DICTS.fr, { drv_share_audience: 'Partager avec', drv_share_aud_internal: 'Interne', drv_share_aud_public: 'Public', drv_share_domain: 'Limiter au domaine', drv_share_domain_any: 'Aucune (toute l\'entreprise)', drv_share_dom_only: '{0} uniquement', drv_share_expires: 'Expiration', drv_share_exp_1d: 'Dans 1 jour', drv_share_exp_7d: 'Dans 7 jours', drv_share_exp_30d: 'Dans 30 jours', drv_share_exp_never: 'Jamais', drv_share_until: 'Jusqu\'au {0}', drv_share_n_items: '{0} éléments', drv_share_n_members: '{0} l’ont ouvert', drv_share_created: 'Créé le {0}', drv_share_revoked: 'Révoqué', drv_share_expired: 'Expiré', drv_share_forget: 'Retirer de la liste', drv_share_items_gone: 'Les éléments partagés ont disparu', drv_share_none_yet: 'Aucun lien de partage', drv_share_root: 'Éléments partagés', drv_share_readonly_note: 'Partage en lecture seule', drv_share_hint_internal: 'Seuls les utilisateurs connectés de cette entreprise peuvent l\'ouvrir. Avec un domaine choisi, une boîte aux lettres de ce domaine est également requise.', drv_share_hint_public: 'Toute personne disposant du lien peut l’ouvrir sans connexion : ces liens sont donc en lecture seule.', drv_links: 'Liens de partage', e_drive_share_revoked: 'Ce lien de partage a été révoqué', e_drive_share_expired: 'Ce lien de partage a expiré', e_drive_share_public_readonly: 'Les liens publics sont en lecture seule' });
+Object.assign(DICTS.es, { drv_share_audience: 'Compartir con', drv_share_aud_internal: 'Interno', drv_share_aud_public: 'Público', drv_share_domain: 'Limitar al dominio', drv_share_domain_any: 'Cualquiera (toda la empresa)', drv_share_dom_only: 'Solo {0}', drv_share_expires: 'Caduca', drv_share_exp_1d: 'En 1 día', drv_share_exp_7d: 'En 7 días', drv_share_exp_30d: 'En 30 días', drv_share_exp_never: 'Nunca', drv_share_until: 'Hasta {0}', drv_share_n_items: '{0} elementos', drv_share_n_members: '{0} lo abrieron', drv_share_created: 'Creado {0}', drv_share_revoked: 'Revocado', drv_share_expired: 'Caducado', drv_share_forget: 'Quitar de la lista', drv_share_items_gone: 'Los elementos compartidos ya no existen', drv_share_none_yet: 'Aún no hay enlaces', drv_share_root: 'Elementos compartidos', drv_share_readonly_note: 'Uso compartido de solo lectura', drv_share_hint_internal: 'Solo los usuarios con sesión en esta empresa pueden abrirlo. Con un dominio seleccionado, también necesitan un buzón en ese dominio.', drv_share_hint_public: 'Cualquiera con el enlace puede abrirlo sin iniciar sesión, por eso son de solo lectura.', drv_links: 'Enlaces compartidos', e_drive_share_revoked: 'Este enlace ha sido revocado', e_drive_share_expired: 'Este enlace ha caducado', e_drive_share_public_readonly: 'Los enlaces públicos son de solo lectura' });
+Object.assign(DICTS.ru, { drv_share_audience: 'Кому', drv_share_aud_internal: 'Внутри', drv_share_aud_public: 'Публично', drv_share_domain: 'Ограничить доменом', drv_share_domain_any: 'Любой (вся компания)', drv_share_dom_only: 'Только {0}', drv_share_expires: 'Срок действия', drv_share_exp_1d: 'Через 1 день', drv_share_exp_7d: 'Через 7 дней', drv_share_exp_30d: 'Через 30 дней', drv_share_exp_never: 'Никогда', drv_share_until: 'До {0}', drv_share_n_items: '{0} объектов', drv_share_n_members: 'Открыли: {0}', drv_share_created: 'Создано {0}', drv_share_revoked: 'Отозвана', drv_share_expired: 'Истекла', drv_share_forget: 'Убрать из списка', drv_share_items_gone: 'Общие объекты удалены', drv_share_none_yet: 'Ссылок пока нет', drv_share_root: 'Общие объекты', drv_share_readonly_note: 'Общий доступ только для чтения', drv_share_hint_internal: 'Открыть могут только вошедшие пользователи этой компании. При выбранном домене нужен ещё и почтовый ящик в нём.', drv_share_hint_public: 'Любой, у кого есть ссылка, откроет её без входа — поэтому такие ссылки только для чтения.', drv_links: 'Ссылки', e_drive_share_revoked: 'Эта ссылка отозвана', e_drive_share_expired: 'Срок действия ссылки истёк', e_drive_share_public_readonly: 'Публичные ссылки только для чтения' });
+
+Object.assign(DICTS['zh-CN'], { drv_share_exp_48h: '48 小时后' });
+Object.assign(DICTS['zh-TW'], { drv_share_exp_48h: '48 小時後' });
+Object.assign(DICTS.en, { drv_share_exp_48h: 'In 48 hours' });
+Object.assign(DICTS.ja, { drv_share_exp_48h: '48 時間後' });
+Object.assign(DICTS.ko, { drv_share_exp_48h: '48시간 후' });
+Object.assign(DICTS.de, { drv_share_exp_48h: 'In 48 Stunden' });
+Object.assign(DICTS.fr, { drv_share_exp_48h: 'Dans 48 heures' });
+Object.assign(DICTS.es, { drv_share_exp_48h: 'En 48 horas' });
+Object.assign(DICTS.ru, { drv_share_exp_48h: 'Через 48 часов' });
+
+Object.assign(DICTS['zh-CN'], { drv_share_by: '由 {0} 分享', drv_a_share_owner: '公开页显示分享人', drv_a_share_owner_note: '开启后,公开分享页会显示分享人的邮件地址' });
+Object.assign(DICTS['zh-TW'], { drv_share_by: '由 {0} 分享', drv_a_share_owner: '公開頁顯示分享人', drv_a_share_owner_note: '開啟後,公開分享頁會顯示分享人的郵件地址' });
+Object.assign(DICTS.en, { drv_share_by: 'Shared by {0}', drv_a_share_owner: 'Show sharer on public page', drv_a_share_owner_note: 'When on, public share pages show the sharer\u2019s email address' });
+Object.assign(DICTS.ja, { drv_share_by: '{0} が共有', drv_a_share_owner: '公開ページに共有者を表示', drv_a_share_owner_note: 'オンにすると、公開共有ページに共有者のメールアドレスを表示します' });
+Object.assign(DICTS.ko, { drv_share_by: '{0} 님이 공유', drv_a_share_owner: '공개 페이지에 공유자 표시', drv_a_share_owner_note: '켜면 공개 공유 페이지에 공유자의 이메일 주소가 표시됩니다' });
+Object.assign(DICTS.de, { drv_share_by: 'Geteilt von {0}', drv_a_share_owner: 'Teilenden auf der öffentlichen Seite zeigen', drv_a_share_owner_note: 'Wenn aktiviert, zeigen öffentliche Freigabeseiten die E-Mail-Adresse des Teilenden' });
+Object.assign(DICTS.fr, { drv_share_by: 'Partagé par {0}', drv_a_share_owner: 'Afficher l\u2019auteur sur la page publique', drv_a_share_owner_note: 'Une fois activé, les pages de partage publiques affichent l\u2019adresse e-mail de l\u2019auteur' });
+Object.assign(DICTS.es, { drv_share_by: 'Compartido por {0}', drv_a_share_owner: 'Mostrar a quien comparte en la página pública', drv_a_share_owner_note: 'Al activarlo, las páginas de uso compartido público muestran el correo de quien comparte' });
+Object.assign(DICTS.ru, { drv_share_by: 'Поделился {0}', drv_a_share_owner: 'Показывать автора на публичной странице', drv_a_share_owner_note: 'Если включено, публичные страницы показывают адрес электронной почты автора' });

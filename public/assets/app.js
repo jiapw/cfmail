@@ -262,6 +262,14 @@ async function route() {
   // 未登录也要能走的两条路
   if (seg[0] === 'forgot') return renderForgot();
   if (seg[0] === 'reset' && seg[1]) return renderReset(seg[1]);
+  // Public share links: the recipient has no account here by definition, so this must resolve
+  // before the sign-in gate below -- otherwise the link would only ever show a login form.
+  // 公开分享链接:接收方按定义在此没有账号,因此必须在下面的登录门槛之前解析 ——
+  // 否则这条链接永远只能显示一个登录表单。
+  if (seg[0] === 'p' && seg[1]) {
+    const mod = await import('./drive/pub.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderPubShare(seg[1], seg.slice(2));
+  }
 
   if (!store.me) await refreshMe();
   if (!store.me) {

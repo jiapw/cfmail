@@ -22,7 +22,7 @@ import { verifyMail, resetMail } from './mailtpl';
 import { fontsApp, isKnownFont } from './fonts';
 import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
-import { driveApp } from './drive';
+import { driveApp, drivePubApp } from './drive';
 import { VERSION } from './version';
 import { ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
 
@@ -1300,5 +1300,11 @@ app.post('/api/dev/ingest', async (c) => {
 app.route('/api/chat', chatApp);
 
 app.route('/api/drive', driveApp);
+
+// Public share links: deliberately NOT behind requireAuth -- the whole point is that a
+// recipient without an account can open them. Read-only by construction (see drive.ts).
+// 公开共享链接:刻意不挂在 requireAuth 之后 —— 它的意义就在于没有账号的接收方也能打开。
+// 按构造即只读(见 drive.ts)。
+app.route('/api/pub', drivePubApp);
 
 app.route('/api/admin', adminApp);
