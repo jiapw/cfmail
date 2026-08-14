@@ -383,6 +383,23 @@ driveApp.get('/list', async (c) => {
   });
 });
 
+/** Node metadata with its breadcrumb path (share-trimmed) -- deep links into an archive
+ *  rebuild the path bar from this.
+ *  节点元数据及面包屑路径(按共享裁剪)。压缩包深链靠它重建路径条。 */
+driveApp.get('/nodes/:id/meta', async (c) => {
+  const a = await accessNode(c, c.req.param('id'), 'view');
+  let path = a.chain.slice(1).reverse();
+  if (a.shareRoot) {
+    const i = path.findIndex((n) => n.id === a.shareRoot);
+    path = i >= 0 ? path.slice(i) : [];
+  }
+  return c.json({
+    node: nodeJson(a.node, a.level === 'owner'),
+    access: a.level,
+    path: path.map((n) => ({ id: n.id, name: n.name })),
+  });
+});
+
 driveApp.get('/search', async (c) => {
   const q = String(c.req.query('q') || '').trim().slice(0, 100);
   if (!q) return c.json({ nodes: [] });

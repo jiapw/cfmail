@@ -50,7 +50,13 @@
 .drv-crumb {
   font-size: 15.5px; padding: 3px 9px; border-radius: 13px; color: var(--text);
   cursor: pointer; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+  /* text-overflow needs a block-ish box; bare inline spans clip without the dots
+     text-overflow 需要块级盒。裸 inline span 只截断不出点点 */
+  display: inline-block; vertical-align: middle;
 }
+/* Flex crumbs (the archive chip) ellipsize through an inner text span
+   flex 型面包屑(压缩包小片)靠内层文字 span 出省略号 */
+.drv-crumb .ct { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .drv-crumb:hover { background: var(--hover); }
 .drv-crumb.here { cursor: default; }
 .drv-crumb.here:hover { background: none; }
@@ -104,6 +110,55 @@
 .drv-dim { color: var(--text-2); }
 .drv-row .rowbtn { visibility: hidden; }
 .drv-row:hover .rowbtn, .drv-row.sel .rowbtn { visibility: visible; }
+/* Archive breadcrumbs: the package crumb wears a tinted chip so the boundary into the
+   read-only zone reads at a glance; inner crumbs inherit a soft tint.
+   压缩包面包屑:包名做成着色小片,只读区的边界一眼可辨;包内层级淡淡着色。 */
+.drv-crumb.arc {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent-soft); color: var(--accent-text);
+  border-radius: 8px; padding: 3px 10px;
+}
+.drv-crumb.arc wa-icon { flex: none; }
+.drv-crumb.arcin { color: var(--accent-text); }
+.drv-arcbar { color: var(--text-2); }
+/* Buffering note over in-archive media, gone on canplay / 压缩包媒体的缓冲提示,可播即撤 */
+/* Loading veil over an image preview. Lifted only when the bitmap has actually decoded, so a
+   slow in-archive extraction shows "still working" instead of an unexplained blank frame.
+   图片预览的加载遮罩。位图真正解出后才撤掉,慢速的压缩包解出显示"仍在进行",
+   而不是一片无从解释的空白。 */
+/* Opaque, because it has to HIDE the not-yet-ready player by covering it -- never by styling
+   the player itself. Chrome does not start loading a media element that is visibility:hidden,
+   so hiding it that way deadlocks: no load means no `canplay`, and `canplay` is what would
+   have revealed it.
+   遮罩不透明,因为它必须靠"盖住"来隐藏尚未就绪的播放器 —— 绝不能去改播放器自身的样式。
+   Chrome 不会为 visibility:hidden 的媒体元素启动加载,那样隐藏会直接死锁:不加载就没有
+   canplay,而正是 canplay 才会让它现身。 */
+.drv-pvwait {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; pointer-events: none;
+  background: rgb(15, 15, 18);
+}
+/* .drv-loading carries `margin: auto` for its usual standalone use; inside this column that
+   auto margin swallows all the free space and shoves the readout down to the frame's edge --
+   the very "stuck at the bottom" look we are getting rid of.
+   .drv-loading 自带 margin:auto 供它独立使用时居中;在这个列里,该 auto 边距会吃掉所有剩余
+   空间,把读数一路推到画面边缘 —— 正是我们要去掉的"贴在底部"的观感。 */
+.drv-pvwait .drv-loading { margin: 0; }
+/* The readout sits in the same centred column as the spinner, right beneath it.
+   读数与加载动画同处一个居中的列里,就在它正下方。 */
+.drv-arcbuf {
+  background: rgba(0,0,0,.62); color: #fff; font-size: 13px;
+  padding: 6px 14px; border-radius: 999px; pointer-events: none; white-space: nowrap;
+}
+/* Deliberately NOT hidden here. Any form of hiding applied to the media element itself stops
+   Chrome from loading it, and the veil above already covers it from view.
+   这里刻意不做隐藏。任何施加在媒体元素自身上的隐藏都会让 Chrome 停止加载它,
+   而上面的遮罩已经把它挡在视线之外了。 */
+/* Without a spinner column to join (no veil), fall back to centring it in the frame.
+   没有加载动画那一列可归属时(无遮罩),退回到在画面里居中。 */
+.drv-view-body > .drv-arcbuf {
+  position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%);
+}
 /* The menu cell: 52px minus 12px padding each side leaves 28px, and the 30px button's 2px
    overflow made the cell paint a literal text-overflow "...". Give the button room and never
    ellipsize this cell. */
@@ -193,6 +248,9 @@
    piece on the same vertical centre by construction. */
 /* 每个文件一行 flex。色块、文件名、圆环或状态、取消按钮。单行结构天然共享同一条垂直中线。 */
 .drv-up-item { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 16px; min-height: 42px; }
+/* A finished item is a jump-to-location control: make it feel clickable / 已完成项是定位控件,做出可点感 */
+.drv-up-item.goto { cursor: pointer; border-radius: 8px; }
+.drv-up-item.goto:hover { background: var(--hover); }
 .drv-up-item .fileicon { flex: none; }
 .drv-up-item .nm {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

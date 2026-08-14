@@ -25,7 +25,12 @@
     "directory": "public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    // /arc-stream/* belongs to the archive service worker and must never reach the SPA
+    // fallback: index.html served as a 200 for an <img> src loads "successfully" and then
+    // fails to decode, which paints nothing at all. Let the worker answer it explicitly.
+    // /arc-stream/* 属于压缩包 service worker,绝不能落到 SPA 兜底:把 index.html 以 200
+    // 喂给 <img>,它会"加载成功"然后解码失败,画面上什么都没有。交给 worker 明确作答。
+    "run_worker_first": ["/api/*", "/arc-stream/*"]
   },
 
   // Create with `wrangler d1 create cfmail`, then paste the returned uuid here.
