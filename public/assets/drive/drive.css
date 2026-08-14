@@ -520,10 +520,15 @@
 .drv-share-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
 .drv-share-row .lb { width: 84px; flex: none; font-size: 13px; color: var(--text-2); }
 
-.drv-links { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.drv-links { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+/* Two lines, not three: everything that describes the link -- audience, role, deadline, when it
+   was made -- runs along the top, and the line below is only what was put in it. The created
+   time used to have a line of its own, which bought a third of the card's height for six words.
+   两行,而非三行:描述这条链接的一切 —— 对象、权限、期限、何时创建 —— 沿顶行排开,
+   下面一行只放"里面装了什么"。创建时间原本独占一行,六个字买下了卡片三分之一的高度。 */
 .drv-link-card {
-  border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
-  display: flex; flex-direction: column; gap: 8px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px;
+  display: flex; flex-direction: column; gap: 5px; background: var(--panel);
 }
 /* A revoked or expired link stays listed but reads as inert, so it is obvious the link was
    stopped rather than quietly dropped.
@@ -540,9 +545,13 @@
 .drv-link-card .items { display: flex; flex-wrap: wrap; gap: 6px; }
 .drv-link-card .items .it {
   display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px;
-  background: var(--hover); padding: 3px 9px; border-radius: 7px;
+  background: var(--hover); padding: 2px 8px; border-radius: 6px;
 }
-.drv-link-card .ft { font-size: 12px; }
+/* size="small" still settles at 34px, which is taller than everything else on the row and was
+   therefore setting the card's height on its own. Give the actions the badges' height instead.
+   size="small" 仍然落在 34px,比同一行上的任何东西都高,于是卡片高度实际由它一家决定。
+   让操作按钮改用徽标的高度。 */
+.drv-link-card .hd wa-button::part(base) { height: 24px; min-height: 24px; padding: 0 8px; }
 .drv-link-card wa-button.danger::part(base) { color: #e5484d; }
 
 .pub-wrap { max-width: 940px; margin: 0 auto; padding: 24px 16px 40px; }
