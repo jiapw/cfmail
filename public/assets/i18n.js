@@ -4572,3 +4572,138 @@ Object.assign(DICTS.de, { e_drive_name_taken: "Eine Datei oder ein Ordner mit di
 Object.assign(DICTS.fr, { e_drive_name_taken: "Un fichier ou dossier de ce nom existe déjà" });
 Object.assign(DICTS.es, { e_drive_name_taken: "Ya existe un archivo o carpeta con ese nombre" });
 Object.assign(DICTS.ru, { e_drive_name_taken: "Файл или папка с таким именем уже существует" });
+
+// Archive browsing / 压缩包浏览
+Object.assign(DICTS['zh-CN'], {
+  drv_arc_readonly: '压缩包内容，只读预览',
+  e_arc_bad: '无法读取压缩包：文件损坏或不是支持的格式',
+  e_arc_fetch: '读取压缩包数据失败，请重试',
+  e_arc_encrypted: '压缩包已加密，不支持在线预览',
+  e_arc_method: '压缩包使用了不支持的压缩算法',
+  e_arc_too_big: '文件过大，无法在线解出，请下载后本地解压',
+});
+Object.assign(DICTS['zh-TW'], {
+  drv_arc_readonly: '壓縮檔內容，唯讀預覽',
+  e_arc_bad: '無法讀取壓縮檔：檔案損壞或不是支援的格式',
+  e_arc_fetch: '讀取壓縮檔資料失敗，請重試',
+  e_arc_encrypted: '壓縮檔已加密，不支援線上預覽',
+  e_arc_method: '壓縮檔使用了不支援的壓縮演算法',
+  e_arc_too_big: '檔案過大，無法線上解出，請下載後本地解壓',
+});
+Object.assign(DICTS.en, {
+  drv_arc_readonly: 'Archive contents, read-only preview',
+  e_arc_bad: 'Cannot read this archive: corrupted or not a supported format',
+  e_arc_fetch: 'Failed to fetch archive data, please retry',
+  e_arc_encrypted: 'This archive is encrypted and cannot be previewed',
+  e_arc_method: 'This archive uses an unsupported compression method',
+  e_arc_too_big: 'This file is too large to extract online; download the archive and extract locally',
+});
+Object.assign(DICTS.ja, {
+  drv_arc_readonly: 'アーカイブの内容（読み取り専用）',
+  e_arc_bad: 'アーカイブを読み取れません。破損しているか未対応の形式です',
+  e_arc_fetch: 'アーカイブの取得に失敗しました。再試行してください',
+  e_arc_encrypted: 'このアーカイブは暗号化されているためプレビューできません',
+  e_arc_method: '未対応の圧縮方式が使われています',
+  e_arc_too_big: 'ファイルが大きすぎます。ダウンロードしてローカルで展開してください',
+});
+Object.assign(DICTS.ko, {
+  drv_arc_readonly: '압축 파일 내용 (읽기 전용)',
+  e_arc_bad: '압축 파일을 읽을 수 없습니다. 손상되었거나 지원하지 않는 형식입니다',
+  e_arc_fetch: '압축 파일 데이터를 가져오지 못했습니다. 다시 시도하세요',
+  e_arc_encrypted: '암호화된 압축 파일은 미리보기할 수 없습니다',
+  e_arc_method: '지원하지 않는 압축 방식이 사용되었습니다',
+  e_arc_too_big: '파일이 너무 커서 온라인으로 풀 수 없습니다. 다운로드 후 로컬에서 해제하세요',
+});
+Object.assign(DICTS.de, {
+  drv_arc_readonly: 'Archivinhalt, schreibgeschützte Vorschau',
+  e_arc_bad: 'Archiv nicht lesbar: beschädigt oder kein unterstütztes Format',
+  e_arc_fetch: 'Archivdaten konnten nicht geladen werden, bitte erneut versuchen',
+  e_arc_encrypted: 'Dieses Archiv ist verschlüsselt und kann nicht angezeigt werden',
+  e_arc_method: 'Dieses Archiv verwendet ein nicht unterstütztes Kompressionsverfahren',
+  e_arc_too_big: 'Datei zu groß zum Online-Entpacken; bitte Archiv herunterladen und lokal entpacken',
+});
+Object.assign(DICTS.fr, {
+  drv_arc_readonly: 'Contenu de l’archive, aperçu en lecture seule',
+  e_arc_bad: 'Archive illisible : endommagée ou format non pris en charge',
+  e_arc_fetch: 'Échec de lecture des données de l’archive, veuillez réessayer',
+  e_arc_encrypted: 'Cette archive est chiffrée et ne peut pas être prévisualisée',
+  e_arc_method: 'Cette archive utilise une méthode de compression non prise en charge',
+  e_arc_too_big: 'Fichier trop volumineux pour être extrait en ligne ; téléchargez l’archive et extrayez-la localement',
+});
+Object.assign(DICTS.es, {
+  drv_arc_readonly: 'Contenido del archivo comprimido, vista de solo lectura',
+  e_arc_bad: 'No se puede leer el archivo: dañado o formato no compatible',
+  e_arc_fetch: 'Error al obtener los datos del archivo, inténtalo de nuevo',
+  e_arc_encrypted: 'Este archivo está cifrado y no se puede previsualizar',
+  e_arc_method: 'Este archivo usa un método de compresión no compatible',
+  e_arc_too_big: 'Archivo demasiado grande para extraer en línea; descárgalo y extráelo localmente',
+});
+Object.assign(DICTS.ru, {
+  drv_arc_readonly: 'Содержимое архива, только чтение',
+  e_arc_bad: 'Не удаётся прочитать архив: повреждён или формат не поддерживается',
+  e_arc_fetch: 'Не удалось загрузить данные архива, повторите попытку',
+  e_arc_encrypted: 'Архив зашифрован, предпросмотр невозможен',
+  e_arc_method: 'Архив использует неподдерживаемый метод сжатия',
+  e_arc_too_big: 'Файл слишком велик для распаковки онлайн; скачайте архив и распакуйте локально',
+});
+
+Object.assign(DICTS['zh-CN'], { drv_arc_buffering: '解压缓冲中…' });
+Object.assign(DICTS['zh-TW'], { drv_arc_buffering: '解壓緩衝中…' });
+Object.assign(DICTS.en, { drv_arc_buffering: 'Decompressing…' });
+Object.assign(DICTS.ja, { drv_arc_buffering: '展開中…' });
+Object.assign(DICTS.ko, { drv_arc_buffering: '압축 해제 중…' });
+Object.assign(DICTS.de, { drv_arc_buffering: 'Entpacken…' });
+Object.assign(DICTS.fr, { drv_arc_buffering: 'Décompression…' });
+Object.assign(DICTS.es, { drv_arc_buffering: 'Descomprimiendo…' });
+Object.assign(DICTS.ru, { drv_arc_buffering: 'Распаковка…' });
+Object.assign(DICTS['zh-CN'], { drv_arc_skipping: '正在跳过压缩数据流…' });
+Object.assign(DICTS['zh-TW'], { drv_arc_skipping: '正在跳過壓縮資料流…' });
+Object.assign(DICTS.en, { drv_arc_skipping: 'Skipping through compressed data…' });
+Object.assign(DICTS.ja, { drv_arc_skipping: '圧縮データをスキップ中…' });
+Object.assign(DICTS.ko, { drv_arc_skipping: '압축 데이터 건너뛰는 중…' });
+Object.assign(DICTS.de, { drv_arc_skipping: 'Überspringe komprimierte Daten…' });
+Object.assign(DICTS.fr, { drv_arc_skipping: 'Parcours des données compressées…' });
+Object.assign(DICTS.es, { drv_arc_skipping: 'Saltando datos comprimidos…' });
+Object.assign(DICTS.ru, { drv_arc_skipping: 'Пропуск сжатых данных…' });
+
+// Archive password / 压缩包密码
+Object.assign(DICTS['zh-CN'], { drv_arc_pw_title: '输入解压密码', drv_arc_pw_ph: '压缩包密码', drv_arc_pw_save: '保存在本浏览器', drv_arc_pw_note: '密码不会上传服务器，解密完全在本地完成。' });
+Object.assign(DICTS['zh-TW'], { drv_arc_pw_title: '輸入解壓密碼', drv_arc_pw_ph: '壓縮檔密碼', drv_arc_pw_save: '儲存在本瀏覽器', drv_arc_pw_note: '密碼不會上傳伺服器，解密完全在本地完成。' });
+Object.assign(DICTS.en, { drv_arc_pw_title: 'Enter archive password', drv_arc_pw_ph: 'Archive password', drv_arc_pw_save: 'Save in this browser', drv_arc_pw_note: 'The password is never sent to the server; decryption happens entirely on your device.' });
+Object.assign(DICTS.ja, { drv_arc_pw_title: 'アーカイブのパスワードを入力', drv_arc_pw_ph: 'パスワード', drv_arc_pw_save: 'このブラウザに保存', drv_arc_pw_note: 'パスワードはサーバーに送信されず、復号はすべて端末上で行われます。' });
+Object.assign(DICTS.ko, { drv_arc_pw_title: '압축 암호 입력', drv_arc_pw_ph: '압축 암호', drv_arc_pw_save: '이 브라우저에 저장', drv_arc_pw_note: '암호는 서버로 전송되지 않으며 복호화는 전적으로 기기에서 이루어집니다.' });
+Object.assign(DICTS.de, { drv_arc_pw_title: 'Archiv-Passwort eingeben', drv_arc_pw_ph: 'Archiv-Passwort', drv_arc_pw_save: 'In diesem Browser speichern', drv_arc_pw_note: 'Das Passwort wird nie an den Server gesendet; die Entschlüsselung erfolgt vollständig auf Ihrem Gerät.' });
+Object.assign(DICTS.fr, { drv_arc_pw_title: 'Saisir le mot de passe de l’archive', drv_arc_pw_ph: 'Mot de passe de l’archive', drv_arc_pw_save: 'Enregistrer dans ce navigateur', drv_arc_pw_note: 'Le mot de passe n’est jamais envoyé au serveur ; le déchiffrement se fait entièrement sur votre appareil.' });
+Object.assign(DICTS.es, { drv_arc_pw_title: 'Introduce la contraseña del archivo', drv_arc_pw_ph: 'Contraseña del archivo', drv_arc_pw_save: 'Guardar en este navegador', drv_arc_pw_note: 'La contraseña nunca se envía al servidor; el descifrado ocurre por completo en tu dispositivo.' });
+Object.assign(DICTS.ru, { drv_arc_pw_title: 'Введите пароль архива', drv_arc_pw_ph: 'Пароль архива', drv_arc_pw_save: 'Сохранить в этом браузере', drv_arc_pw_note: 'Пароль никогда не отправляется на сервер; расшифровка полностью выполняется на вашем устройстве.' });
+
+// Locate uploaded item / 定位已上传项
+Object.assign(DICTS['zh-CN'], { drv_up_locate: '在文件夹中定位' });
+Object.assign(DICTS['zh-TW'], { drv_up_locate: '在資料夾中定位' });
+Object.assign(DICTS.en, { drv_up_locate: 'Show in folder' });
+Object.assign(DICTS.ja, { drv_up_locate: 'フォルダー内で表示' });
+Object.assign(DICTS.ko, { drv_up_locate: '폴더에서 보기' });
+Object.assign(DICTS.de, { drv_up_locate: 'Im Ordner anzeigen' });
+Object.assign(DICTS.fr, { drv_up_locate: 'Afficher dans le dossier' });
+Object.assign(DICTS.es, { drv_up_locate: 'Mostrar en la carpeta' });
+Object.assign(DICTS.ru, { drv_up_locate: 'Показать в папке' });
+
+// Wrong archive password / 压缩包密码错误
+Object.assign(DICTS['zh-CN'], { e_arc_password: '密码不正确，请重试' });
+Object.assign(DICTS['zh-TW'], { e_arc_password: '密碼不正確，請重試' });
+Object.assign(DICTS.en, { e_arc_password: 'Incorrect password, please try again' });
+Object.assign(DICTS.ja, { e_arc_password: 'パスワードが正しくありません。もう一度お試しください' });
+Object.assign(DICTS.ko, { e_arc_password: '비밀번호가 올바르지 않습니다. 다시 시도하세요' });
+Object.assign(DICTS.de, { e_arc_password: 'Falsches Passwort, bitte erneut versuchen' });
+Object.assign(DICTS.fr, { e_arc_password: 'Mot de passe incorrect, veuillez réessayer' });
+Object.assign(DICTS.es, { e_arc_password: 'Contraseña incorrecta, inténtalo de nuevo' });
+Object.assign(DICTS.ru, { e_arc_password: 'Неверный пароль, попробуйте ещё раз' });
+Object.assign(DICTS['zh-CN'], { e_arc_no_worker: '解压组件尚未就绪，请刷新页面后重试' });
+Object.assign(DICTS['zh-TW'], { e_arc_no_worker: '解壓元件尚未就緒，請重新整理後再試' });
+Object.assign(DICTS.en, { e_arc_no_worker: 'The extractor is not ready yet — reload the page and try again' });
+Object.assign(DICTS.ja, { e_arc_no_worker: '展開コンポーネントが未準備です。ページを再読み込みしてください' });
+Object.assign(DICTS.ko, { e_arc_no_worker: '압축 해제 구성 요소가 아직 준비되지 않았습니다. 페이지를 새로 고치세요' });
+Object.assign(DICTS.de, { e_arc_no_worker: 'Die Entpack-Komponente ist noch nicht bereit — Seite neu laden' });
+Object.assign(DICTS.fr, { e_arc_no_worker: "Le composant d'extraction n'est pas prêt — rechargez la page" });
+Object.assign(DICTS.es, { e_arc_no_worker: 'El extractor aún no está listo: recarga la página e inténtalo de nuevo' });
+Object.assign(DICTS.ru, { e_arc_no_worker: 'Компонент распаковки ещё не готов — обновите страницу' });

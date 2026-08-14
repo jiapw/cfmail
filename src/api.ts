@@ -47,6 +47,18 @@ app.onError((err, c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, version: VERSION }));
 
+// Archive entries are served entirely inside the browser by the streaming service worker; this
+// URL space has no server-side meaning. A request that actually arrives here means the worker
+// is not in control -- still installing, mid-update, or unsupported. Answer with a plain error
+// so the page can fall back to extracting in-page: without this the SPA fallback returns
+// index.html with a 200, an <img> "loads" that HTML, decoding fails, and the preview is blank
+// with nothing in the network log to suggest anything went wrong.
+// 压缩包条目完全由流式 service worker 在浏览器内供给,这段 URL 空间在服务端没有含义。
+// 请求真的到了这里,说明 worker 没在控制页面 —— 还在安装、正在更新,或不受支持。给一个
+// 明确的错误,页面才好回退到本地解出:否则 SPA 兜底会以 200 返回 index.html,<img> 把这段
+// HTML "加载成功"后解码失败,预览一片空白,而网络日志里看不出任何异常。
+app.all('/arc-stream/*', (c) => c.json(E('e_arc_no_worker'), 503));
+
 // Font catalogue / CSS / files (public -- the sign-in page needs the brand font too)
 // 字体目录 / CSS / 文件(公开,登录页也要用品牌字体)
 app.route('/api/fonts', fontsApp);

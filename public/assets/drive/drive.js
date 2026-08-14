@@ -22,6 +22,15 @@ const AUD_RE = /^audio\//;
 const AUD_EXTS = new Set(['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'oga', 'opus', 'weba', 'wma', 'mka', 'aiff', 'aif']);
 const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
 
+// Archives browsable as read-only folders (arc.js, lazy). Extensions map to ranged readers:
+// the zip family shares one, 7z has its own.
+// 可当只读目录浏览的压缩包(arc.js,懒加载)。扩展名对应 Range 式读取器:
+// zip 家族共用一个,7z 单独一个。
+const ARC_EXTS = new Set(['zip', 'jar', 'apk', 'epub', '7z']);
+/** Node info stashed for arc.js so entering an archive needs no extra request
+ *  为 arc.js 暂存的节点信息。进压缩包不用再发请求 */
+export const arcSeed = new Map();
+
 const dst = {
   view: 'my',            // my | folder | shared | recent | starred | trash | search
   folderId: null,
@@ -55,6 +64,7 @@ function ensureCss() {
 export async function renderDrive(seg) {
   if (!store.me?.drive_enabled) return navigate('#/');
   ensureCss();
+  closePreview(); // navigation never leaves a stray player behind / 路由变化不留悬空播放器
   if (seg[0] === 's' && seg[1]) return joinShare(seg[1]);
   dst.q = '';
   if (!seg[0]) {
@@ -69,6 +79,9 @@ export async function renderDrive(seg) {
   } else if (seg[0] === 'search' && seg[1]) {
     dst.view = 'search';
     dst.q = seg[1];
+  } else if (seg[0] === 'arc' && seg[1]) {
+    dst.view = 'arc';
+    dst.folderId = null;
   } else {
     return navigate('#/drive');
   }
@@ -77,6 +90,16 @@ export async function renderDrive(seg) {
   show(frame());
   bindFrame();
   refreshState();
+  if (dst.view === 'arc') {
+    try {
+      const mod = await import('./arc.js?v=' + encodeURIComponent(store.brand?.version || ''));
+      await mod.renderArc(seg[1], seg.slice(2).join('/'));
+    } catch (e) {
+      const main = qs('#drv-main');
+      if (main) main.innerHTML = `<div class="drv-empty">${icon('spam', 40)}<div>${esc(tErr(e))}</div></div>`;
+    }
+    return;
+  }
   await loadView();
 }
 
@@ -258,7 +281,7 @@ function crumbsHtml() {
   const parts = dst.path.map((p, i) => {
     const last = i === dst.path.length - 1;
     return `<span class="drv-crumb-sep">${icon('next', 14)}</span>
-      <span class="drv-crumb ${last ? 'here' : ''}" ${last ? '' : `data-nav="#/drive/folder/${esc(p.id)}"`}>${esc(p.name)}</span>`;
+      <span class="drv-crumb ${last ? 'here' : ''}" title="${esc(p.name)}" ${last ? '' : `data-nav="#/drive/folder/${esc(p.id)}"`}>${esc(p.name)}</span>`;
   }).join('');
   return root + parts;
 }
@@ -285,11 +308,30 @@ function renderFolderView(main) {
       ${dst.shown.length ? (dst.layout === 'grid' ? gridHtml() : tableHtml(arrow)) : emptyHtml()}
     </div>`;
   bindFolderView(main);
+  // A "locate uploaded item" jump lands here: select the target and scroll it into view
+  // "定位已上传项"的跳转落到这里:选中目标并滚动到可见
+  if (dst.selectAfterLoad) {
+    const want = dst.selectAfterLoad;
+    dst.selectAfterLoad = null;
+    if (dst.shown.some((n) => n.id === want)) {
+      dst.sel = new Set([want]);
+      applySelection(main);
+      const el = qs(`#drv-drop [data-id="${cssEsc(want)}"]`, main);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
 }
+
+/** CSS.escape with a plain fallback for attribute-selector safety / 属性选择器安全转义 */
+const cssEsc = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
 
 function barHtml() {
   const selN = dst.sel.size;
-  return selN
+  // Only a multi-selection (2+) takes over the bar with batch actions; with 0 or 1 selected
+  // the path bar stays put -- a single item's actions live on its row/card ⋮ menu.
+  // 只有多选(≥2)才用批量操作栏接管;选中 0 或 1 个时路径 bar 保持不变 ——
+  // 单个条目的操作在其行/卡片的 ⋮ 菜单里。
+  return selN >= 2
     ? `<div class="drv-selbar">
         <wa-button class="icon" appearance="plain" id="drv-sel-clear" aria-label="${esc(t('cancel'))}">${icon('close', 20)}</wa-button>
         <span class="cnt">${selN}</span>
@@ -523,7 +565,13 @@ function bindFolderView(main) {
 
 function openNode(n) {
   if (n.kind === 'folder') navigate(`#/drive/folder/${n.id}`);
-  else openPreview(n);
+  else if (!n.arc && ARC_EXTS.has(extOf(n.name)) && !(dst.view === 'trash' || dst.inTrash)) {
+    arcSeed.set(n.id, {
+      name: n.name, size: n.size, access: dst.access,
+      crumbs: dst.view === 'folder' || dst.view === 'my' ? dst.path.map((p) => ({ id: p.id, name: p.name })) : null,
+    });
+    navigate(`#/drive/arc/${n.id}`);
+  } else openPreview(n);
 }
 
 // ---------- Selection actions and context menu ----------
@@ -547,6 +595,12 @@ function closeMenu() {
 }
 document.addEventListener('click', () => closeMenu());
 document.addEventListener('scroll', () => closeMenu(), true);
+// Navigation dismisses it too. Clicking a link happens to close it via the document click
+// above, but the back button and any programmatic navigation do not -- and the menu would then
+// hang over an unrelated screen (the mailbox, say) still offering to rename a file.
+// 导航也要关掉它。点链接恰好会被上面的 document click 关掉,但后退键和任何程序化跳转不会 ——
+// 菜单于是会悬在毫不相干的界面上(比如邮箱),还摆着"重命名文件"这种选项。
+window.addEventListener('hashchange', () => closeMenu());
 window.addEventListener('keydown', (e) => {
   if (!qs('.drv-body')) return;
   if (e.key === 'Escape') closeMenu();
@@ -633,11 +687,27 @@ function menuItems(nodes) {
 }
 
 function downloadFile(n) {
+  if (n.arc) return downloadArcEntry(n);
   const a = document.createElement('a');
   a.href = dlUrl(n.id);
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+/** Archive entries download from their client-side extraction / 压缩包条目从客户端解出的字节下载 */
+async function downloadArcEntry(n) {
+  try {
+    if (!n.arcUrl) n.arcUrl = await n.arcGet();
+    const a = document.createElement('a');
+    a.href = n.arcUrl;
+    a.download = n.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (e) {
+    toast(tErr(e), true);
+  }
 }
 
 async function starNodes(nodes, on) {
@@ -996,7 +1066,12 @@ function renderSharedView(main, shares) {
 let pv = null; // { list, idx, el }
 
 function openPreview(node) {
-  const files = dst.shown.filter((n) => n.kind === 'file');
+  openPreviewFor(dst.shown.filter((n) => n.kind === 'file'), node);
+}
+
+/** Same overlay for an arbitrary file list -- arc.js feeds archive entries through here
+ *  同一预览层接受任意文件列表 —— arc.js 的压缩包条目走这里 */
+export function openPreviewFor(files, node) {
   const idx = Math.max(0, files.findIndex((n) => n.id === node.id));
   pv?.el?.remove();
   pv = { list: files.length ? files : [node], idx, el: document.createElement('div') };
@@ -1006,10 +1081,27 @@ function openPreview(node) {
   window.addEventListener('keydown', pvKeys);
 }
 
+/** Detached media elements keep streaming until src is cleared -- Chrome only tears the
+ *  fetch down on an explicit load() with no source. Applies to every preview teardown.
+ *  脱离 DOM 的媒体元素不清 src 会一直拉流 —— Chrome 要显式空源 load() 才断开。
+ *  所有预览销毁路径都要过这一步。 */
+function killMedia(rootEl) {
+  rootEl?.querySelectorAll?.('video, audio').forEach((m) => {
+    try {
+      m.pause();
+    } catch {}
+    m.removeAttribute('src');
+    try {
+      m.load();
+    } catch {}
+  });
+}
+
 function closePreview() {
   destroyPdfPreview();
   pvRich?.destroy?.();
   pvRich = null;
+  killMedia(pv?.el);
   pv?.el?.remove();
   pv = null;
   window.removeEventListener('keydown', pvKeys);
@@ -1089,7 +1181,7 @@ async function richPreview(n) {
       box.innerHTML = noprevHtml(n);
       return;
     }
-    pvRich = await mod.renderPreview(n, box, kind, dlUrl(n.id, true));
+    pvRich = await mod.renderPreview(n, box, kind, n.arcUrl || dlUrl(n.id, true));
   } catch {
     if (box.isConnected) box.innerHTML = noprevHtml(n);
   }
@@ -1123,7 +1215,7 @@ async function renderPdfPreview(node, box) {
   try {
     const mod = await loadThumbMod();
     const lib = await mod.pdfjs();
-    const r = await fetch(dlUrl(node.id, true));
+    const r = await fetch(node.arcUrl || dlUrl(node.id, true));
     if (!r.ok) throw new Error('fetch');
     const task = lib.getDocument(mod.pdfDocOpts(await r.arrayBuffer()));
     my.task = task;
@@ -1190,37 +1282,78 @@ function pvKeys(e) {
   else if (e.key === 'ArrowRight') pvStep(1);
 }
 
+/** Show a "decompressing X% · Y MB/s" pill over an archive preview while the worker decodes,
+ *  driven by its fill/stat counters. Works for a media element (hide on canplay, reappear on
+ *  stall) and for an <img> (hide on load). The percentage tracks the whole solid block for 7z.
+ *  在压缩包预览上显示"解压缓冲中 X% · Y MB/s"提示,数据取自 worker 的填充/stat 计数。
+ *  媒体元素(可播即隐、停滞再现)与 <img>(载入即隐)都适用。7z 的百分比按整个固实块计。 */
+function attachArcProgress(n, el) {
+  if (!el) return;
+  // The readout belongs directly under the spinner, sharing its column -- pinned to the bottom
+  // of the frame it reads as an unrelated caption, and for media it floated over the controls.
+  // 读数就该在加载动画正下方、与它同列 —— 钉在画面底部时像一句不相干的字幕,
+  // 媒体预览时还会浮在控制条上面。
+  const veil = pv.el.querySelector('.drv-pvwait');
+  const note = document.createElement('div');
+  note.className = 'drv-arcbuf';
+  note.textContent = t('drv_arc_buffering');
+  (veil || el.parentElement || pv.el.querySelector('.drv-view-body') || pv.el).appendChild(note);
+  const statUrl = n.arcUrl + (n.arcUrl.includes('?') ? '&' : '?') + 'stat=1';
+  const poll = async () => {
+    if (note.style.display === 'none' || !note.isConnected) return;
+    try {
+      const s = await (await fetch(statUrl)).json();
+      if (!s || !s.total || s.idle || s.done) return;
+      const bw = s.bps > 0 ? ` · ${fmtSize(s.bps)}/s` : '';
+      // Seeking into a compressed stream means decoding the gap and discarding it; say that
+      // rather than calling it buffering, which suggests the wait is about to end.
+      // 跳转进压缩流意味着把中间那段解出来再丢掉;如实说明,而不是叫它缓冲 ——
+      // 那会让人以为马上就好了。
+      const label = t(s.skipping ? 'drv_arc_skipping' : 'drv_arc_buffering');
+      note.textContent = `${label} ${Math.min(100, (s.written / s.total) * 100).toFixed(0)}%${bw}`;
+    } catch {}
+  };
+  const timer = setInterval(() => {
+    if (!el.isConnected) {
+      clearInterval(timer);
+      note.remove();
+      return;
+    }
+    poll();
+  }, 800);
+  poll();
+  // Spinner, readout and player are one unit: the player only shows once it can actually play,
+  // and goes back under the spinner on a stall. A visible-but-dead control bar just invites
+  // clicking at it. / 加载动画、读数与播放器是一体的:真的能播了播放器才现身,卡顿了退回
+  // 加载动画之下。露着一条按不动的控件条,只会招人反复去点。
+  const hide = () => { note.style.display = 'none'; if (veil) veil.style.display = 'none'; el.classList.remove('drv-wait'); };
+  const show = () => { note.style.display = ''; if (veil) veil.style.display = ''; el.classList.add('drv-wait'); poll(); }; // 只显形,数字靠轮询
+  const isMedia = el.tagName === 'VIDEO' || el.tagName === 'AUDIO';
+  if (isMedia) {
+    el.addEventListener('canplay', hide);
+    el.addEventListener('playing', hide);
+    el.addEventListener('waiting', show);
+    el.addEventListener('stalled', show);
+  } else {
+    el.addEventListener('load', hide, { once: true }); // <img> finished loading / 图片载入完成
+  }
+  el.addEventListener('error', () => {
+    clearInterval(timer);
+    note.remove();
+    const body = pv.el.querySelector('.drv-view-body');
+    if (body && pv.list[pv.idx] === n) body.innerHTML = noprevHtml(n);
+  }, { once: true });
+}
+
 function pvStep(d) {
   if (!pv || pv.list.length < 2) return;
   pv.idx = (pv.idx + d + pv.list.length) % pv.list.length;
   paintPreview();
 }
 
-async function paintPreview() {
-  const n = pv.list[pv.idx];
-  destroyPdfPreview();
-  pvRich?.destroy?.();
-  pvRich = null;
-  const mime = (n.mime || '').toLowerCase();
-  const src = dlUrl(n.id, true);
-  const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(n.name);
-  const isAudio = AUD_RE.test(mime) || AUD_EXTS.has(extOf(n.name));
-  let body;
-  if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt="">`;
-  else if (VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video>`;
-  else if (isAudio) {
-    // Cover-art card: the stored thumbnail doubles as the artwork
-    // 封面卡片。存好的缩略图直接当专辑封面用
-    body = `
-    <div class="drv-audio">
-      ${n.thumb
-        ? `<img class="art" src="/api/drive/files/${esc(n.id)}/thumb" alt="">`
-        : `<div class="art fallback">${icon('fileAudio', 72)}</div>`}
-      <div class="anm">${esc(n.name)}</div>
-      <audio controls autoplay src="${esc(src)}"></audio>
-    </div>`;
-  } else if (isPdf) body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-pdf drv-docwin">${spinnerHtml()}</div></div></div>`;
-  else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
+/** Overlay chrome shared by the normal path and the extract-in-progress state
+ *  预览层外壳。正常路径与"解出中"状态共用 */
+function paintPvShell(n, body) {
   pv.el.innerHTML = `
     <div class="drv-view-head">
       <wa-button class="icon" appearance="plain" data-close aria-label="${esc(t('close'))}">${icon('close', 20)}</wa-button>
@@ -1239,6 +1372,140 @@ async function paintPreview() {
     else if (e.target.closest('[data-nav]')) pvStep(parseInt(e.target.closest('[data-nav]').dataset.nav, 10));
     else if (e.target === pv.el.querySelector('.drv-view-body')) closePreview();
   };
+}
+
+async function paintPreview() {
+  const n = pv.list[pv.idx];
+  destroyPdfPreview();
+  pvRich?.destroy?.();
+  pvRich = null;
+  killMedia(pv.el); // the outgoing preview's stream dies here / 旧预览的流在此断开
+  // Archive entries extract client-side on first view: spinner shell first, then the real
+  // preview off a blob URL. The archive readers fetch only this entry's byte range.
+  // 压缩包条目首次预览时在客户端解出:先上加载壳,再用 blob URL 走正常预览。
+  // 读取器只拉这个条目的字节区间。
+  if (n.arc && n.arcGet && !n.arcUrl) {
+    paintPvShell(n, `<div class="drv-doc"><div class="drv-docc">${spinnerHtml()}<div class="drv-arcbuf" style="position:static;margin:12px auto 0"></div></div></div>`);
+    // Without the streaming worker this extracts the whole entry before anything renders, which
+    // on a big solid block is a long silent wait. Report what is coming down while it runs.
+    // 没有流式 worker 时,这里会先整体解出条目才渲染,大固实块上就是一段漫长的静默等待。
+    // 进行期间把下行情况报出来。
+    const tick = setInterval(() => {
+      const el = pv?.el?.querySelector('.drv-arcbuf');
+      const inf = n.arcMeter?.();
+      if (!el || !inf) return;
+      el.textContent = `${t('drv_arc_buffering')} ${inf.pct.toFixed(0)}%${inf.bps ? ` · ${fmtSize(inf.bps)}/s` : ''}`;
+    }, 400);
+    try {
+      const u = await n.arcGet();
+      if (!pv || pv.list[pv.idx] !== n) return;
+      n.arcUrl = u;
+    } catch (e) {
+      const box = pv?.el?.querySelector('.drv-docc') || pv?.el?.querySelector('.drv-view-body');
+      if (box && pv.list[pv.idx] === n) box.innerHTML = `<div class="noprev" style="margin:auto">${fileIcon(n.name, 72)}<div>${esc(tErr(e))}</div></div>`;
+      return;
+    } finally {
+      clearInterval(tick);
+    }
+  }
+  const mime = (n.mime || '').toLowerCase();
+  const src = n.arcUrl || dlUrl(n.id, true);
+  const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(n.name);
+  const isAudio = AUD_RE.test(mime) || AUD_EXTS.has(extOf(n.name));
+  let body;
+  // Keep a loading veil over the image until the bitmap actually decodes. The src is handed
+  // over long before the bytes exist -- the worker may still be decompressing a whole solid
+  // block -- so swapping the spinner straight out for the <img> leaves an unexplained blank
+  // frame, which reads as "it failed" rather than "it is still coming".
+  // 图片解出来之前一直盖着加载遮罩。src 交出去时字节往往还不存在 —— worker 可能正在解一整个
+  // 固实块 —— 直接把加载图换成 <img> 会留下无从解释的空白,看起来像"失败了"而不是"还在来"。
+  if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
+  else if (VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
+  else if (isAudio) {
+    // Cover-art card: the stored thumbnail doubles as the artwork
+    // 封面卡片。存好的缩略图直接当专辑封面用
+    body = `
+    <div class="drv-audio">
+      ${n.thumb
+        ? `<img class="art" src="/api/drive/files/${esc(n.id)}/thumb" alt="">`
+        : `<div class="art fallback">${icon('fileAudio', 72)}</div>`}
+      <div class="anm">${esc(n.name)}</div>
+      <audio controls autoplay src="${esc(src)}"></audio>
+    </div>
+    <div class="drv-pvwait">${spinnerHtml()}</div>`;
+  } else if (isPdf) body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-pdf drv-docwin">${spinnerHtml()}</div></div></div>`;
+  else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
+  paintPvShell(n, body);
+  // Media inside archives: sequential playback only, no seeking (compressed entries would
+  // have to re-decode from the start on every jump).
+  // 压缩包内媒体只允许顺序播放,禁止 seek(压缩条目每跳一次都得从头重解)。
+  // In-archive media plays off the worker's single-flight disk cache, so seeking is free:
+  // cached regions answer instantly, uncached ones just buffer -- no repeated decodes.
+  // 压缩包内媒体经 worker 的单飞磁盘缓存播放,seek 零成本:已缓存区域即时响应,
+  // 未缓存区域只是缓冲等待,不存在重复解码。
+  // While the worker decodes (a whole solid 7z block, or a compressed/encrypted entry) the
+  // preview shows a "decompressing X% · Y MB/s" pill driven by the worker's fill counters --
+  // for images and other file kinds too, not only for media. Streamed previews only (a blob
+  // URL means it is already fully extracted, nothing to report).
+  // worker 解码期间(一整个固实 7z 块,或压缩/加密条目),预览显示"解压缓冲中 X% · Y MB/s"
+  // 提示,数据来自 worker 的填充计数 —— 图片和其它类型也一样,不止媒体。仅对流式预览
+  // (blob URL 表示已整体解出,无进度可报)。
+  if (n.arc && n.arcUrl && !n.arcUrl.startsWith('blob:')) {
+    attachArcProgress(n, pv.el.querySelector('video, audio') || pv.el.querySelector('img'));
+  }
+  // An <img> the browser cannot decode renders as NOTHING -- no broken-image box, no message,
+  // just an empty frame that is indistinguishable from "still loading". Settle every image
+  // preview explicitly: lift the veil on success, say "cannot preview" on failure. This has to
+  // live here rather than in attachArcProgress, which only runs for streamed previews and so
+  // left the blob fallback with no failure path at all.
+  // 浏览器解不出来的 <img> 渲染结果是「什么都没有」—— 没有裂图框,没有提示,只有一片和
+  // 「还在加载」无从区分的空白。所以每个图片预览都要明确收尾:成功就撤遮罩,失败就说无法预览。
+  // 这段必须放在这里而不是 attachArcProgress —— 那个只对流式预览生效,blob 回退路径因此
+  // 完全没有失败出口。
+  // Media starts hidden behind the spinner and only appears once it can actually play. This
+  // runs for every path, including the no-worker blob fallback where attachArcProgress -- which
+  // owns the same handover during streaming -- is never wired up at all.
+  // 媒体一开始藏在加载动画之后,真的能播了才出现。所有路径都要走这一步,包括没有 worker 的
+  // blob 回退 —— 那条路上负责同一次交接的 attachArcProgress 根本不会接线。
+  const med = pv.el.querySelector('.drv-view-body video, .drv-view-body audio');
+  const medVeil = med ? pv.el.querySelector('.drv-pvwait') : null;
+  if (med && medVeil) {
+    med.classList.add('drv-wait');
+    const ready = () => {
+      medVeil.style.display = 'none';
+      med.classList.remove('drv-wait');
+    };
+    if (med.readyState >= 3) ready();
+    else med.addEventListener('canplay', ready, { once: true });
+  }
+  const im = IMG_RE.test(mime) ? pv.el.querySelector('.drv-view-body > img') : null;
+  if (im) {
+    const settle = async (ok) => {
+      pv?.el?.querySelector('.drv-pvwait')?.remove();
+      if (ok || !pv || pv.list[pv.idx] !== n) return;
+      // A streamed URL that will not load means the service worker is not controlling the page
+      // (installing, updating, unsupported), so the request went to the network, which cannot
+      // serve it. Extract in the page instead -- slower, but the image still appears.
+      // 流式 URL 加载不出来,说明 service worker 没在控制页面(安装中、更新中、或不受支持),
+      // 请求落到了网络,而网络供不了。改成在页面内解出 —— 慢一些,但图还是能出来。
+      if (n.arcBlob && !String(n.arcUrl || '').startsWith('blob:')) {
+        try {
+          const u = await n.arcBlob();
+          if (!pv || pv.list[pv.idx] !== n) return;
+          n.arcUrl = u;
+          paintPreview();
+          return;
+        } catch { /* fall through to the message / 落到下面的提示 */ }
+      }
+      const b = pv?.el?.querySelector('.drv-view-body');
+      if (b && pv.list[pv.idx] === n) b.innerHTML = noprevHtml(n);
+    };
+    if (im.complete) settle(im.naturalWidth > 0);
+    else {
+      im.addEventListener('load', () => settle(true), { once: true });
+      im.addEventListener('error', () => settle(false), { once: true });
+    }
+  }
   const docBox = pv.el.querySelector('.drv-doc');
   if (docBox) {
     applyPreviewWidth(docBox);
@@ -1363,6 +1630,7 @@ function walkEntry(entry, prefix, out) {
 }
 
 async function enqueueFiles(items) {
+  if (dst.view === 'arc') return; // archives are read-only / 压缩包内只读
   if (!items.length) return;
   if (!canWriteHere()) {
     toast(tErr('e_drive_forbidden'), true);
@@ -1420,6 +1688,9 @@ async function enqueueFiles(items) {
         });
       }
     }
+    // Each group's top-level folder id, for click-to-locate (its containing folder is g.parent)
+    // 每个组的顶层文件夹 id,供点击定位(其所在文件夹是 g.parent)
+    for (const g of groups.values()) g.topId = dirCache.get(g.name) || null;
   } catch (e) {
     toast(e.message, true);
   }
@@ -1439,6 +1710,7 @@ function pump() {
       .then((node) => {
         task.status = 'ok';
         task.sent = task.size;
+        task.node = node; // where it landed: id + parent_id, for click-to-locate / 落点,供点击定位
         queueThumb(task.file, node);
       })
       .catch((e) => {
@@ -1641,7 +1913,7 @@ function renderUpPanel() {
     </div>
     <div class="drv-up-list">
       ${up.tasks.map((x) => `
-      <div class="drv-up-item" data-tid="${x.id}">
+      <div class="drv-up-item${x.status === 'ok' && (x.node || x.topId) ? ' goto' : ''}" data-tid="${x.id}"${x.status === 'ok' && (x.node || x.topId) ? ` data-goto="${x.id}" title="${esc(t('drv_up_locate'))}"` : ''}>
         ${x.group ? `<span class="gfold">${icon('folder', 22)}</span>` : fileIcon(x.name, 24)}
         <span class="nm" title="${esc(x.name)}">${esc(x.name)}</span>
         ${x.group ? `<span class="gcnt">${x.done}/${x.total}</span>` : ''}
@@ -1667,6 +1939,12 @@ function renderUpPanel() {
       if (task) cancelTask(task);
       return;
     }
+    const g = e.target.closest('[data-goto]');
+    if (g) {
+      const task = up.tasks.find((x) => x.id === +g.dataset.goto);
+      if (task) locateTask(task);
+      return;
+    }
     const b = e.target.closest('[data-up]');
     if (!b) return;
     if (b.dataset.up === 'min') {
@@ -1677,6 +1955,19 @@ function renderUpPanel() {
       renderUpPanel();
     }
   };
+}
+
+/** Jump to a finished upload's containing folder and select the item. A group's item is the
+ *  top-level folder it created; a single file's item is the file itself.
+ *  跳到已完成上传所在的文件夹并选中该项。组任务的项是它建的顶层文件夹;单文件的项是文件本身。 */
+function locateTask(task) {
+  const itemId = task.group ? task.topId : task.node?.id;
+  const folderId = task.group ? task.parent : (task.node?.parent_id || 'root');
+  if (!itemId) return;
+  dst.selectAfterLoad = itemId;
+  const hash = folderId && folderId !== 'root' ? `#/drive/folder/${folderId}` : '#/drive';
+  if (location.hash === hash) reload(); // already there -- re-list so the item is fresh / 已在此,重列
+  else navigate(hash);
 }
 
 function paintTask(task) {

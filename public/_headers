@@ -9,6 +9,10 @@
 /index.html
   Cache-Control: no-cache
 
+# 压缩包流式 SW 的 scope 要覆盖整个站点(页面在 / 下,拦截才对其子资源生效)
+/assets/drive/arc-sw.js
+  Service-Worker-Allowed: /
+
 # 第三方自托管库(Web Awesome/Quill/postal-mime)基本不变,缓存一天
 /vendor/*
   Cache-Control: public, max-age=86400

@@ -51,9 +51,12 @@ export function kindOf(name, mime) {
   if (e === 'mht' || e === 'mhtml' || m === 'multipart/related' || m === 'message/rfc822') return 'mhtml';
   if (e === 'html' || e === 'htm' || e === 'xhtml' || m === 'text/html') return 'html';
   if (CODE_EXTS.has(e) || CODE_NAMES.has(base)) return 'code';
-  if (e === 'txt' || e === 'text' || m.startsWith('text/')) return 'txt';
+  if (e === 'txt' || e === 'text' || SUB_EXTS.has(e) || m.startsWith('text/')) return 'txt';
   return null;
 }
+
+// Subtitles and lyrics read as plain text / 字幕与歌词按纯文本读
+const SUB_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub', 'lrc']);
 
 // ---------- Small helpers ----------
 // ---------- 小工具 ----------
