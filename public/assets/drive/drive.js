@@ -1148,6 +1148,8 @@ function renderLinksView(main, shares) {
           <span class="badge ${s.audience}">${esc(who)}</span>
           <span class="badge role">${esc(t(s.role === 'editor' ? 'drv_role_editor' : 'drv_role_viewer'))}</span>
           <span class="st">${esc(stateLbl)}</span>
+          <span class="st">${esc(t('drv_share_created', fmtDate(s.created_at)))}${
+            (s.members || []).length ? ' · ' + esc(t('drv_share_n_members', String(s.members.length))) : ''}</span>
           <span style="flex:1"></span>
           ${dead
             ? `<wa-button size="small" appearance="plain" data-forget="${esc(s.id)}">${esc(t('drv_share_forget'))}</wa-button>`
@@ -1155,10 +1157,6 @@ function renderLinksView(main, shares) {
                <wa-button size="small" appearance="plain" class="danger" data-stop="${esc(s.id)}">${esc(t('drv_share_stop'))}</wa-button>`}
         </div>
         <div class="items">${items || `<span class="drv-dim">${esc(t('drv_share_items_gone'))}</span>`}</div>
-        <div class="ft drv-dim">
-          ${esc(t('drv_share_created', fmtDate(s.created_at)))}
-          ${(s.members || []).length ? ' · ' + esc(t('drv_share_n_members', String(s.members.length))) : ''}
-        </div>
       </div>`;
   }).join('');
 
