@@ -1084,6 +1084,11 @@ async function tabDrive(body) {
         <wa-button id="drv-quota-save" size="small">${esc(t('save'))}</wa-button>
         <span class="dim">${esc(t('drv_a_quota_cap', fmtSize(cap * 1024 * 1024)))}</span>
       </div>
+      <div class="form-row">
+        <label>${esc(t('drv_a_share_owner'))}</label>
+        <wa-switch id="drv-show-owner" ${d.drive_share_show_owner ? 'checked' : ''}></wa-switch>
+        <span class="dim">${esc(t('drv_a_share_owner_note'))}</span>
+      </div>
     </section>`;
     // wa-switch dispatches a plain 'change' -- there is no 'wa-change'. Listening for the wrong
     // name left the toggle flipping visually while nothing was ever saved.
@@ -1099,6 +1104,16 @@ async function tabDrive(body) {
         // 只有改的是当前访问域名时,顶栏入口才会即时出现;其余域下次访问生效。
         await refreshMe();
         loadUsers();
+      } catch (err) {
+        toast(err.message, true);
+        paintDomain();
+      }
+    });
+    qs('#drv-show-owner').addEventListener('change', async (e) => {
+      try {
+        await api('POST', `/api/admin/drive/domains/${d.id}`, { share_show_owner: !!e.target.checked });
+        d.drive_share_show_owner = e.target.checked ? 1 : 0;
+        toast(t('t_saved'));
       } catch (err) {
         toast(err.message, true);
         paintDomain();

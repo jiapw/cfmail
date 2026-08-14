@@ -136,10 +136,24 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   if (need === 'owner') throw new HttpError(404, 'e_drive_not_found');
   if (chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
   const ids = chain.map((n) => n.id);
+  // A share qualifies only if it is alive (not revoked, not expired), is meant for signed-in
+  // users, and -- when it names a domain -- this user holds a mailbox under that domain. The
+  // domain test is the department check: membership follows the mailbox, so someone who joins
+  // the department later gains access without the share being touched.
+  // 一条共享要生效,必须仍然活着(未撤销、未过期)、面向登录用户,并且 —— 若它指定了域名 ——
+  // 该用户在此域名下持有信箱。这个域名判定就是部门校验:资格随信箱走,
+  // 后来加入该部门的人无需改动共享即可获得访问权。
   const rows = await c.env.DB.prepare(
-    `SELECT s.node_id, s.role FROM drive_shares s JOIN drive_share_members m ON m.share_id=s.id
-     WHERE m.user_id=?1 AND s.node_id IN (${ids.map((_, i) => '?' + (i + 2)).join(',')})`
-  ).bind(user.id, ...ids).all();
+    `SELECT si.node_id, s.role FROM drive_shares s
+       JOIN drive_share_items si ON si.share_id = s.id
+       JOIN drive_share_members m ON m.share_id = s.id
+     WHERE m.user_id=?1 AND s.audience='internal'
+       AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > ?2)
+       AND (s.domain_id IS NULL OR EXISTS (
+         SELECT 1 FROM grants g JOIN mailboxes mb ON mb.id=g.mailbox_id
+          WHERE g.user_id=?1 AND mb.domain_id = s.domain_id))
+       AND si.node_id IN (${ids.map((_, i) => '?' + (i + 3)).join(',')})`
+  ).bind(user.id, now(), ...ids).all();
   const hits = (rows.results || []) as { node_id: string; role: string }[];
   if (!hits.length) throw new HttpError(404, 'e_drive_not_found');
   const level = hits.some((h) => h.role === 'editor') ? 'editor' : 'viewer';
@@ -276,12 +290,12 @@ export async function purgeSubtree(env: Env, rootId: string, limit = PURGE_BATCH
   for (let i = 0; i < batch.length; i += 90) {
     const part = batch.slice(i, i + 90).map((n) => n.id);
     const ph = part.map((_, j) => '?' + (j + 1)).join(',');
-    // Members must go before their shares (the subquery still needs the share rows)
-    // 成员先于共享删(子查询还要用到共享行)
-    stmts.push(env.DB.prepare(
-      `DELETE FROM drive_share_members WHERE share_id IN (SELECT id FROM drive_shares WHERE node_id IN (${ph}))`
-    ).bind(...part));
-    stmts.push(env.DB.prepare(`DELETE FROM drive_shares WHERE node_id IN (${ph})`).bind(...part));
+    // Drop these nodes from every share they appear in. The share itself survives: it may well
+    // hold other items, and one of them being deleted is not a reason to kill the link. A share
+    // left with nothing is reported as empty by shareItems() and simply serves no content.
+    // 把这些节点从所有包含它们的共享中摘掉。共享本身保留:它很可能还含别的条目,
+    // 其中一个被删不构成销毁链接的理由。条目全空的共享由 shareItems() 报告为空,供不出内容而已。
+    stmts.push(env.DB.prepare(`DELETE FROM drive_share_items WHERE node_id IN (${ph})`).bind(...part));
     stmts.push(env.DB.prepare(`DELETE FROM drive_nodes WHERE id IN (${ph})`).bind(...part));
   }
   if (freed > 0) {
@@ -356,7 +370,7 @@ driveApp.get('/list', async (c) => {
   const parent = String(c.req.query('parent') || 'root');
   const user = c.get('user');
   const childrenSql = (where: string) =>
-    `SELECT n.*, (SELECT 1 FROM drive_shares s WHERE s.node_id=n.id) AS shared
+    `SELECT n.*, (SELECT 1 FROM drive_share_items si JOIN drive_shares s ON s.id=si.share_id WHERE si.node_id=n.id AND s.revoked_at IS NULL) AS shared
      FROM drive_nodes n WHERE ${where} AND n.trashed=0
      ORDER BY n.kind='folder' DESC, n.name COLLATE NOCASE LIMIT ${LIST_LIMIT}`;
   if (parent === 'root') {
@@ -405,7 +419,7 @@ driveApp.get('/search', async (c) => {
   if (!q) return c.json({ nodes: [] });
   const like = '%' + q.replace(/[\\%_]/g, (ch) => '\\' + ch) + '%';
   const rows = await c.env.DB.prepare(
-    `SELECT n.*, (SELECT 1 FROM drive_shares s WHERE s.node_id=n.id) AS shared FROM drive_nodes n
+    `SELECT n.*, (SELECT 1 FROM drive_share_items si JOIN drive_shares s ON s.id=si.share_id WHERE si.node_id=n.id AND s.revoked_at IS NULL) AS shared FROM drive_nodes n
      WHERE n.owner_id=?1 AND n.trashed=0 AND n.name LIKE ?2 ESCAPE '\\'
      ORDER BY n.updated_at DESC LIMIT 200`
   ).bind(c.get('user').id, like).all();
@@ -415,7 +429,7 @@ driveApp.get('/search', async (c) => {
 
 driveApp.get('/starred', async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT n.*, (SELECT 1 FROM drive_shares s WHERE s.node_id=n.id) AS shared FROM drive_nodes n
+    `SELECT n.*, (SELECT 1 FROM drive_share_items si JOIN drive_shares s ON s.id=si.share_id WHERE si.node_id=n.id AND s.revoked_at IS NULL) AS shared FROM drive_nodes n
      WHERE n.owner_id=?1 AND n.starred=1 AND n.trashed=0
      ORDER BY n.kind='folder' DESC, n.name COLLATE NOCASE LIMIT ${LIST_LIMIT}`
   ).bind(c.get('user').id).all();
@@ -425,7 +439,7 @@ driveApp.get('/starred', async (c) => {
 
 driveApp.get('/recent', async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT n.*, (SELECT 1 FROM drive_shares s WHERE s.node_id=n.id) AS shared FROM drive_nodes n
+    `SELECT n.*, (SELECT 1 FROM drive_share_items si JOIN drive_shares s ON s.id=si.share_id WHERE si.node_id=n.id AND s.revoked_at IS NULL) AS shared FROM drive_nodes n
      WHERE n.owner_id=?1 AND n.kind='file' AND n.trashed=0 ORDER BY n.updated_at DESC LIMIT 80`
   ).bind(c.get('user').id).all();
   const vis = (await dropTrashedAncestors(c.env, rows.results || [])).slice(0, 50);
@@ -586,17 +600,37 @@ driveApp.post('/trash/empty', async (c) => {
 // Small files in one request: raw body, metadata in the query string
 // 小文件一次请求:原始字节做 body,元数据放查询串
 driveApp.post('/upload', async (c) => {
-  const target = await resolveWriteTarget(c, String(c.req.query('parent') || 'root'));
-  const name = cleanName(c.req.query('name'));
+  // `node` targets an existing file directly: the caller needs edit rights on THAT FILE, not on
+  // the folder holding it. That is what makes a single shared file updatable -- its recipient
+  // was given the file, never the folder, so they have nowhere to "upload a file of the same
+  // name" into. The name and location are fixed by the target; only the bytes change.
+  // `node` 直接指向一个已有文件:调用者需要的是对"该文件"的编辑权,而不是对其所在目录的。
+  // 正是这一点让"单独分享的文件"可被更新 —— 接收方拿到的是文件而非目录,
+  // 他没有任何地方可以"上传一个同名文件"。名称与位置由目标锁定,变的只有内容。
+  const overwriteId = String(c.req.query('node') || '');
+  let target: { ownerId: string; parentId: string | null };
+  let name: string;
+  let clash: NodeRow | null;
+  if (overwriteId) {
+    const a = await accessNode(c, overwriteId, 'edit');
+    if (a.node.kind !== 'file') throw new HttpError(400, 'e_drive_not_file');
+    if (a.chain.some((n) => n.trashed)) throw new HttpError(400, 'e_drive_trashed');
+    target = { ownerId: a.node.owner_id, parentId: a.node.parent_id };
+    name = a.node.name;
+    clash = a.node;
+  } else {
+    target = await resolveWriteTarget(c, String(c.req.query('parent') || 'root'));
+    name = cleanName(c.req.query('name'));
+    // An occupied name means overwrite: same node id, same R2 key, new bytes. The put below
+    // replaces the object atomically; star and creation date simply stay.
+    // 名字被占用即覆盖。同一节点 id、同一 R2 键、换新字节。下面的 put 原子替换对象,
+    // 星标与创建时间自然保留。
+    clash = await findClash(c.env, target.ownerId, target.parentId, name, 'file');
+  }
   const mime = cleanMime(c.req.query('mime'));
   const len = parseInt(c.req.header('Content-Length') || '', 10);
   if (!c.req.raw.body || !Number.isFinite(len) || len < 0) throw new HttpError(400, 'e_drive_body_required');
   if (len > SINGLE_MAX) throw new HttpError(413, 'e_drive_part_too_big');
-  // An occupied name means overwrite: same node id, same R2 key, new bytes. The put below
-  // replaces the object atomically; star and creation date simply stay.
-  // 名字被占用即覆盖。同一节点 id、同一 R2 键、换新字节。下面的 put 原子替换对象,
-  // 星标与创建时间自然保留。
-  const clash = await findClash(c.env, target.ownerId, target.parentId, name, 'file');
   const oldSize = clash?.size || 0;
   const q0 = await driveQuota(c.env, target.ownerId);
   if (!q0.enabled) throw new HttpError(403, 'e_drive_disabled');
@@ -767,8 +801,13 @@ function parseRange(h: string | undefined): any {
   return { offset, length: end - offset + 1 };
 }
 
-driveApp.get('/files/:id/dl', async (c) => {
-  const node = await accessFileCached(c, c.req.param('id'));
+driveApp.get('/files/:id/dl', async (c) => serveFile(c, await accessFileCached(c, c.req.param('id'))));
+
+/** Stream a file node out of R2, honouring Range. Shared by the signed-in endpoint and the
+ *  public share endpoint -- the two differ only in how they decided the caller may see it.
+ *  从 R2 流出一个文件节点,支持 Range。登录端点与公开共享端点共用 ——
+ *  两者的差别只在于"凭什么认定调用者可以看它"。 */
+async function serveFile(c: any, node: NodeRow): Promise<Response> {
   if (node.kind !== 'file' || !node.r2_key) throw new HttpError(400, 'e_drive_not_file');
   const range = parseRange(c.req.header('Range'));
   const obj: any = await c.env.RAW.get(node.r2_key, range ? { range } : undefined);
@@ -799,7 +838,7 @@ driveApp.get('/files/:id/dl', async (c) => {
   }
   h.set('Content-Length', String(obj.size));
   return new Response(obj.body, { headers: h });
-});
+}
 
 // ---------- Thumbnails ----------
 // ---------- 缩略图 ----------
@@ -861,36 +900,56 @@ async function sharesDomainWith(env: Env, ownerId: string, userId: string): Prom
 }
 
 const SHARE_ROLES = ['viewer', 'editor'];
+const SHARE_AUDIENCES = ['internal', 'public'];
+const SHARE_MAX_ITEMS = 100;
+/** The nine the interface actually ships. An allowlist rather than a length cap: this value is
+ *  handed straight back to every visitor, and only a code we have a dictionary for is useful.
+ *  界面实际提供的九种。用白名单而非长度截断:这个值会原样发给每一位访问者,
+ *  只有我们有词典的语言代码才有意义。 */
+const SHARE_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'ru']);
 
-driveApp.get('/nodes/:id/shares', async (c) => {
-  const a = await accessNode(c, c.req.param('id'), 'owner');
-  const s = await c.env.DB.prepare('SELECT * FROM drive_shares WHERE node_id=?1').bind(a.node.id).first<any>();
-  if (!s) return c.json({ share: null });
-  const members = await c.env.DB.prepare(
-    `SELECT m.user_id, m.joined_at, u.name, u.email FROM drive_share_members m JOIN users u ON u.id=m.user_id
-     WHERE m.share_id=?1 ORDER BY m.joined_at`
-  ).bind(s.id).all();
-  return c.json({
-    share: { id: s.id, token: s.token, role: s.role, created_at: s.created_at, members: members.results || [] },
-  });
-});
+/** A share row plus the reason it is (or is not) usable right now.
+ *  一条共享,外加它此刻可用/不可用的原因。 */
+const SHARE_MAX_DAYS = 3650;
 
-driveApp.post('/nodes/:id/shares', async (c) => {
-  const a = await accessNode(c, c.req.param('id'), 'owner');
-  if (a.node.kind !== 'folder') throw new HttpError(400, 'e_drive_share_folder_only');
-  if (a.chain.some((n) => n.trashed)) throw new HttpError(400, 'e_drive_trashed');
-  const body = await c.req.json<any>();
-  const role = SHARE_ROLES.includes(body.role) ? body.role : 'viewer';
-  const exist = await c.env.DB.prepare('SELECT * FROM drive_shares WHERE node_id=?1').bind(a.node.id).first<any>();
-  if (exist) return c.json({ id: exist.id, token: exist.token, role: exist.role, created_at: exist.created_at });
-  const id = uid();
-  const token = randomToken(24);
-  const t = now();
-  await c.env.DB.prepare(
-    'INSERT INTO drive_shares (id, token, node_id, owner_id, role, created_at) VALUES (?1,?2,?3,?4,?5,?6)'
-  ).bind(id, token, a.node.id, a.node.owner_id, role, t).run();
-  return c.json({ id, token, role, created_at: t });
-});
+/** Expiry is expressed as a DURATION by the caller and turned into an instant here, on the
+ *  server clock. Taking an absolute timestamp from the browser would hand the deadline to a
+ *  clock nobody controls: a client running slow sends an instant that has "already passed",
+ *  which used to be stored as null -- a link the user believed would expire in a week, living
+ *  forever. A fast clock is the mirror image, keeping the link alive past its intended death.
+ *  过期时间由调用方以"时长"表达,在此按服务器时钟换算成时刻。接受浏览器给的绝对时间戳,
+ *  等于把有效期交给一个谁也管不着的时钟:走慢的客户端送来一个"已经过去"的时刻,
+ *  过去会被存成 null —— 用户以为一周后失效的链接,成了永久链接。走快的时钟则相反,
+ *  让链接活过它本该死去的时间。 */
+function expiryFromDays(v: unknown, from: number = now()): number | null {
+  const days = Number(v);
+  if (!Number.isFinite(days) || days <= 0) return null;
+  return from + Math.min(Math.floor(days), SHARE_MAX_DAYS) * 86400000;
+}
+
+function shareLiveness(s: any): string | null {
+  if (!s) return 'e_drive_share_not_found';
+  if (s.revoked_at) return 'e_drive_share_revoked';
+  if (s.expires_at && s.expires_at <= now()) return 'e_drive_share_expired';
+  return null;
+}
+
+/** Items of a share, minus anything trashed or deleted since. Sharing a node does not pin it:
+ *  the owner can still bin it, and it then quietly leaves every share it was in.
+ *  共享的条目,剔除此后被回收或删除的。共享不会钉住节点:所有者照样可以把它扔进回收站,
+ *  它便悄然退出所有包含它的共享。 */
+async function shareItems(env: Env, shareId: string): Promise<NodeRow[]> {
+  const rows = await env.DB.prepare(
+    `SELECT n.* FROM drive_share_items si JOIN drive_nodes n ON n.id = si.node_id
+      WHERE si.share_id = ?1 ORDER BY n.kind DESC, n.name`
+  ).bind(shareId).all();
+  const out: NodeRow[] = [];
+  for (const n of (rows.results || []) as unknown as NodeRow[]) {
+    const chain = await chainOf(env, n.id);
+    if (chain.length && !chain.some((x) => x.trashed)) out.push(n);
+  }
+  return out;
+}
 
 async function ownShare(c: any): Promise<any> {
   const s = await c.env.DB.prepare('SELECT * FROM drive_shares WHERE id=?1').bind(c.req.param('id')).first();
@@ -898,17 +957,150 @@ async function ownShare(c: any): Promise<any> {
   return s;
 }
 
+/** Domains the caller may aim a share at: those where they actually hold a mailbox. Offering
+ *  any other domain would let someone address a department they are not in.
+ *  调用者可用来限定共享的域名:他确实持有信箱的那些。给出别的域名,
+ *  等于让人对着自己并不属于的部门发共享。 */
+async function myDomains(env: Env, userId: string): Promise<{ id: string; name: string }[]> {
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT d.id, d.name FROM grants g
+       JOIN mailboxes m ON m.id = g.mailbox_id JOIN domains d ON d.id = m.domain_id
+      WHERE g.user_id = ?1 ORDER BY d.name`
+  ).bind(userId).all();
+  return (rows.results || []) as any[];
+}
+
+driveApp.get('/share-domains', async (c) => c.json({ domains: await myDomains(c.env, c.get('user').id) }));
+
+/** Create a share over any mix of files and folders. Public shares are forced to viewer here
+ *  as well as in the UI: the public endpoints below never authenticate anyone, so an editable
+ *  public share would be an unauthenticated write endpoint.
+ *  在任意文件与目录的组合上创建共享。public 在此与界面两处都被钉死为 viewer:
+ *  下面的公开端点从不认证任何人,可编辑的公开共享等于一个免认证的写入端点。 */
+driveApp.post('/shares', async (c) => {
+  const user: User = c.get('user');
+  const body = await c.req.json<any>();
+  const ids: string[] = Array.isArray(body.nodes) ? body.nodes.map((x: any) => String(x)) : [];
+  if (!ids.length || ids.length > SHARE_MAX_ITEMS) throw new HttpError(400, 'e_bad_request');
+  const audience = SHARE_AUDIENCES.includes(body.audience) ? body.audience : 'internal';
+  const role = audience === 'public' ? 'viewer' : (SHARE_ROLES.includes(body.role) ? body.role : 'viewer');
+  let domainId: string | null = null;
+  if (audience === 'internal' && body.domain_id) {
+    const mine = await myDomains(c.env, user.id);
+    if (!mine.some((d) => d.id === body.domain_id)) throw new HttpError(400, 'e_drive_share_domain');
+    domainId = String(body.domain_id);
+  }
+  // Every item must be owned by the caller and out of the trash
+  // 每个条目都必须属于调用者且不在回收站
+  const nodes: NodeRow[] = [];
+  for (const id of ids) {
+    const a = await accessNode(c, id, 'owner');
+    if (a.chain.some((n) => n.trashed)) throw new HttpError(400, 'e_drive_trashed');
+    nodes.push(a.node);
+  }
+  const shareId = uid();
+  const token = randomToken(24);
+  // One instant for both stamps: "expires in 7 days" should be exactly seven days after the
+  // creation time recorded on the same row, not seven days after a moment a few queries earlier.
+  // 两个时间戳取同一时刻:"7 天后过期"应当正好是同一行所记创建时间之后的七天,
+  // 而不是几次查询之前那一刻之后的七天。
+  const t = now();
+  const expires = expiryFromDays(body.expires_days, t);
+  // Remember how the sharer's app looked and read, so the public page can open the same way
+  // 记下分享者当时的界面观感与语言,公开页据此以同样的样子打开
+  const theme = String(body.theme || '').slice(0, 32) || null;
+  const mode = body.mode === 'dark' ? 'dark' : (body.mode === 'light' ? 'light' : null);
+  const lang = SHARE_LANGS.has(String(body.lang || '')) ? String(body.lang) : null;
+  const stmts = [c.env.DB.prepare(
+    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, created_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)`
+  ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, t)];
+  for (const n of nodes) {
+    stmts.push(c.env.DB.prepare('INSERT INTO drive_share_items (share_id, node_id) VALUES (?1,?2)')
+      .bind(shareId, n.id));
+  }
+  await c.env.DB.batch(stmts);
+  return c.json({ id: shareId, token, role, audience, domain_id: domainId, expires_at: expires, created_at: t });
+});
+
+function cleanNote(v: unknown): string {
+  return String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 200);
+}
+
+/** Everything the caller has shared out, with what is in it. This is the management list.
+ *  调用者分享出去的一切,连同其内容。这就是管理列表。 */
+driveApp.get('/shares', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT s.*, d.name AS domain_name FROM drive_shares s
+       LEFT JOIN domains d ON d.id = s.domain_id
+      WHERE s.owner_id = ?1 ORDER BY s.created_at DESC LIMIT 300`
+  ).bind(c.get('user').id).all();
+  const out: any[] = [];
+  for (const s of (rows.results || []) as any[]) {
+    const items = await shareItems(c.env, s.id);
+    const members = await c.env.DB.prepare(
+      `SELECT m.user_id, m.joined_at, u.name, u.email FROM drive_share_members m
+         JOIN users u ON u.id = m.user_id WHERE m.share_id = ?1 ORDER BY m.joined_at`
+    ).bind(s.id).all();
+    out.push({
+      id: s.id, token: s.token, role: s.role, audience: s.audience,
+      domain_id: s.domain_id, domain_name: s.domain_name || null,
+      expires_at: s.expires_at, revoked_at: s.revoked_at, note: s.note, created_at: s.created_at,
+      state: shareLiveness(s) || 'ok',
+      items: items.map((n) => ({ id: n.id, name: n.name, kind: n.kind, size: n.size })),
+      members: members.results || [],
+    });
+  }
+  return c.json({ shares: out });
+});
+
 driveApp.put('/shares/:id', async (c) => {
   const s = await ownShare(c);
-  const role = String((await c.req.json<any>()).role || '');
-  if (!SHARE_ROLES.includes(role)) throw new HttpError(400, 'e_bad_request');
-  await c.env.DB.prepare('UPDATE drive_shares SET role=?1 WHERE id=?2').bind(role, s.id).run();
+  const body = await c.req.json<any>();
+  const sets: string[] = [];
+  const args: any[] = [];
+  if (body.role !== undefined) {
+    if (!SHARE_ROLES.includes(body.role)) throw new HttpError(400, 'e_bad_request');
+    // A public link can never be granted write access / 公开链接永远拿不到写权限
+    if (s.audience === 'public' && body.role !== 'viewer') throw new HttpError(400, 'e_drive_share_public_readonly');
+    sets.push(`role=?${sets.length + 1}`);
+    args.push(body.role);
+  }
+  // Same rule on update: a duration from the caller, an instant from this clock.
+  // 更新时同理:调用方给时长,时刻由本机时钟决定。
+  if (body.expires_days !== undefined) {
+    sets.push(`expires_at=?${sets.length + 1}`);
+    args.push(expiryFromDays(body.expires_days));
+  }
+  if (body.note !== undefined) {
+    sets.push(`note=?${sets.length + 1}`);
+    args.push(cleanNote(body.note));
+  }
+  if (!sets.length) throw new HttpError(400, 'e_bad_request');
+  await c.env.DB.prepare(`UPDATE drive_shares SET ${sets.join(',')} WHERE id=?${sets.length + 1}`)
+    .bind(...args, s.id).run();
   return c.json({ ok: true });
 });
 
+/** Revoke. The row is kept (tombstoned) rather than deleted so the link dies immediately and
+ *  visibly, and so a revoked entry can still be listed and explained rather than just vanishing.
+ *  撤销。保留该行(打上墓碑)而非删除,链接因此立刻且显式地失效,
+ *  且被撤销的条目仍能列出并给出说明,而不是凭空消失。 */
 driveApp.delete('/shares/:id', async (c) => {
   const s = await ownShare(c);
   await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE drive_shares SET revoked_at=?1 WHERE id=?2').bind(now(), s.id),
+    c.env.DB.prepare('DELETE FROM drive_share_members WHERE share_id=?1').bind(s.id),
+  ]);
+  return c.json({ ok: true });
+});
+
+/** Delete a revoked share for good, clearing it out of the management list.
+ *  彻底删除一条已撤销的共享,把它从管理列表里清掉。 */
+driveApp.post('/shares/:id/forget', async (c) => {
+  const s = await ownShare(c);
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM drive_share_items WHERE share_id=?1').bind(s.id),
     c.env.DB.prepare('DELETE FROM drive_share_members WHERE share_id=?1').bind(s.id),
     c.env.DB.prepare('DELETE FROM drive_shares WHERE id=?1').bind(s.id),
   ]);
@@ -930,41 +1122,170 @@ driveApp.delete('/shares/:id/members/:userId', async (c) => {
   return c.json({ ok: true });
 });
 
-// Opening a share link: same-domain users only; joining puts it under their "Shared with me"
-// 打开共享链接:仅限同域用户;加入后出现在其「共享给我」列表
+/** Opening an internal share link. Requires a signed-in account on this instance, and -- when
+ *  the share names a domain -- a mailbox under it. Joining files it under "Shared with me".
+ *  打开内部共享链接。需要本实例的登录账号;若共享指定了域名,还需在该域名下有信箱。
+ *  加入后出现在其「共享给我」列表。 */
 driveApp.post('/shares/join', async (c) => {
   const user = c.get('user');
   const token = String((await c.req.json<any>()).token || '');
   if (!token) throw new HttpError(400, 'e_bad_request');
   const s = await c.env.DB.prepare('SELECT * FROM drive_shares WHERE token=?1').bind(token).first<any>();
-  if (!s) throw new HttpError(404, 'e_drive_share_not_found');
-  const chain = await chainOf(c.env, s.node_id);
-  if (!chain.length || chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_share_not_found');
+  const bad = shareLiveness(s);
+  if (bad) throw new HttpError(bad === 'e_drive_share_not_found' ? 404 : 403, bad);
+  if (s.audience !== 'internal') throw new HttpError(404, 'e_drive_share_not_found');
+  const items = await shareItems(c.env, s.id);
+  if (!items.length) throw new HttpError(404, 'e_drive_share_not_found');
   if (s.owner_id !== user.id) {
-    if (!(await sharesDomainWith(c.env, s.owner_id, user.id))) throw new HttpError(403, 'e_drive_share_domain');
+    if (s.domain_id) {
+      const mine = await myDomains(c.env, user.id);
+      if (!mine.some((d) => d.id === s.domain_id)) throw new HttpError(403, 'e_drive_share_domain');
+    } else if (!(await sharesDomainWith(c.env, s.owner_id, user.id))) {
+      throw new HttpError(403, 'e_drive_share_domain');
+    }
     await c.env.DB.prepare('INSERT OR IGNORE INTO drive_share_members (share_id, user_id, joined_at) VALUES (?1,?2,?3)')
       .bind(s.id, user.id, now()).run();
   }
-  return c.json({ node_id: s.node_id, name: chain[0].name, role: s.role });
+  return c.json({
+    share_id: s.id, role: s.role,
+    items: items.map((n) => ({ id: n.id, name: n.name, kind: n.kind })),
+  });
 });
 
 driveApp.get('/shared', async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT s.id AS share_id, s.node_id, s.role, m.joined_at, u.name AS owner_name, u.email AS owner_email
+    `SELECT s.id AS share_id, s.role, s.expires_at, s.revoked_at, m.joined_at,
+            u.name AS owner_name, u.email AS owner_email
      FROM drive_share_members m JOIN drive_shares s ON s.id=m.share_id JOIN users u ON u.id=s.owner_id
      WHERE m.user_id=?1 ORDER BY m.joined_at DESC LIMIT 200`
   ).bind(c.get('user').id).all();
   const out: any[] = [];
   for (const r of (rows.results || []) as any[]) {
-    // Folders sitting in the owner's trash (or already purged) stay out of the list
-    // 已进所有者回收站(或已删)的文件夹不出现在列表里
-    const chain = await chainOf(c.env, r.node_id);
-    if (!chain.length || chain.some((n) => n.trashed)) continue;
-    out.push({ ...r, name: chain[0].name });
+    if (shareLiveness(r)) continue; // revoked or expired shares drop off the list / 已撤销或过期的不再列出
+    for (const n of await shareItems(c.env, r.share_id)) {
+      out.push({ share_id: r.share_id, node_id: n.id, name: n.name, kind: n.kind, size: n.size,
+        role: r.role, joined_at: r.joined_at, owner_name: r.owner_name, owner_email: r.owner_email });
+    }
   }
   return c.json({ shares: out });
 });
 
+// ---------- Public share access (no account) ----------
+// ---------- 公开共享访问(无需账号) ----------
+// Mounted outside the authenticated router. Everything here is read-only by construction:
+// there is no caller identity to authorise a write against, so none of these endpoints can
+// mutate anything, and `audience='public'` is refused write access at creation time too.
+// 挂在需要认证的路由之外。此处一切按构造即只读:没有调用者身份可供授权写操作,
+// 因此这些端点无一能修改任何东西,并且 audience='public' 在创建时也被拒绝写权限。
+
+export const drivePubApp = new Hono<Ctx>();
+
+// Never let a public response be reused from cache. Revocation and expiry must bite the moment
+// they happen, and a cached 200 from five seconds ago would quietly outlive the link -- the one
+// failure mode where the user believes access is cut off and it is not.
+// 公开响应一律不得从缓存复用。撤销与过期必须在发生的那一刻生效,
+// 而五秒前缓存下来的 200 会让链接悄悄活过它的死期 —— 这恰是最糟的失效模式:
+// 用户以为访问已经切断,实际并没有。
+drivePubApp.use('*', async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store');
+});
+
+async function pubShare(c: any): Promise<any> {
+  const token = String(c.req.param('token') || '');
+  if (!token) throw new HttpError(404, 'e_drive_share_not_found');
+  const s = await c.env.DB.prepare("SELECT * FROM drive_shares WHERE token=?1 AND audience='public'")
+    .bind(token).first();
+  const bad = shareLiveness(s);
+  if (bad) throw new HttpError(bad === 'e_drive_share_not_found' ? 404 : 403, bad);
+  return s;
+}
+
+/** Resolve a node the public link is allowed to reach: it must sit at, or beneath, one of the
+ *  share's items, and nothing on the way may be trashed. Without this check the token would be
+ *  a key to the whole drive, since node ids are guessable in the sense that they are just ids.
+ *  解析公开链接有权访问的节点:它必须是共享条目之一,或位于其下,且沿途不得有回收站中的节点。
+ *  没有这道校验,token 就成了整个网盘的钥匙 —— 节点 id 只是 id,不该被当作凭证。 */
+async function pubNode(c: any, share: any, nodeId: string): Promise<{ node: NodeRow; chain: NodeRow[]; roots: Set<string> }> {
+  const chain = await chainOf(c.env, nodeId);
+  if (!chain.length || chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
+  const items = await shareItems(c.env, share.id);
+  const roots = new Set(items.map((n) => n.id));
+  if (!chain.some((n) => roots.has(n.id))) throw new HttpError(404, 'e_drive_not_found');
+  return { node: chain[0], chain, roots };
+}
+
+/** Landing payload: what this link contains, and whether it is still alive.
+ *  落地数据:这条链接包含什么,以及它是否仍然有效。 */
+drivePubApp.get('/:token', async (c) => {
+  const s = await pubShare(c);
+  const items = await shareItems(c.env, s.id);
+  const owner: any = await c.env.DB.prepare('SELECT name, email FROM users WHERE id=?1').bind(s.owner_id).first();
+  // The address is disclosed only where an administrator allowed it, and that permission is
+  // read from the domains the SHARER belongs to -- never from the request, which on a public
+  // link carries no identity to base the decision on.
+  // 只有管理员放行的地方才披露地址,而这项许可取自"分享者"所属的域名 ——
+  // 绝不取自请求本身:公开链接上的访问者没有任何可据以判断的身份。
+  const allow = await c.env.DB.prepare(
+    `SELECT 1 AS ok FROM grants g JOIN mailboxes m ON m.id=g.mailbox_id
+       JOIN domains d ON d.id=m.domain_id
+      WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
+  ).bind(s.owner_id).first();
+  return c.json({
+    role: 'viewer',
+    note: s.note,
+    expires_at: s.expires_at,
+    owner_name: owner?.name || '',
+    owner_email: allow ? (owner?.email || '') : '',
+    theme: s.theme || null,
+    mode: s.mode || null,
+    lang: s.lang || null,
+    items: items.map((n) => nodeJson(n)),
+  });
+});
+
+/** List inside the share. `parent` empty means the virtual root -- the selected items. */
+/** 在共享内部列目录。parent 为空表示虚拟根 —— 即被选中的那些条目。 */
+drivePubApp.get('/:token/list', async (c) => {
+  const s = await pubShare(c);
+  const parent = c.req.query('parent') || '';
+  if (!parent) {
+    const items = await shareItems(c.env, s.id);
+    return c.json({ access: 'viewer', path: [], nodes: items.map((n) => nodeJson(n)) });
+  }
+  const { node, chain, roots } = await pubNode(c, s, parent);
+  if (node.kind !== 'folder') throw new HttpError(400, 'e_drive_not_folder');
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM drive_nodes WHERE parent_id=?1 AND trashed=0 ORDER BY kind DESC, name'
+  ).bind(node.id).all();
+  // Breadcrumb stops at the shared item: the recipient must not learn the folders above it
+  // 面包屑到共享条目为止:接收方不该看到它上面的目录结构
+  const cut = chain.findIndex((n) => roots.has(n.id));
+  const path = chain.slice(0, cut + 1).reverse().map((n) => ({ id: n.id, name: n.name }));
+  return c.json({ access: 'viewer', path, nodes: (rows.results || []).map((n: any) => nodeJson(n)) });
+});
+
+drivePubApp.get('/:token/files/:id/dl', async (c) => {
+  const s = await pubShare(c);
+  const { node } = await pubNode(c, s, c.req.param('id'));
+  return serveFile(c, node);
+});
+
+drivePubApp.get('/:token/files/:id/thumb', async (c) => {
+  const s = await pubShare(c);
+  const { node } = await pubNode(c, s, c.req.param('id'));
+  if (node.kind !== 'file' || !node.r2_key || !node.has_thumb) throw new HttpError(404, 'e_drive_not_found');
+  const obj: any = await c.env.RAW.get(node.r2_key + THUMB_SUFFIX);
+  if (!obj) throw new HttpError(404, 'e_drive_not_found');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': 'image/webp',
+      'Content-Length': String(obj.size),
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=86400',
+    },
+  });
+});
 // ---------- Admin API (/api/admin/drive) ----------
 // ---------- 管理端 API(/api/admin/drive) ----------
 
@@ -972,7 +1293,7 @@ export const driveAdminApp = new Hono<Ctx>();
 
 driveAdminApp.get('/domains', async (c) => {
   const scope = await adminScope(c);
-  const rows = await c.env.DB.prepare('SELECT id, name, drive_enabled, drive_quota_mb FROM domains ORDER BY name').all();
+  const rows = await c.env.DB.prepare('SELECT id, name, drive_enabled, drive_quota_mb, drive_share_show_owner FROM domains ORDER BY name').all();
   let list = (rows.results || []) as any[];
   if (scope) list = list.filter((d) => scope.has(d.id));
   return c.json({ domains: list, hard_cap_mb: DRIVE_HARD_CAP_MB });
@@ -994,11 +1315,19 @@ driveAdminApp.post('/domains/:id', async (c) => {
     sets.push(`drive_quota_mb=?${vals.length + 1}`);
     vals.push(q);
   }
+  // Whether a public share link may print the sharer's address. An administrator decision, not
+  // the sharer's: it governs what leaves the company, so it cannot sit in the share dialog.
+  // 公开分享链接是否可以印出分享者的地址。这是管理员的决定,不是分享者的:
+  // 它管的是什么东西流出企业,因此不能放在分享对话框里。
+  if (body.share_show_owner !== undefined) {
+    sets.push(`drive_share_show_owner=?${vals.length + 1}`);
+    vals.push(body.share_show_owner ? 1 : 0);
+  }
   if (sets.length) {
     vals.push(id);
     await c.env.DB.prepare(`UPDATE domains SET ${sets.join(',')} WHERE id=?${vals.length}`).bind(...vals).run();
     await audit(c.env, c.get('user'), 'drive.settings', undefined,
-      { enabled: body.enabled, quota_mb: body.quota_mb }, id);
+      { enabled: body.enabled, quota_mb: body.quota_mb, share_show_owner: body.share_show_owner }, id);
   }
   return c.json({ ok: true });
 });

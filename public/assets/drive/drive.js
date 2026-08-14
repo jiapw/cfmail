@@ -4,7 +4,7 @@
 // 网盘界面。Google Drive 风格。同一套文件夹视图支持列表/网格两种布局、多选、右键菜单、
 // 拖拽上传加进度面板、媒体预览层、文件夹共享与回收站。数据全部走 /api/drive/*。
 import { api } from '../api.js';
-import { t, tErr } from '../i18n.js';
+import { t, tErr, lang } from '../i18n.js';
 import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
   copyText, fileIcon, avatar, debounce,
@@ -73,7 +73,7 @@ export async function renderDrive(seg) {
   } else if (seg[0] === 'folder' && seg[1]) {
     dst.view = 'folder';
     dst.folderId = seg[1];
-  } else if (['shared', 'recent', 'starred', 'trash'].includes(seg[0])) {
+  } else if (['shared', 'recent', 'starred', 'trash', 'links'].includes(seg[0])) {
     dst.view = seg[0];
     dst.folderId = null;
   } else if (seg[0] === 'search' && seg[1]) {
@@ -136,6 +136,7 @@ const NAV = [
   { key: 'shared', icon: 'folder-shared', hash: '#/drive/shared' },
   { key: 'recent', icon: 'clock', hash: '#/drive/recent' },
   { key: 'starred', icon: 'star', hash: '#/drive/starred' },
+  { key: 'links', icon: 'link', hash: '#/drive/links' },
   { key: 'trash', icon: 'trash', hash: '#/drive/trash' },
 ];
 
@@ -237,6 +238,9 @@ async function loadView() {
     } else if (dst.view === 'shared') {
       const data = await api('GET', '/api/drive/shared');
       renderSharedView(main, data.shares || []);
+    } else if (dst.view === 'links') {
+      const data = await api('GET', '/api/drive/shares');
+      renderLinksView(main, data.shares || []);
     } else {
       const ep = { recent: '/api/drive/recent', starred: '/api/drive/starred', trash: '/api/drive/trash', search: `/api/drive/search?q=${encodeURIComponent(dst.q)}` }[dst.view];
       const data = await api('GET', ep);
@@ -670,10 +674,12 @@ function menuItems(nodes) {
       ? { ic: 'folder', label: t('drv_open'), fn: () => openNode(single) }
       : { ic: 'expand', label: t('drv_preview'), fn: () => openPreview(single) });
     if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
-    if (single.kind === 'folder' && own) out.push({ ic: 'share', label: t('drv_share'), fn: () => shareDialog(single) });
     out.push('-');
     if (canEdit && !editorOnRoot) out.push({ ic: 'pencil', label: t('drv_rename'), fn: () => renameDialog(single) });
   }
+  // Share whatever is selected: files, folders, or any mix of them
+  // 选中什么就分享什么:文件、目录,或者两者混装
+  if (own) out.push({ ic: 'share', label: t('drv_share'), fn: () => shareDialog(nodes) });
   if (canEdit && !editorOnRoot) out.push({ ic: 'folder-move', label: t('drv_move'), fn: () => moveDialog(nodes) });
   if (own) {
     const allStar = nodes.every((n) => n.starred);
@@ -920,106 +926,267 @@ async function moveDialog(nodes) {
   await level();
 }
 
-async function shareDialog(node) {
-  const d = showModal(`
-    <div class="modal-body" id="drv-share-body"><div class="loading">${esc(t('loading'))}</div></div>
-    <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
-      <wa-button appearance="plain" data-x="close">${esc(t('close'))}</wa-button>
-    </div>`);
-  d.addEventListener('click', (e) => {
-    if (e.target.closest('[data-x]')) closeModal();
-  });
-  const paint = async () => {
-    const box = qs('#drv-share-body', d);
-    let data;
-    try {
-      data = await api('GET', `/api/drive/nodes/${node.id}/shares`);
-    } catch (e) {
-      box.innerHTML = `<div class="drv-move-empty">${esc(e.message)}</div>`;
-      return;
-    }
-    const s = data.share;
-    const roleSel = (v) => `
-      <wa-select id="drv-share-role" value="${esc(v)}" size="small" style="width:140px">
-        <wa-option value="viewer">${esc(t('drv_role_viewer'))}</wa-option>
-        <wa-option value="editor">${esc(t('drv_role_editor'))}</wa-option>
-      </wa-select>`;
-    if (!s) {
-      box.innerHTML = `
-        <h3 style="margin:0 0 10px">${esc(t('drv_share_title', node.name))}</h3>
-        <p class="drv-dim" style="margin:0 0 14px;font-size:13px">${esc(t('drv_share_none'))}</p>
-        <div style="display:flex;gap:10px;align-items:center">
-          ${roleSel('viewer')}
-          <wa-button variant="brand" size="small" id="drv-share-create">${icon('link', 16)} ${esc(t('drv_share_create'))}</wa-button>
-        </div>`;
-      qs('#drv-share-create', d)?.addEventListener('click', async () => {
-        try {
-          const role = qs('#drv-share-role', d)?.value || 'viewer';
-          await api('POST', `/api/drive/nodes/${node.id}/shares`, { role });
-          await paint();
-          reloadSoon();
-        } catch (e) {
-          toast(e.message, true);
-        }
-      });
-      return;
-    }
-    const url = `${location.origin}/#/drive/s/${s.token}`;
-    const members = (s.members || []).map((m) => `
-      <div class="drv-member">
-        ${avatar(m.name || m.email, 30)}
-        <div class="who"><div>${esc(m.name || m.email)}</div><div class="em">${esc(m.email)} · ${fmtDate(m.joined_at)}</div></div>
-        <wa-button class="icon" appearance="plain" data-rm="${esc(m.user_id)}" title="${esc(t('drv_member_remove'))}">${icon('close', 16)}</wa-button>
-      </div>`).join('');
-    box.innerHTML = `
-      <h3 style="margin:0 0 10px">${esc(t('drv_share_title', node.name))}</h3>
-      <div class="drv-share-link">
-        <input readonly value="${esc(url)}" onclick="this.select()">
-        <wa-button size="small" id="drv-share-copy">${icon('copy', 15)} ${esc(t('drv_copy_link'))}</wa-button>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;margin:4px 0 14px">
-        <span style="font-size:13px">${esc(t('drv_role'))}</span>
-        ${roleSel(s.role)}
-        <span style="flex:1"></span>
-        <wa-button size="small" appearance="outlined" id="drv-share-stop" style="--wa-color-brand-fill-loud:#e5484d">${esc(t('drv_share_stop'))}</wa-button>
-      </div>
-      <h4 style="margin:0 0 6px;font-size:13.5px">${esc(t('drv_share_members'))}</h4>
-      ${members || `<div class="drv-dim" style="font-size:13px">${esc(t('drv_share_nobody'))}</div>`}`;
-    qs('#drv-share-copy', d)?.addEventListener('click', async () => {
-      await copyText(url);
-      toast(t('drv_link_copied'));
-    });
-    qs('#drv-share-role', d)?.addEventListener('change', async (e) => {
-      try {
-        await api('PUT', `/api/drive/shares/${s.id}`, { role: e.target.value });
-        toast(t('t_saved'));
-      } catch (err) {
-        toast(err.message, true);
-        paint();
-      }
-    });
-    qs('#drv-share-stop', d)?.addEventListener('click', async () => {
-      if (!(await confirmDialog(t('drv_share_stop_confirm'), t('drv_share_stop')))) return;
-      try {
-        await api('DELETE', `/api/drive/shares/${s.id}`);
-        await paint();
-        reloadSoon();
-      } catch (e) {
-        toast(e.message, true);
-      }
-    });
-    qsa('[data-rm]', d).forEach((b) => b.addEventListener('click', async () => {
-      try {
-        await api('DELETE', `/api/drive/shares/${s.id}/members/${b.dataset.rm}`);
-        paint();
-      } catch (e) {
-        toast(e.message, true);
-      }
-    }));
-  };
-  await paint();
+/** One-of-N picker. Used wherever a choice has few, mutually exclusive options that the user
+ *  should be able to weigh at a glance -- a dropdown hides the alternatives behind a click and
+ *  makes a two-way choice feel like a list.
+ *  N 选 1 控件。用于选项少且互斥、且用户应当一眼权衡的场合 ——
+ *  下拉框把备选藏在一次点击之后,会把"二选一"弄得像一份清单。
+ *  @param {string} id  @param {{v:string,label:string}[]} opts  @param {string} value */
+function segHtml(id, opts, value) {
+  return `<div class="drv-seg" id="${esc(id)}" data-v="${esc(value)}">${opts.map((o) =>
+    `<button type="button" class="opt ${o.v === value ? 'on' : ''}" data-v="${esc(o.v)}">${esc(o.label)}</button>`
+  ).join('')}</div>`;
 }
 
+/** Wire a segmented control; `onChange` fires only on an actual change.
+ *  给分段控件接线;onChange 只在真正变化时触发。 */
+function segBind(root, id, onChange) {
+  const el = qs('#' + id, root);
+  if (!el) return;
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('.opt');
+    if (!b || el.classList.contains('off') || b.dataset.v === el.dataset.v) return;
+    el.dataset.v = b.dataset.v;
+    qsa('.opt', el).forEach((x) => x.classList.toggle('on', x === b));
+    onChange?.(b.dataset.v);
+  });
+}
+const segGet = (root, id) => qs('#' + id, root)?.dataset.v || '';
+/** Set the value from code, keeping the buttons in step / 由代码设值,按钮状态同步 */
+function segSet(root, id, v) {
+  const el = qs('#' + id, root);
+  if (!el || el.dataset.v === v) return;
+  el.dataset.v = v;
+  qsa('.opt', el).forEach((x) => x.classList.toggle('on', x.dataset.v === v));
+}
+/** Greyed out, not hidden: the option stays visible so its irrelevance is legible, rather than
+ *  the row silently changing shape. / 置灰而非隐藏:选项留在原处,让"此刻不适用"看得见,
+ *  而不是让这一行悄悄改变形状。 */
+const segDisable = (root, id, off) => qs('#' + id, root)?.classList.toggle('off', !!off);
+
+/** Share whatever is selected -- one file, one folder, or any mix. The dialog composes a new
+ *  link each time rather than editing "the" link of a node: a node can now sit in several
+ *  shares at once, so there is no longer one canonical link to edit.
+ *  分享选中的任意内容 —— 单个文件、单个目录,或任意混装。对话框每次组一条新链接,
+ *  而不是编辑某个节点"那条"链接:一个节点如今可同时存在于多条共享里,已无唯一可编辑的链接。 */
+async function shareDialog(nodes) {
+  const list = Array.isArray(nodes) ? nodes : [nodes];
+  if (!list.length) return;
+  const d = showModal(`
+    <div class="modal-body" id="drv-share-body"><div class="loading">${esc(t('loading'))}</div></div>
+    <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
+      <wa-button variant="brand" id="sh-make">${icon('link', 16)} ${esc(t('drv_share_create'))}</wa-button>
+    </div>`);
+  d.addEventListener('click', (e) => { if (e.target.closest('[data-x]')) closeModal(); });
+
+  let domains = [];
+  try { domains = (await api('GET', '/api/drive/share-domains')).domains || []; } catch {}
+
+  // One item per line. A wrapped chip layout re-flows as names change length, which makes a
+  // list of things you are about to hand out hard to scan; four lines then scroll keeps the
+  // dialog a fixed size no matter how many were selected.
+  // 一项一行。回绕的胶囊布局会随名字长短重新排布,让"即将交出去的东西"很难扫读;
+  // 四行之后转为滚动,无论选了多少,对话框尺寸恒定。
+  const items = list.map((n) => `
+    <div class="it">${n.kind === 'folder' ? icon('folder', 22) : fileIcon(n.name, 22)}<span>${esc(n.name)}</span></div>`).join('');
+  // Count and total sit below the list: with the list capped at four rows, the tally is the
+  // only way to see the whole of what is going out once the rest has scrolled away. A folder
+  // contributes its materialised subtree size, so the number means "this much will be readable".
+  // 计数与总量放在列表下方:列表封顶四行,其余滚走之后,这行汇总是看清"总共要发出去多少"的
+  // 唯一途径。目录按其物化的子树大小计入,因此这个数字的含义是"对方能读到这么多"。
+  const total = list.reduce((s, n) => s + effSize(n), 0);
+
+  const box = qs('#drv-share-body', d);
+  box.innerHTML = `
+    <div class="drv-dlg-head">
+      <h3>${esc(t('drv_share'))}</h3>
+      <button class="drv-x" data-x="close" aria-label="${esc(t('close'))}">${icon('close', 18)}</button>
+    </div>
+    <div class="drv-share-items">
+      <div class="lst">${items}</div>
+      <div class="sum">${esc(t('drv_share_n_items', String(list.length)))} · ${esc(fmtSize(total))}</div>
+    </div>
+
+    <div class="drv-share-line">
+      <div class="f" id="f-aud">
+        <label>${esc(t('drv_share_audience'))}</label>
+        ${segHtml('sh-aud', [
+          { v: 'internal', label: t('drv_share_aud_internal') },
+          { v: 'public', label: t('drv_share_aud_public') },
+        ], 'internal')}
+      </div>
+      <div class="f" id="f-role">
+        <label>${esc(t('drv_role'))}</label>
+        ${segHtml('sh-role', [
+          { v: 'viewer', label: t('drv_role_viewer') },
+          { v: 'editor', label: t('drv_role_editor') },
+        ], 'viewer')}
+      </div>
+    </div>
+
+    <div class="drv-share-line">
+      <div class="f" id="f-dom">
+        <label>${esc(t('drv_share_domain'))}</label>
+        <wa-select id="sh-dom" value="" size="small" class="drv-share-sel">
+          <wa-option value="">${esc(t('drv_share_domain_any'))}</wa-option>
+          ${domains.map((x) => `<wa-option value="${esc(x.id)}">${esc(x.name)}</wa-option>`).join('')}
+        </wa-select>
+      </div>
+      <div class="f" id="f-exp">
+        <label>${esc(t('drv_share_expires'))}</label>
+        <wa-select id="sh-exp" value="7" size="small" class="drv-share-sel">
+          <wa-option value="2">${esc(t('drv_share_exp_48h'))}</wa-option>
+          <wa-option value="7">${esc(t('drv_share_exp_7d'))}</wa-option>
+          <wa-option value="30">${esc(t('drv_share_exp_30d'))}</wa-option>
+          <wa-option value="0">${esc(t('drv_share_exp_never'))}</wa-option>
+        </wa-select>
+      </div>
+    </div>
+
+    <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>
+    <div id="sh-out" style="margin-top:14px"></div>`;
+
+  // Public links are read-only, full stop: nobody is authenticated on the other end, so there
+  // is no one to hold responsible for a write. The role control greys out rather than
+  // vanishing, so the constraint is visible instead of the row quietly losing a field.
+  // 公开链接一律只读:另一端没有任何已认证的人,写操作无从追责。
+  // 权限控件置灰而非消失,于是这条约束是看得见的,而不是这一行悄悄少了个字段。
+  const sync = () => {
+    const pub = segGet(d, 'sh-aud') === 'public';
+    // Snap the role back to viewer, not merely grey it out. A greyed control still showing
+    // "editor" would be stating something the link will not do -- the request is forced to
+    // viewer server-side either way, so the UI must not claim otherwise.
+    // 把权限拨回查看者,而不只是置灰。一个置灰却仍显示"编辑者"的控件,是在陈述这条链接做不到的事 ——
+    // 反正服务端也会强制为查看者,界面就不该说另一套。
+    if (pub) segSet(d, 'sh-role', 'viewer');
+    segDisable(d, 'sh-role', pub);
+    // The domain field fades out label and all, but keeps its space: the row must not collapse
+    // and reshuffle the remaining controls under the user's cursor.
+    // 域名字段连标签一起淡出,但保留占位:这一行不能塌陷,
+    // 否则会把剩下的控件在用户指针底下重新排一遍。
+    qs('#f-dom', d).style.visibility = pub ? 'hidden' : '';
+    qs('#sh-hint', d).textContent = t(pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
+  };
+  segBind(d, 'sh-aud', sync);
+  segBind(d, 'sh-role');
+  sync();
+
+  qs('#sh-make', d).addEventListener('click', async () => {
+    const audience = segGet(d, 'sh-aud');
+    // Send the DURATION, never a computed deadline: this machine's clock has no authority over
+    // when a link dies, and a skewed one would silently make the link permanent or short-lived.
+    // 发送"时长",绝不发送算好的截止时刻:本机时钟无权决定链接何时失效,
+    // 时钟偏了会悄无声息地把链接变成永久的、或早早失效的。
+    const body = {
+      nodes: list.map((n) => n.id),
+      audience,
+      role: audience === 'public' ? 'viewer' : segGet(d, 'sh-role'),
+      domain_id: audience === 'internal' ? (qs('#sh-dom', d).value || null) : null,
+      expires_days: parseInt(qs('#sh-exp', d).value, 10) || 0,
+      // Carry the look along with the link. The palette is a company setting the public page can
+      // look up for itself, but light/dark is this user's own choice and exists nowhere the
+      // recipient can reach -- without recording it, a link made at night opens blindingly light.
+      // 把观感一并带上。配色是企业设置,公开页自己就能查到;但明暗是本用户自己的选择,
+      // 收件人那边无处可寻 —— 不记下来的话,深夜做的链接打开时会白得刺眼。
+      theme: document.documentElement.dataset.theme || null,
+      mode: document.documentElement.classList.contains('wa-dark') ? 'dark' : 'light',
+      // The sharer knows who they are sending this to; the recipient's browser only knows where
+      // that browser was installed. Language travels with the link for the same reason the
+      // theme does.
+      // 分享者清楚自己发给谁;接收方的浏览器只知道它自己装在哪儿。
+      // 语言随链接同行,理由与主题相同。
+      lang: lang(),
+    };
+    try {
+      const s = await api('POST', '/api/drive/shares', body);
+      const url = shareUrl(s);
+      qs('#sh-out', d).innerHTML = `
+        <div class="drv-share-link">
+          <input readonly value="${esc(url)}" onclick="this.select()">
+          <wa-button size="small" id="sh-copy">${icon('copy', 15)} ${esc(t('drv_copy_link'))}</wa-button>
+        </div>`;
+      qs('#sh-copy', d).addEventListener('click', async () => {
+        await copyText(url);
+        toast(t('drv_link_copied'));
+      });
+      reloadSoon();
+    } catch (e) {
+      toast(tErr(e && e.message), true);
+    }
+  });
+}
+
+/** Public links carry no account, so they get their own route; internal ones keep the
+ *  join-then-browse flow. / 公开链接不带账号,因此走独立路由;内部链接沿用"加入后浏览"。 */
+function shareUrl(s) {
+  return `${location.origin}/#/${s.audience === 'public' ? 'p' : 'drive/s'}/${s.token}`;
+}
+
+// ---------- Share links I created ----------
+// ---------- 我创建的分享链接 ----------
+
+/** The management list: every link this account handed out, what is in it, who it is for, and
+ *  whether it still works. Revoking is one click and takes effect immediately -- the row stays
+ *  behind as a tombstone so it is clear the link was killed rather than silently forgotten.
+ *  管理列表:本账号发出的每条链接、里面装了什么、给谁、以及是否仍然有效。撤销一键完成、
+ *  立刻生效 —— 该行会以墓碑形式留下,让人看清链接是被停掉了,而不是不声不响消失了。 */
+function renderLinksView(main, shares) {
+  const rows = shares.map((s) => {
+    const dead = s.state !== 'ok';
+    const url = shareUrl(s);
+    const who = s.audience === 'public'
+      ? t('drv_share_aud_public')
+      : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
+    const items = (s.items || []).map((n) =>
+      `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
+    const stateLbl = s.state === 'ok'
+      ? (s.expires_at ? t('drv_share_until', fmtDate(s.expires_at)) : t('drv_share_exp_never'))
+      : t(s.state === 'e_drive_share_revoked' ? 'drv_share_revoked' : 'drv_share_expired');
+    return `
+      <div class="drv-link-card ${dead ? 'dead' : ''}">
+        <div class="hd">
+          <span class="badge ${s.audience}">${esc(who)}</span>
+          <span class="badge role">${esc(t(s.role === 'editor' ? 'drv_role_editor' : 'drv_role_viewer'))}</span>
+          <span class="st">${esc(stateLbl)}</span>
+          <span style="flex:1"></span>
+          ${dead
+            ? `<wa-button size="small" appearance="plain" data-forget="${esc(s.id)}">${esc(t('drv_share_forget'))}</wa-button>`
+            : `<wa-button size="small" appearance="plain" data-copy="${esc(url)}">${icon('copy', 14)} ${esc(t('drv_copy_link'))}</wa-button>
+               <wa-button size="small" appearance="plain" class="danger" data-stop="${esc(s.id)}">${esc(t('drv_share_stop'))}</wa-button>`}
+        </div>
+        <div class="items">${items || `<span class="drv-dim">${esc(t('drv_share_items_gone'))}</span>`}</div>
+        <div class="ft drv-dim">
+          ${esc(t('drv_share_created', fmtDate(s.created_at)))}
+          ${(s.members || []).length ? ' · ' + esc(t('drv_share_n_members', String(s.members.length))) : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  main.innerHTML = `
+    <div id="drv-bar">${barHtml()}</div>
+    <div class="drv-scroll drv-links">
+      ${rows || `<div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_share_none_yet'))}</div></div>`}
+    </div>`;
+  bindBar(main);
+
+  qsa('[data-copy]', main).forEach((b) => b.addEventListener('click', async () => {
+    await copyText(b.dataset.copy);
+    toast(t('drv_link_copied'));
+  }));
+  qsa('[data-stop]', main).forEach((b) => b.addEventListener('click', async () => {
+    if (!(await confirmDialog(t('drv_share_stop_confirm'), t('drv_share_stop')))) return;
+    try {
+      await api('DELETE', `/api/drive/shares/${b.dataset.stop}`);
+      reload();
+    } catch (e) { toast(tErr(e && e.message), true); }
+  }));
+  qsa('[data-forget]', main).forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await api('POST', `/api/drive/shares/${b.dataset.forget}/forget`);
+      reload();
+    } catch (e) { toast(tErr(e && e.message), true); }
+  }));
+}
 // ---------- Shared-with-me view ----------
 // ---------- 共享给我 ----------
 

@@ -513,3 +513,160 @@
   .drv-table col.c-time { width: 0; }
   .drv-table .c-time, .drv-row td.c-time { display: none; }
 }
+
+/* ---------- Share links: management list + public landing ---------- */
+/* ---------- 分享链接:管理列表 + 公开落地页 ---------- */
+
+.drv-share-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.drv-share-row .lb { width: 84px; flex: none; font-size: 13px; color: var(--text-2); }
+
+.drv-links { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.drv-link-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px; background: var(--panel);
+}
+/* A revoked or expired link stays listed but reads as inert, so it is obvious the link was
+   stopped rather than quietly dropped.
+   已撤销/已过期的链接仍列出但呈现为失效态,让人一眼看出它是被停掉的,而不是被悄悄丢掉。 */
+.drv-link-card.dead { opacity: .55; }
+.drv-link-card .hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.drv-link-card .badge {
+  font-size: 12px; padding: 2px 9px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.drv-link-card .badge.public { background: #f5a62333; color: #f5a623; }
+.drv-link-card .badge.role { background: var(--hover); color: var(--text-2); }
+.drv-link-card .st { font-size: 12.5px; color: var(--text-2); }
+.drv-link-card .items { display: flex; flex-wrap: wrap; gap: 6px; }
+.drv-link-card .items .it {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px;
+  background: var(--hover); padding: 3px 9px; border-radius: 7px;
+}
+.drv-link-card .ft { font-size: 12px; }
+.drv-link-card wa-button.danger::part(base) { color: #e5484d; }
+
+.pub-wrap { max-width: 940px; margin: 0 auto; padding: 24px 16px 40px; }
+/* Stacked, not inline: at 2x the brand owns its line, and hanging the small print off its
+   baseline left the two crammed into one another.
+   竖排而非并排:放大到两倍后,品牌名独占一行;把小字挂在它的基线上,两者会挤作一团。 */
+.pub-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 14px; }
+/* The lockup is the top bar's, enlarged: same logo-to-text ratio, same brand face. Recipients
+   land here from outside the company, so this is the one thing on the page that has to say
+   whose file this is at a glance.
+   这个组合就是顶栏那个的放大版:同样的 logo 与文字之比,同样的品牌字体。
+   接收方从企业之外来到这里,这是页面上唯一必须一眼说清"这是谁家的东西"的元素。 */
+.pub-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pub-brand span { font-family: var(--font-brand); font-size: 32px; line-height: 1.1; }
+.pub-brand > wa-icon { color: var(--primary); }
+.pub-meta { font-size: 13px; }
+.pub-card { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--panel); }
+.pub-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 14px; }
+.pub-bar .drv-crumbs { flex: 1; min-width: 0; padding: 6px 0; }
+.pub-gridwrap { padding: 6px 14px 14px; border-top: 1px solid var(--border); }
+.drv-card.pub-it { cursor: pointer; }
+.drv-card .cap .sz { flex: none; font-size: 12px; padding-right: 8px; }
+.pub-list { display: flex; flex-direction: column; }
+.pub-row {
+  display: grid; grid-template-columns: 30px 1fr auto auto 34px; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer; border-top: 1px solid var(--border);
+}
+.pub-row:hover { background: var(--hover); }
+.pub-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pub-row .sz, .pub-row .dt { font-size: 12.5px; white-space: nowrap; }
+.pub-row .dl { display: inline-flex; opacity: .6; }
+.pub-row .dl:hover { opacity: 1; }
+.drv-pub-dl { display: inline-flex; margin-left: auto; color: #fff; opacity: .8; }
+.drv-pub-dl:hover { opacity: 1; }
+.drv-view-body iframe { width: min(100%, 1000px); height: 100%; border: 0; background: #fff; border-radius: 8px; }
+
+
+/* ---------- Share dialog ---------- */
+/* ---------- 分享对话框 ---------- */
+
+/* Title and close share a row, so the X sits on the title's own centreline. Sizing the button
+   to that row's height also places its centre on the 45-degree line into the corner: half a
+   row down, half a button in from the right.
+   标题与关闭同处一行,X 因此落在标题自身的中线上。把按钮做成与该行等高,
+   它的中心同时落在通往右上角的 45 度线上:向下半行,向左半个按钮。 */
+.drv-dlg-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; }
+.drv-dlg-head h3 { margin: 0; line-height: 30px; }
+.drv-x {
+  flex: none; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer;
+}
+.drv-x:hover { background: var(--hover); color: var(--text); }
+
+/* One item per line, capped at four then scrolling: the dialog keeps a fixed size no matter
+   how many were selected, and a list you are about to hand out stays scannable.
+   一项一行,四行封顶后滚动:无论选了多少,对话框尺寸恒定,
+   而这份"即将交出去"的清单始终好扫读。 */
+.drv-share-items { display: flex; flex-direction: column; margin: 0 0 33px; }
+/* The border belongs to the scrolling rows alone. The tally is a caption about the box, not a
+   row inside it, so it sits outside the frame.
+   边框只属于滚动的条目区。汇总是对这个框的说明,不是框内的一行,因此排在框外。 */
+.drv-share-items .lst {
+  display: flex; flex-direction: column; border: 1px solid var(--border);
+  max-height: calc(4 * 34px); overflow-y: auto; padding: 3px 0;
+}
+.drv-share-items .sum { padding: 6px 2px 0; font-size: 12.5px; color: var(--text-2); }
+/* flex: none is load-bearing. In a column flex box with a max-height, children shrink to fit
+   before the container agrees to scroll -- six 34px rows were being squeezed to 18px each
+   instead of overflowing. Refusing to shrink is what turns the cap into a scrollbar.
+   flex: none 是承重的。在带 max-height 的纵向 flex 容器里,子项会先被压缩以求塞下,
+   容器才肯滚动 —— 六个 34px 的行曾被各自挤成 18px,而不是溢出。
+   拒绝收缩,才能把这个高度上限变成一条滚动条。 */
+.drv-share-items .it {
+  display: flex; align-items: center; gap: 9px; flex: none; height: 34px; padding: 0 11px;
+  font-size: 14px; min-width: 0;
+}
+.drv-share-items .it span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drv-share-items .it wa-icon { flex: none; color: var(--text-2); }
+
+/* Control + dropdown share a row and a height, so the two rows read as a grid rather than a
+   stack of unrelated widgets. 34px is what wa-select settles at with size="small".
+   控件与下拉同处一行、同一高度,两行于是读作一张表格,而不是若干互不相干的部件堆叠。
+   34px 是 wa-select 在 size="small" 下的落点。 */
+.drv-share-line { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.drv-share-line > * { flex: 1 1 0; min-width: 0; }
+.drv-share-sel { --wa-form-control-height: 34px; }
+.drv-share-sel::part(form-control), .drv-share-sel::part(combobox) { min-height: 34px; }
+
+/* N-of-1 picker / N 选 1 控件 */
+/* box-sizing on the frame, and buttons that stretch to the inner height rather than setting
+   their own: a button carrying its own padding grew taller than the 34px frame and spilled
+   over its border. The frame owns the height; the buttons only fill what is left inside it.
+   外框走 border-box,按钮拉伸到内部高度而非自行设定:带着自身 padding 的按钮曾长得比 34px
+   的外框还高,溢出到边框之外。高度由外框决定,按钮只填满它内部剩下的空间。 */
+/* The frame owns the height and the buttons are given an explicit one that fits inside it.
+   Relying on align-items:stretch here did not work: a native <button> as a flex item resolved
+   to a taller box than the frame's content area and spilled past its border.
+   34 outer - 2 border - 2 padding = 30 inner.
+   高度由外框决定,按钮被显式赋予一个能装进去的高度。此处不能依赖 align-items:stretch:
+   原生 <button> 作为 flex 项算出的盒子比外框内容区还高,溢出到边框之外。
+   外框 34 - 边框 2 - 内边距 2 = 内部 30。 */
+.drv-seg {
+  display: flex; align-items: center; box-sizing: border-box;
+  height: 34px; padding: 1px; gap: 3px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2);
+}
+.drv-seg .opt {
+  flex: 1 1 0; min-width: 0; box-sizing: border-box; height: 30px;
+  padding: 0; border: 0; border-radius: 6px; background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-2); font-size: 14px; line-height: 1; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.drv-seg .opt:hover { color: var(--text); }
+.drv-seg .opt.on { background: var(--panel); color: var(--accent-text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+/* Greyed, not gone: the choice stays legible while it does not apply.
+   置灰而非移除:不适用时选择项依然可读。 */
+.drv-seg.off { opacity: .45; pointer-events: none; }
+
+/* Each control wears its own label: four bare widgets in a 2x2 grid give no clue which
+   dropdown governs what. Left column answers "who", right column "on what terms".
+   每个控件自带标签:2x2 网格里四个光秃秃的部件,看不出哪个下拉管什么。
+   左列回答"给谁",右列回答"什么条件"。 */
+.drv-share-line { align-items: end; }
+.drv-share-line .f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.drv-share-line .f > label { font-size: 12px; color: var(--text-2); padding-left: 2px; }
