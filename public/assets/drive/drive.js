@@ -109,13 +109,28 @@ export async function renderDrive(seg) {
   await loadView();
 }
 
+/** Opening an internal share link is how a recipient takes it into their own Drive: it records
+ *  the membership, and from then on the items sit under "shared items" until the link is
+ *  revoked or expires. What it does NOT do is copy anything -- the recipient is looking at the
+ *  sharer's live files, so an edit by either side is seen by both.
+ *  打开一条内部分享链接,就是接收方把它收进自己网盘的方式:记下成员身份,此后这些条目
+ *  一直待在"共享给我"下,直到链接被撤销或过期。它不做的事是复制 —— 接收方看的是分享者的
+ *  实时文件,任何一方的改动另一方都看得见。 */
 async function joinShare(token) {
   try {
     const r = await api('POST', '/api/drive/shares/join', { token });
-    toast(t('drv_share_joined', r.name));
-    navigate(`#/drive/folder/${r.node_id}`);
+    const items = r.items || [];
+    toast(t('drv_share_joined',
+      items.length === 1 ? items[0].name : t('drv_share_n_items', String(items.length))));
+    // One shared folder opens straight into it -- that is what the link was for. Anything else
+    // goes to "shared items", the one place a mixed selection can be seen whole. The sharer's
+    // own link has no membership behind it, so send them back to their drive instead.
+    // 单个共享目录直接进去 —— 链接本就是为此。其余的去"共享给我",那是唯一能完整看到
+    // 混合选择的地方。分享者自己的链接背后没有成员身份,因此把他送回自己的网盘。
+    if (items.length === 1 && items[0].kind === 'folder') return navigate(`#/drive/folder/${items[0].id}`);
+    navigate(r.owner ? '#/drive' : '#/drive/shared');
   } catch (e) {
-    toast(e.message, true);
+    toast(tErr(e && e.message), true);
     navigate('#/drive');
   }
 }
