@@ -1011,10 +1011,20 @@ driveApp.post('/shares', async (c) => {
   const theme = String(body.theme || '').slice(0, 32) || null;
   const mode = body.mode === 'dark' ? 'dark' : (body.mode === 'light' ? 'light' : null);
   const lang = SHARE_LANGS.has(String(body.lang || '')) ? String(body.lang) : null;
+  // Settle the disclosure question HERE, not when someone opens the link. A link states what it
+  // will show at the moment it is handed out; re-reading the administrator's switch at view time
+  // would let a later flip start printing an address on links whose sender never agreed to it.
+  // 在"此处"了结披露问题,而不是在有人打开链接时。链接在交出去的那一刻就声明了它会显示什么;
+  // 浏览时再去读管理员的开关,会让后来的一次拨动,开始在发出者从未同意过的链接上印出地址。
+  const showOwner = await c.env.DB.prepare(
+    `SELECT 1 AS ok FROM grants g JOIN mailboxes m ON m.id=g.mailbox_id
+       JOIN domains d ON d.id=m.domain_id
+      WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
+  ).bind(user.id).first();
   const stmts = [c.env.DB.prepare(
-    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, created_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)`
-  ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, t)];
+    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, created_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`
+  ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, showOwner ? 1 : 0, t)];
   for (const n of nodes) {
     stmts.push(c.env.DB.prepare('INSERT INTO drive_share_items (share_id, node_id) VALUES (?1,?2)')
       .bind(shareId, n.id));
@@ -1221,22 +1231,17 @@ drivePubApp.get('/:token', async (c) => {
   const s = await pubShare(c);
   const items = await shareItems(c.env, s.id);
   const owner: any = await c.env.DB.prepare('SELECT name, email FROM users WHERE id=?1').bind(s.owner_id).first();
-  // The address is disclosed only where an administrator allowed it, and that permission is
-  // read from the domains the SHARER belongs to -- never from the request, which on a public
-  // link carries no identity to base the decision on.
-  // 只有管理员放行的地方才披露地址,而这项许可取自"分享者"所属的域名 ——
-  // 绝不取自请求本身:公开链接上的访问者没有任何可据以判断的身份。
-  const allow = await c.env.DB.prepare(
-    `SELECT 1 AS ok FROM grants g JOIN mailboxes m ON m.id=g.mailbox_id
-       JOIN domains d ON d.id=m.domain_id
-      WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
-  ).bind(s.owner_id).first();
+  // The answer was settled when the link was created and is read back from the link itself.
+  // Nothing an administrator or the sharer changes afterwards moves it -- to stop a link that
+  // is already out there from showing the address, revoke the link.
+  // 这个答案在链接创建时就已了结,此处只从链接自身读回。
+  // 管理员或分享者事后改什么都不会动它 —— 想让一条已经发出去的链接不再显示地址,请撤销它。
   return c.json({
     role: 'viewer',
     note: s.note,
     expires_at: s.expires_at,
     owner_name: owner?.name || '',
-    owner_email: allow ? (owner?.email || '') : '',
+    owner_email: s.show_owner ? (owner?.email || '') : '',
     theme: s.theme || null,
     mode: s.mode || null,
     lang: s.lang || null,

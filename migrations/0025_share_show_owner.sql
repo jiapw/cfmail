@@ -1,0 +1,22 @@
+-- A link is a promise about what it will show, made at the moment it is handed out. Reading the
+-- administrator's disclosure switch at VIEW time broke that promise in both directions: a switch
+-- flipped on later would start printing an address on links whose sender never agreed to it, and
+-- a link created deliberately with the address visible would silently lose it. Decide once, at
+-- creation, and record the answer on the share.
+--
+-- The consequence is deliberate: turning the switch off no longer retracts links already out
+-- there. Revoking the link is what retracts it -- and that is the honest control, since a
+-- recipient may have read the address the moment they opened it.
+--
+-- 一条链接,是在交出去的那一刻做出的"我会显示什么"的承诺。在"浏览时"去读管理员的披露开关,
+-- 会从两个方向背弃这个承诺:后来打开开关,会让那些发出者从未同意过的链接开始印出地址;
+-- 而有意带着地址创建的链接,则会悄无声息地失去它。在创建时决定一次,把答案记在这条分享上。
+--
+-- 由此带来的后果是有意为之的:关掉开关不再能收回已经发出去的链接。
+-- 收回靠的是撤销该链接 —— 而这才是诚实的控制手段,因为接收方在打开的那一刻可能就已经读到了地址。
+
+-- Default 0: links created before this column existed were made under a switch that was off,
+-- and a column added with a permissive default would retroactively disclose.
+-- 默认 0:本列存在之前创建的链接,是在开关关闭的前提下做出的;
+-- 若以放行值作默认,等于追溯性地披露。
+ALTER TABLE drive_shares ADD COLUMN show_owner INTEGER NOT NULL DEFAULT 0;
