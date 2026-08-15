@@ -1158,6 +1158,11 @@ driveApp.post('/shares/join', async (c) => {
   }
   return c.json({
     share_id: s.id, role: s.role,
+    // The sharer opening their own link joins nothing -- there is no membership row for them,
+    // so "shared items" would be empty and landing there would read as a broken link.
+    // 分享者打开自己的链接不会加入任何东西 —— 他没有成员记录,"共享给我"因此是空的,
+    // 落到那里会让人以为链接坏了。
+    owner: s.owner_id === user.id,
     items: items.map((n) => ({ id: n.id, name: n.name, kind: n.kind })),
   });
 });
