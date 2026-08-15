@@ -84,6 +84,19 @@ export async function loadBrand() {
   document.title = pageTitle();
   applyTheme(store.brand?.theme || 'blue');
   applyFonts();
+  // Leave the boot screen what it needs to paint this company on the NEXT visit's first frame,
+  // before any request has come back. Everything here is public branding, already served to
+  // anyone who loads the page.
+  // 给启动屏留下它所需之物,好在下次访问的第一帧就画出这家企业 —— 早于任何请求返回。
+  // 这里的一切都是公开的品牌信息,任何加载本页的人本就能拿到。
+  try {
+    localStorage.setItem('cfmail_brand', JSON.stringify({
+      name: store.brand?.name || '',
+      logo: store.brand?.logo_url || '',
+      logoMode: store.brand?.logo_mode || 'light',
+      font: getComputedStyle(document.documentElement).getPropertyValue('--font-brand').trim(),
+    }));
+  } catch {}
   // With a brand logo present, swap the favicon to match
   // 品牌 logo 存在时,同步替换 favicon
   const fav = document.querySelector('link[rel="icon"]');

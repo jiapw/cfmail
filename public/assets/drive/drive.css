@@ -143,7 +143,10 @@
    the very "stuck at the bottom" look we are getting rid of.
    .drv-loading 自带 margin:auto 供它独立使用时居中;在这个列里,该 auto 边距会吃掉所有剩余
    空间,把读数一路推到画面边缘 —— 正是我们要去掉的"贴在底部"的观感。 */
-.drv-pvwait .drv-loading { margin: 0; }
+/* ...and no floor on its height either: inside this centred column the readout sits directly
+   under the spinner, and a minimum would only prise the two apart.
+   ...高度也不设下限:在这个居中的列里,读数就贴在加载动画之下,设下限只会把两者撑开。 */
+.drv-pvwait .drv-loading { margin: 0; min-height: 0; }
 /* The readout sits in the same centred column as the spinner, right beneath it.
    读数与加载动画同处一个居中的列里,就在它正下方。 */
 .drv-arcbuf {
@@ -345,7 +348,10 @@
    窗口跟随站点主题,应用的主题滚动条在窗口里原样生效;只有四周的深色遮罩保持不变。 */
 /* Centered loading spinner while a preview fetches and parses
    预览拉取解析期间居中的加载转圈 */
-.drv-loading { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--text-2); font-size: 13px; }
+.drv-loading {
+  margin: auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; color: var(--text-2); font-size: 13px; flex: 1; min-height: 200px;
+}
 .drv-spin {
   width: 34px; height: 34px; border-radius: 50%;
   border: 3px solid var(--border); border-top-color: var(--primary);
@@ -595,9 +601,6 @@
    whose file this is at a glance.
    这个组合就是顶栏那个的放大版:同样的 logo 与文字之比,同样的品牌字体。
    接收方从企业之外来到这里,这是页面上唯一必须一眼说清"这是谁家的东西"的元素。 */
-.pub-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.pub-brand span { font-family: var(--font-brand); font-size: 32px; line-height: 1.1; }
-.pub-brand > wa-icon { color: var(--primary); }
 .pub-meta { font-size: 13px; }
 .pub-card { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--panel); }
 .pub-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 14px; }
