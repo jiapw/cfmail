@@ -106,7 +106,7 @@ function brandHtml() {
   const logo = store.brand?.logo_url
     ? `<img class="brand-logo" data-logo-mode="${esc(store.brand.logo_mode || 'light')}" style="height:42px" src="${esc(store.brand.logo_url)}" alt="">`
     : icon('cloud', 38);
-  return `<div class="pub-brand">${logo}<span>${esc(name)}</span></div>`;
+  return `<div class="brand-lockup pub-brand">${logo}<span>${esc(name)}</span></div>`;
 }
 
 /** Header + card frame shared by the listing and the archive browser, so stepping into a zip
@@ -278,7 +278,11 @@ export async function renderPubShare(token, rest) {
   if (segs[0] === 'arc' && segs[1]) return renderPubArc(token, segs[1], segs.slice(2).join('/'));
 
   const parent = segs.length ? segs[segs.length - 1] : '';
-  app.innerHTML = `<div class="pub-wrap"><div class="drv-loading" style="margin:60px auto"><div class="drv-spin"></div><span>${esc(t('loading'))}</span></div></div>`;
+  // Same first frame as the app's own boot screen: the company, centred, with the spinner under
+  // it. A recipient arriving from outside should see whose files these are before anything else.
+  // 与应用自身启动屏同样的第一帧:企业居中,加载动画在其下。
+  // 从外部前来的接收方,理应先看到这是谁家的东西。
+  app.innerHTML = `<div class="boot-loading">${brandHtml()}</div>`;
 
   let head;
   let data;

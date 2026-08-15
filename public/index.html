@@ -26,7 +26,39 @@
   </script>
 </head>
 <body>
-  <div id="app"><div class="boot-loading">CFMail…</div></div>
+  <div id="app"><div class="boot-loading" id="boot"></div></div>
+  <script>
+    (function () {
+      // The company this browser saw last time, cached by loadBrand(). The real one arrives over
+      // the network a moment later; painting it now means the very first frame belongs to the
+      // company rather than announcing the product to its own staff. Nothing cached (a first
+      // visit) leaves the spinner alone -- better a bare spinner than someone else's name.
+      // 本浏览器上次见到的企业,由 loadBrand() 缓存。真实值稍后经网络到达;此刻先画出来,
+      // 第一帧便属于这家企业,而不是向它自己的员工报出产品名。没有缓存(首次访问)就只留
+      // 加载动画 —— 一个光秃秃的动画,好过别人的名字。
+      try {
+        var b = JSON.parse(localStorage.getItem('cfmail_brand') || 'null');
+        if (!b) return;
+        if (b.font) document.documentElement.style.setProperty('--font-brand', b.font);
+        var box = document.getElementById('boot');
+        var wrap = document.createElement('div');
+        wrap.className = 'brand-lockup';
+        if (b.logo) {
+          var im = document.createElement('img');
+          im.className = 'brand-logo';
+          im.setAttribute('data-logo-mode', b.logoMode || 'light');
+          im.src = b.logo;
+          wrap.appendChild(im);
+        }
+        if (b.name) {
+          var sp = document.createElement('span');
+          sp.textContent = b.name;   // a name is text, never markup / 名称是文本,绝不是标记
+          wrap.appendChild(sp);
+        }
+        if (wrap.childNodes.length) box.appendChild(wrap);
+      } catch (e) {}
+    })();
+  </script>
   <div id="compose-root"></div>
   <wa-toast id="toast-stack" placement="bottom-start"></wa-toast>
   <script type="module" src="/assets/app.js"></script>

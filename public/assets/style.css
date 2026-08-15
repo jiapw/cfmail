@@ -43,7 +43,41 @@ a { color: var(--link); text-decoration: none; }
 .flex1 { flex: 1; }
 .dim { color: var(--text-2); font-size: 12.5px; }
 .nowrap { white-space: nowrap; }
-.boot-loading, .loading { padding: 40px; text-align: center; color: var(--text-2); }
+/* Every "still working" state in the app, centred on both axes.
+   `flex: 1` centres it inside a flex parent that has room (the drive's main column, a message
+   body); `min-height` gives it something to centre within when the parent has none; `margin:
+   auto` covers the plain-block case. Text-align alone only ever centred it sideways, leaving
+   the spinner pinned near the top of whatever it was filling.
+   应用里每一处"仍在进行"的状态,两轴居中。
+   flex:1 让它在有余量的 flex 父容器里居中(网盘主列、邮件正文);min-height 在父容器没有高度时
+   给它一个可居中的范围;margin:auto 兜住普通块级的情形。
+   只靠 text-align 永远只能横向居中,加载动画被钉在所填区域的顶部附近。 */
+.boot-loading, .loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 40px; text-align: center; color: var(--text-2);
+  flex: 1; margin: auto; min-height: 160px;
+}
+/* The app's first frame belongs to the company, so it fills the viewport / 应用的第一帧属于企业,占满视口 */
+.boot-loading { min-height: 100vh; }
+/* Spinner above the word for a list, below the lockup for the boot screen: in both, the moving
+   part sits between the reader and what they are waiting for.
+   列表里动画在文字之上,启动屏里在品牌组合之下:两处都让"动着的那个"处在
+   读者与他所等待之物之间。 */
+.loading::before, .boot-loading::after {
+  content: ''; width: 34px; height: 34px; border-radius: 50%; flex: none;
+  border: 3px solid var(--border); border-top-color: var(--primary);
+  animation: cfspin .8s linear infinite;
+}
+@keyframes cfspin { to { transform: rotate(360deg); } }
+
+/* Brand lockup: logo and name at one visual weight, the name in the brand face. Lives here
+   rather than in a feature stylesheet because the boot screen paints before any of those load.
+   品牌组合:logo 与名称视觉分量相当,名称用品牌字体。放在这里而不是某个功能样式表里,
+   因为启动屏在那些样式表加载之前就要画出来。 */
+.brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand-lockup span { font-family: var(--font-brand); font-size: 32px; line-height: 1.1; color: var(--text); }
+.brand-lockup > wa-icon { color: var(--primary); }
+.brand-lockup .brand-logo { height: 42px; }
 .empty { padding: 64px 24px; text-align: center; color: var(--text-2); font-size: 15px; }
 
 /* ---------- Web Awesome 全局密度/形状调校 ---------- */
