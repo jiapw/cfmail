@@ -236,6 +236,22 @@ async function keepShare(token, btn) {
   }
 }
 
+/** The part of the card the view toggle owns. Everything else on screen -- the brand, the
+ *  share's terms, the breadcrumb -- is unaffected by which layout is chosen, so it stays put.
+ *  视图切换所管辖的那一块。屏幕上其余的东西 —— 品牌、分享条款、面包屑 ——
+ *  与选了哪种布局无关,因此原地不动。 */
+const bodyHtml = (nodes) => (nodes.length
+  ? (layout() === 'grid' ? cardsHtml(nodes) : `<div class="pub-list">${rowsHtml(nodes)}</div>`)
+  : `<div class="drv-empty">${icon('folder', 44)}<div>${esc(t('drv_empty_folder'))}</div></div>`);
+
+/** The toggle shows the view it would switch TO, so it repaints whenever the layout changes.
+ *  切换按钮显示的是"按下去会变成哪种视图",因此布局一变它就重画。 */
+function paintToggle(btn) {
+  if (!btn) return;
+  btn.innerHTML = icon(layout() === 'list' ? 'grid' : 'view-list', 20);
+  btn.setAttribute('title', layout() === 'list' ? t('drv_view_grid') : t('drv_view_list'));
+}
+
 const headCache = new Map(); // token -> landing payload / token -> 落地数据
 
 async function shareHead(token) {
@@ -290,23 +306,11 @@ export async function renderPubShare(token, rest) {
       </wa-button>
     </div>
     ${head.note ? `<div class="drv-ctx">${esc(head.note)}</div>` : ''}
-    ${nodes.length
-      ? (layout() === 'grid' ? cardsHtml(nodes) : `<div class="pub-list">${rowsHtml(nodes)}</div>`)
-      : `<div class="drv-empty">${icon('folder', 44)}<div>${esc(t('drv_empty_folder'))}</div></div>`}`);
+    <div id="pub-body">${bodyHtml(nodes)}</div>`);
 
   bindKeep(app, token);
 
-  qs('#pub-layout', app).addEventListener('click', () => {
-    localStorage.setItem('cf_drive_layout', layout() === 'list' ? 'grid' : 'list');
-    renderPubShare(token, rest);
-  });
-
-  qsa('.drv-crumb[data-go]', app).forEach((el) => el.addEventListener('click', () => {
-    const id = el.dataset.go;
-    navigate(id ? folderHash(id) : `#/p/${encodeURIComponent(token)}`);
-  }));
-
-  qsa('.pub-it', app).forEach((el) => el.addEventListener('click', async (e) => {
+  const bindItems = () => qsa('.pub-it', app).forEach((el) => el.addEventListener('click', async (e) => {
     if (e.target.closest('.dl')) return; // the download link handles itself / 下载链接自己处理
     const n = nodes[parseInt(el.dataset.i, 10)];
     if (!n) return;
@@ -325,6 +329,26 @@ export async function renderPubShare(token, rest) {
     const drv = await loadDrive();
     drv.openPreviewFor(nodes.filter((x) => x.kind === 'file'), n);
   }));
+
+  // Switching view is not navigation: the listing is already in hand, so only the listing is
+  // rebuilt. Re-rendering the page would refetch the share, rebuild the header and blink the
+  // brand -- a whole page's worth of work to change how the same rows are drawn.
+  // 切换视图不是导航:列表数据已经在手,因此只重建列表。重渲整页会再取一遍分享、重建页眉、
+  // 让品牌闪一下 —— 为了换一种画法,付出整页的代价。
+  const toggle = qs('#pub-layout', app);
+  toggle.addEventListener('click', () => {
+    localStorage.setItem('cf_drive_layout', layout() === 'list' ? 'grid' : 'list');
+    qs('#pub-body', app).innerHTML = bodyHtml(nodes);
+    paintToggle(toggle);
+    bindItems();
+  });
+
+  qsa('.drv-crumb[data-go]', app).forEach((el) => el.addEventListener('click', () => {
+    const id = el.dataset.go;
+    navigate(id ? folderHash(id) : `#/p/${encodeURIComponent(token)}`);
+  }));
+
+  bindItems();
 }
 
 /** Archive browsing on a public link: the Drive's own arc.js, painting into this page's card.
