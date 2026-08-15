@@ -974,7 +974,7 @@ async function shareDialog(nodes) {
   if (!list.length) return;
   const d = showModal(`
     <div class="modal-body" id="drv-share-body"><div class="loading">${esc(t('loading'))}</div></div>
-    <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
+    <div slot="footer" class="drv-share-foot" id="sh-foot">
       <wa-button variant="brand" id="sh-make">${icon('link', 16)} ${esc(t('drv_share_create'))}</wa-button>
     </div>`);
   d.addEventListener('click', (e) => { if (e.target.closest('[data-x]')) closeModal(); });
@@ -1043,8 +1043,7 @@ async function shareDialog(nodes) {
       </div>
     </div>
 
-    <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>
-    <div id="sh-out" style="margin-top:14px"></div>`;
+    <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
 
   // Public links are read-only, full stop: nobody is authenticated on the other end, so there
   // is no one to hold responsible for a write. The role control greys out rather than
@@ -1100,7 +1099,12 @@ async function shareDialog(nodes) {
     try {
       const s = await api('POST', '/api/drive/shares', body);
       const url = shareUrl(s);
-      qs('#sh-out', d).innerHTML = `
+      // The link takes over the button's own slot. There is exactly one thing to do at the
+      // bottom of this dialog at any moment -- make the link, then take it -- and leaving a
+      // spent "create" button sitting under the result invites a second, identical link.
+      // 链接接管按钮自己的位置。此刻这个对话框底部只该有一件可做的事 —— 先造出链接,
+      // 再把它拿走 —— 把用过的"创建"按钮留在结果下方,等于邀请再造一条一模一样的链接。
+      qs('#sh-foot', d).innerHTML = `
         <div class="drv-share-link">
           <input readonly value="${esc(url)}" onclick="this.select()">
           <wa-button size="small" id="sh-copy">${icon('copy', 15)} ${esc(t('drv_copy_link'))}</wa-button>
