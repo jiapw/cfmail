@@ -136,18 +136,32 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   if (need === 'owner') throw new HttpError(404, 'e_drive_not_found');
   if (chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
   const ids = chain.map((n) => n.id);
-  // A share qualifies only if it is alive (not revoked, not expired), is meant for signed-in
-  // users, and -- when it names a domain -- this user holds a mailbox under that domain. The
+  // A share qualifies only if it is alive (not revoked, not expired), this user has actually
+  // joined it, and -- when it names a domain -- they hold a mailbox under that domain. The
   // domain test is the department check: membership follows the mailbox, so someone who joins
   // the department later gains access without the share being touched.
-  // 一条共享要生效,必须仍然活着(未撤销、未过期)、面向登录用户,并且 —— 若它指定了域名 ——
-  // 该用户在此域名下持有信箱。这个域名判定就是部门校验:资格随信箱走,
+  //
+  // Public shares reach this query too, but only through a membership row, which exists solely
+  // because a signed-in visitor pressed "add to my drive" on the landing page. The link itself
+  // still needs no account and grants nothing here; and whatever the row says, a public share
+  // is read-only -- the role is pinned at creation, refused on update, and pinned again below
+  // so a single wrong row could never hand out write access.
+  //
+  // 一条共享要生效,必须仍然活着(未撤销、未过期)、本用户确实加入过它,并且 —— 若它指定了
+  // 域名 —— 他在该域名下持有信箱。这个域名判定就是部门校验:资格随信箱走,
   // 后来加入该部门的人无需改动共享即可获得访问权。
+  //
+  // 公开分享也会走到这条查询,但只能经由一条成员记录进来,而那条记录的唯一来源是某个已登录
+  // 的访问者在落地页上按了"添加到我的网盘"。链接本身仍然无需账号,且在此不授予任何东西;
+  // 并且无论那行怎么写,公开分享一律只读 —— 角色在创建时钉死、更新时被拒,下面再钉一次,
+  // 单独一行写错也绝无可能发出写权限。
   const rows = await c.env.DB.prepare(
-    `SELECT si.node_id, s.role FROM drive_shares s
+    `SELECT si.node_id,
+            CASE WHEN s.audience='public' THEN 'viewer' ELSE s.role END AS role
+       FROM drive_shares s
        JOIN drive_share_items si ON si.share_id = s.id
        JOIN drive_share_members m ON m.share_id = s.id
-     WHERE m.user_id=?1 AND s.audience='internal'
+     WHERE m.user_id=?1 AND s.audience IN ('internal','public')
        AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > ?2)
        AND (s.domain_id IS NULL OR EXISTS (
          SELECT 1 FROM grants g JOIN mailboxes mb ON mb.id=g.mailbox_id
@@ -1143,15 +1157,24 @@ driveApp.post('/shares/join', async (c) => {
   const s = await c.env.DB.prepare('SELECT * FROM drive_shares WHERE token=?1').bind(token).first<any>();
   const bad = shareLiveness(s);
   if (bad) throw new HttpError(bad === 'e_drive_share_not_found' ? 404 : 403, bad);
-  if (s.audience !== 'internal') throw new HttpError(404, 'e_drive_share_not_found');
+  if (!SHARE_AUDIENCES.includes(s.audience)) throw new HttpError(404, 'e_drive_share_not_found');
   const items = await shareItems(c.env, s.id);
   if (!items.length) throw new HttpError(404, 'e_drive_share_not_found');
   if (s.owner_id !== user.id) {
-    if (s.domain_id) {
-      const mine = await myDomains(c.env, user.id);
-      if (!mine.some((d) => d.id === s.domain_id)) throw new HttpError(403, 'e_drive_share_domain');
-    } else if (!(await sharesDomainWith(c.env, s.owner_id, user.id))) {
-      throw new HttpError(403, 'e_drive_share_domain');
+    // Who may keep a link decides nothing new about who may open it. An internal link still
+    // has to clear the company (and the department, when one is named); a public link is by
+    // definition open to whoever holds it, so there is nothing further to check -- keeping it
+    // is exactly as read-only as opening it was.
+    // "谁可以留下这条链接",不会对"谁可以打开它"作出任何新的裁定。内部链接仍须过企业这一关
+    // (指定了部门的还要过部门);公开链接按定义对任何拿到它的人开放,因此无可再验 ——
+    // 留下它,与打开它一样只读。
+    if (s.audience === 'internal') {
+      if (s.domain_id) {
+        const mine = await myDomains(c.env, user.id);
+        if (!mine.some((d) => d.id === s.domain_id)) throw new HttpError(403, 'e_drive_share_domain');
+      } else if (!(await sharesDomainWith(c.env, s.owner_id, user.id))) {
+        throw new HttpError(403, 'e_drive_share_domain');
+      }
     }
     await c.env.DB.prepare('INSERT OR IGNORE INTO drive_share_members (share_id, user_id, joined_at) VALUES (?1,?2,?3)')
       .bind(s.id, user.id, now()).run();

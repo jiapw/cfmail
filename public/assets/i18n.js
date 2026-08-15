@@ -4747,3 +4747,13 @@ Object.assign(DICTS.de, { drv_share_by: 'Geteilt von {0}', drv_a_share_owner: 'T
 Object.assign(DICTS.fr, { drv_share_by: 'Partagé par {0}', drv_a_share_owner: 'Afficher l\u2019auteur sur la page publique', drv_a_share_owner_note: 'Une fois activé, les liens publics créés désormais affichent l’adresse e-mail de l’auteur. Les liens déjà distribués ne changent pas.' });
 Object.assign(DICTS.es, { drv_share_by: 'Compartido por {0}', drv_a_share_owner: 'Mostrar a quien comparte en la página pública', drv_a_share_owner_note: 'Al activarlo, los enlaces públicos creados a partir de ahora muestran el correo de quien comparte. Los enlaces ya repartidos no cambian.' });
 Object.assign(DICTS.ru, { drv_share_by: 'Поделился {0}', drv_a_share_owner: 'Показывать автора на публичной странице', drv_a_share_owner_note: 'Если включено, публичные ссылки, созданные с этого момента, показывают адрес электронной почты автора. Уже выданные ссылки не меняются.' });
+
+Object.assign(DICTS['zh-CN'], { drv_share_save: '添加到我的网盘' });
+Object.assign(DICTS['zh-TW'], { drv_share_save: '加入我的雲端硬碟' });
+Object.assign(DICTS.en, { drv_share_save: 'Add to my drive' });
+Object.assign(DICTS.ja, { drv_share_save: 'マイドライブに追加' });
+Object.assign(DICTS.ko, { drv_share_save: '내 드라이브에 추가' });
+Object.assign(DICTS.de, { drv_share_save: 'Zu meinem Drive hinzufügen' });
+Object.assign(DICTS.fr, { drv_share_save: 'Ajouter à mon Drive' });
+Object.assign(DICTS.es, { drv_share_save: 'Añadir a mi unidad' });
+Object.assign(DICTS.ru, { drv_share_save: 'Добавить на мой диск' });
