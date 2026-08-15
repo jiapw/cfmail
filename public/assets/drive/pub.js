@@ -18,7 +18,7 @@
 // 品牌组合、这条分享的条款,以及一个没有选择、没有菜单、无处可写的列表。
 
 import { t, tErr, setLang } from '../i18n.js';
-import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon } from '../ui.js';
+import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon, toast } from '../ui.js';
 import { store, navigate } from '../app.js';
 import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './fsrc.js';
 
@@ -170,6 +170,51 @@ function cardsHtml(nodes) {
   }).join('')}</div></div>`;
 }
 
+// ---------- Keeping the link ----------
+// ---------- 留下这条链接 ----------
+
+/** Is anyone signed in? Asked with a bare fetch on purpose: refreshMe() would apply the
+ *  visitor's own language and light/dark, undoing the look this page borrowed from the sharer.
+ *  Nothing here needs the payload -- only whether a session answered.
+ *  有人登录着吗?特意用裸 fetch 问:refreshMe() 会套用访问者自己的语言与明暗,
+ *  把本页向分享者借来的观感抹掉。此处不需要返回体 —— 只需要知道会话是否作答。 */
+let signedIn = null;
+async function hasSession() {
+  if (signedIn !== null) return signedIn;
+  if (store.me) return (signedIn = true);
+  try {
+    signedIn = (await fetch('/api/me', { headers: { accept: 'application/json' } })).ok;
+  } catch {
+    signedIn = false;
+  }
+  return signedIn;
+}
+
+/** Keep a public link: record the membership so the items sit under "shared items" from now
+ *  on. Nothing is copied -- what is kept is a pointer to the sharer's live files, so this
+ *  costs the recipient no quota and shows them the sharer's latest state. It also grants
+ *  nothing new: a public share is read-only whether opened or kept.
+ *  留下一条公开链接:记下成员身份,此后这些条目就待在"共享给我"下。不复制任何东西 ——
+ *  留下的是指向分享者实时文件的指针,因此不占接收方配额,看到的始终是分享者的最新状态。
+ *  它也不授予任何新东西:公开分享无论是打开还是留下,都是只读。 */
+async function keepShare(token, btn) {
+  btn.setAttribute('loading', '');
+  try {
+    const r = await fetch('/api/drive/shares/join', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'e_generic');
+    const items = j.items || [];
+    toast(t('drv_share_joined',
+      items.length === 1 ? items[0].name : t('drv_share_n_items', String(items.length))));
+    navigate(j.owner ? '#/drive' : '#/drive/shared');
+  } catch (e) {
+    btn.removeAttribute('loading');
+    toast(tErr(e && e.message), true);
+  }
+}
+
 const headCache = new Map(); // token -> landing payload / token -> 落地数据
 
 async function shareHead(token) {
@@ -218,6 +263,9 @@ export async function renderPubShare(token, rest) {
   app.innerHTML = frame(head, `
     <div class="pub-bar">
       <div class="drv-crumbs">${crumbs}</div>
+      <wa-button size="small" appearance="plain" id="pub-keep" hidden>
+        ${icon('folder-shared', 15)} ${esc(t('drv_share_save'))}
+      </wa-button>
       <wa-button class="icon" appearance="plain" id="pub-layout"
                  title="${esc(layout() === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">
         ${icon(layout() === 'list' ? 'grid' : 'view-list', 20)}
@@ -227,6 +275,16 @@ export async function renderPubShare(token, rest) {
     ${nodes.length
       ? (layout() === 'grid' ? cardsHtml(nodes) : `<div class="pub-list">${rowsHtml(nodes)}</div>`)
       : `<div class="drv-empty">${icon('folder', 44)}<div>${esc(t('drv_empty_folder'))}</div></div>`}`);
+
+  // Offered only to someone who has a drive to keep it in. Resolved after the listing paints,
+  // so an anonymous visitor -- the common case -- waits for nothing.
+  // 只提供给"有网盘可放"的人。在列表渲染之后才解析,匿名访问者(常态)因此毫无等待。
+  hasSession().then((yes) => {
+    const btn = qs('#pub-keep', app);
+    if (!yes || !btn) return;
+    btn.removeAttribute('hidden');
+    btn.addEventListener('click', () => keepShare(token, btn));
+  });
 
   qs('#pub-layout', app).addEventListener('click', () => {
     localStorage.setItem('cf_drive_layout', layout() === 'list' ? 'grid' : 'list');
