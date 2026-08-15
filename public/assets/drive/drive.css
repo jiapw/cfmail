@@ -567,10 +567,29 @@
 .drv-link-card wa-button.danger::part(base) { color: #e5484d; }
 
 .pub-wrap { max-width: 940px; margin: 0 auto; padding: 24px 16px 40px; }
+/* Identity on the left, the one action on the right. Wrapping is what keeps a long brand name
+   from squeezing the button off the page on a narrow screen -- it drops to its own line instead.
+   左边是身份,右边是唯一的动作。允许换行,才不会在窄屏上让一个长品牌名把按钮挤出页面 ——
+   它会另起一行而不是被挤掉。 */
+.pub-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px 16px; margin: 0 0 14px;
+}
 /* Stacked, not inline: at 2x the brand owns its line, and hanging the small print off its
    baseline left the two crammed into one another.
    竖排而非并排:放大到两倍后,品牌名独占一行;把小字挂在它的基线上,两者会挤作一团。 */
-.pub-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 14px; }
+.pub-id { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+/* Same height as the logo, so the two ends of the top row share one centreline.
+   The selector is deliberately long: a bare .pub-keep::part(base) loses to Web Awesome's own
+   host-scoped sizing rule and the button stayed at its 32px default.
+   与 logo 等高,顶行的两端因此共用同一条中线。选择器有意写长:
+   光是 .pub-keep::part(base) 会输给 Web Awesome 自己那条 host 作用域的尺寸规则,
+   按钮会停在 32px 的默认值上。 */
+.pub-head wa-button.pub-keep::part(base) {
+  height: 42px; min-height: 42px; font-size: 15px; padding: 0 18px; border-radius: 12px;
+}
+.pub-head wa-button.pub-keep::part(label) { display: flex; align-items: center; gap: 9px; }
+.pub-keep span { font-size: 15px; line-height: 1; }
 /* The lockup is the top bar's, enlarged: same logo-to-text ratio, same brand face. Recipients
    land here from outside the company, so this is the one thing on the page that has to say
    whose file this is at a glance.
