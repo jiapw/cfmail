@@ -418,30 +418,57 @@ const cmp = (a, b) => {
  *  bytes, sequential decode for compressed ones -- and nothing is pre-extracted at all.
  *  流式 Service Worker:注册一次,scope '/',只碰 /arc-stream/*。有它在,条目拿到的是
  *  按需流动的 URL —— 直存字节按段直通,压缩字节顺序解码 —— 完全不用预先解出。 */
+const swUrl = () =>
+  new URL('/assets/drive/arc-sw.js?v=' + encodeURIComponent(store.brand?.version || ''), location.origin).href;
+
+/** Is the worker controlling this page the one this release ships? Registration is keyed by
+ *  script URL, and ours carries the version, so this is just a string comparison.
+ *  正在控制本页的 worker,是不是本次发布所带的那个?注册以脚本 URL 为键,
+ *  而我们的 URL 带着版本号,所以这就是一次字符串比较。 */
+const swCurrent = () => (navigator.serviceWorker?.controller?.scriptURL || '') === swUrl();
+
 let swReady = null;
 function ensureSw() {
-  // A controller that is here NOW settles it, whatever an earlier probe concluded. The first
+  // A controller from THIS release settles it, whatever an earlier probe concluded. The first
   // probe runs while the archive listing loads, often before the worker has claimed the page;
   // caching that "no" would pin the whole session to the in-page fallback, which extracts every
   // entry in full -- ruinous for large ones, and outright refused past the preview cap.
-  // 此刻有 controller 就够了,不管先前那次探测得出什么结论。首次探测是在列压缩包目录时跑的,
-  // 常常早于 worker 接管页面;把那个"否"缓存下来,会把整个会话钉死在页内回退路径 ——
+  //
+  // A controller from an OLDER release settles nothing, and this used to accept one. Because
+  // the early return skipped register(), the browser was never asked to fetch the new script,
+  // so a worker installed by some past version kept serving /arc-stream indefinitely. That is
+  // how a worker predating share tokens survived: it fetched archive bytes through /api/drive,
+  // which a visitor without an account cannot read, and every entry in a shared zip refused to
+  // open -- encrypted or not. register() is idempotent and doubles as the update check; the
+  // worker skipWaiting()s and claims the page on install, so the swap needs no reload.
+  //
+  // 本次发布的 controller 就够了,不管先前那次探测得出什么结论。首次探测是在列压缩包目录时
+  // 跑的,常常早于 worker 接管页面;把那个"否"缓存下来,会把整个会话钉死在页内回退路径 ——
   // 它要把条目整个解出来,大文件代价惨重,超过预览上限更是直接拒绝。
-  if (navigator.serviceWorker?.controller) return Promise.resolve(true);
+  //
+  // 而"旧版本的 controller"什么也说明不了,过去这里却认它。由于提前返回跳过了 register(),
+  // 浏览器从未被要求去取新脚本,于是某个旧版本装下的 worker 会无限期地继续服务 /arc-stream。
+  // 一个早于"分享 token"的 worker 就是这样活下来的:它经 /api/drive 取压缩包字节,
+  // 而没有账号的访问者读不了那里,于是共享 zip 里的每个条目都打不开 —— 无论加不加密。
+  // register() 幂等,同时兼作更新检查;worker 在 install 时 skipWaiting() 并接管页面,
+  // 因此这次替换无需刷新。
+  if (swCurrent()) return Promise.resolve(true);
   if (swReady !== null) return swReady;
   swReady = (async () => {
     if (!('serviceWorker' in navigator)) return false;
     try {
-      await navigator.serviceWorker.register(
-        '/assets/drive/arc-sw.js?v=' + encodeURIComponent(store.brand?.version || ''),
-        { scope: '/', type: 'module' },
-      );
+      await navigator.serviceWorker.register(swUrl(), { scope: '/', type: 'module' });
       await navigator.serviceWorker.ready;
-      // clients.claim() lands a beat later; give it a moment / clients.claim() 稍晚生效,等一拍
-      for (let i = 0; i < 20 && !navigator.serviceWorker.controller; i++) {
+      // clients.claim() lands a beat later, and replacing a stale worker takes longer still
+      // clients.claim() 稍晚生效;替换一个旧 worker 还要更久
+      for (let i = 0; i < 40 && !swCurrent(); i++) {
         await new Promise((res) => setTimeout(res, 100));
       }
-      return !!navigator.serviceWorker.controller;
+      // An older worker still in charge is worse than none: it would fetch through the wrong
+      // door. Say no and let the caller extract in the page instead.
+      // 仍由旧 worker 掌控,比没有 worker 更糟:它会从错误的门去取。
+      // 此时回"否",让调用方改在页面内解出。
+      return swCurrent();
     } catch {
       return false;
     }
@@ -471,7 +498,7 @@ async function entryUrl(entryPath, k, forceBlob) {
   // has no answer for it.
   // 这里重新检查 controller,不能只靠 ensureSw():它的结果整页缓存,但 controller 会随 worker
   // 更新而来去。页面无人控制时还发流式 URL,请求就落到网络上,而网络给不出答案。
-  if (!forceBlob && await ensureSw() && navigator.serviceWorker.controller) {
+  if (!forceBlob && await ensureSw() && swCurrent()) {
     if (cur.reader.encrypted) await pushPwToSw(cur.id, savedPw(cur.id));
     url = streamUrl(entryPath);
   } else {
