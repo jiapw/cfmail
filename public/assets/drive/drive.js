@@ -10,6 +10,9 @@ import {
   copyText, fileIcon, avatar, debounce,
 } from '../ui.js';
 import { store, navigate, show } from '../app.js';
+import { arcSeed, dlUrl, setPreviewOpener, thumbUrl, useDriveSource } from './fsrc.js';
+
+export { arcSeed };
 
 // Client-side twin of the server's inline whitelist. Only used to decide which preview widget
 // to try; the server stays the real gatekeeper.
@@ -29,7 +32,7 @@ const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['
 const ARC_EXTS = new Set(['zip', 'jar', 'apk', 'epub', '7z']);
 /** Node info stashed for arc.js so entering an archive needs no extra request
  *  为 arc.js 暂存的节点信息。进压缩包不用再发请求 */
-export const arcSeed = new Map();
+
 
 const dst = {
   view: 'my',            // my | folder | shared | recent | starred | trash | search
@@ -48,8 +51,6 @@ const dst = {
   lastIdx: -1,
 };
 
-const dlUrl = (id, inline) => `/api/drive/files/${encodeURIComponent(id)}/dl${inline ? '?inline=1' : ''}`;
-
 // ---------- Entry ----------
 // ---------- 入口 ----------
 
@@ -63,6 +64,11 @@ function ensureCss() {
 
 export async function renderDrive(seg) {
   if (!store.me?.drive_enabled) return navigate('#/');
+  // Reads go through the signed-in door from here on. The public share page points the same
+  // machinery at /api/pub/<token>, so whichever view ran last, claim it back on entry.
+  // 从这里起,读取走登录态那扇门。公开分享页把同一套机器指向 /api/pub/<token>,
+  // 因此不论上一次跑的是哪个视图,进来时都要把它认领回来。
+  useDriveSource();
   ensureCss();
   closePreview(); // navigation never leaves a stray player behind / 路由变化不留悬空播放器
   if (seg[0] === 's' && seg[1]) return joinShare(seg[1]);
@@ -429,7 +435,7 @@ function gridHtml() {
     const oldImg = !n.thumb && n.kind === 'file' && IMG_RE.test(n.mime) && n.size < 20 * 1024 * 1024;
     const bf = oldImg && dst.access !== 'viewer' ? ` data-bf="${esc(n.id)}"` : '';
     const media = n.thumb
-      ? `<img loading="lazy" src="/api/drive/files/${esc(n.id)}/thumb" alt="">`
+      ? `<img loading="lazy" src="${esc(thumbUrl(n.id))}" alt="">`
       : oldImg
         ? `<img loading="lazy" src="${dlUrl(n.id, true)}"${bf} alt="">`
         : fileIcon(n.name, 44);
@@ -1250,6 +1256,12 @@ export function openPreviewFor(files, node) {
   window.addEventListener('keydown', pvKeys);
 }
 
+// The archive browser opens entries through this same overlay. It registers rather than being
+// imported so arc.js needs nothing from this module -- see the note in fsrc.js.
+// 压缩包浏览器经由同一个预览层打开条目。用登记而非被引入的方式,
+// arc.js 就不需要从本模块取任何东西 —— 缘由见 fsrc.js 中的说明。
+setPreviewOpener(openPreviewFor);
+
 /** Detached media elements keep streaming until src is cleared -- Chrome only tears the
  *  fetch down on an explicit load() with no source. Applies to every preview teardown.
  *  脱离 DOM 的媒体元素不清 src 会一直拉流 —— Chrome 要显式空源 load() 才断开。
@@ -1596,7 +1608,7 @@ async function paintPreview() {
     body = `
     <div class="drv-audio">
       ${n.thumb
-        ? `<img class="art" src="/api/drive/files/${esc(n.id)}/thumb" alt="">`
+        ? `<img class="art" src="${esc(thumbUrl(n.id))}" alt="">`
         : `<div class="art fallback">${icon('fileAudio', 72)}</div>`}
       <div class="anm">${esc(n.name)}</div>
       <audio controls autoplay src="${esc(src)}"></audio>

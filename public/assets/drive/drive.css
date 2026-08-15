@@ -584,6 +584,15 @@
 .pub-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 14px; }
 .pub-bar .drv-crumbs { flex: 1; min-width: 0; padding: 6px 0; }
 .pub-gridwrap { padding: 6px 14px 14px; border-top: 1px solid var(--border); }
+/* The archive browser paints the Drive's own path bar and listing straight into this card.
+   In the Drive those sit in a viewport-height flex column and .drv-scroll owns the scrolling;
+   here the page scrolls, so the container simply grows and the insets are re-cut to the card's.
+   压缩包浏览器把网盘自己的路径条与列表直接渲进这张卡片。在网盘里它们身处一列视口高的 flex
+   容器,由 .drv-scroll 负责滚动;这里滚动的是页面,所以容器只管长高,内缩改按卡片重新裁定。 */
+.pub-arc #drv-bar { margin-top: 0; }
+.pub-arc .drv-crumbbar { min-height: 36px; padding: 4px 8px 4px 14px; }
+.pub-arc .drv-ctx { margin: 0 14px 10px; }
+.pub-arc .drv-scroll { overflow: visible; padding: 0 2px 12px; }
 .drv-card.pub-it { cursor: pointer; }
 .drv-card .cap .sz { flex: none; font-size: 12px; padding-right: 8px; }
 .pub-list { display: flex; flex-direction: column; }
