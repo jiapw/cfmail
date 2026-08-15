@@ -121,14 +121,35 @@ function frame(head, inner) {
     // 只有管理员开启披露时才有值;由服务端决定,否则回空串,此处不会有可意外泄露的东西。
     head.owner_email ? t('drv_share_by', head.owner_email) : '',
   ].filter(Boolean);
+  // Keeping the share is about the whole link, not about whichever folder is on screen, so it
+  // belongs beside the brand at the top of the page rather than inside the listing's own bar.
+  // "留下这条分享"针对的是整条链接,而不是屏幕上碰巧是哪个目录,
+  // 因此它属于页顶品牌旁边,而不是列表自己那条 bar 里面。
   return `
     <div class="pub-wrap">
       <div class="pub-head">
-        ${brandHtml()}
-        <div class="pub-meta drv-dim">${meta.map(esc).join(' · ')}</div>
+        <div class="pub-id">
+          ${brandHtml()}
+          <div class="pub-meta drv-dim">${meta.map(esc).join(' · ')}</div>
+        </div>
+        <wa-button class="pub-keep" id="pub-keep" appearance="outlined" hidden>
+          ${icon('folder-shared', 20)} <span>${esc(t('drv_share_save'))}</span>
+        </wa-button>
       </div>
       <div class="pub-card">${inner}</div>
     </div>`;
+}
+
+/** Offered only to someone who has a drive to keep it in. Resolved after the frame paints, so
+ *  an anonymous visitor -- the common case -- waits for nothing.
+ *  只提供给"有网盘可放"的人。在外框渲染之后才解析,匿名访问者(常态)因此毫无等待。 */
+function bindKeep(app, token) {
+  hasSession().then((yes) => {
+    const btn = qs('#pub-keep', app);
+    if (!yes || !btn) return;
+    btn.removeAttribute('hidden');
+    btn.addEventListener('click', () => keepShare(token, btn));
+  });
 }
 
 // ---------- Listing ----------
@@ -263,9 +284,6 @@ export async function renderPubShare(token, rest) {
   app.innerHTML = frame(head, `
     <div class="pub-bar">
       <div class="drv-crumbs">${crumbs}</div>
-      <wa-button size="small" appearance="plain" id="pub-keep" hidden>
-        ${icon('folder-shared', 15)} ${esc(t('drv_share_save'))}
-      </wa-button>
       <wa-button class="icon" appearance="plain" id="pub-layout"
                  title="${esc(layout() === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">
         ${icon(layout() === 'list' ? 'grid' : 'view-list', 20)}
@@ -276,15 +294,7 @@ export async function renderPubShare(token, rest) {
       ? (layout() === 'grid' ? cardsHtml(nodes) : `<div class="pub-list">${rowsHtml(nodes)}</div>`)
       : `<div class="drv-empty">${icon('folder', 44)}<div>${esc(t('drv_empty_folder'))}</div></div>`}`);
 
-  // Offered only to someone who has a drive to keep it in. Resolved after the listing paints,
-  // so an anonymous visitor -- the common case -- waits for nothing.
-  // 只提供给"有网盘可放"的人。在列表渲染之后才解析,匿名访问者(常态)因此毫无等待。
-  hasSession().then((yes) => {
-    const btn = qs('#pub-keep', app);
-    if (!yes || !btn) return;
-    btn.removeAttribute('hidden');
-    btn.addEventListener('click', () => keepShare(token, btn));
-  });
+  bindKeep(app, token);
 
   qs('#pub-layout', app).addEventListener('click', () => {
     localStorage.setItem('cf_drive_layout', layout() === 'list' ? 'grid' : 'list');
@@ -335,6 +345,7 @@ async function renderPubArc(token, id, path) {
   if (!box) {
     app.innerHTML = frame(head, '<div id="pub-arc" class="pub-arc"></div>');
     box = qs('#pub-arc', app);
+    bindKeep(app, token);
   }
   // drive.js first: it is what registers the preview overlay the archive browser opens
   // entries through, and arc.js no longer pulls it in on its own.
