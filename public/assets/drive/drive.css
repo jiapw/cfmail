@@ -480,6 +480,18 @@
 
 /* ---------- Share dialog ---------- */
 /* ---------- 共享对话框 ---------- */
+/* The footer holds one thing at a time: the create button, then the link that replaced it.
+   Both sit on the same centreline, so nothing below the dialog shifts at the moment of
+   creation -- the button does not slide away, it is simply what the link is now.
+   页脚同一时刻只放一样东西:先是创建按钮,然后是取代它的链接。两者共用同一条中线,
+   创建的那一刻对话框下方不会发生位移 —— 按钮不是滑走了,它就是现在的这条链接。 */
+/* width:100% is load-bearing. The dialog's footer part is itself a flex row that sizes this
+   slotted div to its content, so the link's flex:1 had nothing to grow into and the URL sat
+   squeezed into 168px against the right edge.
+   width:100% 是承重的。对话框的 footer part 自身是一行 flex,会把这个插槽 div 收到内容宽度,
+   于是链接的 flex:1 无处可长,URL 被挤成 168px 贴在右边。 */
+.drv-share-foot { display: flex; gap: 8px; align-items: center; justify-content: flex-end; min-height: 40px; width: 100%; }
+.drv-share-foot .drv-share-link { flex: 1; min-width: 0; margin: 0; }
 .drv-share-link { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
 .drv-share-link input {
   flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
