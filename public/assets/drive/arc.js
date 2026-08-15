@@ -8,9 +8,13 @@
 import { t, tErr } from '../i18n.js';
 import { esc, icon, qs, qsa, toast, fmtSize, fmtDate, fileIcon, showModal, closeModal } from '../ui.js';
 import { store, navigate } from '../app.js';
-import { arcSeed, openPreviewFor } from './drive.js';
+import {
+  arcHash, arcSeed, dlUrl as srcDl, folderHash, fsrc, inArc, metaUrl, preview, streamQuery,
+} from './fsrc.js';
 
-const dlUrl = (id) => `/api/drive/files/${encodeURIComponent(id)}/dl?inline=1`;
+const dlUrl = (id) => srcDl(id, true);
+
+export { arcHash };
 const ARC_PV_CAP = 256 * 1024 * 1024;  // extraction cap for preview / 在线预览的解出上限
 const READER_CACHE = 3;                // open listings kept around / 缓存几份已开的目录
 
@@ -150,7 +154,7 @@ function promptPassword(name, retry) {
 // Self-cleaning: when the hash leaves this archive, blob URLs die with the visit
 // 自清理。hash 一离开这个压缩包,blob URL 随访问一起释放
 window.addEventListener('hashchange', () => {
-  if (cur && !location.hash.startsWith(`#/drive/arc/${cur.id}`)) leave();
+  if (cur && !inArc(cur.id)) leave();
 });
 
 function leave() {
@@ -160,14 +164,11 @@ function leave() {
   qs('.drv-new')?.removeAttribute('disabled');
 }
 
-export const arcHash = (id, path) =>
-  `#/drive/arc/${encodeURIComponent(id)}${path ? '/' + path.split('/').map(encodeURIComponent).join('/') : ''}`;
-
 /** Full seed (name, size, breadcrumb prefix, access) from the meta endpoint -- deep links
  *  and reloads rebuild the path bar with it.
  *  从 meta 端点取完整种子(名称、大小、路径前缀、权限)。深链与刷新靠它重建路径条。 */
 async function probe(id) {
-  const r = await fetch(`/api/drive/nodes/${encodeURIComponent(id)}/meta`, { credentials: 'include' });
+  const r = await fetch(metaUrl(id), { credentials: 'include' });
   if (!r.ok) throw new Error('e_drive_not_found');
   const j = await r.json();
   return { name: j.node.name, size: j.node.size, crumbs: j.path || [], access: j.access };
@@ -281,8 +282,8 @@ function pushPwToSw(id, pw) {
 }
 
 /** Entry point, called by drive.js routing / 入口,由 drive.js 路由调用 */
-export async function renderArc(id, path) {
-  const main = qs('#drv-main');
+export async function renderArc(id, path, mainEl) {
+  const main = mainEl || qs('#drv-main');
   if (!main) return;
   ensureSw(); // warm up while the listing loads / 列目录的同时预热 SW
   qs('.drv-new')?.setAttribute('disabled', '');
@@ -325,13 +326,13 @@ export async function renderArc(id, path) {
   try {
     opened = await openReader(id);
   } catch (e) {
-    if (!location.hash.startsWith(`#/drive/arc/${cur.id}`)) return; // navigated away / 已离开
+    if (!inArc(cur.id)) return; // navigated away / 已离开
     // Cancelling the password prompt just backs out to where the archive was opened from
     // 取消密码框就退回打开压缩包的来路
     if (e && e.message === 'arc_pw_cancel') {
       const back = arcSeed.get(cur.id)?.crumbs?.slice(-1)[0];
       leave();
-      navigate(back ? `#/drive/folder/${back.id}` : '#/drive');
+      navigate(back ? folderHash(back.id) : fsrc.root);
       return;
     }
     // Keep the archive path bar; report the failure inside the content area
@@ -450,7 +451,7 @@ function ensureSw() {
 
 const streamUrl = (entryPath) =>
   `/arc-stream/${encodeURIComponent(cur.id)}/${cur.size}/${extOf(cur.name)}/`
-  + entryPath.split('/').map(encodeURIComponent).join('/');
+  + entryPath.split('/').map(encodeURIComponent).join('/') + streamQuery();
 
 /** URL for an entry: the streaming URL when the worker took control, else a blob of the
  *  client-side extraction (capped). Cached per visit.
@@ -494,12 +495,18 @@ function crumbs() {
   // 祖先前缀来自种子(进入时暂存,深链时从 /meta 取)。共享成员以"共享"为根。
   // 每个面包屑都带 title,被省略的名字悬停仍可看全。
   const shared = seed?.access && seed.access !== 'owner';
-  let out = shared
-    ? `<span class="drv-crumb" data-nav="#/drive/shared">${esc(t('drv_shared'))}</span>`
-    : `<span class="drv-crumb" data-nav="#/drive">${esc(t('drv_my'))}</span>`;
+  // On a share page the root is the sharer's selection, and the crumb chain the server sends
+  // is already cut there -- nothing above the shared item can be named, let alone navigated to.
+  // 在分享页上,根就是分享者选出的那批条目,服务端给的面包屑链也已在那里截断 ——
+  // 共享条目之上的任何东西都无法被命名,更谈不上跳过去。
+  let out = fsrc.token
+    ? `<span class="drv-crumb" data-nav="${esc(fsrc.root)}">${esc(t('drv_share_root'))}</span>`
+    : shared
+      ? `<span class="drv-crumb" data-nav="#/drive/shared">${esc(t('drv_shared'))}</span>`
+      : `<span class="drv-crumb" data-nav="#/drive">${esc(t('drv_my'))}</span>`;
   for (const p of seed?.crumbs || []) {
     out += `<span class="drv-crumb-sep">${icon('next', 14)}</span>
-      <span class="drv-crumb" title="${esc(p.name)}" data-nav="#/drive/folder/${esc(p.id)}">${esc(p.name)}</span>`;
+      <span class="drv-crumb" title="${esc(p.name)}" data-nav="${esc(folderHash(p.id))}">${esc(p.name)}</span>`;
   }
   const segs = cur.path ? cur.path.split('/') : [];
   const last = !segs.length;
@@ -554,9 +561,15 @@ function bind(main) {
   }));
   const open = (n) => {
     if (n.kind === 'folder') navigate(arcHash(cur.id, n.arcPath));
-    else openPreviewFor(cur.shown.filter((x) => x.kind === 'file'), n);
+    else preview.open?.(cur.shown.filter((x) => x.kind === 'file'), n);
   };
-  qsa('[data-i]', main).forEach((el) => el.addEventListener('dblclick', () => {
+  // Double-click in the Drive, where a single click means "select". A share page has no
+  // selection at all -- one click opens its folders and files -- so requiring two inside an
+  // archive would make the same page answer a click two different ways.
+  // 网盘里用双击,因为在那儿单击意味着"选中"。分享页根本没有选择这回事 ——
+  // 它的目录与文件都是一击即开 —— 压缩包里若要两下,同一个页面就会对同一个动作给出两种答复。
+  const evt = fsrc.token ? 'click' : 'dblclick';
+  qsa('[data-i]', main).forEach((el) => el.addEventListener(evt, () => {
     const n = cur.shown[parseInt(el.dataset.i, 10)];
     if (n) open(n);
   }));

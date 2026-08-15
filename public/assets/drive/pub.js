@@ -1,13 +1,26 @@
 // Public share landing page. Reached without an account, so it may not touch anything that
 // assumes a signed-in session (no store.me, no /api/drive/*). Everything it can do is read:
-// list the shared items, walk into shared folders, preview and download files.
+// list the shared items, walk into shared folders and archives, preview and download files.
+//
+// The reading half is not reimplemented here. The preview overlay and the archive browser are
+// the Drive's own, pointed at /api/pub/<token> through fsrc.js -- so a text file, a docx, a
+// slide deck or an encrypted 7z behaves for a recipient exactly as it does for the sharer.
+// What IS this page's own is the frame around them: the brand lockup, the share's terms, and
+// a listing with no selection, no menus and nothing to write with.
+//
 // 公开分享落地页。无账号即可抵达,因此不能碰任何以"已登录会话"为前提的东西
 // (没有 store.me,不用 /api/drive/*)。它能做的一切都是读:列出被分享的条目、
-// 进入被分享的目录、预览与下载文件。
+// 进入被分享的目录与压缩包、预览与下载文件。
+//
+// "读"的那一半没有在这里重写。预览层与压缩包浏览器就是网盘自己的那套,经 fsrc.js 指向
+// /api/pub/<token> —— 于是一个文本、一份 docx、一套幻灯片、一个加密 7z,
+// 在接收方那里的行为与在分享者那里完全一致。属于本页自己的是它们外面的框:
+// 品牌组合、这条分享的条款,以及一个没有选择、没有菜单、无处可写的列表。
 
 import { t, tErr, setLang } from '../i18n.js';
 import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon } from '../ui.js';
 import { store, navigate } from '../app.js';
+import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './fsrc.js';
 
 let cssDone = false;
 function ensureCss() {
@@ -26,14 +39,16 @@ const api = async (path) => {
   return j;
 };
 
-const dlUrl = (token, id, inline) =>
-  `/api/pub/${encodeURIComponent(token)}/files/${encodeURIComponent(id)}/dl${inline ? '?inline=1' : ''}`;
-const thumbUrl = (token, id) =>
-  `/api/pub/${encodeURIComponent(token)}/files/${encodeURIComponent(id)}/thumb`;
+const v = () => encodeURIComponent(store.brand?.version || '');
+const loadDrive = () => import('./drive.js?v=' + v());
+const loadArc = () => import('./arc.js?v=' + v());
 
 /** Same rule as the signed-in drive: a folder's size is the rollup of everything under it.
  *  与登录端一致的口径:目录的大小是其下全部内容的上卷值。 */
 const effSize = (n) => (n.kind === 'file' ? n.size || 0 : n.tree_bytes || 0);
+const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
+const ARC_EXTS = new Set(['zip', 'jar', 'apk', 'epub', '7z']);
+const IMG_RE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/;
 
 // ---------- Look and feel ----------
 // ---------- 观感 ----------
@@ -94,37 +109,57 @@ function brandHtml() {
   return `<div class="pub-brand">${logo}<span>${esc(name)}</span></div>`;
 }
 
+/** Header + card frame shared by the listing and the archive browser, so stepping into a zip
+ *  changes only what is inside the card.
+ *  列表与压缩包浏览器共用的页眉与卡片外框 —— 点进一个 zip,只有卡片内部会变。 */
+function frame(head, inner) {
+  const meta = [
+    t('drv_share_readonly_note'),
+    head.expires_at ? t('drv_share_until', fmtDate(head.expires_at)) : '',
+    // Present only where an administrator turned the disclosure on; the server decides, and
+    // sends an empty string otherwise, so there is nothing here to leak by accident.
+    // 只有管理员开启披露时才有值;由服务端决定,否则回空串,此处不会有可意外泄露的东西。
+    head.owner_email ? t('drv_share_by', head.owner_email) : '',
+  ].filter(Boolean);
+  return `
+    <div class="pub-wrap">
+      <div class="pub-head">
+        ${brandHtml()}
+        <div class="pub-meta drv-dim">${meta.map(esc).join(' · ')}</div>
+      </div>
+      <div class="pub-card">${inner}</div>
+    </div>`;
+}
+
 // ---------- Listing ----------
 // ---------- 列表 ----------
 
 const layout = () => (localStorage.getItem('cf_drive_layout') === 'grid' ? 'grid' : 'list');
 
-function rowsHtml(token, nodes) {
-  return nodes.map((n) => `
-    <div class="pub-row pub-it" data-id="${esc(n.id)}" data-kind="${esc(n.kind)}" data-name="${esc(n.name)}"
-         data-mime="${esc(n.mime || '')}">
+function rowsHtml(nodes) {
+  return nodes.map((n, i) => `
+    <div class="pub-row pub-it" data-i="${i}">
       <span class="ic">${n.kind === 'folder' ? icon('folder', 22) : fileIcon(n.name, 22)}</span>
       <span class="nm">${esc(n.name)}</span>
       <span class="sz drv-dim">${esc(fmtSize(effSize(n)))}</span>
       <span class="dt drv-dim">${esc(fmtDate(n.updated_at))}</span>
-      ${n.kind === 'file' ? `<a class="dl" href="${esc(dlUrl(token, n.id, false))}" download title="${esc(t('drv_download'))}">${icon('download', 18)}</a>` : ''}
+      ${n.kind === 'file' ? `<a class="dl" href="${esc(dlUrl(n.id))}" download title="${esc(t('drv_download'))}">${icon('download', 18)}</a>` : ''}
     </div>`).join('');
 }
 
-function cardsHtml(token, nodes) {
-  return `<div class="pub-gridwrap"><div class="drv-grid">${nodes.map((n) => {
+function cardsHtml(nodes) {
+  return `<div class="pub-gridwrap"><div class="drv-grid">${nodes.map((n, i) => {
     // Files uploaded before thumbnails existed have none to serve, and nobody visiting a public
     // link may mint one -- small images fall back to the original, everything else to its icon.
     // 缩略图时代之前上传的文件没有缩略图可发,而公开链接的访问者无权生成 ——
     // 小图退回原图,其余退回类型图标。
     const old = !n.thumb && n.kind === 'file' && IMG_RE.test((n.mime || '').toLowerCase()) && n.size < 20 * 1024 * 1024;
     const media = n.thumb
-      ? `<img loading="lazy" src="${esc(thumbUrl(token, n.id))}" alt="">`
-      : old ? `<img loading="lazy" src="${esc(dlUrl(token, n.id, true))}" alt="">`
+      ? `<img loading="lazy" src="${esc(thumbUrl(n.id))}" alt="">`
+      : old ? `<img loading="lazy" src="${esc(dlUrl(n.id, true))}" alt="">`
         : fileIcon(n.name, 44);
     return `
-    <div class="drv-card pub-it ${esc(n.kind)}" data-id="${esc(n.id)}" data-kind="${esc(n.kind)}"
-         data-name="${esc(n.name)}" data-mime="${esc(n.mime || '')}">
+    <div class="drv-card pub-it ${esc(n.kind)}" data-i="${i}">
       <div class="thumb">${n.kind === 'folder' ? icon('folder', 56) : media}</div>
       <div class="cap">
         ${n.kind === 'folder' ? `<wa-icon class="fold" name="folder" style="font-size:22px"></wa-icon>` : fileIcon(n.name, 22)}
@@ -135,24 +170,41 @@ function cardsHtml(token, nodes) {
   }).join('')}</div></div>`;
 }
 
+const headCache = new Map(); // token -> landing payload / token -> 落地数据
+
+async function shareHead(token) {
+  if (headCache.has(token)) return headCache.get(token);
+  const h = await api(`/api/pub/${encodeURIComponent(token)}`);
+  headCache.set(token, h);
+  return h;
+}
+
+function errorPage(app, head, e) {
+  app.innerHTML = head
+    ? frame(head, `<div class="drv-empty">${icon('link', 48)}<div>${esc(tErr(e && e.message))}</div></div>`)
+    : `<div class="pub-wrap"><div class="pub-card">
+         <div class="drv-empty">${icon('link', 48)}<div>${esc(tErr(e && e.message))}</div></div>
+       </div></div>`;
+}
+
 /** @param {string} token @param {string[]} rest path segments below the share root */
 export async function renderPubShare(token, rest) {
   ensureCss();
+  usePubSource(token);
   const app = qs('#app');
-  const parent = rest && rest.length ? rest[rest.length - 1] : '';
+  const segs = rest || [];
+  if (segs[0] === 'arc' && segs[1]) return renderPubArc(token, segs[1], segs.slice(2).join('/'));
+
+  const parent = segs.length ? segs[segs.length - 1] : '';
   app.innerHTML = `<div class="pub-wrap"><div class="drv-loading" style="margin:60px auto"><div class="drv-spin"></div><span>${esc(t('loading'))}</span></div></div>`;
 
   let head;
   let data;
   try {
-    head = await api(`/api/pub/${encodeURIComponent(token)}`);
+    head = await shareHead(token);
     data = await api(`/api/pub/${encodeURIComponent(token)}/list${parent ? '?parent=' + encodeURIComponent(parent) : ''}`);
   } catch (e) {
-    app.innerHTML = `
-      <div class="pub-wrap"><div class="pub-card">
-        <div class="drv-empty">${icon('link', 48)}<div>${esc(tErr(e && e.message))}</div></div>
-      </div></div>`;
-    return;
+    return errorPage(app, head, e);
   }
   applyShareLook(head);
 
@@ -163,35 +215,18 @@ export async function renderPubShare(token, rest) {
     .join('');
 
   const nodes = data.nodes || [];
-  const meta = [
-    t('drv_share_readonly_note'),
-    head.expires_at ? t('drv_share_until', fmtDate(head.expires_at)) : '',
-    // Present only where an administrator turned the disclosure on; the server decides, and
-    // sends an empty string otherwise, so there is nothing here to leak by accident.
-    // 只有管理员开启披露时才有值;由服务端决定,否则回空串,此处不会有可意外泄露的东西。
-    head.owner_email ? t('drv_share_by', head.owner_email) : '',
-  ].filter(Boolean);
-
-  app.innerHTML = `
-    <div class="pub-wrap">
-      <div class="pub-head">
-        ${brandHtml()}
-        <div class="pub-meta drv-dim">${meta.map(esc).join(' · ')}</div>
-      </div>
-      <div class="pub-card">
-        <div class="pub-bar">
-          <div class="drv-crumbs">${crumbs}</div>
-          <wa-button class="icon" appearance="plain" id="pub-layout"
-                     title="${esc(layout() === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">
-            ${icon(layout() === 'list' ? 'grid' : 'view-list', 20)}
-          </wa-button>
-        </div>
-        ${head.note ? `<div class="drv-ctx">${esc(head.note)}</div>` : ''}
-        ${nodes.length
-          ? (layout() === 'grid' ? cardsHtml(token, nodes) : `<div class="pub-list">${rowsHtml(token, nodes)}</div>`)
-          : `<div class="drv-empty">${icon('folder', 44)}<div>${esc(t('drv_empty_folder'))}</div></div>`}
-      </div>
-    </div>`;
+  app.innerHTML = frame(head, `
+    <div class="pub-bar">
+      <div class="drv-crumbs">${crumbs}</div>
+      <wa-button class="icon" appearance="plain" id="pub-layout"
+                 title="${esc(layout() === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">
+        ${icon(layout() === 'list' ? 'grid' : 'view-list', 20)}
+      </wa-button>
+    </div>
+    ${head.note ? `<div class="drv-ctx">${esc(head.note)}</div>` : ''}
+    ${nodes.length
+      ? (layout() === 'grid' ? cardsHtml(nodes) : `<div class="pub-list">${rowsHtml(nodes)}</div>`)
+      : `<div class="drv-empty">${icon('folder', 44)}<div>${esc(t('drv_empty_folder'))}</div></div>`}`);
 
   qs('#pub-layout', app).addEventListener('click', () => {
     localStorage.setItem('cf_drive_layout', layout() === 'list' ? 'grid' : 'list');
@@ -200,54 +235,54 @@ export async function renderPubShare(token, rest) {
 
   qsa('.drv-crumb[data-go]', app).forEach((el) => el.addEventListener('click', () => {
     const id = el.dataset.go;
-    navigate(id ? `#/p/${encodeURIComponent(token)}/${encodeURIComponent(id)}` : `#/p/${encodeURIComponent(token)}`);
+    navigate(id ? folderHash(id) : `#/p/${encodeURIComponent(token)}`);
   }));
 
-  qsa('.pub-it', app).forEach((row) => row.addEventListener('click', (e) => {
+  qsa('.pub-it', app).forEach((el) => el.addEventListener('click', async (e) => {
     if (e.target.closest('.dl')) return; // the download link handles itself / 下载链接自己处理
-    const { id, kind, name, mime } = row.dataset;
-    if (kind === 'folder') return navigate(`#/p/${encodeURIComponent(token)}/${encodeURIComponent(id)}`);
-    openPubPreview(token, { id, name, mime });
+    const n = nodes[parseInt(el.dataset.i, 10)];
+    if (!n) return;
+    if (n.kind === 'folder') return navigate(folderHash(n.id));
+    // An archive opens as a folder, exactly as it does in the Drive. The seed spares the
+    // browser a /meta round-trip and gives it the breadcrumb it should show above the zip.
+    // 压缩包像在网盘里一样以目录形式打开。种子省掉一次 /meta 往返,
+    // 并把该显示在 zip 之上的面包屑交给它。
+    if (ARC_EXTS.has(extOf(n.name))) {
+      arcSeed.set(n.id, {
+        name: n.name, size: n.size, access: 'viewer',
+        crumbs: (data.path || []).map((p) => ({ id: p.id, name: p.name })),
+      });
+      return navigate(arcHash(n.id, ''));
+    }
+    const drv = await loadDrive();
+    drv.openPreviewFor(nodes.filter((x) => x.kind === 'file'), n);
   }));
 }
 
-const IMG_RE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/;
-const VID_RE = /^video\/(mp4|webm|ogg|quicktime)$/;
-
-/** A deliberately small preview: images, media and PDF inline, everything else downloads.
- *  The rich in-page renderers live behind the signed-in bundle and stay there.
- *  刻意做小的预览:图片、音视频与 PDF 内嵌显示,其余一律下载。
- *  富渲染器属于登录后的那套包,就留在那边。 */
-function openPubPreview(token, n) {
-  const src = dlUrl(token, n.id, true);
-  const mime = (n.mime || '').toLowerCase();
-  let body;
-  if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt="">`;
-  else if (VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video>`;
-  else if (mime.startsWith('audio/')) body = `<audio controls autoplay src="${esc(src)}"></audio>`;
-  else if (mime === 'application/pdf') body = `<iframe src="${esc(src)}" title="${esc(n.name)}"></iframe>`;
-  else {
-    window.location.href = dlUrl(token, n.id, false);
-    return;
+/** Archive browsing on a public link: the Drive's own arc.js, painting into this page's card.
+ *  公开链接里的压缩包浏览:网盘自己的 arc.js,渲进本页的卡片。 */
+async function renderPubArc(token, id, path) {
+  const app = qs('#app');
+  let head;
+  try {
+    head = await shareHead(token);
+  } catch (e) {
+    return errorPage(app, null, e);
   }
-  const el = document.createElement('div');
-  el.className = 'drv-view';
-  el.innerHTML = `
-    <div class="drv-view-head">
-      <wa-button class="icon" appearance="plain" data-close aria-label="${esc(t('close'))}">${icon('close', 20)}</wa-button>
-      ${fileIcon(n.name, 20)}<span class="nm">${esc(n.name)}</span>
-      <a class="drv-pub-dl" href="${esc(dlUrl(token, n.id, false))}" download>${icon('download', 20)}</a>
-    </div>
-    <div class="drv-view-body">${body}</div>`;
-  document.body.appendChild(el);
-  const close = () => {
-    el.querySelectorAll('video,audio').forEach((m) => { try { m.pause(); } catch {} m.removeAttribute('src'); });
-    el.remove();
-    window.removeEventListener('keydown', onKey);
-  };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
-  window.addEventListener('keydown', onKey);
-  el.addEventListener('click', (e) => {
-    if (e.target.closest('[data-close]') || e.target === el.querySelector('.drv-view-body')) close();
-  });
+  applyShareLook(head);
+  // Rebuild the frame only when arriving from elsewhere; walking around inside the archive
+  // must not throw away the container arc.js is painting into.
+  // 只有从别处过来时才重建外框;在压缩包内部走动不能把 arc.js 正在渲染的容器扔掉。
+  let box = qs('#pub-arc', app);
+  if (!box) {
+    app.innerHTML = frame(head, '<div id="pub-arc" class="pub-arc"></div>');
+    box = qs('#pub-arc', app);
+  }
+  // drive.js first: it is what registers the preview overlay the archive browser opens
+  // entries through, and arc.js no longer pulls it in on its own.
+  // 先加载 drive.js:压缩包浏览器打开条目所用的预览层由它登记,
+  // 而 arc.js 已不再自行引入它。
+  await loadDrive();
+  const arc = await loadArc();
+  await arc.renderArc(id, path, box);
 }

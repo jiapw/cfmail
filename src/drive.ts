@@ -1270,6 +1270,23 @@ drivePubApp.get('/:token/list', async (c) => {
   return c.json({ access: 'viewer', path, nodes: (rows.results || []).map((n: any) => nodeJson(n)) });
 });
 
+/** Seed for the archive browser: name, size, and the breadcrumb down from the shared item.
+ *  Cut at the share root exactly like the listing is -- a deep link into an archive must not
+ *  reveal the folders the sharer kept above it.
+ *  压缩包浏览器的种子:名称、大小,以及自共享条目往下的面包屑。
+ *  与列目录一样在共享根处截断 —— 深链进一个压缩包,不该暴露分享者留在其上层的目录。 */
+drivePubApp.get('/:token/nodes/:id/meta', async (c) => {
+  const s = await pubShare(c);
+  const { node, chain, roots } = await pubNode(c, s, c.req.param('id'));
+  const cut = chain.findIndex((n) => roots.has(n.id));
+  const path = chain.slice(1, cut + 1).reverse();
+  return c.json({
+    node: nodeJson(node, false),
+    access: 'viewer',
+    path: path.map((n) => ({ id: n.id, name: n.name })),
+  });
+});
+
 drivePubApp.get('/:token/files/:id/dl', async (c) => {
   const s = await pubShare(c);
   const { node } = await pubNode(c, s, c.req.param('id'));

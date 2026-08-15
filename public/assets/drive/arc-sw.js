@@ -28,7 +28,15 @@ import { open7z } from './r7z.js';
 import { ZipCrypto } from './arcrypto.js';
 
 const PREFIX = '/arc-stream/';
-const dlUrl = (id) => `/api/drive/files/${encodeURIComponent(id)}/dl?inline=1`;
+// Which door this archive's bytes come through. The signed-in Drive and the public share page
+// hand the worker the very same node id, but only one of them can be read with a session
+// cookie; the stream URL carries `?t=<token>` for the public case and this map remembers it,
+// so the four places that fetch archive bytes stay one-liners.
+// 这个压缩包的字节走哪扇门。登录态网盘与公开分享页交给 worker 的是同一个节点 id,
+// 但只有其中一个能凭会话 cookie 读到;公开的情形下流式 URL 带着 ?t=<token>,由这张表记住,
+// 于是四处取压缩字节的地方仍旧各是一行。
+const bases = new Map(); // fileId -> API base / 文件 id -> API 基址
+const dlUrl = (id) => `${bases.get(id) || '/api/drive'}/files/${encodeURIComponent(id)}/dl?inline=1`;
 const readers = new Map(); // fileId -> Promise<reader> / 读取器缓存
 const READER_CACHE = 4;
 
@@ -556,6 +564,8 @@ async function handle(req, url) {
   const arcSize = parseInt(sizeStr, 10);
   const entryPath = rest.join('/');
   if (!id || !Number.isFinite(arcSize) || !entryPath) return new Response('bad url', { status: 400 });
+  const tok = url.searchParams.get('t');
+  bases.set(id, tok ? `/api/pub/${encodeURIComponent(tok)}` : '/api/drive');
 
   // Diagnostic: what has this worker been asked for? Answered before anything can block.
   // 诊断:这个 worker 都被要求过什么?在任何可能阻塞的操作之前作答。
