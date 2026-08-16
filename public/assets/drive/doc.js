@@ -35,6 +35,20 @@ const CODE_EXTS = new Set([
   'lisp', 'scm', 'ml', 'mli', 'nim', 'zig', 'v', 'd', 'pas', 'vbs', 'ahk',
   'diff', 'patch', 'cmake', 'mk', 'ninja', 'bazel', 'bzl', 'nix', 'dockerfile',
   'log', 'lock', 'ipynb', 'rst', 'tex', 'bib',
+  // JSON Lines and its neighbours. One record per line is the whole point of the format, so
+  // they belong here, in the monospace reader that shows lines -- not with the documents.
+  // A .jsonl used to match nothing at all and came out as "cannot preview".
+  // JSON Lines 及其同类。一行一条记录正是这个格式的全部意义，
+  // 所以它们属于这里 —— 那个按行展示的等宽阅读器，而不是文档那边。
+  // 一个 .jsonl 过去什么都匹配不上，直接出“无法预览”。
+  'jsonl', 'ndjson', 'jsonlines', 'har',
+  // Log-ish suffixes people actually use / 人们真在用的日志后缀
+  'out', 'err', 'trace', 'syslog',
+  // Text formats that were simply missing / 单纯是漏掉的文本格式
+  'mts', 'cts', 'pyi', 'awk', 'po', 'pot', 'plist', 'reg',
+  // Certificates and public keys are PEM text; a private key is deliberately not listed
+  // 证书与公钥是 PEM 文本；私钥有意不列入
+  'pem', 'crt', 'cer', 'csr',
 ]);
 // Files that are code by NAME rather than extension / 按文件名而非扩展名识别的代码文件
 const CODE_NAMES = new Set(['makefile', 'dockerfile', 'cmakelists.txt', 'rakefile', 'gemfile', 'procfile', 'vagrantfile', 'jenkinsfile', '.gitignore', '.gitattributes', '.editorconfig', '.env']);
@@ -66,12 +80,19 @@ export function kindOf(name, mime) {
   if (e === 'mht' || e === 'mhtml' || m === 'multipart/related' || m === 'message/rfc822') return 'mhtml';
   if (e === 'html' || e === 'htm' || e === 'xhtml' || m === 'text/html') return 'html';
   if (CODE_EXTS.has(e) || CODE_NAMES.has(base)) return 'code';
-  if (e === 'txt' || e === 'text' || SUB_EXTS.has(e) || m.startsWith('text/')) return 'txt';
+  if (e === 'txt' || e === 'text' || SUB_EXTS.has(e) || TEXT_NAMES.has(base) || m.startsWith('text/')) return 'txt';
   return null;
 }
 
 // Subtitles and lyrics read as plain text / 字幕与歌词按纯文本读
 const SUB_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub', 'lrc']);
+
+// Files a project keeps at its root with no extension at all. They are prose, not code, so
+// they read in the interface font rather than monospace.
+// 项目根目录下那些根本没有扩展名的文件。它们是散文而非代码，
+// 所以用界面字体而不是等宽字体来读。
+const TEXT_NAMES = new Set(['readme', 'license', 'licence', 'copying', 'notice', 'authors',
+  'changelog', 'changes', 'todo', 'install', 'news', 'contributing']);
 
 // Spreadsheets. `xls` is deliberately absent: the pre-2007 binary format shares nothing with
 // these but the icon, and claiming it here would promise a preview that cannot be delivered.
