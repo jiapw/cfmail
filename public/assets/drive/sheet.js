@@ -616,8 +616,18 @@ export function gridHtml(grid, cutLabel) {
   // Excel 的宽度单位是"默认字体的字符数";每字符约 7px 是 Excel 自己给出的换算,
   // 沿用它,为 A4 排过版的表格看起来仍然是排过版的。
   const colw = (i) => (grid.widths[i] ? Math.max(28, Math.min(Math.round(grid.widths[i] * 7), 460)) : 92);
-  const head = `<tr><th class="corner"></th>${
-    Array.from({ length: ncols }, (_, i) => `<th style="width:${colw(i)}px">${esc(colName(i))}</th>`).join('')}</tr>`;
+  // Widths go out as PERCENTAGES of the table's natural total, with that total as a min-width.
+  // Narrower than natural, the min-width holds and the wrapper scrolls; wider, every column
+  // grows by the same factor. Pixel widths on an auto table did the opposite: the table stayed
+  // put and whichever column held the longest text swallowed all the slack.
+  // 列宽以"占自然总宽的百分比"输出,并把该总宽设为 min-width。窄于自然宽时,min-width 顶住、
+  // 由外层滚动;宽于自然宽时,每一列按同一比例长大。在 auto 表格上写像素宽度则恰恰相反:
+  // 表格原地不动,而文字最长的那一列把富余空间全吞了。
+  const RN = 44;
+  const total = RN + Array.from({ length: ncols }, (_, i) => colw(i)).reduce((a, b) => a + b, 0);
+  const pc = (px) => ((px / total) * 100).toFixed(4) + '%';
+  const head = `<tr><th class="corner" style="width:${pc(RN)}"></th>${
+    Array.from({ length: ncols }, (_, i) => `<th style="width:${pc(colw(i))}">${esc(colName(i))}</th>`).join('')}</tr>`;
   const body = grid.rows.map((row, r) => {
     let out = `<tr><th class="rn">${r + 1}</th>`;
     for (let c = 0; c < ncols; c++) {
@@ -637,6 +647,6 @@ export function gridHtml(grid, cutLabel) {
     return out + '</tr>';
   }).join('');
   const note = cutLabel ? `<div class="drv-trunc">${esc(cutLabel)}</div>` : '';
-  return `${note}<table class="drv-grid-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  return `${note}<table class="drv-grid-tbl" style="min-width:${total}px"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
