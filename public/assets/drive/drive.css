@@ -406,7 +406,25 @@
    放着图片的单元格放它出去:在文件里它以自身尺寸浮在网格之上,
    把它裁进一列,只会露出一条边而已。 */
 .drv-grid-tbl td.pic { overflow: visible; position: relative; vertical-align: top; }
-.drv-cellpic { display: block; max-width: none; border-radius: 2px; position: relative; z-index: 1; }
+.drv-cellpic { display: block; max-width: none; border-radius: 2px; position: relative; z-index: 1; cursor: zoom-in; }
+
+/* Above the preview overlay (950), because it opens on top of the workbook rather than
+   replacing it -- closing the picture has to leave the sheet exactly where it was.
+   在预览层(950)之上,因为它是"盖在"工作簿上打开的,而不是取而代之 ——
+   关掉图片后,表格必须还停在原处。 */
+.drv-piclb {
+  position: fixed; inset: 0; z-index: 960; background: rgba(10, 10, 12, .93);
+  display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+}
+.drv-piclb img { max-width: calc(100vw - 96px); max-height: calc(100vh - 64px); object-fit: contain; }
+.drv-piclb .nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px; border: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, .12); color: #fff; font-size: 26px; line-height: 1;
+}
+.drv-piclb .nav:hover { background: rgba(255, 255, 255, .22); }
+.drv-piclb .nav.prev { left: 18px; }
+.drv-piclb .nav.next { right: 18px; }
 /* Sheet tabs along the bottom, where a workbook keeps them / 工作表标签在底部,与工作簿一致 */
 .drv-sheettabs {
   flex: none; display: flex; gap: 2px; overflow-x: auto; padding: 0 8px 6px;

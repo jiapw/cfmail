@@ -40,11 +40,17 @@ export function httpSource(url, size, onProgress) {
       const r = await fetch(url, { headers: { Range: `bytes=${off}-${end}` } });
       if (!r.ok) throw new Error('e_arc_fetch');
       const want = end - off + 1;
-      // A server that ignored Range would hand back the whole object -- trim, never buffer it
-      // 服务器若无视 Range 会回整个对象 —— 裁掉,别照单全收
+      // A 206 body starts at `off`; a 200 means the server ignored the Range and sent the whole
+      // object from zero, so the wanted span has to be cut out of the middle. Trimming from the
+      // front either way was silently wrong for every read but the first -- the tail read that
+      // finds the central directory would have come back as the file's opening bytes.
+      // 206 的响应体从 off 开始;200 则说明服务器无视了 Range、从 0 发来整个对象,
+      // 所要的那一段得从中间截出来。无论如何都从头裁,对除第一次以外的每次读取都是
+      // 静默错误 —— 用来找中央目录的那次尾部读取,拿回来的会是文件开头的字节。
+      const base = r.status === 206 ? 0 : off;
+      const cut = (u8) => (u8.length > base + want ? u8.subarray(base, base + want) : u8.subarray(base));
       if (!onProgress || !r.body) {
-        const u8 = new Uint8Array(await r.arrayBuffer());
-        return u8.length > want ? u8.subarray(0, want) : u8;
+        return cut(new Uint8Array(await r.arrayBuffer()));
       }
       const rd = r.body.getReader();
       const parts = [];
@@ -63,7 +69,7 @@ export function httpSource(url, size, onProgress) {
         u8.set(p, o);
         o += p.length;
       }
-      return u8.length > want ? u8.subarray(0, want) : u8;
+      return cut(u8);
     },
   };
 }

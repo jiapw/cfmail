@@ -821,3 +821,58 @@ function imgHtml(im) {
   const size = w && h ? `width:${w}px;height:${h}px` : `max-width:${PIC_MAX_W}px;max-height:${PIC_MAX_H}px`;
   return `<img class="drv-cellpic" loading="lazy" src="${esc(im.url)}" style="${size}" alt="">`;
 }
+
+// ---------- Enlarging a cell picture ----------
+// ---------- 放大单元格里的图片 ----------
+
+/** Wire the pictures in a rendered grid so a click enlarges them. Kept here with the markup
+ *  that produced them, and free of any app dependency: the caller passes the container.
+ *  给渲染好的网格里的图片接线,点击即放大。与产出这些标记的代码放在一处,
+ *  且不依赖任何应用层:容器由调用方传入。 */
+export function bindGrid(root) {
+  const pics = [...root.querySelectorAll('img.drv-cellpic')];
+  pics.forEach((im, i) => im.addEventListener('click', (e) => {
+    // The cell beneath must not also react -- in the grid a click on a cell selects nothing,
+    // but a picture overlaps its neighbours and the click would otherwise land on both.
+    // 下面的单元格不应一并响应 —— 网格里点单元格本不选中什么,
+    // 但图片会盖住邻格,不拦住的话这一下会同时落在两者上。
+    e.stopPropagation();
+    lightbox(pics.map((p) => p.getAttribute('src')), i);
+  }));
+}
+
+/** A viewer of its own rather than the Drive's preview overlay: that overlay is already open
+ *  showing this workbook, and reusing it would replace the sheet instead of covering it, so
+ *  closing the picture would drop the reader back at the file listing.
+ *  自带一个查看器,而不复用网盘的预览层:那一层此刻正开着、显示的就是这本工作簿,
+ *  复用它会"替换"掉表格而不是"盖住"它 —— 关掉图片时,读者会一路掉回文件列表。 */
+function lightbox(srcs, start) {
+  let i = start;
+  const el = document.createElement('div');
+  el.className = 'drv-piclb';
+  el.innerHTML = `<img alt="">${srcs.length > 1
+    ? '<button class="nav prev" aria-label="prev">‹</button><button class="nav next" aria-label="next">›</button>' : ''}`;
+  const img = el.querySelector('img');
+  const show = () => { img.src = srcs[i]; };
+  show();
+  const close = () => {
+    el.remove();
+    window.removeEventListener('keydown', onKey, true);
+  };
+  const step = (d) => { i = (i + d + srcs.length) % srcs.length; show(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.key === 'ArrowLeft') step(-1);
+    else if (e.key === 'ArrowRight') step(1);
+  };
+  // Capture phase: the preview overlay listens for Escape too, and whoever hears it first
+  // would close the whole workbook instead of just the picture.
+  // 捕获阶段:预览层同样监听 Escape,谁先听到谁就关 —— 那会关掉整本工作簿而不是这张图。
+  window.addEventListener('keydown', onKey, true);
+  el.addEventListener('click', (e) => {
+    const nav = e.target.closest('.nav');
+    if (nav) { e.stopPropagation(); return step(nav.classList.contains('prev') ? -1 : 1); }
+    close();
+  });
+  document.body.appendChild(el);
+}
