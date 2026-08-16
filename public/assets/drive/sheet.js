@@ -60,6 +60,35 @@ const kid = (el, name) => {
   return null;
 };
 const parseXml = (s) => new DOMParser().parseFromString(s, 'application/xml');
+const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** A part's relationships, id -> target resolved against the part's own folder. Every reference
+ *  between OOXML parts goes through one of these, and the targets are relative.
+ *  某个部件的关系表,id -> 目标(相对该部件所在目录解析)。OOXML 部件之间的每一处引用
+ *  都要经过它,而目标都是相对路径。 */
+async function relsOf(zip, partPath) {
+  const dir = partPath.slice(0, partPath.lastIndexOf('/'));
+  const entry = zip.get(`${dir}/_rels/${partPath.slice(dir.length + 1)}.rels`);
+  const map = new Map();
+  if (!entry) return map;
+  for (const r of kids(parseXml(await entry.text()).documentElement, 'Relationship')) {
+    const t = r.getAttribute('Target') || '';
+    map.set(r.getAttribute('Id'), t.startsWith('/') ? t.slice(1) : norm(`${dir}/${t}`));
+  }
+  return map;
+}
+
+/** Collapse the ../ segments a relationship target uses to climb out of its own folder.
+ *  把关系目标里用来跳出自身目录的 ../ 折叠掉。 */
+function norm(path) {
+  const out = [];
+  for (const seg of path.split('/')) {
+    if (seg === '.' || seg === '') continue;
+    if (seg === '..') out.pop();
+    else out.push(seg);
+  }
+  return out.join('/');
+}
 
 // ---------- Colours / 颜色 ----------
 
@@ -292,7 +321,7 @@ export function fmtCell(v, code, base1904) {
  * 打开一个工作簿。头部件立刻读,工作表按需读。
  * @returns {Promise<{sheets: {name: string}[], read(i: number): Promise<object>}|null>}
  */
-export async function xlsxOpen(buf) {
+export async function xlsxOpen(buf, keepUrl) {
   let zip;
   try {
     zip = unzip(buf);
@@ -335,12 +364,75 @@ export async function xlsxOpen(buf) {
     sheets: sheets.map((s) => ({ name: s.name })),
     async read(i) {
       if (cache.has(i)) return cache.get(i);
-      const entry = zip.get(sheets[i]?.path);
+      const path = sheets[i]?.path;
+      const entry = zip.get(path);
       const grid = entry ? parseSheet(await entry.text(), ctx) : null;
+      // Pictures are their own part, referenced from the sheet -- and only worth inflating for
+      // a caller that can hold the blob URLs and release them again.
+      // 图片是独立部件,由工作表引用 —— 且只有在调用方能持有 blob URL 并负责释放时才值得解压。
+      if (grid && grid.drawing && keepUrl) {
+        try {
+          grid.images = await readDrawing(zip, path, grid.drawing, keepUrl);
+        } catch { grid.images = []; }
+      }
       cache.set(i, grid);
       return grid;
     },
   };
+}
+
+// EMU is the unit every OOXML measurement uses: 914400 to the inch, against 96 CSS pixels
+// EMU 是 OOXML 一切尺寸的单位:每英寸 914400,而 CSS 每英寸 96 像素
+const EMU = 9525;
+// One picture is worth inflating; a sheet's worth of full-resolution photographs is not. The
+// sample that prompted this carries 78 MB of them, and a preview that unpacks all of it to
+// show thumbnails of thirty-one pictures has mistaken thoroughness for usefulness.
+// 解压一张图片是值得的;整张表的全分辨率照片则不然。促成这项支持的样本带了 78 MB 图片,
+// 一个为了展示三十一张图的缩样而把它们全解压的预览,是把"周全"错当成了"有用"。
+const IMG_MAX = 8 * 1024 * 1024;
+const IMG_TOTAL = 48 * 1024 * 1024;
+
+/** Pictures anchored to cells: where each sits, how big it is, and a blob URL for its bytes.
+ *  Both anchor shapes carry a `from` cell; a two-cell anchor also names where it ends, which is
+ *  the only way to know its size when no explicit extent is given.
+ *  锚定在单元格上的图片:各自的位置、尺寸,以及其字节的 blob URL。
+ *  两种锚点都带 `from` 单元格;双单元格锚点还给出终点 —— 在没有显式尺寸时,那是唯一的依据。 */
+async function readDrawing(zip, sheetPath, relId, keepUrl) {
+  const sheetRels = await relsOf(zip, sheetPath);
+  const drawPath = sheetRels.get(relId);
+  const entry = drawPath && zip.get(drawPath);
+  if (!entry) return [];
+  const drawRels = await relsOf(zip, drawPath);
+  const doc = parseXml(await entry.text());
+  const out = [];
+  let spent = 0;
+  for (let a = doc.documentElement.firstElementChild; a; a = a.nextElementSibling) {
+    if (a.localName !== 'oneCellAnchor' && a.localName !== 'twoCellAnchor') continue;
+    const from = kid(a, 'from');
+    const r = +(kid(from, 'row')?.textContent || -1);
+    const c = +(kid(from, 'col')?.textContent || -1);
+    if (r < 0 || c < 0 || r >= ROW_CAP || c >= COL_CAP) continue;
+    const pic = kid(a, 'pic');
+    const blip = kid(kid(pic, 'blipFill'), 'blip');
+    const target = blip && drawRels.get(blip.getAttributeNS(REL_NS, 'embed'));
+    const media = target && zip.get(target);
+    if (!media || media.size > IMG_MAX || spent + media.size > IMG_TOTAL) continue;
+    let w = 0;
+    let h = 0;
+    const extent = kid(a, 'ext');
+    if (extent) {
+      w = +extent.getAttribute('cx') / EMU;
+      h = +extent.getAttribute('cy') / EMU;
+    } else {
+      const off = kid(kid(kid(pic, 'spPr'), 'xfrm'), 'ext');
+      if (off) { w = +off.getAttribute('cx') / EMU; h = +off.getAttribute('cy') / EMU; }
+    }
+    spent += media.size;
+    const type = /\.png$/i.test(target) ? 'image/png' : /\.gif$/i.test(target) ? 'image/gif'
+      : /\.webp$/i.test(target) ? 'image/webp' : 'image/jpeg';
+    out.push({ r, c, w: Math.round(w) || 0, h: Math.round(h) || 0, url: keepUrl(new Blob([await media.bytes()], { type })) });
+  }
+  return out;
 }
 
 /** sharedStrings.xml: one string per <si>, rich-text runs flattened into it.
@@ -449,6 +541,7 @@ function parseSheet(xml, ctx) {
     seen++;
   }
   const rows = Array.from({ length: maxRow + 1 }, (_, i) => byIdx.get(i) || []);
+  const drawing = kid(root, 'drawing')?.getAttributeNS(REL_NS, 'id') || '';
 
   const merges = kids(kid(root, 'mergeCells'), 'mergeCell').map((m) => {
     const [a, b] = (m.getAttribute('ref') || '').split(':');
@@ -458,7 +551,7 @@ function parseSheet(xml, ctx) {
     return { r: r0, c: colOf(a), rs: r1 - r0 + 1, cs: colOf(b) - colOf(a) + 1 };
   }).filter((m) => m && m.r >= 0 && m.c >= 0 && m.c < COL_CAP);
 
-  return { rows, ncols, widths, merges, cut };
+  return { rows, ncols, widths, merges, cut, drawing, images: [] };
 }
 
 function cellOf(c, ctx) {
@@ -603,6 +696,18 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  *  单元格的填充、字重与对齐照搬。被合并覆盖的单元格要跳过 —— 一并输出会把其后每一列右挤一格。 */
 export function gridHtml(grid, cutLabel) {
   const ncols = Math.max(grid.ncols, 1);
+  // A picture is often anchored well below the last row that holds text -- in the sample, four
+  // hundred rows below. Reaching it means the grid has to run that far, exactly as the sheet
+  // does in Excel; stopping at the last word would drop the pictures entirely.
+  // 图片常常锚定在最后一行文字之下很远处 —— 样本里是四百行之下。要够到它,网格就得铺那么长,
+  // 与在 Excel 中所见一致;停在最后一个字上,等于把图片整个丢掉。
+  const pics = new Map();
+  for (const im of grid.images || []) {
+    const key = im.r + ':' + im.c;
+    if (!pics.has(key)) pics.set(key, []);
+    pics.get(key).push(im);
+  }
+  const nrows = Math.max(grid.rows.length, ...[...pics.values()].map((v) => v[0].r + 1), 0);
   const covered = new Set();
   const span = new Map();
   for (const m of grid.merges) {
@@ -616,24 +721,23 @@ export function gridHtml(grid, cutLabel) {
   // Excel 的宽度单位是"默认字体的字符数";每字符约 7px 是 Excel 自己给出的换算,
   // 沿用它,为 A4 排过版的表格看起来仍然是排过版的。
   const colw = (i) => (grid.widths[i] ? Math.max(28, Math.min(Math.round(grid.widths[i] * 7), 460)) : 92);
-  // Widths go out as PERCENTAGES of the table's natural total, with that total as a min-width.
-  // Narrower than natural, the min-width holds and the wrapper scrolls; wider, every column
-  // grows by the same factor. Pixel widths on an auto table did the opposite: the table stayed
-  // put and whichever column held the longest text swallowed all the slack.
-  // 列宽以"占自然总宽的百分比"输出,并把该总宽设为 min-width。窄于自然宽时,min-width 顶住、
-  // 由外层滚动;宽于自然宽时,每一列按同一比例长大。在 auto 表格上写像素宽度则恰恰相反:
-  // 表格原地不动,而文字最长的那一列把富余空间全吞了。
+  // The table is exactly as wide as its columns need, and no wider: a window stretched past
+  // that leaves empty space on the right rather than inflating every column to fill it. A
+  // spreadsheet's column widths are a decision someone made; honouring them beats using them.
+  // 表格恰好是列宽之和那么宽,不再多一分:窗口拉得更宽时,右侧留白,而不是把每一列吹大去填满。
+  // 电子表格的列宽是有人做过的决定;尊重它,胜过拿它当参考。
   const RN = 44;
   const total = RN + Array.from({ length: ncols }, (_, i) => colw(i)).reduce((a, b) => a + b, 0);
-  const pc = (px) => ((px / total) * 100).toFixed(4) + '%';
-  const head = `<tr><th class="corner" style="width:${pc(RN)}"></th>${
-    Array.from({ length: ncols }, (_, i) => `<th style="width:${pc(colw(i))}">${esc(colName(i))}</th>`).join('')}</tr>`;
-  const body = grid.rows.map((row, r) => {
+  const head = `<tr><th class="corner" style="width:${RN}px"></th>${
+    Array.from({ length: ncols }, (_, i) => `<th style="width:${colw(i)}px">${esc(colName(i))}</th>`).join('')}</tr>`;
+  const body = Array.from({ length: nrows }, (_, r) => {
+    const row = grid.rows[r] || [];
     let out = `<tr><th class="rn">${r + 1}</th>`;
     for (let c = 0; c < ncols; c++) {
       if (covered.has(r + ':' + c)) continue;
       const m = span.get(r + ':' + c);
       const cell = row[c];
+      const here = pics.get(r + ':' + c);
       const st = [];
       if (cell?.bg) st.push(`background:${cell.bg}`);
       if (cell?.fg) st.push(`color:${cell.fg}`);
@@ -641,12 +745,36 @@ export function gridHtml(grid, cutLabel) {
       if (cell?.b) st.push('font-weight:600');
       if (cell?.i) st.push('font-style:italic');
       if (cell?.w) st.push('white-space:pre-wrap');
-      out += `<td${m ? ` rowspan="${m.rs}" colspan="${m.cs}"` : ''}${
-        st.length ? ` style="${esc(st.join(';'))}"` : ''}>${esc(cell?.v || '')}</td>`;
+      // A picture in Excel floats above the grid at its own size, overlapping whatever is to
+      // its right. Reproducing that -- rather than squeezing it into one narrow column -- is
+      // the difference between seeing the picture and seeing a 28-pixel smudge.
+      // Excel 里的图片以自身尺寸浮在网格之上,盖住右侧的一切。照此再现 ——
+      // 而不是把它挤进一个窄列 —— 就是"看见这张图"与"看见一块 28 像素污渍"的分别。
+      let inner = esc(cell?.v || '');
+      if (here) inner += here.map((im) => imgHtml(im)).join('');
+      out += `<td${m ? ` rowspan="${m.rs}" colspan="${m.cs}"` : ''}${here ? ' class="pic"' : ''}${
+        st.length ? ` style="${esc(st.join(';'))}"` : ''}>${inner}</td>`;
     }
     return out + '</tr>';
   }).join('');
   const note = cutLabel ? `<div class="drv-trunc">${esc(cutLabel)}</div>` : '';
-  return `${note}<table class="drv-grid-tbl" style="min-width:${total}px"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  return `${note}<table class="drv-grid-tbl" style="width:${total}px"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
+
+// Big enough to read, small enough that a row of them does not become the whole preview.
+// 大到能看清,小到不会让一排图占满整个预览。
+const PIC_MAX_W = 460;
+const PIC_MAX_H = 340;
+
+function imgHtml(im) {
+  let w = im.w || 0;
+  let h = im.h || 0;
+  if (w && h) {
+    const k = Math.min(1, PIC_MAX_W / w, PIC_MAX_H / h);
+    w = Math.round(w * k);
+    h = Math.round(h * k);
+  }
+  const size = w && h ? `width:${w}px;height:${h}px` : `max-width:${PIC_MAX_W}px;max-height:${PIC_MAX_H}px`;
+  return `<img class="drv-cellpic" loading="lazy" src="${esc(im.url)}" style="${size}" alt="">`;
+}
