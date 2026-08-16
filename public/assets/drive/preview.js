@@ -11,13 +11,14 @@ import { esc, fileIcon } from '../ui.js';
 import { t } from '../i18n.js';
 import { renderMarkdown } from '../chat/markdown.js';
 import { store } from '../app.js';
-import { docxParse, drawioDraw, drawioPages, kindOf, mhtmlParse } from './doc.js';
+import { docxParse, drawioDraw, drawioPages, ext as extOf, kindOf, mhtmlParse } from './doc.js';
 
 export { kindOf };
 
 // The pptx engine is the heaviest parser by far -- it loads only when a pptx is actually opened
 // pptx 引擎是最重的解析器。只在真的打开 pptx 时才加载
 const loadPptx = () => import('./pptx.js?v=' + encodeURIComponent(store.brand?.version || ''));
+const loadSheet = () => import('./sheet.js?v=' + encodeURIComponent(store.brand?.version || ''));
 
 const TXT_CAP = 2 * 1024 * 1024;   // text fetched via Range / 文本走 Range 只取这么多
 const DOC_CAP = 80 * 1024 * 1024;  // parseable document ceiling / 可解析文档的大小上限
@@ -26,6 +27,16 @@ const DOC_CAP = 80 * 1024 * 1024;  // parseable document ceiling / 可解析文�
 // pptx 的体积常被内嵌字体和视频撑大。而惰性解压根本不会去读那些字节。
 // 按总大小一刀切会错杀完全可渲染的文件。光字体就能有 60MB+
 const PPTX_CAP = 300 * 1024 * 1024;
+// A workbook is mostly its pictures too: the sample that prompted this is 79 MB of which 78 is
+// embedded photographs the parser never opens. Judge it by the same rule as a deck.
+// 工作簿的体积同样大半是图片:促成这项支持的样本共 79 MB,其中 78 MB 是解析器根本不打开的
+// 内嵌照片。与幻灯片同一把尺子。
+const XLSX_CAP = 300 * 1024 * 1024;
+// Delimited text is fetched by Range, never whole: a million-row export is a download, not a
+// preview, and the first few thousand rows answer the question either way.
+// 带分隔符的文本按 Range 取,绝不整取:百万行的导出属于下载而非预览,
+// 而无论如何,头几千行就已回答了问题。
+const CSV_CAP = 4 * 1024 * 1024;
 
 const noprev = (node) => `
   <div class="noprev" style="margin:auto">${fileIcon(node.name, 72)}<div>${esc(t('drv_no_preview'))}</div></div>`;
@@ -142,6 +153,29 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       return { destroy };
     }
 
+    if (kind === 'sheet') {
+      const mod = await loadSheet();
+      const e = extOf(node.name);
+      let book;
+      if (e === 'csv' || e === 'tsv' || e === 'tab') {
+        const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${CSV_CAP - 1}` } });
+        if (!r.ok && r.status !== 206) throw new Error('fetch');
+        const grid = mod.delimitedGrid(mod.decodeText(await r.arrayBuffer()), e);
+        book = { sheets: [{ name: node.name }], read: async () => grid };
+      } else {
+        if (node.size > XLSX_CAP) { box.innerHTML = noprev(node); return { destroy }; }
+        const r = await fetch(inlineUrl);
+        if (!r.ok) throw new Error('fetch');
+        book = await mod.xlsxOpen(await r.arrayBuffer());
+      }
+      if (!book || dead()) {
+        if (!dead()) box.innerHTML = noprev(node);
+        return { destroy };
+      }
+      await mountBook(box, book, mod, dead);
+      return { destroy };
+    }
+
     if (kind === 'drawio') {
       const r = await fetch(inlineUrl);
       if (!r.ok) throw new Error('fetch');
@@ -180,6 +214,39 @@ export async function renderPreview(node, box, kind, inlineUrl) {
     if (!dead()) box.innerHTML = noprev(node);
     return { destroy };
   }
+}
+
+// ---------- Spreadsheet ----------
+// ---------- 电子表格 ----------
+
+/** Mount a workbook: one tab per sheet when there is more than one, and the grid below. Only
+ *  the sheet being looked at is parsed -- switching tabs is what pulls the next one out of the
+ *  zip, so a seventeen-sheet book costs one sheet to open.
+ *  装载一个工作簿:多于一张表时每表一个标签页,网格在其下。只解析正在看的那一张 ——
+ *  切换标签才会把下一张从 zip 里取出来,于是十七张表的簿子只花一张表的代价就能打开。 */
+async function mountBook(box, book, mod, dead) {
+  const many = book.sheets.length > 1;
+  box.innerHTML = win(`
+    ${many ? `<div class="drv-sheettabs">${book.sheets.map((s, i) =>
+      `<button class="tab${i ? '' : ' on'}" data-s="${i}">${esc(s.name)}</button>`).join('')}</div>` : ''}
+    <div class="drv-gridwrap"><div class="drv-loading"><div class="drv-spin"></div></div></div>`);
+  const wrap = box.querySelector('.drv-gridwrap');
+  const show = async (i) => {
+    wrap.innerHTML = `<div class="drv-loading"><div class="drv-spin"></div></div>`;
+    let grid = null;
+    try {
+      grid = await book.read(i);
+    } catch { /* one bad sheet must not take the workbook down / 一张坏表不该拖垮整本 */ }
+    if (dead()) return;
+    wrap.innerHTML = grid && grid.rows.length
+      ? mod.gridHtml(grid, grid.cut ? t('drv_sheet_cut', String(grid.rows.length)) : '')
+      : `<div class="drv-gridempty">${esc(t('drv_empty_folder'))}</div>`;
+  };
+  box.querySelectorAll('.drv-sheettabs .tab').forEach((b) => b.addEventListener('click', () => {
+    box.querySelectorAll('.drv-sheettabs .tab').forEach((x) => x.classList.toggle('on', x === b));
+    show(+b.dataset.s);
+  }));
+  await show(0);
 }
 
 /** Wrap untrusted HTML for the sandboxed iframe: a CSP that allows inline styles and data:
