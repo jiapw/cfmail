@@ -240,14 +240,39 @@ export async function pdfjs() {
 
 /** getDocument options shared by thumbnail and preview rendering
  *  缩略图与预览共用的 getDocument 选项 */
-export function pdfDocOpts(data) {
-  return {
-    data,
+/** Loading options for pdf.js. Given a URL and the file's length it uses its own ranged
+ *  transport: the cross-reference table comes off the tail, then only the objects a rendered
+ *  page actually needs. `disableAutoFetch` is what keeps it from quietly pulling the rest in
+ *  the background -- without it the ranged start is undone a second later.
+ *  Given bytes instead, it works from those, which is what a local File leaves us with.
+ *  pdf.js 的加载参数。给它 URL 与文件长度,它会启用自带的 Range 传输:先从文件尾取交叉引用表,
+ *  之后只取渲染某一页真正需要的对象。disableAutoFetch 是防止它在后台悄悄把其余部分拉完 ——
+ *  少了这一项,刚省下的开头会在一秒后被抵消掉。
+ *  若给的是字节,就按字节来 —— 本地 File 只能给到这个。 */
+export function pdfDocOpts(src, length) {
+  const base = {
     isEvalSupported: false,
     cMapUrl: '/vendor/pdfjs/cmaps/',
     cMapPacked: true,
     standardFontDataUrl: '/vendor/pdfjs/standard_fonts/',
   };
+  return typeof src === 'string'
+    ? {
+      ...base,
+      url: src,
+      length,
+      rangeChunkSize: 1 << 18,
+      // Both switches, or neither does much. `disableStream` stops pdf.js opening a whole-file
+      // stream to discover that ranges work -- with it off, the file arrives anyway while the
+      // ranged path is being set up. `disableAutoFetch` stops it from reading ahead once the
+      // first page is up. Together they mean: the tail, then whatever a rendered page asks for.
+      // 两个开关缺一不可。disableStream 阻止 pdf.js 为"探明支持 Range"而开一条整文件流 ——
+      // 不关它,ranged 那条路还在搭建,文件已经到齐了。disableAutoFetch 阻止它在首页出来后
+      // 继续预读。两者合起来才是:先读文件尾,再按渲染出的页面的需要去取。
+      disableStream: true,
+      disableAutoFetch: true,
+    }
+    : { ...base, data: src };
 }
 
 async function fromPdf(file) {

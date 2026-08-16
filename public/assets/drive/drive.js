@@ -1411,9 +1411,34 @@ async function renderPdfPreview(node, box) {
   try {
     const mod = await loadThumbMod();
     const lib = await mod.pdfjs();
-    const r = await fetch(node.arcUrl || dlUrl(node.id, true));
-    if (!r.ok) throw new Error('fetch');
-    const task = lib.getDocument(mod.pdfDocOpts(await r.arrayBuffer()));
+    // Ranged when the bytes are behind a URL that answers Range: pdf.js then reads the tail
+    // for the cross-reference table and pulls each page's objects as that page is rendered, so
+    // a 200 MB scan shows its first page without downloading 200 MB. An archive entry is
+    // excluded on purpose -- its bytes come from the streaming worker, where a scatter of small
+    // ranges means decoding a compressed block over and over.
+    // 当字节位于一个响应 Range 的 URL 之后时走 Range:pdf.js 先读文件尾取交叉引用表,
+    // 再随每页渲染去取该页所需的对象,于是 200 MB 的扫描件不必下完 200 MB 就能显示第一页。
+    // 压缩包内条目有意排除 —— 它的字节来自流式 worker,零散的小 Range 意味着
+    // 同一个压缩块被反复解码。
+    const url = node.arcUrl || dlUrl(node.id, true);
+    // Only worth it above a size. Ranged loading trades one request for a dozen, and pdf.js
+    // chases objects across the file to open it at all -- measured on a 2 MB PDF it still
+    // pulled 88% of it, in nine round trips instead of one. The saving is the part of a big
+    // file nobody scrolls to, so the threshold is where that part starts to be worth having.
+    // 大到一定程度才划算。Range 加载把一次请求换成十几次,而 pdf.js 光是打开就要在文件里
+    // 四处追对象 —— 在一个 2 MB 的 PDF 上实测仍拉了 88%,还多花了八个来回。
+    // 省下的是大文件里没人滚到的那一部分,所以门槛设在"那一部分开始值得省"的地方。
+    const PDF_RANGE_MIN = 8 * 1024 * 1024;
+    const ranged = !node.arc && !url.startsWith('blob:') && node.size > PDF_RANGE_MIN;
+    let opts;
+    if (ranged) {
+      opts = mod.pdfDocOpts(url, node.size);
+    } else {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('fetch');
+      opts = mod.pdfDocOpts(await r.arrayBuffer());
+    }
+    const task = lib.getDocument(opts);
     my.task = task;
     const doc = await task.promise;
     // The user may have moved on while we were loading
