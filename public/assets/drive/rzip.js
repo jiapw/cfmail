@@ -74,6 +74,19 @@ export function httpSource(url, size, onProgress) {
   };
 }
 
+/** A ranged source over a local File, for callers that hold a File rather than a URL --
+ *  thumbnail generation, chiefly. Same shape, so nothing downstream can tell them apart.
+ *  本地 File 上的 Range 源,给手里是 File 而不是 URL 的调用方 —— 主要是缩略图生成。
+ *  形状相同,下游分辨不出两者。 */
+export function fileSource(file) {
+  return {
+    size: file.size,
+    async read(off, len) {
+      return new Uint8Array(await file.slice(off, Math.min(off + len, file.size)).arrayBuffer());
+    },
+  };
+}
+
 export function memSource(u8) {
   return {
     size: u8.byteLength,
@@ -320,3 +333,30 @@ export async function openZip(source, password) {
 }
 
 const join = (a, b) => (a ? a + '/' + b : b);
+
+// ---------- Named entries, for the OOXML readers ----------
+// ---------- 按名取部件,给 OOXML 读取器用 ----------
+//
+// docx, xlsx and pptx are all zips addressed by path rather than browsed as folders. Going
+// through openZip means each of those parts is a ranged read of its own byte span: the file's
+// pictures, which are most of its size and none of its text, are never fetched at all.
+// docx、xlsx、pptx 都是"按路径寻址"而非"当目录浏览"的 zip。经由 openZip 取用,
+// 意味着每个部件都是针对自身字节区间的一次 Range 读取:文件里的图片 ——
+// 占了大半体积、却不含一个字 —— 根本不会被取下来。
+
+/** One named entry's bytes, or null when it is absent or refuses to inflate.
+ *  按名取一个条目的字节;不存在或解不开时返回 null。 */
+export async function zipPart(zip, path, cap) {
+  const e = zip.stat(path);
+  if (!e || e.isDir) return null;
+  try {
+    return (await zip.extract(e, cap)).bytes;
+  } catch {
+    return null;
+  }
+}
+
+export async function zipText(zip, path, cap) {
+  const b = await zipPart(zip, path, cap);
+  return b ? new TextDecoder().decode(b) : null;
+}
