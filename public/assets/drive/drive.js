@@ -9,7 +9,7 @@ import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
   copyText, fileIcon, avatar, debounce,
 } from '../ui.js';
-import { store, navigate, show } from '../app.js';
+import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, setPreviewOpener, thumbUrl, useDriveSource } from './fsrc.js';
 
 export { arcSeed };
@@ -164,23 +164,18 @@ const NAV = [
 function frame() {
   const active = (k) => (dst.view === k || (k === 'my' && dst.view === 'folder') ? 'active' : '');
   return `
-  <div class="page drv-page">
-    <header class="page-head">
-      <wa-button class="icon" appearance="plain" href="#/" aria-label="${esc(t('back_mail'))}">${icon('back', 20)}</wa-button>
-      <h1 style="display:flex;align-items:center;gap:10px">${icon('cloud', 24)}${esc(t('drv_title'))}</h1>
-      <form class="searchbar" id="drv-search" style="max-width:560px">
-        ${icon('search', 20)}
-        <input type="text" placeholder="${esc(t('drv_search_ph'))}" value="${esc(dst.view === 'search' ? dst.q : '')}" autocomplete="off">
-      </form>
-      <div style="flex:1"></div>
-      <wa-button class="icon" appearance="plain" id="drv-layout" title="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">
-        ${icon(dst.layout === 'list' ? 'grid' : 'view-list', 20)}
-      </wa-button>
-    </header>
+  <div class="shell drv-page">
+    ${topbarHtml({
+      page: 'drive',
+      searchId: 'drv-search',
+      searchInputId: 'drv-search-input',
+      searchPh: t('drv_search_ph'),
+      searchValue: dst.view === 'search' ? dst.q : '',
+    })}
     <div class="drv-body">
       <nav class="drv-nav">
         <wa-dropdown id="drv-new-dd">
-          <wa-button slot="trigger" class="drv-new" variant="brand">${icon('plus', 20)}<span>${esc(t('drv_new'))}</span></wa-button>
+          <wa-button slot="trigger" class="compose-btn drv-new">${icon('plus', 20)}<span>${esc(t('drv_new'))}</span></wa-button>
           <wa-dropdown-item value="folder">${icon('folder-plus', 18)} ${esc(t('drv_new_folder'))}</wa-dropdown-item>
           <wa-dropdown-item value="files">${icon('upload', 18)} ${esc(t('drv_upload_files'))}</wa-dropdown-item>
           <wa-dropdown-item value="dir">${icon('upload', 18)} ${esc(t('drv_upload_folder'))}</wa-dropdown-item>
@@ -199,15 +194,13 @@ function frame() {
 }
 
 function bindFrame() {
+  // Sidebar toggle and the account menu come from the shared top bar
+  // 侧栏开关与账号菜单由共用顶栏统一接线
+  bindTopbar();
   qs('#drv-search')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const v = qs('#drv-search input').value.trim();
     if (v) navigate(`#/drive/search/${encodeURIComponent(v)}`);
-  });
-  qs('#drv-layout')?.addEventListener('click', () => {
-    dst.layout = dst.layout === 'list' ? 'grid' : 'list';
-    localStorage.setItem('cf_drive_layout', dst.layout);
-    renderDrive(currentSeg());
   });
   qs('#drv-new-dd')?.addEventListener('wa-select', (e) => {
     const v = e.detail?.item?.value;
@@ -359,17 +352,30 @@ function barHtml() {
   return selN >= 2
     ? `<div class="drv-selbar">
         <wa-button class="icon" appearance="plain" id="drv-sel-clear" aria-label="${esc(t('cancel'))}">${icon('close', 20)}</wa-button>
-        <span class="cnt">${selN}</span>
+        <span class="cnt">${esc(selN === 1 ? t('drv_sel_one') : t('drv_sel_n', selN))}</span>
         ${selActionsHtml()}
       </div>`
-    : `<div class="drv-crumbbar"><div class="drv-crumbs">${crumbsHtml()}</div><span class="sp"></span>
-        <wa-button class="icon" appearance="plain" id="drv-refresh" aria-label="${esc(t('refresh'))}">${icon('refresh', 18)}</wa-button></div>`;
+    : `<div class="drv-crumbbar"><div class="drv-crumbs">${crumbsHtml()}</div><span class="sp"></span>${barToolsHtml()}</div>`;
+}
+
+/** The buttons that sit at the right end of the path bar: view mode, then refresh.
+ *  路径栏右端的按钮:视图切换,然后刷新。 */
+function barToolsHtml() {
+  return `<wa-button class="icon" appearance="plain" id="drv-layout" aria-label="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}" title="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">${icon(dst.layout === 'list' ? 'grid' : 'view-list', 18)}</wa-button>
+      <wa-button class="icon" appearance="plain" id="drv-refresh" aria-label="${esc(t('refresh'))}" title="${esc(t('refresh'))}">${icon('refresh', 18)}</wa-button>`;
 }
 
 function bindBar(main) {
   qsa('#drv-bar .drv-crumb[data-nav]', main).forEach((el) =>
     el.addEventListener('click', () => navigate(el.dataset.nav)));
   qs('#drv-refresh', main)?.addEventListener('click', reload);
+  // View mode lives in the path bar now, so it is re-bound on every bar redraw
+  // 视图切换现在在路径栏里,所以每次重绘这条栏都要重新绑定
+  qs('#drv-layout', main)?.addEventListener('click', () => {
+    dst.layout = dst.layout === 'list' ? 'grid' : 'list';
+    localStorage.setItem('cf_drive_layout', dst.layout);
+    renderDrive(currentSeg());
+  });
   qs('#drv-sel-clear', main)?.addEventListener('click', () => {
     dst.sel.clear();
     applySelection(main);
@@ -389,6 +395,312 @@ function applySelection(main) {
   }
 }
 
+/**
+ * Shift-click: add everything between the clicked index and the nearer end of what is already
+ * selected. Anchoring on the nearer end rather than on the last item touched keeps reaching
+ * up and reaching down symmetrical, and the existing selection is never thrown away.
+ * shift 点击:把点击处与既有选区中较近的那一端之间的项全部选上。以"较近的一端"为锚点
+ * (而不是"上一次点过的项"),向上够与向下够对称;已选的内容不会被清掉。
+ */
+function extendSelectionTo(hit) {
+  const picked = dst.shown.map((n, i) => (dst.sel.has(n.id) ? i : -1)).filter((i) => i >= 0);
+  if (!picked.length) {
+    dst.sel.add(dst.shown[hit].id);
+    return;
+  }
+  const lo = picked[0];
+  const hi = picked[picked.length - 1];
+  const anchor = Math.abs(hit - lo) <= Math.abs(hit - hi) ? lo : hi;
+  for (let i = Math.min(anchor, hit); i <= Math.max(anchor, hit); i++) dst.sel.add(dst.shown[i].id);
+}
+
+/**
+ * Rubber-band selection. Drag on empty space to sweep a rectangle: a plain drag replaces the
+ * selection, ctrl/cmd-drag adds to it. Starting the drag on an item is left alone so that
+ * click, double-click and drag-to-move keep working.
+ *
+ * 框选。在空白处按下拖动扫出一个矩形:普通拖动替换选区,ctrl/cmd 拖动追加。
+ * 在条目上按下不接管 —— 那样点击、双击、拖动移动才不会被打断。
+ */
+// Set when a marquee drag finishes, read by the row click handler right after.
+// 框选拖动结束时置位,紧接着由行点击处理读取。
+// Our own drag type. It is what tells an item being moved inside the drive apart from a file
+// dragged in from the desktop, so the upload drop zone and the move-into-folder drop never fight.
+// 内部拖动专用的 MIME。靠它区分"网盘内移动条目"与"从桌面拖文件进来",
+// 上传落点与移动落点因此不会互相抢。
+const DRAG_MIME = 'application/x-cfmail-drive';
+// The ids currently being dragged. dataTransfer is deliberately unreadable during dragover in
+// most browsers, so the payload is kept here too and only read back from dataTransfer on drop.
+// 正在拖动的 id。多数浏览器在 dragover 期间刻意不让读 dataTransfer,
+// 因此这里另存一份,drop 时才从 dataTransfer 回读。
+let dragIds = null;
+
+let marqueeJustDragged = false;
+
+/**
+ * Drag items onto a folder to move them there. Dragging an unselected item picks it up on
+ * its own; dragging a selected one carries the whole selection. A folder that is itself
+ * being dragged cannot be its own destination, so selected folders never light up.
+ *
+ * 把条目拖到文件夹上即移动过去。拖一个未选中的条目,就只拖它自己;拖一个已选中的,
+ * 整个选区一起走。正在被拖动的文件夹不能作为自己的落点,所以选中的文件夹不会高亮。
+ */
+/**
+ * Drag image for a multi-selection: the real tiles, cloned whole -- background, thumbnail,
+ * caption and all -- stacked with a small offset and topped with a count.
+ *
+ * Geometry is computed from the tile actually being dragged rather than hard-coded, so the
+ * badge lands exactly on the top card's corner in either view: the stack occupies
+ * tileW + (n-1)*OFF by tileH + (n-1)*OFF, the top card sits at (0, B/2), and the badge is
+ * centred on that card's top-right corner. The container reserves B/2 on the top and right
+ * for the badge, because anything outside the element's box is not part of the snapshot.
+ *
+ * 多选时的拖动影像:把真实 tile 整个克隆下来 —— 背景、缩略图、标题一并保留 ——
+ * 错开叠放,右上角带数量。
+ *
+ * 几何尺寸取自正在被拖的那个 tile,而不是写死,所以两种视图里角标都正好压在最上层卡片的角上:
+ * 整叠占 tileW + (n-1)*OFF 宽、tileH + (n-1)*OFF 高,最上层卡片位于 (0, B/2),
+ * 角标以该卡片右上角为圆心。容器在上方和右侧各留 B/2 给角标 ——
+ * 超出元素盒子的部分不会被截进影像。
+ */
+function setStackDragImage(e, ids, srcEl) {
+  const SHOWN = 3;      // deeper stacks are clutter, not information / 再多层只是杂乱
+  const OFF = 8;        // step between stacked cards / 每层错开
+  const B = 20;         // badge diameter / 角标直径
+  const MAXW = 340;     // list rows span the whole table; keep the ghost a sane size
+                        // 列表行有整个表格那么宽,影像要收在合理尺寸内
+
+  // The dragged tile goes on top; the rest fill in behind it
+  // 被拖的那个放最上层,其余垫在后面
+  const rest = ids.filter((id) => id !== srcEl.dataset.id)
+    .map((id) => qs(`#drv-drop [data-id="${cssEsc(id)}"]`))
+    .filter(Boolean);
+  const els = [srcEl, ...rest].slice(0, SHOWN);
+  const r = srcEl.getBoundingClientRect();
+  const tileW = Math.min(r.width, MAXW);
+  const tileH = r.height;
+  if (!tileW || !tileH) return;
+  const n = els.length;
+
+  const ghost = document.createElement('div');
+  ghost.className = 'drv-dragghost';
+  ghost.style.width = `${tileW + (n - 1) * OFF + B / 2}px`;
+  ghost.style.height = `${tileH + (n - 1) * OFF + B / 2}px`;
+
+  // Last in the DOM paints on top, so walk the stack back to front
+  // DOM 里靠后的画在上层,所以从最底层往最上层放
+  els.slice().reverse().forEach((el, k) => {
+    const depth = n - 1 - k;                     // 0 = topmost / 0 为最上层
+    const slot = document.createElement('div');
+    slot.className = 'gslot';
+    slot.style.width = `${tileW}px`;
+    slot.style.height = `${tileH}px`;
+    slot.style.transform = `translate(${depth * OFF}px, ${B / 2 + depth * OFF}px)`;
+    const clone = el.cloneNode(true);
+    clone.classList.remove('sel');               // 影像里不要选中态的底色
+    clone.removeAttribute('draggable');
+    if (el.tagName === 'TR') {
+      // A <tr> renders as nothing on its own -- it needs a table, and the original colgroup
+      // to keep the columns the same width as what the user is looking at.
+      // 单独一个 <tr> 什么都渲染不出来 —— 得给它一张表,并带上原来的 colgroup,
+      // 列宽才和用户正看着的一致。
+      const src = el.closest('table');
+      const tbl = document.createElement('table');
+      tbl.className = src?.className || 'drv-table';
+      tbl.style.width = `${r.width}px`;
+      const cg = src?.querySelector('colgroup');
+      if (cg) tbl.appendChild(cg.cloneNode(true));
+      const tb = document.createElement('tbody');
+      tb.appendChild(clone);
+      tbl.appendChild(tb);
+      slot.appendChild(tbl);
+    } else {
+      slot.appendChild(clone);
+    }
+    ghost.appendChild(slot);
+  });
+
+  if (n > 1) {
+    const badge = document.createElement('span');
+    badge.className = 'gcount';
+    badge.textContent = String(ids.length);
+    // Centred on the top card's top-right corner: that card spans x:[0,tileW], y:[B/2, ...]
+    // 以最上层卡片的右上角为圆心:该卡片横跨 x:[0,tileW],纵向自 y:B/2 起
+    badge.style.left = `${tileW - B / 2}px`;
+    badge.style.top = '0px';
+    ghost.appendChild(badge);
+  }
+
+  document.body.appendChild(ghost);
+  // Grab it just inside the top card so the stack tracks the pointer instead of trailing it
+  // 抓取点落在最上层卡片内侧,整叠才跟着指针走、不拖在后面
+  e.dataTransfer.setDragImage(ghost, 24, B / 2 + 20);
+  // The snapshot is taken synchronously during this event; the node is only needed until the
+  // current task ends.
+  // 截图在本次事件里同步完成,节点只需活到当前任务结束。
+  setTimeout(() => ghost.remove(), 0);
+}
+
+function bindItemDrag(box, main) {
+  if (!canWriteHere()) return;
+
+  box.addEventListener('dragstart', (e) => {
+    const el = e.target.closest('[data-id]');
+    if (!el) return;
+    const id = el.dataset.id;
+    // Dragging something outside the selection replaces it -- the same as every file manager
+    // 拖动选区之外的条目会替换选区 —— 与各家文件管理器一致
+    if (!dst.sel.has(id)) {
+      dst.sel.clear();
+      dst.sel.add(id);
+      applySelection(main);
+    }
+    dragIds = [...dst.sel];
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(DRAG_MIME, dragIds.join(','));
+    // Some browsers refuse a drag with no text/plain payload
+    // 有些浏览器在没有 text/plain 时不肯启动拖动
+    e.dataTransfer.setData('text/plain', '');
+    // The default ghost is only the tile under the cursor, which is a lie when several are
+    // moving. Show the stack instead.
+    // 默认的拖动影像只有指针下那一个,多选时是在骗人。改成显示整叠。
+    if (dragIds.length > 1) setStackDragImage(e, dragIds, el);
+  });
+
+  box.addEventListener('dragend', () => {
+    dragIds = null;
+    qsa('.drv-dropinto', main).forEach((el) => el.classList.remove('drv-dropinto'));
+  });
+
+  /** The folder element under the pointer that this drag may legally land on.
+   *  指针下方、本次拖动可以合法落入的那个文件夹元素。 */
+  const dropTarget = (e) => {
+    if (!dragIds) return null;
+    const el = e.target.closest('[data-id]');
+    if (!el) return null;
+    const n = dst.shown.find((x) => x.id === el.dataset.id);
+    if (!n || n.kind !== 'folder') return null;
+    // Never into something that is itself moving / 不能落进正在被移动的东西里
+    if (dragIds.includes(n.id)) return null;
+    return el;
+  };
+
+  box.addEventListener('dragover', (e) => {
+    const el = dropTarget(e);
+    qsa('.drv-dropinto', main).forEach((x) => { if (x !== el) x.classList.remove('drv-dropinto'); });
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    el.classList.add('drv-dropinto');
+  });
+
+  box.addEventListener('drop', async (e) => {
+    const el = dropTarget(e);
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove('drv-dropinto');
+    const ids = dragIds;
+    const dest = el.dataset.id;
+    dragIds = null;
+    if (!ids?.length) return;
+    try {
+      for (const id of ids) await api('POST', `/api/drive/nodes/${id}/move`, { parent: dest });
+      dst.sel.clear();
+      toast(t('drv_moved_toast'));
+      reload();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+}
+
+function bindMarquee(box, main) {
+  // A drag cut short by a re-render can leave its rectangle behind on <body>; clear any stray.
+  // 拖动中途被重绘打断,矩形会留在 <body> 上;这里先清掉任何残留。
+  qsa('.drv-marquee').forEach((el) => el.remove());
+  const THRESHOLD = 4; // px before a press counts as a drag, not a click / 超过这个距离才算拖动
+  let start = null;
+  let boxEl = null;
+  let base = null;
+
+  const hitTest = () => {
+    const r = boxEl.getBoundingClientRect();
+    for (const el of qsa('#drv-drop [data-id]', main)) {
+      const b = el.getBoundingClientRect();
+      const overlaps = b.right > r.left && b.left < r.right && b.bottom > r.top && b.top < r.bottom;
+      const id = el.dataset.id;
+      if (overlaps) dst.sel.add(id);
+      else if (!base.has(id)) dst.sel.delete(id);
+    }
+    qsa('#drv-drop [data-id]', main).forEach((el) => el.classList.toggle('sel', dst.sel.has(el.dataset.id)));
+  };
+
+  const move = (e) => {
+    if (!start) return;
+    // The button is already up -- it was released outside the window, so mouseup never reached
+    // us. Finish here, or the rectangle would hang on screen until the next render.
+    // 按键已经是松开状态 —— 是在窗口外松的,mouseup 根本没送到这里。
+    // 必须就地收尾,否则矩形会一直挂在屏幕上,直到下一次重绘。
+    if (e.buttons === 0) { up(); return; }
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (!boxEl) {
+      if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return;
+      boxEl = document.createElement('div');
+      boxEl.className = 'drv-marquee';
+      document.body.appendChild(boxEl);
+      // A plain drag starts from nothing; ctrl/cmd keeps what was already selected
+      // 普通拖动从零开始;ctrl/cmd 保留原有选中
+      if (!start.additive) dst.sel.clear();
+      base = new Set(dst.sel);
+    }
+    boxEl.style.left = Math.min(start.x, e.clientX) + 'px';
+    boxEl.style.top = Math.min(start.y, e.clientY) + 'px';
+    boxEl.style.width = Math.abs(dx) + 'px';
+    boxEl.style.height = Math.abs(dy) + 'px';
+    hitTest();
+    e.preventDefault();
+  };
+
+  const up = () => {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    if (boxEl) {
+      boxEl.remove();
+      boxEl = null;
+      // Redraw the bar once at the end; doing it per mousemove would rebuild it constantly
+      // 收尾时重绘一次工具栏;每次 mousemove 都重绘会不停地重建它
+      applySelection(main);
+      // Swallow the click that follows this drag, or it would land on empty space and clear
+      // everything we just swept up. A flag rather than a one-shot listener: if the drag ends
+      // somewhere that produces no click at all, a listener would stay armed and eat an
+      // unrelated click later. The flag is cleared on the next mousedown, so it cannot linger.
+      // 吞掉拖动后紧跟的那次 click,否则它会落在空白处、把刚框中的全部清掉。
+      // 用标志位而不是一次性监听:万一拖动结束在不产生 click 的地方,监听会一直挂着、
+      // 误吞掉之后某次无关的点击。标志位在下次 mousedown 时清掉,不可能残留。
+      marqueeJustDragged = true;
+    }
+    start = null;
+    base = null;
+  };
+
+  box.addEventListener('mousedown', (e) => {
+    // Any fresh press means the previous drag is done being accounted for; the flag can
+    // never survive into an unrelated interaction.
+    // 只要有新的按下,上一次拖动的账就算结清了;标志不可能残留到无关的下一次交互。
+    marqueeJustDragged = false;
+    if (e.button !== 0) return;
+    // Only from empty space -- pressing on an item belongs to click / dblclick / drag-move
+    // 只从空白处起手 —— 按在条目上属于点击/双击/拖动移动
+    if (e.target.closest('[data-id]') || e.target.closest('button, wa-button, a, input')) return;
+    start = { x: e.clientX, y: e.clientY, additive: e.ctrlKey || e.metaKey };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+
 function selActionsHtml() {
   const nodes = selNodes();
   const trashCtx = dst.view === 'trash' || dst.inTrash;
@@ -402,6 +714,7 @@ function selActionsHtml() {
   const own = dst.access === 'owner';
   return `
     ${single && single.kind === 'file' ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>` : ''}
+    ${own ? `<wa-button class="icon" appearance="plain" data-act="share" title="${esc(t('drv_share'))}">${icon('share', 20)}</wa-button>` : ''}
     ${own ? `<wa-button class="icon" appearance="plain" data-act="star" title="${esc(t('drv_star'))}">${icon('star', 20)}</wa-button>` : ''}
     ${canEdit ? `<wa-button class="icon" appearance="plain" data-act="move" title="${esc(t('drv_move'))}">${icon('folder-move', 20)}</wa-button>` : ''}
     ${canEdit ? `<wa-button class="icon" appearance="plain" data-act="trash" title="${esc(t('drv_trash_it'))}">${icon('trash', 20)}</wa-button>` : ''}`;
@@ -422,7 +735,7 @@ function badgesHtml(n) {
 function tableHtml(arrow) {
   const trashCtx = dst.view === 'trash';
   const rows = dst.shown.map((n, i) => `
-    <tr class="drv-row ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}">
+    <tr class="drv-row ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}" draggable="true">
       <td><div class="drv-name">${nodeIconHtml(n)}<span class="nm">${esc(n.name)}</span>${badgesHtml(n)}</div></td>
       <td class="c-time drv-dim">${fmtDate(trashCtx ? n.updated_at : n.updated_at)}</td>
       <td class="drv-dim">${fmtSize(effSize(n))}</td>
@@ -450,12 +763,12 @@ function gridHtml() {
     const oldImg = !n.thumb && n.kind === 'file' && IMG_RE.test(n.mime) && n.size < 20 * 1024 * 1024;
     const bf = oldImg && dst.access !== 'viewer' ? ` data-bf="${esc(n.id)}"` : '';
     const media = n.thumb
-      ? `<img loading="lazy" src="${esc(thumbUrl(n.id))}" alt="">`
+      ? `<img loading="lazy" draggable="false" src="${esc(thumbUrl(n.id))}" alt="">`
       : oldImg
-        ? `<img loading="lazy" src="${dlUrl(n.id, true)}"${bf} alt="">`
+        ? `<img loading="lazy" draggable="false" src="${dlUrl(n.id, true)}"${bf} alt="">`
         : fileIcon(n.name, 44);
     return `
-    <div class="drv-card ${n.kind} ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}">
+    <div class="drv-card ${n.kind} ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}" draggable="true">
       <div class="thumb">${n.kind === 'file' ? media : icon('folder', 56)}</div>
       <div class="cap">${nodeIconHtml(n, 22)}<span class="nm" title="${esc(n.name)}">${esc(n.name)}</span>${badgesHtml(n)}
         <wa-button class="icon rowbtn" appearance="plain" data-menu="${esc(n.id)}" aria-label="menu">${icon('dots-v', 16)}</wa-button></div>
@@ -493,6 +806,10 @@ function bindFolderView(main) {
   if (!box) return;
 
   box.addEventListener('click', (e) => {
+    // The click a finished marquee drag leaves behind would otherwise land on empty space
+    // and wipe out what was just swept up.
+    // 框选拖动结束后残留的那次 click,不拦掉会落在空白处、把刚框中的清空。
+    if (marqueeJustDragged) { marqueeJustDragged = false; return; }
     if (e.target.closest('[data-menu]')) return;
     const row = e.target.closest('[data-id]');
     if (!row) {
@@ -505,10 +822,11 @@ function bindFolderView(main) {
     if (e.ctrlKey || e.metaKey) {
       dst.sel.has(id) ? dst.sel.delete(id) : dst.sel.add(id);
       dst.lastIdx = i;
-    } else if (e.shiftKey && dst.lastIdx >= 0) {
-      const [a, b] = [Math.min(dst.lastIdx, i), Math.max(dst.lastIdx, i)];
-      dst.sel.clear();
-      for (let j = a; j <= b; j++) dst.sel.add(dst.shown[j].id);
+    } else if (e.shiftKey && dst.sel.size) {
+      // Extend from whichever end of the existing selection is nearer, and keep what was
+      // already picked -- same gesture as the mail list.
+      // 从既有选区中较近的那一端延伸过来,并保留已选的 —— 与邮件列表同一套手感。
+      extendSelectionTo(i);
     } else {
       dst.sel.clear();
       dst.sel.add(id);
@@ -523,6 +841,9 @@ function bindFolderView(main) {
     const n = dst.shown.find((x) => x.id === row.dataset.id);
     if (n) openNode(n);
   });
+
+  bindMarquee(box, main);
+  bindItemDrag(box, main);
 
   box.addEventListener('contextmenu', (e) => {
     const row = e.target.closest('[data-id]');
@@ -577,8 +898,15 @@ function bindFolderView(main) {
         box.classList.remove('droppable');
       }
     });
-    box.addEventListener('dragover', (e) => e.preventDefault());
+    // Only claim the drag when it actually carries files. An item being moved inside the drive
+    // must fall through to the folder drop below, or the upload zone would swallow it.
+    // 只在确实拖着文件时接管。网盘内部移动的拖动要能落到下面的文件夹上,
+    // 否则会被上传落点吞掉。
+    box.addEventListener('dragover', (e) => {
+      if (e.dataTransfer?.types?.includes('Files')) e.preventDefault();
+    });
     box.addEventListener('drop', async (e) => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
       e.preventDefault();
       depth = 0;
       box.classList.remove('droppable');
@@ -606,6 +934,7 @@ async function runSelAction(act) {
   const nodes = selNodes();
   if (!nodes.length) return;
   if (act === 'download') downloadFile(nodes[0]);
+  else if (act === 'share') shareDialog(nodes);
   else if (act === 'star') await starNodes(nodes, true);
   else if (act === 'move') moveDialog(nodes);
   else if (act === 'trash') await trashNodes(nodes);
@@ -1223,8 +1552,7 @@ function renderSharedView(main, shares) {
       <td><wa-button class="icon rowbtn" appearance="plain" data-leave="${esc(s.share_id)}" title="${esc(t('drv_leave_share'))}">${icon('close', 16)}</wa-button></td>
     </tr>`).join('');
   main.innerHTML = `
-    <div class="drv-crumbbar"><div class="drv-crumbs"><span class="drv-crumb here">${esc(t('drv_shared'))}</span></div><span class="sp"></span>
-      <wa-button class="icon" appearance="plain" id="drv-refresh">${icon('refresh', 18)}</wa-button></div>
+    <div class="drv-crumbbar"><div class="drv-crumbs"><span class="drv-crumb here">${esc(t('drv_shared'))}</span></div><span class="sp"></span>${barToolsHtml()}</div>
     <div class="drv-scroll">
       ${shares.length ? `
       <table class="drv-table">
@@ -1234,6 +1562,11 @@ function renderSharedView(main, shares) {
       </table>` : emptyHtml()}
     </div>`;
   qs('#drv-refresh', main)?.addEventListener('click', reload);
+  qs('#drv-layout', main)?.addEventListener('click', () => {
+    dst.layout = dst.layout === 'list' ? 'grid' : 'list';
+    localStorage.setItem('cf_drive_layout', dst.layout);
+    renderDrive(currentSeg());
+  });
   qsa('[data-leave]', main).forEach((b) => b.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!(await confirmDialog(t('drv_leave_confirm'), t('drv_leave_share')))) return;

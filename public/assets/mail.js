@@ -158,6 +158,31 @@ function bindList(folder, q) {
     if (label) label.textContent = t('selected_n', sel.ids.size);
   };
 
+  /**
+   * Shift-click: add everything between the clicked row and the nearer end of what is already
+   * selected. Anchoring on the nearer end (rather than on the last row you touched) means the
+   * gesture reads the same whether you are reaching upwards or downwards, and it never throws
+   * away the existing selection -- it only ever grows it.
+   *
+   * shift 点击:把点击行与既有选区中较近的那一端之间的行全部选上。以"较近的一端"为锚点
+   * (而不是"上一次点过的行"),向上够和向下够的手感就一致;并且只会扩大选区,不会清掉已选的。
+   */
+  const selectRangeTo = (tid) => {
+    const rows = qsa('.row[data-tid]');
+    const ids = rows.map((r) => r.dataset.tid);
+    const hit = ids.indexOf(tid);
+    if (hit < 0) return;
+    const picked = ids.map((id, i) => (sel.ids.has(id) ? i : -1)).filter((i) => i >= 0);
+    if (!picked.length) return;
+    const lo = picked[0];
+    const hi = picked[picked.length - 1];
+    // Nearer end wins; inside the selection either end is equally close, so lo is as good as hi
+    // 取较近的一端;点在选区内部时两端一样近,取 lo 即可
+    const anchor = Math.abs(hit - lo) <= Math.abs(hit - hi) ? lo : hi;
+    for (let i = Math.min(anchor, hit); i <= Math.max(anchor, hit); i++) sel.ids.add(ids[i]);
+    rows.forEach((r) => setRowSelected(r, sel.ids.has(r.dataset.tid)));
+  };
+
   qsa('.row').forEach((row) => {
     // Context menu (works in both modes)
     // 右键菜单(两种模式都支持)
@@ -174,11 +199,16 @@ function bindList(folder, q) {
         showRowMenu(e.clientX, e.clientY, tid, folder, q);
       });
     }
-    // Multi-select: clicking anywhere on a row toggles it
-    // 多选模式:整行点击切换选中
+    // Multi-select: clicking anywhere on a row toggles it; shift-click extends from whichever
+    // end of the existing selection is nearer to the row you clicked.
+    // 多选模式:整行点击切换选中;shift 点击则从既有选区中离点击处较近的那一端延伸过来。
     if (sel.active && row.dataset.tid) {
-      row.addEventListener('click', () => {
+      row.addEventListener('click', (e) => {
         const tid = row.dataset.tid;
+        if (e.shiftKey && sel.ids.size) {
+          selectRangeTo(tid);
+          return;
+        }
         if (sel.ids.has(tid)) sel.ids.delete(tid);
         else sel.ids.add(tid);
         setRowSelected(row, sel.ids.has(tid));
