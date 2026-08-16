@@ -520,6 +520,23 @@
   overflow: hidden; text-align: left; container-type: inline-size;
   box-shadow: 0 2px 10px rgba(0,0,0,.45);
 }
+/* A slide that has not been parsed yet: the deck's own colour (set inline from the master) with
+   a spinner centred on it. The spinner is deliberately grey rather than the theme's accent --
+   it sits on whatever colour the deck happens to use, and a neutral reads on both dark and
+   light where an accent can vanish into one of them.
+   尚未解析的那一页:用整套幻灯片自己的底色(由母版取出、内联写上),动画居中其上。
+   动画特意用灰而非主题强调色 —— 它落在幻灯片碰巧用的任何颜色上,
+   中性色在深浅两种底上都读得出,而强调色可能恰好没入其中之一。 */
+.drv-slide.pending { display: flex; align-items: center; justify-content: center; }
+.drv-slide.pending .drv-loading { margin: 0; min-height: 0; flex: none; }
+.drv-slide.pending .drv-spin,
+.drv-pdf-page.pending .drv-spin {
+  border-color: rgba(128, 128, 128, .32); border-top-color: rgba(128, 128, 128, .92);
+}
+.drv-pdf-page.pending {
+  display: flex; align-items: center; justify-content: center;
+}
+.drv-pdf-page.pending .drv-loading { margin: 0; min-height: 0; flex: none; }
 .drv-slide .shp { position: absolute; overflow: hidden; line-height: 1.25; box-sizing: border-box; }
 /* Geometry layer: custGeom SVG or preset fill/border div. Flips are applied here so the
    text layer above stays readable / 几何层:custGeom SVG 或预设填充边框 div。翻转打在这层,上面的文字层保持可读 */
