@@ -1454,10 +1454,15 @@ async function renderPdfPreview(node, box) {
     box.innerHTML = '';
     for (let i = 1; i <= doc.numPages; i++) {
       const d = document.createElement('div');
-      d.className = 'drv-pdf-page';
+      d.className = 'drv-pdf-page pending';
       d.dataset.page = i;
       d.style.width = width + 'px';
       d.style.height = estH + 'px';
+      // A page that has not been rasterised yet says so. Blank paper of the right size is
+      // indistinguishable from a page that really is blank.
+      // 尚未光栅化的页面要把这件事说出来。一张尺寸正确的空白纸,
+      // 与一张真的空白的页面无从分辨。
+      d.innerHTML = `<div class="drv-loading"><div class="drv-spin"></div></div>`;
       box.appendChild(d);
     }
     const renderPage = async (holder) => {
@@ -1479,6 +1484,7 @@ async function renderPdfPreview(node, box) {
         await page.render({ canvasContext: c.getContext('2d'), viewport: vp, intent: 'print' }).promise;
         if (pvPdf !== my) return;
         holder.style.height = 'auto';
+        holder.classList.remove('pending');
         holder.replaceChildren(c);
       } catch {}
     };

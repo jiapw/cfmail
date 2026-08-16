@@ -252,11 +252,19 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // parsed and only their pictures are fetched.
       // 每页先放一个形状正确的占位，进入视野才填。第一帧起整套幻灯片就可滚动，
       // 但只有被看到的那几页会被解析，也只有它们的图片会被取下来。
+      // The placeholder waits in the deck's own colour with a spinner on it. A slide can take a
+      // second or two to parse and fetch its pictures, and an empty white rectangle says
+      // "finished, and blank" where a spinner says "still coming".
+      // 占位块用整套幻灯片自己的底色等待，上面放一个加载动画。
+      // 一页的解析与取图可能要一两秒，而一块空白矩形说的是“完了，但是空的”，
+      // 加载动画说的才是“还在来”。
+      const slideStyle = `aspect-ratio:${deck.w} / ${deck.h}${deck.bg ? `;background:${deck.bg}` : ''}`;
       for (let i = 0; i < deck.count; i++) {
         const holder = document.createElement('div');
         holder.className = 'drv-slidewrap';
         holder.dataset.i = i;
-        holder.innerHTML = `<div class="drv-slide" style="aspect-ratio:${deck.w} / ${deck.h}"></div>`;
+        holder.innerHTML = `<div class="drv-slide pending" style="${esc(slideStyle)}">
+          <div class="drv-loading"><div class="drv-spin"></div></div></div>`;
         w.appendChild(holder);
       }
       const fill = async (holder) => {
@@ -265,7 +273,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         const slide = await deck.slide(+holder.dataset.i);
         if (!slide || dead() || !holder.isConnected) return;
         if (slide.broken) {
-          holder.innerHTML = `<div class="drv-slide broken" style="aspect-ratio:${deck.w} / ${deck.h}">
+          holder.innerHTML = `<div class="drv-slide broken" style="${esc(slideStyle)}">
             <span>${esc(t('drv_no_preview'))}</span></div>`;
           return;
         }

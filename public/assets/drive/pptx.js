@@ -780,6 +780,20 @@ export async function pptxOpen(source) {
       }
     };
 
+    // The deck's own backdrop, taken from the master. A slide that has not been parsed yet has
+    // to be waited on somewhere, and waiting on a white rectangle in front of a dark deck is a
+    // flash of the wrong document. Only a flat colour or a gradient is usable here -- a picture
+    // background would mean fetching its bytes, which is the very thing being deferred.
+    // 整套幻灯片自己的底色，取自母版。尚未解析的那一页总得在某个地方等，
+    // 而在一套深色幻灯片前面等一块白矩形，闪的是另一份文档。
+    // 此处只能用纯色或渐变 —— 图片底意味着要去取它的字节，
+    // 而那正是此刻要推迟的事。
+    let deckBg = null;
+    try {
+      const mb = masterXml && bgOf(masterXml, mRels, theme);
+      if (mb && (mb.type === 'solid' || mb.type === 'grad')) deckBg = mb.css;
+    } catch { /* a deck with no usable master background simply has none / 没有可用母版底色就是没有 */ }
+
     const cache = new Map();
     // The cover is for thumbnails; a preview never wants it. Leaving it as a thunk keeps its
     // hundred kilobytes off every deck that is merely being read.
@@ -788,6 +802,7 @@ export async function pptxOpen(source) {
     return {
       w,
       h,
+      bg: deckBg,
       count: names.length,
       async cover() {
         const b = (await zipPart(zip, 'docProps/thumbnail.jpeg', PART_CAP))
