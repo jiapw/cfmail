@@ -39,11 +39,6 @@ const loadSheet = () => import('./sheet.js?v=' + encodeURIComponent(store.brand?
 
 const TXT_CAP = 2 * 1024 * 1024;   // text fetched via Range / 文本走 Range 只取这么多
 const DOC_CAP = 80 * 1024 * 1024;  // parseable document ceiling / 可解析文档的大小上限
-// pptx files balloon on embedded fonts and video that the lazy unzip never even reads --
-// judging them by total size threw away perfectly renderable decks (fonts alone can be 60MB+)
-// pptx 的体积常被内嵌字体和视频撑大。而惰性解压根本不会去读那些字节。
-// 按总大小一刀切会错杀完全可渲染的文件。光字体就能有 60MB+
-const PPTX_CAP = 300 * 1024 * 1024;
 // Delimited text is fetched by Range, never whole: a million-row export is a download, not a
 // preview, and the first few thousand rows answer the question either way.
 // 带分隔符的文本按 Range 取,绝不整取:百万行的导出属于下载而非预览,
@@ -70,7 +65,11 @@ export async function renderPreview(node, box, kind, inlineUrl) {
     return u;
   };
   const dead = () => !box.isConnected;
-  const destroy = () => urls.forEach((u) => URL.revokeObjectURL(u));
+  // Most entries are blob URLs; a few are disposers (an observer to disconnect). One list, so
+  // there is exactly one place that lets go of everything this preview took hold of.
+  // 大多数条目是 blob URL，少数是处置器（例如要断开的观察器）。
+  // 共用一份清单，于是"放手本次预览所取的一切"只有一处。
+  const destroy = () => urls.forEach((u) => (typeof u === 'string' ? URL.revokeObjectURL(u) : u.revoke()));
   try {
     if (kind === 'txt' || kind === 'code' || kind === 'md') {
       const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${TXT_CAP - 1}` } });
@@ -135,31 +134,51 @@ export async function renderPreview(node, box, kind, inlineUrl) {
     }
 
     if (kind === 'pptx') {
-      if (node.size > PPTX_CAP) {
-        box.innerHTML = noprev(node);
-        return { destroy };
-      }
-      const r = await fetch(inlineUrl);
-      if (!r.ok) throw new Error('fetch');
-      const { pptxParse } = await loadPptx();
-      const deck = await pptxParse(await r.arrayBuffer());
-      if (!deck || !deck.slides.length || dead()) {
+      const { pptxOpen } = await loadPptx();
+      const deck = await pptxOpen(await zipSource(inlineUrl, node.size));
+      if (!deck || !deck.count || dead()) {
         if (!dead()) box.innerHTML = noprev(node);
         return { destroy };
       }
       box.innerHTML = win('');
       const w = box.firstElementChild;
-      for (const slide of deck.slides) {
-        if (slide.broken) {
-          const bad = document.createElement('div');
-          bad.className = 'drv-slidewrap';
-          bad.innerHTML = `<div class="drv-slide broken" style="aspect-ratio:${deck.w} / ${deck.h}">
-            <span>${esc(t('drv_no_preview'))}</span></div>`;
-          w.appendChild(bad);
-          continue;
-        }
-        w.appendChild(await slideEl(slide, deck, keepUrl));
+      // A placeholder of the right shape per slide, filled in as it comes into view. The deck's
+      // whole length is scrollable from the first frame, but only the slides looked at are
+      // parsed and only their pictures are fetched.
+      // 每页先放一个形状正确的占位，进入视野才填。第一帧起整套幻灯片就可滚动，
+      // 但只有被看到的那几页会被解析，也只有它们的图片会被取下来。
+      for (let i = 0; i < deck.count; i++) {
+        const holder = document.createElement('div');
+        holder.className = 'drv-slidewrap';
+        holder.dataset.i = i;
+        holder.innerHTML = `<div class="drv-slide" style="aspect-ratio:${deck.w} / ${deck.h}"></div>`;
+        w.appendChild(holder);
       }
+      const fill = async (holder) => {
+        if (holder.dataset.done || dead()) return;
+        holder.dataset.done = '1';
+        const slide = await deck.slide(+holder.dataset.i);
+        if (!slide || dead() || !holder.isConnected) return;
+        if (slide.broken) {
+          holder.innerHTML = `<div class="drv-slide broken" style="aspect-ratio:${deck.w} / ${deck.h}">
+            <span>${esc(t('drv_no_preview'))}</span></div>`;
+          return;
+        }
+        const el = await slideEl(slide, deck, keepUrl);
+        if (!dead() && holder.isConnected) holder.replaceWith(el);
+      };
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) if (e.isIntersecting) fill(e.target);
+        // The document window is the element that scrolls, so it is the observer's root; the
+        // viewport would only fire for whatever happens to be on screen behind the overlay.
+        // 滚动的是文档窗口那一层,所以观察器以它为 root;拿视口当 root,
+        // 只会对"恰好在遮罩后面露出来的东西"触发。
+      }, { root: w, rootMargin: '900px' });
+      for (const h of w.children) io.observe(h);
+      // The first two are drawn without waiting to be scrolled to
+      // 头两页不等滚动，直接画出来
+      for (const h of [...w.children].slice(0, 2)) await fill(h);
+      urls.push({ revoke: () => io.disconnect() });
       return { destroy };
     }
 
@@ -396,7 +415,8 @@ async function slideEl(slide, deck, keepUrl) {
 
   const mediaUrl = async (it) => {
     try {
-      return keepUrl(new Blob([await it.entry.bytes()], { type: it.mime }));
+      const bytes = await it.read();
+      return bytes ? keepUrl(new Blob([bytes], { type: it.mime })) : null;
     } catch {
       return null;
     }

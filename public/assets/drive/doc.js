@@ -1,8 +1,8 @@
 // Shared document extraction for Drive previews and thumbnails: type detection, docx and pptx
-// unpacking (via unzip.js, no libraries), drawio decompression and drawing, mhtml via the
+// unpacking (ranged, through rzip.js), drawio decompression and drawing, mhtml via the
 // already-vendored postal-mime. Every function is defensive -- a parse failure means "no
 // preview", never a broken page.
-// 网盘预览与缩略图共用的文档解析层:类型判定、docx/pptx 解包(走 unzip.js,零依赖)、
+// 网盘预览与缩略图共用的文档解析层:类型判定、docx/pptx 解包(经 rzip.js 按 Range 读)、
 // drawio 解压与绘制、mhtml 复用已自托管的 postal-mime。所有函数都保守处理 ——
 // 解析失败等于"没有预览",绝不炸页面。
 import { openZip, zipText } from './rzip.js';
