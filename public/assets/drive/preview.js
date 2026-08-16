@@ -252,6 +252,7 @@ async function mountBook(box, book, mod, dead) {
     wrap.innerHTML = grid && grid.rows.length
       ? mod.gridHtml(grid, grid.cut ? t('drv_sheet_cut', String(grid.rows.length)) : '')
       : `<div class="drv-gridempty">${esc(t('drv_empty_folder'))}</div>`;
+    mod.bindGrid(wrap);
   };
   box.querySelectorAll('.drv-sheettabs .tab').forEach((b) => b.addEventListener('click', () => {
     box.querySelectorAll('.drv-sheettabs .tab').forEach((x) => x.classList.toggle('on', x === b));
