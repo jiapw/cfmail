@@ -358,6 +358,57 @@
   animation: drvspin .8s linear infinite;
 }
 @keyframes drvspin { to { transform: rotate(360deg); } }
+/* ---------- Spreadsheet preview ---------- */
+/* ---------- 电子表格预览 ---------- */
+/* The grid scrolls inside the document window on both axes: a sheet is wider than the page far
+   more often than a document is, and letting it push the page sideways would drag the whole
+   preview overlay with it.
+   网格在文档窗口内部双向滚动:表格比页面宽的情形远多于文档,
+   若任由它把页面横向撑开,会把整个预览层一起拖着走。 */
+/* The document window gives up its padding and its scrollbar to the grid: two nested scrollers
+   for one table means the reader has to guess which one moves it.
+   文档窗口把内边距与滚动条一并让给网格:同一张表套两层滚动,读者得猜是哪一层在动。 */
+.drv-docwin:has(> .drv-gridwrap), .drv-docwin:has(> .drv-sheettabs) {
+  padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left;
+}
+.drv-gridwrap { flex: 1; min-height: 0; overflow: auto; background: #fff; }
+.drv-grid-tbl {
+  border-collapse: collapse; font-size: 13px; color: #202124;
+  font-family: system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.drv-grid-tbl th, .drv-grid-tbl td {
+  border: 1px solid #dadce0; padding: 4px 8px; vertical-align: middle;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 460px;
+}
+/* Row numbers and column letters stay put while the grid moves under them -- without them a
+   reader who has scrolled has no way to say which cell they are looking at.
+   行号与列标在网格移动时留在原地 —— 没有它们,滚动之后的读者说不出自己在看哪一格。 */
+.drv-grid-tbl thead th {
+  position: sticky; top: 0; z-index: 2; background: #f1f3f4; color: #5f6368;
+  font-weight: 500; text-align: center;
+}
+.drv-grid-tbl th.rn {
+  position: sticky; left: 0; z-index: 1; background: #f1f3f4; color: #5f6368;
+  font-weight: 400; text-align: center; min-width: 44px;
+}
+.drv-grid-tbl th.corner { position: sticky; left: 0; z-index: 3; min-width: 44px; }
+.drv-gridempty { padding: 60px 20px; text-align: center; color: #80868b; background: #fff; }
+/* Sheet tabs sit under the document window's top edge, the way a workbook's do at its bottom
+   -- but here the content is below them, so above is where the eye looks first.
+   工作表标签贴在文档窗口的上沿,一如工作簿把它们放在下沿 ——
+   只是这里内容在其下方,所以视线先落在上面。 */
+.drv-sheettabs {
+  display: flex; gap: 2px; overflow-x: auto; padding: 6px 8px 0;
+  background: var(--panel-2); border-bottom: 1px solid var(--border);
+}
+.drv-sheettabs .tab {
+  flex: none; border: 0; background: transparent; color: var(--text-2); cursor: pointer;
+  font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 8px 8px 0 0;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.drv-sheettabs .tab:hover { background: var(--hover); color: var(--text); }
+.drv-sheettabs .tab.on { background: #fff; color: #202124; font-weight: 600; }
+
 /* pdf fills the resizable .drv-doc wrapper / pdf 充满可调宽的 .drv-doc 容器 */
 .drv-pdf-page {
   background: #fff; margin: 0 auto 16px; border-radius: 8px; max-width: 100%;

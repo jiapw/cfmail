@@ -21,6 +21,7 @@ import { docxParse, drawioDraw, drawioPages, ext, htmlText, kindOf, mhtmlParse }
 // The pptx engine loads only when a pptx thumbnail is actually being made
 // pptx 引擎只在真的要做 pptx 缩略图时才加载
 const loadPptx = () => import('./pptx.js?v=' + encodeURIComponent(store.brand?.version || ''));
+const loadSheet = () => import('./sheet.js?v=' + encodeURIComponent(store.brand?.version || ''));
 
 const TW = 480;
 const TH = 360;
@@ -46,6 +47,7 @@ export async function makeThumb(file) {
       case 'mhtml': return await withTimeout(fromMhtml(file), 8000);
       case 'svg': return await withTimeout(fromSvg(file), 6000);
       case 'drawio': return await withTimeout(fromDrawio(file), 8000);
+      case 'sheet': return await withTimeout(fromSheet(file), 12000);
       default: return null;
     }
   } catch {
@@ -425,6 +427,98 @@ async function fromDrawio(file) {
 
 // ---------- Audio: embedded cover art, else a waveform ----------
 // ---------- 音频:内嵌封面优先,否则画波形 ----------
+
+// ---------- spreadsheet ----------
+
+/** A spreadsheet thumbnail has to read as a spreadsheet at 480x360 -- ruled, with a header
+ *  band -- or it is indistinguishable from a text file. So this draws an actual little grid
+ *  rather than typesetting the values as lines of prose.
+ *  电子表格的缩略图必须在 480x360 下"看起来就是电子表格" —— 有格线、有表头带 ——
+ *  否则与文本文件毫无分别。因此这里画的是一张真的小网格,而不是把值排成一行行文字。 */
+async function fromSheet(file) {
+  const mod = await loadSheet();
+  const e = ext(file.name);
+  let grid = null;
+  if (e === 'csv' || e === 'tsv' || e === 'tab') {
+    grid = mod.delimitedGrid(mod.decodeText(await file.slice(0, 256 * 1024).arrayBuffer()), e);
+  } else {
+    const book = await mod.xlsxOpen(await file.arrayBuffer());
+    if (book) grid = await book.read(0);
+  }
+  if (!grid || !grid.rows.length) return null;
+  return drawGrid(grid);
+}
+
+function drawGrid(grid) {
+  const c = document.createElement('canvas');
+  c.width = TW;
+  c.height = TH;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, TW, TH);
+
+  const rowH = 26;
+  const nRows = Math.min(grid.rows.length, Math.ceil(TH / rowH));
+  // Columns are sized by what they hold, within reason: an all-narrow grid wastes the frame,
+  // an all-wide one shows two columns of a twelve-column sheet.
+  // 列宽按内容定,但有分寸:全窄会浪费画面,全宽则让十二列的表只露出两列。
+  const want = [];
+  for (let i = 0; i < Math.min(grid.ncols, 12); i++) {
+    const w = grid.widths[i] ? grid.widths[i] * 7 : 92;
+    want.push(Math.max(46, Math.min(w, 170)));
+  }
+  if (!want.length) want.push(TW);
+  const total = want.reduce((a, b) => a + b, 0);
+  const scale = total > TW ? TW / total : 1;
+  const cols = want.map((w) => w * scale);
+
+  g.font = '12px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
+  g.textBaseline = 'middle';
+  for (let r = 0; r < nRows; r++) {
+    const y = r * rowH;
+    let x = 0;
+    for (let ci = 0; ci < cols.length; ci++) {
+      const cell = grid.rows[r][ci];
+      // The file's own fill first; failing that, the top row reads as a header band
+      // 优先用文件自己的填充色;没有的话,首行以表头带呈现
+      const bg = cell?.bg || (r === 0 ? '#f1f3f4' : '');
+      if (bg) {
+        g.fillStyle = bg;
+        g.fillRect(x, y, cols[ci], rowH);
+      }
+      const v = cell?.v || '';
+      if (v) {
+        g.fillStyle = cell?.fg || '#3c4043';
+        if (cell?.b || r === 0) g.font = 'bold 12px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
+        g.save();
+        g.beginPath();
+        g.rect(x + 4, y, cols[ci] - 8, rowH);
+        g.clip();
+        g.fillText(v, cell?.a === 'right' ? Math.max(x + 5, x + cols[ci] - 5 - g.measureText(v).width) : x + 5, y + rowH / 2);
+        g.restore();
+        g.font = '12px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
+      }
+      x += cols[ci];
+    }
+  }
+  // Rules last, so they sit over the fills rather than under them
+  // 格线最后画,好压在填充之上而不是之下
+  g.strokeStyle = '#dadce0';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let r = 1; r <= nRows; r++) {
+    g.moveTo(0, r * rowH - 0.5);
+    g.lineTo(TW, r * rowH - 0.5);
+  }
+  let x = 0;
+  for (const w of cols) {
+    x += w;
+    g.moveTo(Math.round(x) - 0.5, 0);
+    g.lineTo(Math.round(x) - 0.5, nRows * rowH);
+  }
+  g.stroke();
+  return encode(c);
+}
 
 const ascii = (u8, p, n) => String.fromCharCode(...u8.subarray(p, p + n));
 

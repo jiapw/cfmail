@@ -21,7 +21,7 @@ const FILE_KINDS = [
   { icon: 'image', color: '#8e5cf7', ext: 'png jpg jpeg gif webp bmp svg heic heif avif tif tiff ico' },
   { icon: 'filePdf', color: '#e5484d', ext: 'pdf' },
   { icon: 'fileDoc', color: '#2e6ff2', ext: 'doc docx odt pages rtf' },
-  { icon: 'fileSheet', color: '#12a150', ext: 'xls xlsx csv ods numbers' },
+  { icon: 'fileSheet', color: '#12a150', ext: 'xls xlsx xlsm xltx csv tsv tab ods numbers' },
   { icon: 'fileSlides', color: '#f2820d', ext: 'ppt pptx odp key' },
   { icon: 'fileZip', color: '#a1795c', ext: 'zip rar 7z gz tar bz2 xz' },
   { icon: 'fileAudio', color: '#d6409f', ext: 'mp3 wav flac aac m4a ogg wma' },

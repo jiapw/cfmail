@@ -4757,3 +4757,13 @@ Object.assign(DICTS.de, { drv_share_save: 'Zu meinem Drive hinzufügen' });
 Object.assign(DICTS.fr, { drv_share_save: 'Ajouter à mon Drive' });
 Object.assign(DICTS.es, { drv_share_save: 'Añadir a mi unidad' });
 Object.assign(DICTS.ru, { drv_share_save: 'Добавить на мой диск' });
+
+Object.assign(DICTS['zh-CN'], { drv_sheet_cut: '仅显示前 {0} 行' });
+Object.assign(DICTS['zh-TW'], { drv_sheet_cut: '僅顯示前 {0} 列' });
+Object.assign(DICTS.en, { drv_sheet_cut: 'Showing the first {0} rows' });
+Object.assign(DICTS.ja, { drv_sheet_cut: '先頭 {0} 行のみ表示' });
+Object.assign(DICTS.ko, { drv_sheet_cut: '처음 {0}행만 표시' });
+Object.assign(DICTS.de, { drv_sheet_cut: 'Nur die ersten {0} Zeilen' });
+Object.assign(DICTS.fr, { drv_sheet_cut: 'Seules les {0} premières lignes' });
+Object.assign(DICTS.es, { drv_sheet_cut: 'Solo las primeras {0} filas' });
+Object.assign(DICTS.ru, { drv_sheet_cut: 'Показаны первые {0} строк' });

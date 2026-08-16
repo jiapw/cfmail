@@ -24,7 +24,7 @@ const CODE_EXTS = new Set([
   'asm', 's', 'f', 'f90', 'f95', 'ex', 'exs', 'erl', 'hs', 'elm', 'clj', 'cljs', 'edn',
   'lisp', 'scm', 'ml', 'mli', 'nim', 'zig', 'v', 'd', 'pas', 'vbs', 'ahk',
   'diff', 'patch', 'cmake', 'mk', 'ninja', 'bazel', 'bzl', 'nix', 'dockerfile',
-  'csv', 'tsv', 'log', 'lock', 'ipynb', 'rst', 'tex', 'bib',
+  'log', 'lock', 'ipynb', 'rst', 'tex', 'bib',
 ]);
 // Files that are code by NAME rather than extension / 按文件名而非扩展名识别的代码文件
 const CODE_NAMES = new Set(['makefile', 'dockerfile', 'cmakelists.txt', 'rakefile', 'gemfile', 'procfile', 'vagrantfile', 'jenkinsfile', '.gitignore', '.gitattributes', '.editorconfig', '.env']);
@@ -46,6 +46,11 @@ export function kindOf(name, mime) {
   if (e === 'md' || e === 'markdown' || m === 'text/markdown') return 'md';
   if (e === 'docx' || m === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
   if (e === 'pptx' || m === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return 'pptx';
+  // Delimited text is a grid, not code. It used to fall through to the monospace renderer,
+  // which prints the commas and lets nothing line up -- the one thing a table has to do.
+  // 带分隔符的文本是网格,不是代码。它过去落到等宽渲染器,把逗号原样打出来、什么也对不齐 ——
+  // 而"对齐"恰是表格唯一必须做到的事。
+  if (SHEET_EXTS.has(e) || m === XLSX_MIME || m === 'text/csv' || m === 'text/tab-separated-values') return 'sheet';
   if (e === 'svg' || m === 'image/svg+xml') return 'svg';
   if (e === 'drawio') return 'drawio';
   if (e === 'mht' || e === 'mhtml' || m === 'multipart/related' || m === 'message/rfc822') return 'mhtml';
@@ -57,6 +62,13 @@ export function kindOf(name, mime) {
 
 // Subtitles and lyrics read as plain text / 字幕与歌词按纯文本读
 const SUB_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub', 'lrc']);
+
+// Spreadsheets. `xls` is deliberately absent: the pre-2007 binary format shares nothing with
+// these but the icon, and claiming it here would promise a preview that cannot be delivered.
+// 电子表格。有意不含 `xls`:2007 之前的二进制格式除了图标之外与这些毫无共通之处,
+// 在此认领它等于承诺一个交付不了的预览。
+const SHEET_EXTS = new Set(['xlsx', 'xlsm', 'xltx', 'csv', 'tsv', 'tab']);
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 // ---------- Small helpers ----------
 // ---------- 小工具 ----------
