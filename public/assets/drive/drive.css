@@ -372,15 +372,15 @@
   padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left;
 }
 .drv-gridwrap { flex: 1; min-height: 0; overflow: auto; background: #fff; }
-/* Fixed layout at 100% with a min-width is what makes the columns share the extra room: the
-   percentages in the markup then scale together, and below the natural width the min-width
-   takes over and the wrapper scrolls. Auto layout would hand every spare pixel to whichever
-   column happens to hold the longest sentence.
-   固定布局 + 100% 宽 + min-width,才能让各列分享多出来的空间:标记里的百分比随之同比缩放;
-   低于自然宽时由 min-width 接管、外层滚动。auto 布局则会把每一个富余像素
-   都送给"碰巧句子最长"的那一列。 */
+/* Fixed layout against an explicit pixel width: the columns are exactly what the file says and
+   the table is exactly their sum, so a wider window leaves space at the right instead of
+   inflating anything. Auto layout would hand every spare pixel to whichever column happens to
+   hold the longest sentence.
+   固定布局 + 显式像素宽度:列宽严格照文件所写,表宽严格等于其和,
+   于是更宽的窗口只在右侧留白,不会把任何东西吹大。
+   auto 布局则会把每一个富余像素都送给"碰巧句子最长"的那一列。 */
 .drv-grid-tbl {
-  border-collapse: collapse; table-layout: fixed; width: 100%;
+  border-collapse: collapse; table-layout: fixed;
   font-size: 13px; color: #202124;
   font-family: system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
@@ -401,6 +401,12 @@
 }
 .drv-grid-tbl th.corner { position: sticky; left: 0; z-index: 3; }
 .drv-gridempty { padding: 60px 20px; text-align: center; color: #80868b; background: #fff; }
+/* A cell holding a picture lets it out: in the file it floats over the grid at its own size,
+   and clipping it to one column would show a sliver of it and nothing more.
+   放着图片的单元格放它出去:在文件里它以自身尺寸浮在网格之上,
+   把它裁进一列,只会露出一条边而已。 */
+.drv-grid-tbl td.pic { overflow: visible; position: relative; vertical-align: top; }
+.drv-cellpic { display: block; max-width: none; border-radius: 2px; position: relative; z-index: 1; }
 /* Sheet tabs along the bottom, where a workbook keeps them / 工作表标签在底部,与工作簿一致 */
 .drv-sheettabs {
   flex: none; display: flex; gap: 2px; overflow-x: auto; padding: 0 8px 6px;

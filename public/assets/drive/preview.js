@@ -166,7 +166,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         if (node.size > XLSX_CAP) { box.innerHTML = noprev(node); return { destroy }; }
         const r = await fetch(inlineUrl);
         if (!r.ok) throw new Error('fetch');
-        book = await mod.xlsxOpen(await r.arrayBuffer());
+        book = await mod.xlsxOpen(await r.arrayBuffer(), keepUrl);
       }
       if (!book || dead()) {
         if (!dead()) box.innerHTML = noprev(node);
