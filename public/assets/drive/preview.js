@@ -45,6 +45,18 @@ const DOC_CAP = 80 * 1024 * 1024;  // parseable document ceiling / 可解析文�
 // 而无论如何,头几千行就已回答了问题。
 const CSV_CAP = 4 * 1024 * 1024;
 
+/** Bytes as a short human string. Its own tiny copy rather than an import from the interface
+ *  layer, so this renderer keeps depending on nothing but the document it is drawing.
+ *  字节数的短人话写法。自带一份微型实现而不从界面层引入，
+ *  好让这个渲染器除了它正在画的文档之外不依赖任何东西。 */
+const fmtBytes = (n) => {
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = Number(n) || 0;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(v < 10 ? 1 : 0)) + ' ' + u[i];
+};
+
 const noprev = (node) => `
   <div class="noprev" style="margin:auto">${fileIcon(node.name, 72)}<div>${esc(t('drv_no_preview'))}</div></div>`;
 
@@ -71,20 +83,113 @@ export async function renderPreview(node, box, kind, inlineUrl) {
   // 共用一份清单，于是"放手本次预览所取的一切"只有一处。
   const destroy = () => urls.forEach((u) => (typeof u === 'string' ? URL.revokeObjectURL(u) : u.revoke()));
   try {
-    if (kind === 'txt' || kind === 'code' || kind === 'md') {
+    if (kind === 'md') {
+      // Markdown stays capped rather than windowed. Its meaning spans the whole file -- a code
+      // fence or a table opened in one chunk and closed in the next -- so appending chunks and
+      // re-rendering would show something that was never in the document.
+      // Markdown 保持"截断"而非"分窗"。它的语义横跨整个文件 —— 一段代码围栏可能在这一块打开、
+      // 在下一块闭合 —— 边追加边重渲,会显示出文档里从未有过的东西。
       const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${TXT_CAP - 1}` } });
       if (!r.ok && r.status !== 206) throw new Error('fetch');
       const raw = new TextDecoder().decode(await r.arrayBuffer());
       if (dead()) return { destroy };
       const note = node.size > TXT_CAP
         ? `<div class="drv-trunc">${esc(t('drv_truncated', '2 MB'))}</div>` : '';
-      if (kind === 'md') {
-        box.innerHTML = win(`${note}<div class="drv-sheet drv-md">${renderMarkdown(raw)}</div>`);
-      } else {
-        // txt reads in the interface font; code stays monospace, no highlighting by design
-        // txt 用界面字体;代码保持等宽,有意不做语法高亮
-        box.innerHTML = win(`${note}<pre class="drv-txt ${kind === 'txt' ? 'uif' : 'mono'}"></pre>`);
-        box.querySelector('pre').textContent = raw;
+      box.innerHTML = win(`${note}<div class="drv-sheet drv-md">${renderMarkdown(raw)}</div>`);
+      return { destroy };
+    }
+
+    if (kind === 'txt' || kind === 'code') {
+      // A log or a dump is a sequence of lines, and the interesting one is rarely in the first
+      // two megabytes. So it is read in windows: a megabyte at a time, the next one fetched
+      // when the reader scrolls to the bottom of what is already there. Nothing is discarded --
+      // scrolling back up costs nothing -- and a file of any size can be walked to its end.
+      // 一份日志或导出就是一串行，而值得看的那一行很少在头两兆里。
+      // 因此改成分窗读：一次一兆，读者滚到已有内容的底部时再取下一段。
+      // 什么都不丢 —— 往回滚不花一分钱 —— 且任何大小的文件都能走到尽头。
+      const CHUNK = 1 << 20;
+      box.innerHTML = win(`<pre class="drv-txt ${kind === 'txt' ? 'uif' : 'mono'}"></pre>
+        <div class="drv-textmore drv-dim"></div>`);
+      const pre = box.querySelector('pre');
+      const foot = box.querySelector('.drv-textmore');
+      const win_ = box.firstElementChild;
+      // One decoder across every window: a UTF-8 sequence split by a range boundary is carried
+      // over to the next chunk instead of coming out as a replacement character.
+      // 整个过程共用一个解码器:被 Range 边界切断的 UTF-8 字节序列
+      // 会被带到下一块，而不是变成一个替换字符。
+      const dec = new TextDecoder('utf-8');
+      let off = 0;
+      let busy = false;
+      let stop = false;
+      const step = async () => {
+        if (busy || stop || dead()) return;
+        busy = true;
+        try {
+          const end = Math.min(off + CHUNK, node.size || off + CHUNK) - 1;
+          const r = await fetch(inlineUrl, { headers: { Range: `bytes=${off}-${end}` } });
+          if (!r.ok && r.status !== 206) throw new Error('fetch');
+          const buf = await r.arrayBuffer();
+          if (dead()) return;
+          // A server that ignored the Range sent the whole file: that is all of it, at once
+          // 服务器若无视 Range，发来的就是整个文件：那就是全部，一次性给齐
+          const whole = r.status !== 206;
+          off = whole ? (node.size || buf.byteLength) : off + buf.byteLength;
+          pre.appendChild(document.createTextNode(dec.decode(buf, { stream: !whole })));
+          const done = whole || !buf.byteLength || (node.size && off >= node.size);
+          if (done) {
+            stop = true;
+            foot.remove();
+            io.disconnect();
+          } else {
+            foot.textContent = t('drv_text_read', fmtBytes(off), fmtBytes(node.size));
+          }
+        } catch {
+          stop = true;
+          foot.remove();
+          io.disconnect();
+        } finally {
+          busy = false;
+          // Re-arm. An observer only speaks when intersection CHANGES, and the sentinel does
+          // not move: if it is still in view after this window -- a short file, a tall window,
+          // or a notification that arrived while the previous read was in flight -- no further
+          // event would ever come and the reader would sit at the same megabyte forever.
+          // 重新布防。观察器只在"相交状态发生变化"时说话,而哨兵并不移动:
+          // 若这一窗读完它仍在视野内 —— 文件短、窗口高,或上一次通知恰好落在读取途中 ——
+          // 就再也不会有事件到来,读者会永远停在同一兆上。
+          if (!stop && !dead() && foot.isConnected) {
+            io.unobserve(foot);
+            io.observe(foot);
+          }
+        }
+      };
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) if (e.isIntersecting) step();
+        // The document window is the element that scrolls, so it is the observer's root; the
+        // viewport would only ever report whatever happens to sit behind the overlay.
+        // 滚动的是文档窗口那一层,所以观察器以它为 root;
+        // 拿视口当 root,只会报告"恰好在遮罩后面的东西"。
+      }, { root: win_, rootMargin: '400px' });
+      io.observe(foot);
+      // And a plain scroll handler beside it. The observer covers what the handler cannot --
+      // content too short to scroll at all, which must still load the next window -- and the
+      // handler covers what the observer can miss, since intersection is reported only during
+      // a render, and a window that is not being painted reports nothing at all.
+      // 旁边再放一个普通的滚动监听。观察器覆盖监听器覆盖不到的情形 ——
+      // 内容短到根本无从滚动,却仍该载入下一窗;监听器覆盖观察器可能漏掉的情形 ——
+      // 相交只在渲染时上报,而一个没在绘制的窗口什么都不会上报。
+      const onScroll = () => {
+        if (win_.scrollTop + win_.clientHeight >= win_.scrollHeight - 400) step();
+      };
+      win_.addEventListener('scroll', onScroll, { passive: true });
+      urls.push({ revoke: () => { io.disconnect(); win_.removeEventListener('scroll', onScroll); } });
+      // Read until the window is full before handing over to the scroll triggers. A file that
+      // is several windows long but short lines -- or a very tall preview -- would otherwise
+      // open with content that does not reach the bottom and nothing to scroll toward.
+      // 先读到填满窗口,再把后续交给滚动触发。否则一个"有好几窗那么长、但行很短"的文件,
+      // 或者一个很高的预览层,打开时内容够不到底部,也就无从往下滚。
+      for (let i = 0; i < 8 && !stop; i++) {
+        await step();
+        if (win_.scrollHeight > win_.clientHeight + 200) break;
       }
       return { destroy };
     }
