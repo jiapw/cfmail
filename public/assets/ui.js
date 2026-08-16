@@ -26,8 +26,8 @@ const FILE_KINDS = [
   { icon: 'fileZip', color: '#a1795c', ext: 'zip rar 7z gz tar bz2 xz' },
   { icon: 'fileAudio', color: '#d6409f', ext: 'mp3 wav flac aac m4a ogg wma' },
   { icon: 'fileVideo', color: '#0e8ca8', ext: 'mp4 mov avi mkv webm wmv flv m4v' },
-  { icon: 'fileText', color: '#7a828d', ext: 'txt md log' },
-  { icon: 'fileCode', color: '#1f9b8f', ext: 'js mjs ts jsx tsx json html htm css scss py java c h cpp go rs rb php sh bat ps1 yml yaml xml sql' },
+  { icon: 'fileText', color: '#7a828d', ext: 'txt md log out err trace syslog rst tex' },
+  { icon: 'fileCode', color: '#1f9b8f', ext: 'js mjs cjs ts mts cts jsx tsx json jsonl ndjson har html htm css scss py pyi java c h cpp go rs rb php sh bat ps1 yml yaml toml ini xml sql' },
 ];
 const EXT_KIND = {};
 for (const k of FILE_KINDS) for (const e of k.ext.split(' ')) EXT_KIND[e] = k;
