@@ -3,8 +3,12 @@
 // previewed or thumbnailed -- txt previews should not pay for any of this.
 // pptx 引擎单独成文件。主题色、几何、填充、形状树遍历与版式/母版继承。
 // 仅在真正预览或生成 pptx 缩略图时按需加载 —— 预览个 txt 不该为这些付费。
-import { unzip } from './unzip.js';
+import { openZip, zipPart, zipText } from './rzip.js';
 import { ext } from './doc.js';
+
+// No single part of a deck should be this big; a picture that is has stopped being a slide.
+// 一套幻灯片的任何单个部件都不该这么大;真有那么大的图片,它已经不是一页幻灯片了。
+const PART_CAP = 64 * 1024 * 1024;
 
 const NS = (root, local) => [...root.getElementsByTagNameNS('*', local)];
 
@@ -214,18 +218,43 @@ function styleColors(spEl, theme) {
   return { fill: pick('fillRef'), line: pick('lnRef'), font: colorFrom(firstChildNS(st, 'fontRef'), theme) };
 }
 
-export async function pptxParse(buf, maxSlides = 200) {
+/**
+ * Open a deck. The shared parts -- presentation, master, theme -- are read now; a slide and the
+ * pictures on it wait until someone looks at that slide.
+ *
+ * A deck's size is almost entirely its media, and the media of slide forty is of no interest to
+ * a reader who has seen three. Parsing all of them up front was what made a 105 MB deck take
+ * the best part of a minute to show its title page.
+ *
+ * 打开一套幻灯片。共享部件 —— presentation、母版、主题 —— 现在就读;
+ * 某一页及其上的图片,要等有人看那一页时才读。
+ *
+ * 一套幻灯片的体积几乎全是媒体,而第四十页的媒体对一个只看了三页的读者毫无意义。
+ * 一开始就把它们全解析一遍,正是 105 MB 的样本要花将近一分钟才显示出标题页的原因。
+ *
+ * @returns {Promise<{w: number, h: number, count: number, cover: Blob|null,
+ *                    slide(i: number): Promise<object>}|null>}
+ */
+export async function pptxOpen(source) {
   try {
-    const zip = unzip(buf);
+    const zip = await openZip(source);
     let w = 12192000 / EMU;
     let h = 6858000 / EMU;
     const xmlCache = new Map();
     const loadXml = async (path) => {
-      if (!zip.has(path)) return null;
       if (!xmlCache.has(path)) {
-        xmlCache.set(path, new DOMParser().parseFromString(await zip.get(path).text(), 'application/xml'));
+        const t = await zipText(zip, path, PART_CAP);
+        xmlCache.set(path, t ? new DOMParser().parseFromString(t, 'application/xml') : null);
       }
       return xmlCache.get(path);
+    };
+    // A media reference is a promise of bytes, not the bytes: the renderer calls it when the
+    // picture is about to be shown, and a slide never scrolled to never costs its pictures.
+    // 媒体引用是"字节的承诺"而非字节本身:渲染器在图片即将显示时才调用它,
+    // 一页从未被滚动到,它上面的图片就一分钱不花。
+    const mediaOf = (target, mime) => {
+      const e = zip.stat(target);
+      return e && !e.isDir && mime ? { read: () => zipPart(zip, target, PART_CAP), mime } : null;
     };
     const relsOf = async (path) => {
       const doc2 = await loadXml(path.replace(/([^/]+)$/, '_rels/$1.rels'));
@@ -519,9 +548,7 @@ export async function pptxParse(buf, maxSlides = 200) {
           || blip?.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed');
         const rel = rid && rels.get(rid);
         if (!rel) return null;
-        const entry = zip.get(rel.target);
-        const mime = PPTX_IMG_MIME[ext(rel.target)];
-        return entry && mime ? { entry, mime } : null;
+        return mediaOf(rel.target, PPTX_IMG_MIME[ext(rel.target)]);
       };
       const walk = (tree, xf) => {
         for (const el of tree.children) {
@@ -581,12 +608,8 @@ export async function pptxParse(buf, maxSlides = 200) {
               || vf.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'link'));
             const vrel = vrid && rels.get(vrid);
             if (vrel) {
-              const ventry = zip.get(vrel.target);
-              if (ventry) {
-                const vext = ext(vrel.target);
-                const vmime = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg' }[vext];
-                if (vmime) video = { entry: ventry, mime: vmime };
-              }
+              const vmime = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg' }[ext(vrel.target)];
+              video = mediaOf(vrel.target, vmime);
             }
             items.push({
               kind: 'image', box, ...m, srcRect: srcRectOf(bf), video,
@@ -661,9 +684,7 @@ export async function pptxParse(buf, maxSlides = 200) {
             || blip?.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed');
           const rel = rid && rels.get(rid);
           if (!rel) return null;
-          const entry = zip.get(rel.target);
-          const mime = PPTX_IMG_MIME[ext(rel.target)];
-          return entry && mime ? { entry, mime } : null;
+          return mediaOf(rel.target, PPTX_IMG_MIME[ext(rel.target)]);
         };
         return fillOf(bgPr, th, media);
       }
@@ -705,14 +726,32 @@ export async function pptxParse(buf, maxSlides = 200) {
       return out;
     };
 
-    const names = [...zip.keys()]
-      .map((n) => /^ppt\/slides\/slide(\d+)\.xml$/.exec(n))
-      .filter(Boolean)
-      .sort((a, b) => parseInt(a[1], 10) - parseInt(b[1], 10))
-      .slice(0, maxSlides)
-      .map((m) => m[0]);
-    const slides = [];
-    for (const name of names) {
+    // Slide ORDER comes from the presentation's own list, not from the numbers in the file
+    // names: slide7.xml is not reliably the seventh slide, and a deck reordered in PowerPoint
+    // proves it every time.
+    // 幻灯片的"顺序"取自 presentation 自己的列表，而不是文件名里的数字：
+    // slide7.xml 并不可靠地就是第七页，一套在 PowerPoint 里重排过的幻灯片每次都能证明这一点。
+    let names = [];
+    const idLst = px && NS(px, 'sldIdLst')[0];
+    if (idLst) {
+      for (const sld of idLst.children) {
+        const rid = sld.getAttribute('r:id')
+          || sld.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+        const rel = rid && presRels.get(rid);
+        if (rel) names.push(rel.target);
+      }
+    }
+    if (!names.length) {
+      // No list to go by: fall back to the folder, in numeric order
+      // 无表可依：退回按目录取，按数字排序
+      names = (zip.dir('ppt/slides') || [])
+        .filter((n) => !n.isDir && /^slide[0-9]+[.]xml$/.test(n.name))
+        .sort((a, b) => parseInt(a.name.slice(5), 10) - parseInt(b.name.slice(5), 10))
+        .map((n) => 'ppt/slides/' + n.name);
+    }
+
+    const readSlide = async (name) => {
+      {
       try {
         const xml = await loadXml(name);
         const rels = await relsOf(name);
@@ -733,21 +772,34 @@ export async function pptxParse(buf, maxSlides = 200) {
         // 缩略图与搜索用的旧视图。只含本页自己的文字形状与图片
         const shapes = ownItems.filter((it) => it.kind === 'shape' && it.lines.length);
         const images = ownItems.filter((it) => it.kind === 'image');
-        slides.push({
-          items: [...deco.items, ...ownItems], bg,
-          shapes, images, text: texts.join('\n'),
-        });
+        return { items: [...deco.items, ...ownItems], bg, shapes, images, text: texts.join('\n') };
       } catch (e) {
         console.warn('pptx slide parse failed', name, e);
-        slides.push({ items: [], bg: null, shapes: [], images: [], text: '', broken: true });
+        return { items: [], bg: null, shapes: [], images: [], text: '', broken: true };
       }
-    }
-    let cover = null;
-    const coverEntry = zip.get('docProps/thumbnail.jpeg') || zip.get('docProps/thumbnail.png');
-    if (coverEntry) {
-      cover = new Blob([await coverEntry.bytes()], { type: 'image/jpeg' });
-    }
-    return { slides, w, h, cover };
+      }
+    };
+
+    const cache = new Map();
+    // The cover is for thumbnails; a preview never wants it. Leaving it as a thunk keeps its
+    // hundred kilobytes off every deck that is merely being read.
+    // 封面是给缩略图用的,预览从不需要它。留成一个 thunk,它那一百来 KB 就不会
+    // 压在每一套"只是被读一读"的幻灯片头上。
+    return {
+      w,
+      h,
+      count: names.length,
+      async cover() {
+        const b = (await zipPart(zip, 'docProps/thumbnail.jpeg', PART_CAP))
+          || (await zipPart(zip, 'docProps/thumbnail.png', PART_CAP));
+        return b ? new Blob([b], { type: 'image/jpeg' }) : null;
+      },
+      async slide(i) {
+        if (!names[i]) return null;
+        if (!cache.has(i)) cache.set(i, await readSlide(names[i]));
+        return cache.get(i);
+      },
+    };
   } catch (e) {
     // Soft-fail for the UI, but leave a trace for whoever opens devtools with a broken file
     // 界面软着陆,但给拿着问题文件开 devtools 的人留个线索

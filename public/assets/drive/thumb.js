@@ -347,18 +347,19 @@ async function fromDocx(file) {
  *  (its first picture on top, title and text below).
  *  pptx:文件自带封面图就直接用;否则用第一页合成 —— 首图在上、标题正文在下。 */
 async function fromPptx(file) {
-  const { pptxParse } = await loadPptx();
-  const deck = await pptxParse(await file.arrayBuffer(), 1);
+  const { pptxOpen } = await loadPptx();
+  const deck = await pptxOpen(fileSource(file));
   if (!deck) return null;
-  if (deck.cover) {
+  const cover = await deck.cover();
+  if (cover) {
     try {
-      const bmp = await createImageBitmap(deck.cover);
+      const bmp = await createImageBitmap(cover);
       const out = await drawCover(bmp, bmp.width, bmp.height, false);
       bmp.close();
       if (out) return out;
     } catch {}
   }
-  const slide = deck.slides[0];
+  const slide = await deck.slide(0);
   if (!slide) return null;
   const c = document.createElement('canvas');
   c.width = TW;
@@ -369,7 +370,8 @@ async function fromPptx(file) {
   let y = 26;
   if (slide.images[0]) {
     try {
-      const bmp = await createImageBitmap(new Blob([await slide.images[0].entry.bytes()], { type: slide.images[0].mime }));
+      const bytes = await slide.images[0].read();
+      const bmp = await createImageBitmap(new Blob([bytes], { type: slide.images[0].mime }));
       const scale = Math.min(TW / bmp.width, (TH * 0.55) / bmp.height);
       const w = bmp.width * scale;
       const h = bmp.height * scale;
