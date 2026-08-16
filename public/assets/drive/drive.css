@@ -12,21 +12,23 @@
 /* ---------- Left rail ---------- */
 /* ---------- 左侧栏 ---------- */
 .drv-nav {
-  width: 232px; flex: none; padding: 12px 8px 16px 12px;
-  display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
+  width: 256px; flex: none; padding: 0 8px 16px 8px;
+  display: flex; flex-direction: column; overflow-y: auto;
 }
-/* Compact pill that hugs its label, not a full-width slab / 紧贴文字的胶囊按钮,不再通栏 */
-.drv-new { margin: 0 12px 14px 4px; width: fit-content; }
-.drv-new::part(base) { border-radius: 16px; min-height: 40px; font-size: 14.5px; padding: 0 20px 0 16px; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
-/* Slotted children lay out inline by default, so the icon aligned to the text baseline and
-   sat ~1.5px high. Make the label slot a centred flex row and let the text box hug its glyphs. */
-/* 插槽内容默认按行内基线排布,图标会贴着文字基线、比文字中线高约 1.5px。
-   把 label 插槽改成居中的 flex 行,并让文字盒紧贴字形。 */
-.drv-new::part(label) { display: flex; align-items: center; gap: 8px; }
-.drv-new span { line-height: 1; }
+/* The shared top bar's menu button collapses this the same way it collapses mail's sidebar
+   / 共用顶栏的菜单按钮收起它,和收起邮件侧栏是同一个行为 */
+.drv-nav.hidden { display: none; }
+/* Same button as mail's compose: it carries .compose-btn, so every visual rule comes from
+   there and the two can never drift apart. Only the width behaviour is Drive's own -- the
+   pill hugs its label instead of stretching.
+   与邮件的"写邮件"是同一个按钮:它带 .compose-btn,所有外观规则都来自那里,两边不会走样。
+   只有宽度行为是网盘自己的 —— 胶囊紧贴文字,不通栏。 */
+.drv-new { width: fit-content; margin: 8px 8px 16px 4px; }
 .drv-nav-item {
-  display: flex; align-items: center; gap: 12px; padding: 5px 12px 5px 16px;
-  border-radius: 0 16px 16px 0; color: var(--text); text-decoration: none;
+  display: flex; align-items: center; gap: 14px;
+  height: 36px; padding: 0 12px 0 14px; margin-right: 8px;
+  overflow: hidden; white-space: nowrap;
+  border-radius: 0 999px 999px 0; color: var(--text); text-decoration: none;
   font-size: 14px; cursor: pointer; user-select: none;
 }
 .drv-nav-item:hover { background: var(--hover); }
@@ -39,13 +41,16 @@
 /* ---------- Content ---------- */
 /* ---------- 内容区 ---------- */
 .drv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 16px 0 8px; }
-/* The bar's centreline matches the New button's (nav padding 12 + button 40/2 = 32px)
-   路径条的垂直中线对齐左侧新建按钮(导航内边距 12 + 按钮高 40 的一半 = 32px) */
 /* The bar is chrome, not content: its text neither selects nor drags
    路径条是界面件不是内容。文字既不可选中也不可拖拽 */
-#drv-bar { margin-top: 7px; user-select: none; }
+#drv-bar { user-select: none; }
 #drv-bar .drv-crumb, #drv-bar .drv-crumb-sep { -webkit-user-drag: none; }
-.drv-crumbbar { display: flex; align-items: center; min-height: 40px; gap: 4px; padding: 2px 8px; }
+/* Height is load-bearing: the left column runs nav padding + New button + its margins down to
+   the first nav item, and this bar is what pushes the first content row down to meet it.
+   Change the New button's height and this has to follow.
+   这个高度是承重的:左栏从导航内边距 + 新建按钮 + 其外边距一路排到第一个导航项,
+   而右侧靠这条栏把内容首行顶下去与之对齐。改了新建按钮的高度,这里就得跟着改。 */
+.drv-crumbbar { display: flex; align-items: center; min-height: 42px; gap: 4px; padding: 2px 8px; margin-top: 8px; }
 .drv-crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex-wrap: wrap; }
 .drv-crumb {
   font-size: 15.5px; padding: 3px 9px; border-radius: 13px; color: var(--text);
@@ -62,7 +67,7 @@
 .drv-crumb.here:hover { background: none; }
 .drv-crumb-sep { color: var(--text-3); flex: none; }
 .drv-crumbbar .sp { flex: 1; }
-.drv-selbar { display: flex; align-items: center; gap: 4px; min-height: 40px; padding: 2px 8px; }
+.drv-selbar { display: flex; align-items: center; gap: 4px; min-height: 42px; padding: 2px 8px; margin-top: 8px; }
 .drv-selbar .cnt { font-size: 14px; margin: 0 10px 0 4px; }
 
 /* Shared-context banner (viewing someone else's folder) / 共享上下文提示条 */
@@ -73,6 +78,70 @@
 .drv-ctx wa-icon { color: var(--text-3); }
 
 .drv-scroll { flex: 1; overflow-y: auto; padding: 0 8px 40px; position: relative; }
+/* Thumbnails are chrome, not content: they must never be text-selected, and they must
+   never start a native image drag -- the tile around them owns dragging.
+   缩略图是界面件不是内容:既不能被选中,也不能发起原生图片拖动 —— 拖动归外面那张卡片管。 */
+.drv-scroll img, .drv-card img, .drv-row img {
+  user-select: none; -webkit-user-select: none;
+  -webkit-user-drag: none; -khtml-user-drag: none;
+}
+
+/* The folder currently under a drag. Ring + tint so it reads as "drop in here" in both
+   views without shifting anything (a border would reflow the grid).
+   拖动经过的目标文件夹。用内描边 + 淡底表示"放进这里",两种视图通用,
+   且不引起位移(改 border 会让网格重排)。 */
+.drv-dropinto {
+  box-shadow: inset 0 0 0 2px var(--primary);
+  background: var(--accent-soft) !important;
+  border-radius: 8px;
+}
+.drv-row.drv-dropinto td { background: var(--accent-soft) !important; }
+
+/* Drag ghost for a multi-selection: real tiles cloned whole and stacked. Its size is set
+   inline from the dragged tile's own measurements, so nothing here hard-codes a shape.
+   It must genuinely take part in layout for the browser to snapshot it -- parked off-view
+   rather than hidden, because display:none or visibility:hidden yields an empty drag image.
+   多选拖动影像:把真实 tile 整个克隆下来错开叠放。尺寸由 JS 按被拖 tile 的实测值内联写入,
+   这里不写死任何形状。元素必须真正参与布局才截得到图 —— 所以是"停在视口外"而不是隐藏,
+   display:none 或 visibility:hidden 都只会得到一张空影像。 */
+.drv-dragghost {
+  position: fixed; top: -2000px; left: -2000px;
+  pointer-events: none;
+}
+/* Each layer is a fixed-size window onto one cloned tile; overflow is clipped so a list row
+   wider than the ghost does not spill out of the stack.
+   每一层是一个固定尺寸的窗口,里面装一个克隆的 tile;溢出裁掉,
+   免得比影像更宽的列表行漏到叠外。 */
+.drv-dragghost .gslot {
+  position: absolute; top: 0; left: 0; overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .22);
+}
+/* The clone keeps its own look; only the hover-only affordances are pointless in a snapshot */
+/* 克隆保留原样;只有那些靠 hover 才出现的控件在静态影像里没有意义 */
+.drv-dragghost .rowbtn, .drv-dragghost [data-menu] { display: none !important; }
+.drv-dragghost .drv-card { border: none; box-shadow: none; border-radius: 0; }
+.drv-dragghost .drv-row td { border-bottom: none; }
+.drv-dragghost .gcount {
+  position: absolute; z-index: 2;
+  min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary); color: #fff;
+  border: 2px solid var(--panel); border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; line-height: 1;
+}
+
+/* Rubber-band rectangle. Fixed-position and pointer-events:none so it never blocks the
+   hit-testing underneath, and it sits above the rows but below any dialog.
+   框选矩形。fixed 定位且 pointer-events:none,不会挡住下面的命中判定;
+   层级在行之上、对话框之下。 */
+.drv-marquee {
+  position: fixed; z-index: 30; pointer-events: none;
+  border: 1px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  border-radius: 2px;
+}
 .drv-scroll.droppable::after {
   content: ''; position: absolute; inset: 4px; border: 2px dashed var(--primary);
   border-radius: 12px; background: var(--accent-soft); opacity: .55; pointer-events: none;
@@ -174,7 +243,12 @@
 
 /* ---------- Grid view ---------- */
 /* ---------- 网格视图 ---------- */
-.drv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; padding-top: 8px; }
+/* No leading space: content starts level with the bottom of the path bar, exactly as mail's
+   list starts level with the bottom of the Compose button. Both sides then run from the same
+   line, and the nav's first item keeps its own gap below the button.
+   不留起始空白:内容与路径栏的下沿齐平,正如邮件的列表与写邮件按钮的下沿齐平。
+   两侧从同一条线开始,左栏第一个导航项则保留它自己在按钮下方的间距。 */
+.drv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
 .drv-card {
   border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: default;
   user-select: none; background: var(--panel);

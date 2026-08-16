@@ -200,32 +200,13 @@ export function renderShell(contentHtml) {
 
   return `
   <div class="shell">
-    <header class="topbar">
-      <wa-button class="icon" appearance="plain" id="btn-menu" aria-label="${esc(t('toggle_sidebar'))}">${icon('menu', 22)}</wa-button>
-      <a class="logo" href="#/">${brandLogoHtml(26)}<span>${esc(brandName)}</span></a>
-      <form class="searchbar" id="search-form">
-        ${icon('search', 20)}
-        <input id="search-input" type="text" placeholder="${esc(t('search_ph'))}" value="${esc(store.q || '')}" autocomplete="off">
-      </form>
-      <div class="topbar-right">
-        ${me.send_enabled ? '' : `<span class="chip chip-warn" title="${esc(t('no_channel_tip'))}">${esc(t('no_channel_chip'))}</span>`}
-        ${me.drive_enabled ? `<wa-button class="icon" appearance="plain" href="#/drive" aria-label="${esc(t('drv_title'))}" title="${esc(t('drv_title'))}">${icon('cloud', 20)}</wa-button>` : ''}
-        ${me.chat_enabled ? `<wa-button class="icon" appearance="plain" href="#/chat" aria-label="${esc(t('c_title'))}" title="${esc(t('c_title'))}">${icon('sparkle', 20)}</wa-button>` : ''}
-        ${canAdmin ? `<wa-button class="icon" appearance="plain" href="#/admin" aria-label="${esc(t('admin'))}">${icon('shield', 20)}</wa-button>` : ''}
-        <wa-button class="icon" appearance="plain" href="#/settings" aria-label="${esc(t('settings'))}">${icon('gear', 20)}</wa-button>
-        <wa-dropdown id="user-dd" placement="bottom-end">
-          <wa-button slot="trigger" class="icon" appearance="plain" aria-label="${esc(me.user.email)}">${avatar(me.user.name || me.user.email, 32)}</wa-button>
-          <div class="um-head">
-            ${avatar(me.user.name || me.user.email, 40)}
-            <div><div class="um-name">${esc(me.user.name)}</div><div class="um-mail">${esc(me.user.email)}</div></div>
-          </div>
-          <wa-dropdown-item value="settings">${icon('gear', 18)} ${esc(t('settings'))}</wa-dropdown-item>
-          ${canAdmin ? `<wa-dropdown-item value="admin">${icon('shield', 18)} ${esc(t('admin'))}</wa-dropdown-item>` : ''}
-          <wa-dropdown-item value="logout">${icon('logout', 18)} ${esc(t('logout'))}</wa-dropdown-item>
-          <div class="um-version">${store.brand?.name ? 'Powered by ' : ''}CFMail v${esc(store.brand?.version || '')}</div>
-        </wa-dropdown>
-      </div>
-    </header>
+    ${topbarHtml({
+      page: 'mail',
+      searchId: 'search-form',
+      searchInputId: 'search-input',
+      searchPh: t('search_ph'),
+      searchValue: store.q || '',
+    })}
     <div class="body">
       <nav class="sidebar ${store.sidebarHidden ? 'hidden' : ''}">
         <wa-button class="compose-btn" id="btn-compose">${icon('pencil', 20)}<span>${esc(t('compose'))}</span></wa-button>
@@ -239,16 +220,85 @@ export function renderShell(contentHtml) {
   </div>`;
 }
 
-export function bindShell() {
+/**
+ * The bar both subsystems wear. Mail and Drive are peers, not parent and child: identical
+ * skeleton, identical right-hand icons, and both are listed on both pages -- neither sits
+ * "inside" the other, which is also why neither carries a back button.
+ *
+ * 两个子系统共用的顶栏。邮件与网盘是平级、不是父子关系:骨架相同、右侧图标相同,
+ * 且两个入口在两边都列出 —— 谁都不在谁"里面",所以谁也不带返回按钮。
+ *
+ * @param page          'mail' | 'drive' -- decides the home link and which entry reads as current
+ * @param searchId      form id, so each page can bind its own submit handler
+ * @param searchInputId input id (mail's handler looks it up by name)
+ * @param extra         page-specific buttons, placed first in the right-hand group
+ */
+export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValue = '', extra = '' }) {
+  const me = store.me;
+  const canAdmin = me.user.is_admin || (me.domain_admin_of || []).length > 0;
+  const brandName = store.brand?.name || 'CFMail';
+  // The logo goes to this subsystem's own home, never to the other one
+  // 品牌 logo 回本子系统的首页,不会跳到对方那边
+  const home = page === 'drive' ? '#/drive' : '#/';
+  /**
+   * Both subsystems are listed on both pages, so the pair reads as one switcher rather than
+   * as "you are here, and there is a way out". A plain click switches in place; because these
+   * are real anchors carrying an href, the browser's own "open in new tab/window" on
+   * right-click keeps working -- which is the user's call to make, not ours.
+   * 两个子系统在两边都列出来,这一对看起来才像一个切换器,而不是"你在这儿,那边是出口"。
+   * 左键在本页切换;因为它们是带 href 的真实链接,右键"在新标签页/窗口打开"照常可用 ——
+   * 要不要新开窗口是用户自己的决定,不该由我们替他定。
+   */
+  const entry = (self, href, label, ic) => {
+    const current = page === self;
+    return `<wa-button class="icon ${current ? 'current' : ''}" appearance="plain" href="${href}"
+       ${current ? 'aria-current="page"' : ''}
+       aria-label="${esc(label)}" title="${esc(label)}">${icon(ic, 20)}</wa-button>`;
+  };
+  const cross = entry('mail', '#/', t('mail_title'), 'mail')
+    + (me.drive_enabled ? entry('drive', '#/drive', t('drv_title'), 'cloud') : '');
+  return `
+    <header class="topbar">
+      <wa-button class="icon" appearance="plain" id="btn-menu" aria-label="${esc(t('toggle_sidebar'))}">${icon('menu', 22)}</wa-button>
+      <a class="logo" href="${home}">${brandLogoHtml(26)}<span>${esc(brandName)}</span></a>
+      <form class="searchbar" id="${searchId}">
+        ${icon('search', 20)}
+        <input id="${searchInputId}" type="text" placeholder="${esc(searchPh)}" value="${esc(searchValue)}" autocomplete="off">
+      </form>
+      <div class="topbar-right">
+        ${extra}
+        ${page === 'mail' && !me.send_enabled ? `<span class="chip chip-warn" title="${esc(t('no_channel_tip'))}">${esc(t('no_channel_chip'))}</span>` : ''}
+        ${cross}
+        ${me.chat_enabled ? `<wa-button class="icon" appearance="plain" href="#/chat" aria-label="${esc(t('c_title'))}" title="${esc(t('c_title'))}">${icon('sparkle', 20)}</wa-button>` : ''}
+        ${canAdmin ? `<wa-button class="icon" appearance="plain" href="#/admin" aria-label="${esc(t('admin'))}" title="${esc(t('admin'))}">${icon('shield', 20)}</wa-button>` : ''}
+        <wa-button class="icon" appearance="plain" href="#/settings" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">${icon('gear', 20)}</wa-button>
+        <wa-dropdown id="user-dd" placement="bottom-end">
+          <wa-button slot="trigger" class="icon" appearance="plain" aria-label="${esc(me.user.email)}">${avatar(me.user.name || me.user.email, 32)}</wa-button>
+          <div class="um-head">
+            ${avatar(me.user.name || me.user.email, 40)}
+            <div><div class="um-name">${esc(me.user.name)}</div><div class="um-mail">${esc(me.user.email)}</div></div>
+          </div>
+          <wa-dropdown-item value="settings">${icon('gear', 18)} ${esc(t('settings'))}</wa-dropdown-item>
+          ${canAdmin ? `<wa-dropdown-item value="admin">${icon('shield', 18)} ${esc(t('admin'))}</wa-dropdown-item>` : ''}
+          <wa-dropdown-item value="logout">${icon('logout', 18)} ${esc(t('logout'))}</wa-dropdown-item>
+          <div class="um-version">${store.brand?.name ? 'Powered by ' : ''}CFMail v${esc(store.brand?.version || '')}</div>
+        </wa-dropdown>
+      </div>
+    </header>`;
+}
+
+/**
+ * Wiring shared by both top bars: the sidebar toggle and the account menu. Each page binds its
+ * own search form, since what a search means differs.
+ * 两个顶栏共用的接线:侧栏开关与账号菜单。搜索表单各自绑定 —— 搜什么本来就不一样。
+ */
+export function bindTopbar() {
   qs('#btn-menu')?.addEventListener('click', () => {
     store.sidebarHidden = !store.sidebarHidden;
+    // Mail calls it .sidebar, Drive calls it .drv-nav; toggle whichever this page has
+    // 邮件叫 .sidebar,网盘叫 .drv-nav,页面上有哪个就切哪个
     qs('.sidebar')?.classList.toggle('hidden', store.sidebarHidden);
-  });
-  qs('#btn-compose')?.addEventListener('click', () => openCompose({ mbId: store.mbId }));
-  qs('#search-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const v = qs('#search-input').value.trim();
-    if (v) navigate(`#/mb/${store.mbId}/search/${encodeURIComponent(v)}`);
+    qs('.drv-nav')?.classList.toggle('hidden', store.sidebarHidden);
   });
   qs('#user-dd')?.addEventListener('wa-select', async (e) => {
     const v = e.detail?.item?.value;
@@ -259,6 +309,16 @@ export function bindShell() {
       store.me = null;
       navigate('#/login');
     }
+  });
+}
+
+export function bindShell() {
+  bindTopbar();
+  qs('#btn-compose')?.addEventListener('click', () => openCompose({ mbId: store.mbId }));
+  qs('#search-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = qs('#search-input').value.trim();
+    if (v) navigate(`#/mb/${store.mbId}/search/${encodeURIComponent(v)}`);
   });
 }
 

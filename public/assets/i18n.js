@@ -3645,6 +3645,9 @@ Object.assign(DICTS['zh-CN'], {
   e_drive_part_too_big: "上传分片过大",
   e_drive_body_required: "请求缺少文件内容",
   drv_search: '搜索结果',
+  mail_title: '邮件',
+  drv_sel_one: '已选 1 个项目',
+  drv_sel_n: '已选 {0} 个项目',
 });
 
 Object.assign(DICTS['zh-TW'], {
@@ -3759,6 +3762,9 @@ Object.assign(DICTS['zh-TW'], {
   e_drive_part_too_big: "上傳分片過大",
   e_drive_body_required: "請求缺少檔案內容",
   drv_search: '搜尋結果',
+  mail_title: '郵件',
+  drv_sel_one: '已選 1 個項目',
+  drv_sel_n: '已選 {0} 個項目',
 });
 
 Object.assign(DICTS.en, {
@@ -3873,6 +3879,9 @@ Object.assign(DICTS.en, {
   e_drive_part_too_big: "Upload part too large",
   e_drive_body_required: "Request body is missing",
   drv_search: 'Search results',
+  mail_title: 'Mail',
+  drv_sel_one: '1 item selected',
+  drv_sel_n: '{0} items selected',
 });
 
 Object.assign(DICTS.ja, {
@@ -3987,6 +3996,9 @@ Object.assign(DICTS.ja, {
   e_drive_part_too_big: "アップロードの分割サイズが大きすぎます",
   e_drive_body_required: "リクエストにファイル内容がありません",
   drv_search: '検索結果',
+  mail_title: 'メール',
+  drv_sel_one: '1 件を選択',
+  drv_sel_n: '{0} 件を選択',
 });
 
 Object.assign(DICTS.ko, {
@@ -4101,6 +4113,9 @@ Object.assign(DICTS.ko, {
   e_drive_part_too_big: "업로드 조각이 너무 큽니다",
   e_drive_body_required: "요청에 파일 내용이 없습니다",
   drv_search: '검색 결과',
+  mail_title: '메일',
+  drv_sel_one: '1개 선택됨',
+  drv_sel_n: '{0}개 선택됨',
 });
 
 Object.assign(DICTS.de, {
@@ -4215,6 +4230,9 @@ Object.assign(DICTS.de, {
   e_drive_part_too_big: "Upload-Teil zu groß",
   e_drive_body_required: "Dateiinhalt fehlt in der Anfrage",
   drv_search: 'Suchergebnisse',
+  mail_title: 'E-Mail',
+  drv_sel_one: '1 Element ausgewählt',
+  drv_sel_n: '{0} Elemente ausgewählt',
 });
 
 Object.assign(DICTS.fr, {
@@ -4329,6 +4347,9 @@ Object.assign(DICTS.fr, {
   e_drive_part_too_big: "Fragment d'import trop volumineux",
   e_drive_body_required: "Contenu du fichier manquant dans la requête",
   drv_search: 'Résultats de recherche',
+  mail_title: 'Courrier',
+  drv_sel_one: '1 élément sélectionné',
+  drv_sel_n: '{0} éléments sélectionnés',
 });
 
 Object.assign(DICTS.es, {
@@ -4443,6 +4464,9 @@ Object.assign(DICTS.es, {
   e_drive_part_too_big: "Fragmento de subida demasiado grande",
   e_drive_body_required: "Falta el contenido del archivo en la solicitud",
   drv_search: 'Resultados de búsqueda',
+  mail_title: 'Correo',
+  drv_sel_one: '1 elemento seleccionado',
+  drv_sel_n: '{0} elementos seleccionados',
 });
 
 Object.assign(DICTS.ru, {
@@ -4557,6 +4581,9 @@ Object.assign(DICTS.ru, {
   e_drive_part_too_big: "Слишком большая часть загрузки",
   e_drive_body_required: "В запросе нет содержимого файла",
   drv_search: 'Результаты поиска',
+  mail_title: 'Почта',
+  drv_sel_one: 'Выбран 1 объект',
+  drv_sel_n: 'Выбрано объектов: {0}',
 });
 
 

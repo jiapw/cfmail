@@ -168,6 +168,10 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 .searchbar input { flex: 1; border: none; outline: none; background: transparent; font-size: 15px; color: var(--text); }
 .searchbar wa-icon { font-size: 20px; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+/* Mail and Drive both appear on both pages; this marks which one you are looking at, so the
+   pair reads as a switcher instead of two identical icons.
+   邮件与网盘在两边都列出,这里标出你正看着哪一个 —— 否则就是两个一模一样的图标。 */
+.topbar-right wa-button.current::part(base) { background: var(--selected); color: var(--primary); }
 /* 只限定高度,宽度按原图比例自适应;过宽时封顶,避免挤压顶栏其余部分 */
 .brand-logo {
   display: block; width: auto; object-fit: contain; border-radius: 5px;
@@ -197,6 +201,12 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 }
 .compose-btn::part(base):hover { box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 30%, transparent), 0 4px 8px color-mix(in srgb, var(--text) 15%, transparent); }
 .compose-btn wa-icon { font-size: 20px; }
+/* Slotted children lay out inline by default, so the icon aligns to the text baseline and sits
+   ~1.5px above the label's centre. Centre them as boxes and let the text box hug its glyphs.
+   插槽内容默认按行内基线排布,图标贴着文字基线、比文字中线高约 1.5px。
+   改成按盒居中,并让文字盒紧贴字形。 */
+.compose-btn::part(label) { display: flex; align-items: center; gap: 8px; }
+.compose-btn span { line-height: 1; }
 .side-group { display: flex; flex-direction: column; }
 .side-item {
   display: flex; align-items: center; gap: 14px;
