@@ -226,10 +226,14 @@ export async function renderPreview(node, box, kind, inlineUrl) {
  *  切换标签才会把下一张从 zip 里取出来,于是十七张表的簿子只花一张表的代价就能打开。 */
 async function mountBook(box, book, mod, dead) {
   const many = book.sheets.length > 1;
+  // Tabs below the grid, where a workbook keeps them. Above, they read as a filter applied to
+  // the table; below, they read as the pages of the book -- which is what they are.
+  // 标签在网格下方,工作簿本来就把它们放在那里。放在上方,它们读作"施加于表格的筛选";
+  // 放在下方,它们读作"这本簿子的一页页" —— 而它们正是如此。
   box.innerHTML = win(`
+    <div class="drv-gridwrap"><div class="drv-loading"><div class="drv-spin"></div></div></div>
     ${many ? `<div class="drv-sheettabs">${book.sheets.map((s, i) =>
-      `<button class="tab${i ? '' : ' on'}" data-s="${i}">${esc(s.name)}</button>`).join('')}</div>` : ''}
-    <div class="drv-gridwrap"><div class="drv-loading"><div class="drv-spin"></div></div></div>`);
+      `<button class="tab${i ? '' : ' on'}" data-s="${i}">${esc(s.name)}</button>`).join('')}</div>` : ''}`);
   const wrap = box.querySelector('.drv-gridwrap');
   const show = async (i) => {
     wrap.innerHTML = `<div class="drv-loading"><div class="drv-spin"></div></div>`;
