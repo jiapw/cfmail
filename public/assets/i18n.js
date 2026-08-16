@@ -4804,3 +4804,85 @@ Object.assign(DICTS.de, { drv_text_read: '{0} von {1} gelesen' });
 Object.assign(DICTS.fr, { drv_text_read: '{0} sur {1} lus' });
 Object.assign(DICTS.es, { drv_text_read: '{0} de {1} leídos' });
 Object.assign(DICTS.ru, { drv_text_read: 'Прочитано {0} из {1}' });
+
+// ---------- Shared invite links ----------
+// ---------- 多人共享邀请链接 ----------
+Object.assign(DICTS['zh-CN'], { inv_kind: '邀请类型' });
+Object.assign(DICTS['zh-TW'], { inv_kind: '邀請類型' });
+Object.assign(DICTS.en, { inv_kind: 'Invitation type' });
+Object.assign(DICTS.ja, { inv_kind: '招待の種類' });
+Object.assign(DICTS.ko, { inv_kind: '초대 유형' });
+Object.assign(DICTS.de, { inv_kind: 'Einladungsart' });
+Object.assign(DICTS.fr, { inv_kind: 'Type d\'invitation' });
+Object.assign(DICTS.es, { inv_kind: 'Tipo de invitación' });
+Object.assign(DICTS.ru, { inv_kind: 'Тип приглашения' });
+
+Object.assign(DICTS['zh-CN'], { inv_kind_single: '单人(一次性)' });
+Object.assign(DICTS['zh-TW'], { inv_kind_single: '單人(一次性)' });
+Object.assign(DICTS.en, { inv_kind_single: 'One person, once' });
+Object.assign(DICTS.ja, { inv_kind_single: '1 人・1 回限り' });
+Object.assign(DICTS.ko, { inv_kind_single: '1인 1회' });
+Object.assign(DICTS.de, { inv_kind_single: 'Eine Person, einmalig' });
+Object.assign(DICTS.fr, { inv_kind_single: 'Une personne, une fois' });
+Object.assign(DICTS.es, { inv_kind_single: 'Una persona, una vez' });
+Object.assign(DICTS.ru, { inv_kind_single: 'Один человек, один раз' });
+
+Object.assign(DICTS['zh-CN'], { inv_kind_multi: '多人共享(不限人数)' });
+Object.assign(DICTS['zh-TW'], { inv_kind_multi: '多人共用(不限人數)' });
+Object.assign(DICTS.en, { inv_kind_multi: 'Shared, any number' });
+Object.assign(DICTS.ja, { inv_kind_multi: '共有・人数無制限' });
+Object.assign(DICTS.ko, { inv_kind_multi: '공유·인원 제한 없음' });
+Object.assign(DICTS.de, { inv_kind_multi: 'Geteilt, beliebig viele' });
+Object.assign(DICTS.fr, { inv_kind_multi: 'Partagée, sans limite' });
+Object.assign(DICTS.es, { inv_kind_multi: 'Compartida, sin límite' });
+Object.assign(DICTS.ru, { inv_kind_multi: 'Общая, без ограничений' });
+
+Object.assign(DICTS['zh-CN'], { inv_multi_note: '一条链接发给整个团队:过期之前不限注册人数,每人自己取邮箱名。同一个人只能用一次,链接可随时吊销。' });
+Object.assign(DICTS['zh-TW'], { inv_multi_note: '一條連結發給整個團隊:過期之前不限註冊人數,每人自己取信箱名稱。同一個人只能用一次,連結可隨時撤銷。' });
+Object.assign(DICTS.en, { inv_multi_note: 'One link for a whole team: any number may register until it expires, each picking their own mailbox name. One mailbox per person, and the link can be revoked at any time.' });
+Object.assign(DICTS.ja, { inv_multi_note: 'チーム全体に配る 1 本のリンク:期限までは人数制限なく登録でき、各自がメールボックス名を決めます。1 人 1 つまでで、リンクはいつでも失効できます。' });
+Object.assign(DICTS.ko, { inv_multi_note: '팀 전체에 배포하는 링크 하나: 만료 전까지 인원 제한 없이 가입할 수 있고, 각자 메일함 이름을 정합니다. 1인 1개이며 링크는 언제든 철회할 수 있습니다.' });
+Object.assign(DICTS.de, { inv_multi_note: 'Ein Link für ein ganzes Team: Bis zum Ablauf können sich beliebig viele registrieren und jeweils ihren Postfachnamen wählen. Ein Postfach pro Person, der Link lässt sich jederzeit widerrufen.' });
+Object.assign(DICTS.fr, { inv_multi_note: 'Un seul lien pour toute une équipe : jusqu\'à son expiration, n\'importe qui peut s\'inscrire en choisissant son nom de boîte. Une boîte par personne, et le lien peut être révoqué à tout moment.' });
+Object.assign(DICTS.es, { inv_multi_note: 'Un enlace para todo un equipo: hasta que caduque puede registrarse cualquier número de personas, cada una con su propio nombre de buzón. Un buzón por persona y el enlace se puede revocar cuando sea.' });
+Object.assign(DICTS.ru, { inv_multi_note: 'Одна ссылка на всю команду: до истечения срока зарегистрироваться может любое число людей, каждый выбирает имя ящика сам. По одному ящику на человека, ссылку можно отозвать в любой момент.' });
+
+Object.assign(DICTS['zh-CN'], { inv_joined: '已加入 {0} 人' });
+Object.assign(DICTS['zh-TW'], { inv_joined: '已加入 {0} 人' });
+Object.assign(DICTS.en, { inv_joined: '{0} joined' });
+Object.assign(DICTS.ja, { inv_joined: '{0} 人が参加' });
+Object.assign(DICTS.ko, { inv_joined: '{0}명 참여' });
+Object.assign(DICTS.de, { inv_joined: '{0} beigetreten' });
+Object.assign(DICTS.fr, { inv_joined: '{0} inscrit(s)' });
+Object.assign(DICTS.es, { inv_joined: '{0} se han unido' });
+Object.assign(DICTS.ru, { inv_joined: 'Присоединились: {0}' });
+
+Object.assign(DICTS['zh-CN'], { e_invite_rate_limited: '该邀请链接近期发出的验证码过多，请稍后再试' });
+Object.assign(DICTS['zh-TW'], { e_invite_rate_limited: '該邀請連結近期發出的驗證碼過多，請稍後再試' });
+Object.assign(DICTS.en, { e_invite_rate_limited: 'This invitation link has sent too many verification codes recently — please try again later' });
+Object.assign(DICTS.ja, { e_invite_rate_limited: 'この招待リンクは最近の確認コード送信が多すぎます。しばらくしてからお試しください' });
+Object.assign(DICTS.ko, { e_invite_rate_limited: '이 초대 링크에서 최근 인증 코드가 너무 많이 발송되었습니다. 잠시 후 다시 시도하세요' });
+Object.assign(DICTS.de, { e_invite_rate_limited: 'Über diesen Einladungslink wurden zuletzt zu viele Bestätigungscodes gesendet – bitte später erneut versuchen' });
+Object.assign(DICTS.fr, { e_invite_rate_limited: 'Ce lien d\'invitation a envoyé trop de codes de vérification récemment — réessayez plus tard' });
+Object.assign(DICTS.es, { e_invite_rate_limited: 'Este enlace de invitación ha enviado demasiados códigos de verificación hace poco: inténtelo más tarde' });
+Object.assign(DICTS.ru, { e_invite_rate_limited: 'По этой ссылке-приглашению недавно отправлено слишком много кодов подтверждения — попробуйте позже' });
+
+Object.assign(DICTS['zh-CN'], { e_invite_already_joined: '你已经用这个邀请链接开过邮箱了' });
+Object.assign(DICTS['zh-TW'], { e_invite_already_joined: '你已經用這個邀請連結開過信箱了' });
+Object.assign(DICTS.en, { e_invite_already_joined: 'You have already opened a mailbox with this invitation link' });
+Object.assign(DICTS.ja, { e_invite_already_joined: 'この招待リンクでは既にメールボックスを開設済みです' });
+Object.assign(DICTS.ko, { e_invite_already_joined: '이 초대 링크로 이미 메일함을 개설했습니다' });
+Object.assign(DICTS.de, { e_invite_already_joined: 'Mit diesem Einladungslink haben Sie bereits ein Postfach eröffnet' });
+Object.assign(DICTS.fr, { e_invite_already_joined: 'Vous avez déjà ouvert une boîte avec ce lien d\'invitation' });
+Object.assign(DICTS.es, { e_invite_already_joined: 'Ya ha abierto un buzón con este enlace de invitación' });
+Object.assign(DICTS.ru, { e_invite_already_joined: 'Вы уже открыли ящик по этой ссылке-приглашению' });
+
+Object.assign(DICTS['zh-CN'], { e_invite_multi_open_only: '多人共享的邀请不能限定邮箱地址或注册邮箱' });
+Object.assign(DICTS['zh-TW'], { e_invite_multi_open_only: '多人共用的邀請不能限定信箱地址或註冊信箱' });
+Object.assign(DICTS.en, { e_invite_multi_open_only: 'A shared invitation cannot be tied to one address or one registration email' });
+Object.assign(DICTS.ja, { e_invite_multi_open_only: '共有の招待には特定のアドレスや登録メールを指定できません' });
+Object.assign(DICTS.ko, { e_invite_multi_open_only: '공유 초대에는 특정 주소나 가입 이메일을 지정할 수 없습니다' });
+Object.assign(DICTS.de, { e_invite_multi_open_only: 'Eine geteilte Einladung kann nicht auf eine Adresse oder eine Registrierungs-E-Mail festgelegt werden' });
+Object.assign(DICTS.fr, { e_invite_multi_open_only: "Une invitation partagée ne peut pas être liée à une adresse ni à un e-mail d'inscription précis" });
+Object.assign(DICTS.es, { e_invite_multi_open_only: 'Una invitación compartida no puede fijarse a una dirección ni a un correo de registro concretos' });
+Object.assign(DICTS.ru, { e_invite_multi_open_only: 'Общее приглашение нельзя привязать к одному адресу или одной почте для регистрации' });

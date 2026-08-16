@@ -856,19 +856,25 @@ adminApp.get('/audit/export', async (c) => {
 adminApp.get('/invites', async (c) => {
   const scope = await adminScope(c);
   const rows = await c.env.DB.prepare(
-    `SELECT i.*, u.email AS creator_email, uu.email AS used_email, d.name AS domain_name
+    `SELECT i.*, u.email AS creator_email, uu.email AS used_email, d.name AS domain_name,
+            (SELECT COUNT(*) FROM invite_uses iu WHERE iu.invite_id=i.id) AS joined
      FROM invites i LEFT JOIN users u ON u.id=i.created_by
      LEFT JOIN users uu ON uu.id=i.used_by
      LEFT JOIN domains d ON d.id=i.domain_id
      ORDER BY i.created_at DESC LIMIT 200`
   ).all<any>();
   let list = (rows.results || []).map((i: any) => {
-    const status = i.revoked ? 'revoked' : i.used_by ? 'used' : i.expires_at < now() ? 'expired' : 'pending';
+    // A shared link is never spent, so it only ever leaves the pending state by being
+    // revoked or by expiring -- the count of who joined is reported separately.
+    // 共享链接不会被用掉,离开"待用"状态只有吊销和过期两条路 —— 加入了多少人另外报。
+    const spent = !i.multi_use && i.used_by;
+    const status = i.revoked ? 'revoked' : spent ? 'used' : i.expires_at < now() ? 'expired' : 'pending';
     const mode = i.mailbox_mode || 'fixed';
     return {
       id: i.id, email: i.email, status, created_at: i.created_at, expires_at: i.expires_at,
       creator: i.creator_email, used_by: i.used_email, used_at: i.used_at,
       domain_id: i.domain_id, domain_name: i.domain_name,
+      multi_use: !!i.multi_use, joined: i.joined || 0,
       mailbox_mode: mode,
       role: mode === 'choose' ? 'owner' : i.role || 'owner',
       // Pinned invites carry the full address; open ones carry only the domain, and the name is settled at signup
@@ -895,9 +901,19 @@ adminApp.post('/invites', async (c) => {
   const dom = await c.env.DB.prepare('SELECT id, name FROM domains WHERE id=?1').bind(domainId).first<any>();
   if (!dom) return c.json({ error: 'e_domain_not_found' }, 400);
 
+  // A shared link is good for any number of registrations until it expires, so nothing about
+  // it can name one person: no pinned address to hand out twice, no email to restrict it to.
+  // Those are refused rather than quietly dropped -- an administrator who typed an address
+  // into an open link should hear that it does not apply, not discover it later.
+  // 共享链接在过期前不限注册人数,所以它身上不能有任何指向"某一个人"的东西:
+  // 没有可以发两遍的固定地址,也没有把它限死的邮箱。这些是明确拒绝而不是悄悄忽略 ——
+  // 管理员往开放链接里填了地址,应该当场知道它不适用,而不是事后才发现。
+  const multiUse = !!body.multi_use;
+  if (multiUse && (body.email || body.local_part)) return c.json({ error: 'e_invite_multi_open_only' }, 400);
+
   // fixed = a pinned address (created at signup when absent); choose = the registrant picks the name and always becomes owner
   // fixed = 限定邮箱地址(不存在则注册时新建);choose = 注册者自己取名,角色固定所有者
-  const mode = body.mailbox_mode === 'choose' ? 'choose' : 'fixed';
+  const mode = multiUse || body.mailbox_mode === 'choose' ? 'choose' : 'fixed';
   let localPart: string | null = null;
   let role = 'owner';
   if (mode === 'fixed') {
@@ -926,26 +942,31 @@ adminApp.post('/invites', async (c) => {
   const token = randomToken(24);
   const id = uid();
   await c.env.DB.prepare(
-    `INSERT INTO invites (id, token_hash, email, grants_json, domain_id, mailbox_mode, local_part, role, created_by, created_at, expires_at)
-     VALUES (?1,?2,?3,'[]',?4,?5,?6,?7,?8,?9,?10)`
+    `INSERT INTO invites (id, token_hash, email, grants_json, domain_id, mailbox_mode, local_part, role, multi_use, created_by, created_at, expires_at)
+     VALUES (?1,?2,?3,'[]',?4,?5,?6,?7,?8,?9,?10,?11)`
   ).bind(
-    id, await sha256Hex(token), email, domainId, mode, localPart, role,
+    id, await sha256Hex(token), email, domainId, mode, localPart, role, multiUse ? 1 : 0,
     user.id, now(), now() + hours * 3600 * 1000
   ).run();
 
-  let domainName: string | null = null;
-  if (domainId) {
-    const d = await c.env.DB.prepare('SELECT name FROM domains WHERE id=?1').bind(domainId).first<any>();
-    domainName = d?.name || null;
-  }
-  return c.json({ id, url: inviteUrl(c.env, domainName, token), expires_hours: hours });
+  // A link anyone may register through is worth a line in the log even when nobody uses it
+  // 一条谁都能拿去注册的链接,即便没人用过也值得在日志里留一行
+  const target = multiUse ? `*@${dom.name}` : localPart ? `${localPart}@${dom.name}` : email || dom.name;
+  await audit(c.env, user, 'invite.create', target, { multi_use: multiUse, mailbox_mode: mode, hours }, domainId);
+
+  return c.json({ id, url: inviteUrl(c.env, dom.name, token), expires_hours: hours, multi_use: multiUse });
 });
 
 adminApp.delete('/invites/:id', async (c) => {
   const scope = await adminScope(c);
-  const inv = await c.env.DB.prepare('SELECT domain_id FROM invites WHERE id=?1').bind(c.req.param('id')).first<any>();
+  const inv = await c.env.DB.prepare('SELECT domain_id, multi_use, local_part FROM invites WHERE id=?1')
+    .bind(c.req.param('id')).first<any>();
   if (!inv) throw new HttpError(404, 'e_invite_not_found');
   if (scope && !(inv.domain_id && scope.has(inv.domain_id))) throw new HttpError(403, 'e_no_perm_action');
   await c.env.DB.prepare('UPDATE invites SET revoked=1 WHERE id=?1').bind(c.req.param('id')).run();
+  // Revoking closes the door for everyone still holding the link; accounts already opened stay
+  // 吊销只是把还拿着链接的人关在门外;已经开出来的账号照旧
+  await audit(c.env, c.get('user'), 'invite.revoke', c.req.param('id'),
+    { multi_use: !!inv.multi_use }, inv.domain_id);
   return c.json({ ok: true });
 });

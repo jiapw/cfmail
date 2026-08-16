@@ -446,7 +446,7 @@ async function tabUsers(body) {
   const pending = (invData.invites || []).filter((i) => i.status === 'pending');
   const pendHtml = pending.length
     ? `<section class="card"><h3>${esc(t('pending_invites', pending.length))}</h3>
-       ${pending.map((i) => `<div class="row-flex" style="padding:4px 0"><span>${esc(i.email || t('unlimited'))}</span><span class="dim">${esc(i.legacy ? t('inv_legacy') : i.address || t('inv_self_pick', i.domain_name || ''))}</span><span class="flex1"></span><span class="dim">${esc(t('by_creator', i.creator || ''))}</span></div>`).join('')}
+       ${pending.map((i) => `<div class="row-flex" style="padding:4px 0"><span>${esc(i.multi_use ? t('inv_kind_multi') : i.email || t('unlimited'))}</span><span class="dim">${esc(i.multi_use ? t('inv_joined', i.joined || 0) : i.legacy ? t('inv_legacy') : i.address || t('inv_self_pick', i.domain_name || ''))}</span><span class="flex1"></span><span class="dim">${esc(t('by_creator', i.creator || ''))}</span></div>`).join('')}
        <p class="dim">${esc(t('invites_hint'))}</p></section>`
     : '';
   const rows = users
@@ -632,14 +632,14 @@ async function tabInvites(body) {
     .map(
       (i) => `
     <tr>
-      <td>${esc(i.email || t('unlimited'))}</td>
+      <td>${i.multi_use ? `<span class="chip chip-ok">${esc(t('inv_kind_multi'))}</span>` : esc(i.email || t('unlimited'))}</td>
       <td>${i.legacy
         ? `<span class="chip chip-warn">${esc(t('inv_legacy'))}</span>`
         : i.address
         ? `<span class="chip">${esc(i.address)}·${roleName(i.role)}</span>`
         : `<span class="chip">${esc(t('inv_self_pick', i.domain_name || ''))}</span>`}</td>
       <td><span class="chip ${i.status === 'pending' ? 'chip-ok' : ''}">${esc(stText[i.status] || i.status)}</span></td>
-      <td>${i.used_by ? esc(i.used_by) : '—'}</td>
+      <td>${i.multi_use ? esc(t('inv_joined', i.joined || 0)) : i.used_by ? esc(i.used_by) : '—'}</td>
       <td class="dim">${fmtDateTime(i.created_at)}</td>
       <td>${i.status === 'pending' ? `<wa-button appearance="plain" size="small" class="danger" data-revoke="${esc(i.id)}">${esc(t('revoke'))}</wa-button>` : ''}</td>
     </tr>`
@@ -655,6 +655,14 @@ async function tabInvites(body) {
           <wa-select id="inv-domain" value="${esc(firstDomain)}" style="width:260px">${domainOptions}</wa-select>
         </div>
         <div class="form-row">
+          <label>${esc(t('inv_kind'))}</label>
+          <wa-select id="inv-kind" value="single" style="width:260px">
+            <wa-option value="single">${esc(t('inv_kind_single'))}</wa-option>
+            <wa-option value="multi">${esc(t('inv_kind_multi'))}</wa-option>
+          </wa-select>
+          <span class="dim" id="inv-multi-note">${esc(t('inv_multi_note'))}</span>
+        </div>
+        <div class="form-row" id="row-mode">
           <label>${esc(t('inv_mb_mode'))}</label>
           <wa-select id="inv-mode" value="fixed" style="width:260px">
             <wa-option value="fixed">${esc(t('inv_mode_fixed'))}</wa-option>
@@ -673,7 +681,7 @@ async function tabInvites(body) {
           <label>${esc(t('role'))}</label>
           <wa-select id="inv-role" value="owner" style="width:260px"><wa-option value="owner">${esc(t('role_owner'))}</wa-option><wa-option value="member">${esc(t('role_member_full'))}</wa-option><wa-option value="readonly">${esc(t('role_readonly'))}</wa-option></wa-select>
         </div>
-        <div class="form-row">
+        <div class="form-row" id="row-email">
           <label>${esc(t('limit_email'))}</label>
           <input id="inv-email" type="email" placeholder="only-this@example.com" style="width:260px">
         </div>
@@ -701,31 +709,48 @@ async function tabInvites(body) {
     const d = domains.find((x) => x.id === e.target.value);
     qs('#inv-suffix').textContent = '@' + (d?.name || '');
   });
-  // When the mailbox name is not pinned, both the address and the role are decided by the registrant, so hide these two rows
-  // 不限定邮箱名时,地址和角色都由注册者决定,这两行藏起来
+  // When the mailbox name is not pinned, both the address and the role are decided by the
+  // registrant, so those two rows go away. A shared link takes that further: it is for a whole
+  // team, so there is no one address, no one role and no one email to restrict it to, and the
+  // rows that would ask for them are hidden rather than left to be filled in and refused.
+  // 不限定邮箱名时,地址和角色都由注册者决定,这两行藏起来。共享链接更进一步:
+  // 它是给一整队人用的,没有唯一的地址、角色和限定邮箱,所以那几行直接不显示,
+  // 免得填了再被拒。
   const syncMode = () => {
-    const choose = qs('#inv-mode').value === 'choose';
+    const multi = qs('#inv-kind').value === 'multi';
+    const choose = multi || qs('#inv-mode').value === 'choose';
+    qs('#row-mode').hidden = multi;
     qs('#row-lp').hidden = choose;
     qs('#row-role').hidden = choose;
+    qs('#row-email').hidden = multi;
+    qs('#inv-multi-note').hidden = !multi;
   };
+  qs('#inv-kind')?.addEventListener('change', syncMode);
   qs('#inv-mode')?.addEventListener('change', syncMode);
   syncMode();
   const validityLabel = (h) => (h === 2 ? t('v_2h') : h === 168 ? t('v_7d') : t('v_48h'));
   qs('#f-inv').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const mode = qs('#inv-mode').value;
+    const multi = qs('#inv-kind').value === 'multi';
+    const mode = multi ? 'choose' : qs('#inv-mode').value;
     try {
       const r = await api('POST', '/api/admin/invites', {
         domain_id: qs('#inv-domain').value,
+        multi_use: multi,
         mailbox_mode: mode,
         local_part: mode === 'fixed' ? qs('#inv-lp').value.trim() : undefined,
         role: mode === 'fixed' ? qs('#inv-role').value : undefined,
-        email: qs('#inv-email').value || null,
+        // A hidden field still holds whatever was typed before the kind was switched; sending
+        // it would have the server refuse a link the form no longer claims to restrict
+        // 切换类型前填的东西还留在隐藏的输入框里,原样发过去会让服务端
+        // 拒绝一条表单已经不再声称要限定的链接
+        email: (!multi && qs('#inv-email').value) || null,
         expires_hours: qs('#inv-hours').value,
       });
       const m = showModal(`
         <h3 style="margin:0 0 8px">${esc(t('url_title'))}</h3>
         <p class="dim">${esc(t('url_note', validityLabel(r.expires_hours)))}</p>
+        ${r.multi_use ? `<p class="dim">${esc(t('inv_multi_note'))}</p>` : ''}
         <div class="invite-url" id="inv-url">${esc(r.url)}</div>
         <div class="modal-foot">
           <wa-button appearance="plain" id="iv-close">${esc(t('close'))}</wa-button>
