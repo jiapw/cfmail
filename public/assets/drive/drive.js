@@ -1396,7 +1396,7 @@ let pvPdf = null; // { task, io, gen } 当前预览中的 PDF 加载任务与懒
 function destroyPdfPreview() {
   if (!pvPdf) return;
   pvPdf.gen++;
-  pvPdf.io?.disconnect();
+  pvPdf.pager?.destroy();
   // v6: cleanup goes through the loading task (PDFDocumentProxy lost its destroy())
   // v6 的清理走 loading task(PDFDocumentProxy 已没有 destroy())
   pvPdf.task?.destroy?.().catch?.(() => {});
@@ -1405,7 +1405,7 @@ function destroyPdfPreview() {
 
 async function renderPdfPreview(node, box) {
   destroyPdfPreview();
-  const my = { task: null, io: null, gen: 0 };
+  const my = { task: null, pager: null, gen: 0 };
   pvPdf = my;
   const gen = my.gen;
   try {
@@ -1488,13 +1488,13 @@ async function renderPdfPreview(node, box) {
         holder.replaceChildren(c);
       } catch {}
     };
-    my.io = new IntersectionObserver((entries) => {
-      for (const e of entries) if (e.isIntersecting) renderPage(e.target);
-    }, { root: box, rootMargin: '600px' });
-    for (const d of box.children) my.io.observe(d);
-    // First pages paint immediately; the observer takes over from there
-    // 前几页立即渲染,后面的交给观察器
-    for (const d of [...box.children].slice(0, 2)) renderPage(d);
+    // Which page to rasterise next is a decision, not a queue: during a fast scroll the pages
+    // that swept past are dropped and the one the reader stopped on is taken first.
+    // 下一个光栅化哪一页是一项决策,而不是一条队列:快速滚动中掠过的那些页被丢掉,
+    // 读者停下来看的那一页最先被取。
+    const { lazyPages } = await import('./lazypage.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    if (pvPdf !== my || my.gen !== gen || !box.isConnected) return;
+    my.pager = lazyPages({ root: box, items: [...box.children], margin: 600, render: renderPage });
   } catch {
     if (pvPdf === my && box.isConnected) {
       box.innerHTML = `<div class="noprev" style="margin-top:60px">${fileIcon(node.name, 72)}<div>${esc(t('drv_no_preview'))}</div></div>`;
