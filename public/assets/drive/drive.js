@@ -40,6 +40,7 @@ const dst = {
   q: '',
   nodes: [],
   shown: [],             // 排序后的当前列表
+  folders: {},           // 搜索结果用:parent_id → 自根而下的路径 [{id,name}]
   path: [],
   access: 'owner',
   shareRoot: null,
@@ -244,6 +245,7 @@ async function loadView() {
     if (dst.view === 'my' || dst.view === 'folder') {
       const data = await api('GET', `/api/drive/list?parent=${encodeURIComponent(currentParent())}`);
       dst.nodes = data.nodes;
+      dst.folders = {};
       dst.path = data.path || [];
       dst.access = data.access || 'owner';
       dst.shareRoot = data.share_root || null;
@@ -259,6 +261,7 @@ async function loadView() {
       const ep = { recent: '/api/drive/recent', starred: '/api/drive/starred', trash: '/api/drive/trash', search: `/api/drive/search?q=${encodeURIComponent(dst.q)}` }[dst.view];
       const data = await api('GET', ep);
       dst.nodes = data.nodes;
+      dst.folders = data.folders || {};
       dst.path = [];
       dst.access = 'owner';
       dst.shareRoot = null;
@@ -306,6 +309,14 @@ function crumbsHtml() {
 
 function renderFolderView(main) {
   dst.shown = sortNodes(dst.nodes);
+  // Search answers from everywhere at once, so it is shown gathered by address. shown is
+  // rewritten in the grouped order and stays the one flat list every index refers to --
+  // shift-select, marquee and drag all keep counting through the headings as if they were air.
+  // 搜索是从四面八方一起答的,所以按地址归拢着显示。shown 按归拢后的顺序重写,
+  // 并且仍是那唯一一份、所有下标都指向它的扁平列表 —— 范围选择、框选、拖动
+  // 数过标题时就像数过空气一样。
+  const groups = dst.view === 'search' ? groupByFolder(dst.shown) : null;
+  if (groups) dst.shown = groups.flatMap((g) => g.nodes);
   const selN = dst.sel.size;
   const trashCtx = dst.view === 'trash' || dst.inTrash;
   const arrow = (k) => (dst.sort.key === k ? `<span class="arr">${dst.sort.dir > 0 ? '▲' : '▼'}</span>` : '');
@@ -323,7 +334,7 @@ function renderFolderView(main) {
 
   main.innerHTML = `<div id="drv-bar">${barHtml()}</div>${banner}${shareBanner}
     <div class="drv-scroll" id="drv-drop">
-      ${dst.shown.length ? (dst.layout === 'grid' ? gridHtml() : tableHtml(arrow)) : emptyHtml()}
+      ${dst.shown.length ? (dst.layout === 'grid' ? gridHtml(groups) : tableHtml(arrow, groups)) : emptyHtml()}
     </div>`;
   bindFolderView(main);
   // A "locate uploaded item" jump lands here: select the target and scroll it into view
@@ -692,9 +703,10 @@ function bindMarquee(box, main) {
     // 只要有新的按下,上一次拖动的账就算结清了;标志不可能残留到无关的下一次交互。
     marqueeJustDragged = false;
     if (e.button !== 0) return;
-    // Only from empty space -- pressing on an item belongs to click / dblclick / drag-move
-    // 只从空白处起手 —— 按在条目上属于点击/双击/拖动移动
-    if (e.target.closest('[data-id]') || e.target.closest('button, wa-button, a, input')) return;
+    // Only from empty space -- pressing on an item, or on a folder heading, belongs to
+    // click / dblclick / drag-move
+    // 只从空白处起手 —— 按在条目上、或按在文件夹标题上,属于点击/双击/拖动移动
+    if (e.target.closest('[data-id]') || e.target.closest('[data-gofolder]') || e.target.closest('button, wa-button, a, input')) return;
     start = { x: e.clientX, y: e.clientY, additive: e.ctrlKey || e.metaKey };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
@@ -732,15 +744,46 @@ function badgesHtml(n) {
   return out.length ? `<span class="drv-badges">${out.join('')}</span>` : '';
 }
 
-function tableHtml(arrow) {
+/** Search hits gathered under the folder that holds them. The folders come out in the order
+ *  their first hit does, so whatever the list is sorted by still decides what you read first.
+ *  搜索结果按所在文件夹归拢。文件夹之间按各自第一条命中的先后排列,
+ *  于是列表按什么排序,仍然决定你先读到什么。 */
+function groupByFolder(nodes) {
+  const by = new Map();
+  for (const n of nodes) {
+    const key = n.parent_id || '';
+    if (!by.has(key)) by.set(key, { id: n.parent_id || null, path: dst.folders[key] || null, nodes: [] });
+    by.get(key).nodes.push(n);
+  }
+  return [...by.values()];
+}
+
+/** The heading over one folder's hits, and the way into that folder.
+ *  一个文件夹那批命中之上的标题,同时也是进入该文件夹的入口。 */
+function groupHeadHtml(g) {
+  // A folder whose path did not arrive still opens; it just cannot spell out where it sits.
+  // 路径没送到的文件夹照样能打开,只是说不出自己在哪一层。
+  const crumbs = g.id && !g.path ? [{ name: '…' }] : (g.path || []);
+  const tail = crumbs.map((p) => `<span class="sep">${icon('next', 12)}</span><span>${esc(p.name)}</span>`).join('');
+  return `<div class="drv-ghead" data-gofolder="${esc(g.id || '')}" title="${esc(t('drv_open'))}">
+      ${icon('folder', 17)}<span class="pth"><span>${esc(t('drv_my'))}</span>${tail}</span>
+      <span class="cnt">${g.nodes.length}</span>
+    </div>`;
+}
+
+function tableHtml(arrow, groups) {
   const trashCtx = dst.view === 'trash';
-  const rows = dst.shown.map((n, i) => `
+  const row = (n, i) => `
     <tr class="drv-row ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}" draggable="true">
       <td><div class="drv-name">${nodeIconHtml(n)}<span class="nm">${esc(n.name)}</span>${badgesHtml(n)}</div></td>
       <td class="c-time drv-dim">${fmtDate(trashCtx ? n.updated_at : n.updated_at)}</td>
       <td class="drv-dim">${fmtSize(effSize(n))}</td>
       <td><wa-button class="icon rowbtn" appearance="plain" data-menu="${esc(n.id)}" aria-label="menu">${icon('dots-v', 18)}</wa-button></td>
-    </tr>`).join('');
+    </tr>`;
+  let i = 0;
+  const rows = groups
+    ? groups.map((g) => `<tr class="drv-ghead-row"><td colspan="4">${groupHeadHtml(g)}</td></tr>${g.nodes.map((n) => row(n, i++)).join('')}`).join('')
+    : dst.shown.map(row).join('');
   return `
   <table class="drv-table">
     <colgroup><col><col class="c-time"><col class="c-size"><col class="c-menu"></colgroup>
@@ -754,8 +797,8 @@ function tableHtml(arrow) {
   </table>`;
 }
 
-function gridHtml() {
-  return `<div class="drv-grid">${dst.shown.map((n, i) => {
+function gridHtml(groups) {
+  const card = (n, i) => {
     // Prefer the stored thumbnail. Images from before the thumbnail era still show full-size
     // (as they always did) and carry data-bf so the backfill can mint them a real one.
     // 优先用存好的缩略图。缩略图时代之前的图片仍显示原图(一直如此),并带上 data-bf
@@ -773,7 +816,12 @@ function gridHtml() {
       <div class="cap">${nodeIconHtml(n, 22)}<span class="nm" title="${esc(n.name)}">${esc(n.name)}</span>${badgesHtml(n)}
         <wa-button class="icon rowbtn" appearance="plain" data-menu="${esc(n.id)}" aria-label="menu">${icon('dots-v', 16)}</wa-button></div>
     </div>`;
-  }).join('')}</div>`;
+  };
+  let i = 0;
+  const cells = groups
+    ? groups.map((g) => `<div class="drv-ghead-cell">${groupHeadHtml(g)}</div>${g.nodes.map((n) => card(n, i++)).join('')}`).join('')
+    : dst.shown.map(card).join('');
+  return `<div class="drv-grid">${cells}</div>`;
 }
 
 function emptyHtml() {
@@ -811,6 +859,8 @@ function bindFolderView(main) {
     // 框选拖动结束后残留的那次 click,不拦掉会落在空白处、把刚框中的清空。
     if (marqueeJustDragged) { marqueeJustDragged = false; return; }
     if (e.target.closest('[data-menu]')) return;
+    const gh = e.target.closest('[data-gofolder]');
+    if (gh) return navigate(gh.dataset.gofolder ? `#/drive/folder/${gh.dataset.gofolder}` : '#/drive');
     const row = e.target.closest('[data-id]');
     if (!row) {
       dst.sel.clear();
@@ -1005,6 +1055,19 @@ function emptyMenuItems() {
   ];
 }
 
+/** Views whose items live somewhere else than the view itself / 条目并不住在视图本身的那些视图 */
+const LOCATABLE = new Set(['search', 'recent', 'starred']);
+
+/** Land on the folder that holds a node, with the node selected and scrolled to.
+ *  落到某个节点所在的文件夹,选中它并滚动到它。 */
+function gotoNode(itemId, folderId) {
+  if (!itemId) return;
+  dst.selectAfterLoad = itemId;
+  const hash = folderId && folderId !== 'root' ? `#/drive/folder/${folderId}` : '#/drive';
+  if (location.hash === hash) reload(); // already there -- re-list so the item is fresh / 已在此,重列
+  else navigate(hash);
+}
+
 function menuItems(nodes) {
   if (!nodes.length) return emptyMenuItems();
   const single = nodes.length === 1 ? nodes[0] : null;
@@ -1024,6 +1087,13 @@ function menuItems(nodes) {
       ? { ic: 'folder', label: t('drv_open'), fn: () => openNode(single) }
       : { ic: 'expand', label: t('drv_preview'), fn: () => openPreview(single) });
     if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
+    // The views that answer from everywhere at once owe you the address. In a folder you are
+    // already standing in it, so the offer would be to go where you are.
+    // 那些一次从四面八方作答的视图,欠你一个地址。在文件夹里你本来就站在那儿,
+    // 这个入口只会请你去你已经在的地方。
+    if (LOCATABLE.has(dst.view)) {
+      out.push({ ic: 'folder', label: t('drv_up_locate'), fn: () => gotoNode(single.id, single.parent_id) });
+    }
     out.push('-');
     if (canEdit && !editorOnRoot) out.push({ ic: 'pencil', label: t('drv_rename'), fn: () => renameDialog(single) });
   }
@@ -2521,13 +2591,8 @@ function renderUpPanel() {
  *  top-level folder it created; a single file's item is the file itself.
  *  跳到已完成上传所在的文件夹并选中该项。组任务的项是它建的顶层文件夹;单文件的项是文件本身。 */
 function locateTask(task) {
-  const itemId = task.group ? task.topId : task.node?.id;
-  const folderId = task.group ? task.parent : (task.node?.parent_id || 'root');
-  if (!itemId) return;
-  dst.selectAfterLoad = itemId;
-  const hash = folderId && folderId !== 'root' ? `#/drive/folder/${folderId}` : '#/drive';
-  if (location.hash === hash) reload(); // already there -- re-list so the item is fresh / 已在此,重列
-  else navigate(hash);
+  if (task.group) gotoNode(task.topId, task.parent);
+  else gotoNode(task.node?.id, task.node?.parent_id || 'root');
 }
 
 function paintTask(task) {
