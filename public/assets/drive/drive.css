@@ -249,6 +249,34 @@
    不留起始空白:内容与路径栏的下沿齐平,正如邮件的列表与写邮件按钮的下沿齐平。
    两侧从同一条线开始,左栏第一个导航项则保留它自己在按钮下方的间距。 */
 .drv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
+
+/* ---------- Folder headings over search results ---------- */
+/* ---------- 搜索结果上方的文件夹标题 ---------- */
+/* A hit only means something once you know where it lives, so the address heads its own block
+   -- and since the address is already written out, it may as well be the door into that folder.
+   命中要知道它住在哪才有意义,所以地址领起属于它的那一段 ——
+   既然地址都写出来了,它不妨就是通往那个文件夹的门。 */
+.drv-ghead {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  margin: 14px 0 2px; padding: 4px 8px; border-radius: 8px;
+  font-size: 12.5px; color: var(--text-2); cursor: pointer; user-select: none;
+}
+.drv-ghead:hover { background: var(--hover); color: var(--text); }
+.drv-ghead wa-icon { flex: none; color: var(--text-3); }
+.drv-ghead:hover wa-icon { color: inherit; }
+.drv-ghead .pth { display: flex; align-items: center; gap: 1px; min-width: 0; white-space: nowrap; }
+.drv-ghead .pth > span { overflow: hidden; text-overflow: ellipsis; }
+/* The last name is the folder itself -- let it keep its full width and squeeze the ancestors */
+/* 最后一个名字是文件夹本身 —— 让它保留完整宽度,挤压前面的祖先 */
+.drv-ghead .pth > span:last-child { flex: none; max-width: 100%; }
+.drv-ghead .sep { display: inline-flex; flex: none; color: var(--text-3); }
+.drv-ghead .cnt { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* Full-bleed in both layouts: one grid row of its own, one table row spanning every column */
+/* 两种布局下都通栏:网格里独占一行,表格里横跨所有列 */
+.drv-ghead-cell { grid-column: 1 / -1; }
+.drv-ghead-row td { padding: 0; }
+.drv-ghead-row:first-child .drv-ghead,
+.drv-grid > .drv-ghead-cell:first-child .drv-ghead { margin-top: 6px; }
 .drv-card {
   border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: default;
   user-select: none; background: var(--panel);

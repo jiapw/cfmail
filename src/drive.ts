@@ -100,6 +100,11 @@ async function checkQuota(env: Env, ownerId: string, add: number): Promise<void>
 // ---------- Tree and permission helpers ----------
 // ---------- 目录树与权限 ----------
 
+/** A folder's address: its ancestors and itself, root first. The Drive root is not in it -- it
+ *  has no row, and every path implicitly starts there.
+ *  一个文件夹的地址:自根而下的祖先加它自己。网盘根不在其中 —— 它没有行,而每条路径都从那里起步。 */
+type FolderPath = { id: string; name: string }[];
+
 /** The node and all its ancestors, node first, root last. Empty when the id does not exist.
  *  节点及其全部祖先,节点在前、根在后。id 不存在时为空。 */
 async function chainOf(env: Env, nodeId: string): Promise<NodeRow[]> {
@@ -255,8 +260,12 @@ async function findClash(env: Env, ownerId: string, parentId: string | null, nam
 
 /** Drop rows whose ancestors include a trashed folder (used by search/starred/recent, where the
  *  query alone cannot see implicit trash membership). Chain lookups are memoised per parent.
- *  过滤掉祖先在回收站里的行(搜索/星标/最近用 —— 单条查询看不出"隐式在回收站")。按父节点缓存。 */
-async function dropTrashedAncestors(env: Env, rows: any[]): Promise<any[]> {
+ *  Pass `paths` to also collect each folder's root-first name path: the chains are already being
+ *  fetched for the trash check, so the addresses cost nothing beyond the copying.
+ *  过滤掉祖先在回收站里的行(搜索/星标/最近用 —— 单条查询看不出"隐式在回收站")。按父节点缓存。
+ *  传入 `paths` 可顺带收集每个文件夹自根而下的名字路径:祖先链本来就为回收站检查取过了,
+ *  这些地址除了拷贝之外不多花任何代价。 */
+async function dropTrashedAncestors(env: Env, rows: any[], paths?: Map<string, FolderPath>): Promise<any[]> {
   const bad = new Map<string, boolean>();
   const out: any[] = [];
   for (const r of rows) {
@@ -265,9 +274,17 @@ async function dropTrashedAncestors(env: Env, rows: any[]): Promise<any[]> {
     if (!bad.has(r.parent_id)) {
       const chain = await chainOf(env, r.parent_id);
       let b = !chain.length;
+      // The chain arrives node-first; walking it backwards is walking down from the root, which
+      // is both the order the trash flag propagates and the order a path is read.
+      // 链是"节点在前"送来的;倒着走就是自根而下 —— 既是回收站标记传播的方向,也是路径读出来的顺序。
+      const acc: FolderPath = [];
       for (let i = chain.length - 1; i >= 0; i--) {
         b = b || !!chain[i].trashed;
         bad.set(chain[i].id, b);
+        if (paths) {
+          acc.push({ id: chain[i].id, name: chain[i].name });
+          paths.set(chain[i].id, [...acc]);
+        }
       }
       if (!chain.length) bad.set(r.parent_id, true);
     }
@@ -437,8 +454,16 @@ driveApp.get('/search', async (c) => {
      WHERE n.owner_id=?1 AND n.trashed=0 AND n.name LIKE ?2 ESCAPE '\\'
      ORDER BY n.updated_at DESC LIMIT 200`
   ).bind(c.get('user').id, like).all();
-  const vis = await dropTrashedAncestors(c.env, rows.results || []);
-  return c.json({ nodes: vis.map((n) => nodeJson(n)) });
+  // Hits scatter across the whole drive, so each one has to say where it lives. The addresses
+  // travel once per folder rather than once per hit -- a query that matches thirty files in the
+  // same folder repeats that folder's path thirty times otherwise.
+  // 命中散落在整个网盘里,所以每一条都得说清自己住在哪。地址按文件夹发一次,而不是按命中发一次 ——
+  // 否则一次命中同一文件夹三十个文件的搜索,就要把那个文件夹的路径重复三十遍。
+  const paths = new Map<string, FolderPath>();
+  const vis = await dropTrashedAncestors(c.env, rows.results || [], paths);
+  const folders: Record<string, FolderPath> = {};
+  for (const n of vis) if (n.parent_id && paths.has(n.parent_id)) folders[n.parent_id] = paths.get(n.parent_id)!;
+  return c.json({ nodes: vis.map((n) => nodeJson(n)), folders });
 });
 
 driveApp.get('/starred', async (c) => {
