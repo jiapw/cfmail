@@ -17,7 +17,42 @@
 // 单元格全解析一遍。与 pptx 同一个道理:工作量按"真正读到的部件"衡量,绝不按文件大小 ——
 // 这里的大小主要是解析器根本不碰的内嵌图片。
 
-import { unzip } from './unzip.js';
+import { httpSource, memSource, openZip } from './rzip.js';
+
+/** A ranged source over a local File, for the thumbnail path -- which holds a File, not a URL.
+ *  Same shape httpSource gives, so the workbook reader cannot tell them apart.
+ *  本地 File 上的 Range 源,给缩略图那条路径 —— 它手里是 File 而不是 URL。
+ *  形状与 httpSource 给的一致,工作簿读取器分辨不出两者。 */
+export const fileSource = (file) => ({
+  size: file.size,
+  async read(off, len) {
+    return new Uint8Array(await file.slice(off, Math.min(off + len, file.size)).arrayBuffer());
+  },
+});
+
+export { httpSource, memSource };
+
+// No single part of a workbook should be this big; one that is has stopped being a spreadsheet.
+// 工作簿的任何单个部件都不该这么大;真有那么大的,它已经不是一张电子表格了。
+const PART_CAP = 64 * 1024 * 1024;
+
+/** One part's bytes, or null when it is not in the package. Every read is a Range request
+ *  against the entry's own byte span -- nothing else in the file is touched.
+ *  某个部件的字节,不在包里则为 null。每次读取都是针对该条目自身字节区间的 Range 请求 ——
+ *  文件里的其它部分一概不碰。 */
+async function part(zip, path) {
+  const e = zip.stat(path);
+  if (!e || e.isDir) return null;
+  try {
+    return (await zip.extract(e, PART_CAP)).bytes;
+  } catch {
+    return null;
+  }
+}
+const partText = async (zip, path) => {
+  const b = await part(zip, path);
+  return b ? new TextDecoder().decode(b) : null;
+};
 
 // A preview is something you glance at, not a spreadsheet application. These caps are what
 // keep a 200k-row export from locking the tab while it builds a table nobody will scroll.
@@ -68,10 +103,10 @@ const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationsh
  *  都要经过它,而目标都是相对路径。 */
 async function relsOf(zip, partPath) {
   const dir = partPath.slice(0, partPath.lastIndexOf('/'));
-  const entry = zip.get(`${dir}/_rels/${partPath.slice(dir.length + 1)}.rels`);
+  const xml = await partText(zip, `${dir}/_rels/${partPath.slice(dir.length + 1)}.rels`);
   const map = new Map();
-  if (!entry) return map;
-  for (const r of kids(parseXml(await entry.text()).documentElement, 'Relationship')) {
+  if (!xml) return map;
+  for (const r of kids(parseXml(xml).documentElement, 'Relationship')) {
     const t = r.getAttribute('Target') || '';
     map.set(r.getAttribute('Id'), t.startsWith('/') ? t.slice(1) : norm(`${dir}/${t}`));
   }
@@ -321,17 +356,17 @@ export function fmtCell(v, code, base1904) {
  * 打开一个工作簿。头部件立刻读,工作表按需读。
  * @returns {Promise<{sheets: {name: string}[], read(i: number): Promise<object>}|null>}
  */
-export async function xlsxOpen(buf, keepUrl) {
+export async function xlsxOpen(source, keepUrl) {
   let zip;
   try {
-    zip = unzip(buf);
+    zip = await openZip(source);
   } catch {
     return null;
   }
-  const wbEntry = zip.get('xl/workbook.xml');
-  if (!wbEntry) return null;
+  const wbXml = await partText(zip, 'xl/workbook.xml');
+  if (!wbXml) return null;
 
-  const wb = parseXml(await wbEntry.text());
+  const wb = parseXml(wbXml);
   const base1904 = /date1904="(1|true)"/i.test(kid(wb.documentElement, 'workbookPr')?.outerHTML || '');
 
   // Sheet order and names come from workbook.xml; the file each one lives in comes from the
@@ -339,9 +374,9 @@ export async function xlsxOpen(buf, keepUrl) {
   // 表的顺序与名称取自 workbook.xml;每张表实际在哪个文件里,要靠关系 id 查 ——
   // sheetN.xml 并不可靠地就是第 N 张表。
   const rels = new Map();
-  const relEntry = zip.get('xl/_rels/workbook.xml.rels');
-  if (relEntry) {
-    for (const r of kids(parseXml(await relEntry.text()).documentElement, 'Relationship')) {
+  const relXml = await partText(zip, 'xl/_rels/workbook.xml.rels');
+  if (relXml) {
+    for (const r of kids(parseXml(relXml).documentElement, 'Relationship')) {
       rels.set(r.getAttribute('Id'), r.getAttribute('Target').replace(/^\/?xl\//, '').replace(/^\.\//, ''));
     }
   }
@@ -354,9 +389,16 @@ export async function xlsxOpen(buf, keepUrl) {
     .filter((s) => !s.hidden);
   if (!sheets.length) return null;
 
-  const theme = zip.get('xl/theme/theme1.xml') ? themeColors(await zip.get('xl/theme/theme1.xml').text()) : null;
-  const shared = zip.get('xl/sharedStrings.xml') ? sharedStrings(await zip.get('xl/sharedStrings.xml').text()) : [];
-  const styles = zip.get('xl/styles.xml') ? parseStyles(await zip.get('xl/styles.xml').text(), theme) : { xfs: [], fmts: new Map() };
+  // The only parts read to open a workbook: a couple of kilobytes of names, the string pool
+  // and the style table. The worksheets -- and the pictures -- wait until someone asks.
+  // 打开一个工作簿只读这几个部件:几 KB 的名称、字符串池、样式表。
+  // 工作表 —— 以及图片 —— 要等有人开口才读。
+  const themeXml = await partText(zip, 'xl/theme/theme1.xml');
+  const sharedXml = await partText(zip, 'xl/sharedStrings.xml');
+  const stylesXml = await partText(zip, 'xl/styles.xml');
+  const theme = themeXml ? themeColors(themeXml) : null;
+  const shared = sharedXml ? sharedStrings(sharedXml) : [];
+  const styles = stylesXml ? parseStyles(stylesXml, theme) : { xfs: [], fmts: new Map() };
   const ctx = { shared, styles, base1904 };
 
   const cache = new Map();
@@ -365,8 +407,8 @@ export async function xlsxOpen(buf, keepUrl) {
     async read(i) {
       if (cache.has(i)) return cache.get(i);
       const path = sheets[i]?.path;
-      const entry = zip.get(path);
-      const grid = entry ? parseSheet(await entry.text(), ctx) : null;
+      const xml = path ? await partText(zip, path) : null;
+      const grid = xml ? parseSheet(xml, ctx) : null;
       // Pictures are their own part, referenced from the sheet -- and only worth inflating for
       // a caller that can hold the blob URLs and release them again.
       // 图片是独立部件,由工作表引用 —— 且只有在调用方能持有 blob URL 并负责释放时才值得解压。
@@ -400,10 +442,10 @@ const IMG_TOTAL = 48 * 1024 * 1024;
 async function readDrawing(zip, sheetPath, relId, keepUrl) {
   const sheetRels = await relsOf(zip, sheetPath);
   const drawPath = sheetRels.get(relId);
-  const entry = drawPath && zip.get(drawPath);
-  if (!entry) return [];
+  const drawXml = drawPath && await partText(zip, drawPath);
+  if (!drawXml) return [];
   const drawRels = await relsOf(zip, drawPath);
-  const doc = parseXml(await entry.text());
+  const doc = parseXml(drawXml);
   const out = [];
   let spent = 0;
   for (let a = doc.documentElement.firstElementChild; a; a = a.nextElementSibling) {
@@ -415,8 +457,8 @@ async function readDrawing(zip, sheetPath, relId, keepUrl) {
     const pic = kid(a, 'pic');
     const blip = kid(kid(pic, 'blipFill'), 'blip');
     const target = blip && drawRels.get(blip.getAttributeNS(REL_NS, 'embed'));
-    const media = target && zip.get(target);
-    if (!media || media.size > IMG_MAX || spent + media.size > IMG_TOTAL) continue;
+    const media = target && zip.stat(target);
+    if (!media || media.isDir || media.size > IMG_MAX || spent + media.size > IMG_TOTAL) continue;
     let w = 0;
     let h = 0;
     const extent = kid(a, 'ext');
@@ -430,7 +472,8 @@ async function readDrawing(zip, sheetPath, relId, keepUrl) {
     spent += media.size;
     const type = /\.png$/i.test(target) ? 'image/png' : /\.gif$/i.test(target) ? 'image/gif'
       : /\.webp$/i.test(target) ? 'image/webp' : 'image/jpeg';
-    out.push({ r, c, w: Math.round(w) || 0, h: Math.round(h) || 0, url: keepUrl(new Blob([await media.bytes()], { type })) });
+    const bytes = (await zip.extract(media, IMG_MAX)).bytes;
+    out.push({ r, c, w: Math.round(w) || 0, h: Math.round(h) || 0, url: keepUrl(new Blob([bytes], { type })) });
   }
   return out;
 }

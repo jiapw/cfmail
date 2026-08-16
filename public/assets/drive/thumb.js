@@ -442,7 +442,11 @@ async function fromSheet(file) {
   if (e === 'csv' || e === 'tsv' || e === 'tab') {
     grid = mod.delimitedGrid(mod.decodeText(await file.slice(0, 256 * 1024).arrayBuffer()), e);
   } else {
-    const book = await mod.xlsxOpen(await file.arrayBuffer());
+    // Ranged over the File itself: a thumbnail of an 80 MB workbook reads its directory and
+    // one worksheet, not eighty megabytes.
+    // 直接在 File 上按 Range 读:一本 80 MB 工作簿的缩略图,读的是它的目录和一张工作表,
+    // 而不是八十兆字节。
+    const book = await mod.xlsxOpen(mod.fileSource(file));
     if (book) grid = await book.read(0);
   }
   if (!grid || !grid.rows.length) return null;

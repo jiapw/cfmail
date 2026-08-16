@@ -27,11 +27,6 @@ const DOC_CAP = 80 * 1024 * 1024;  // parseable document ceiling / 可解析文�
 // pptx 的体积常被内嵌字体和视频撑大。而惰性解压根本不会去读那些字节。
 // 按总大小一刀切会错杀完全可渲染的文件。光字体就能有 60MB+
 const PPTX_CAP = 300 * 1024 * 1024;
-// A workbook is mostly its pictures too: the sample that prompted this is 79 MB of which 78 is
-// embedded photographs the parser never opens. Judge it by the same rule as a deck.
-// 工作簿的体积同样大半是图片:促成这项支持的样本共 79 MB,其中 78 MB 是解析器根本不打开的
-// 内嵌照片。与幻灯片同一把尺子。
-const XLSX_CAP = 300 * 1024 * 1024;
 // Delimited text is fetched by Range, never whole: a million-row export is a download, not a
 // preview, and the first few thousand rows answer the question either way.
 // 带分隔符的文本按 Range 取,绝不整取:百万行的导出属于下载而非预览,
@@ -163,10 +158,22 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         const grid = mod.delimitedGrid(mod.decodeText(await r.arrayBuffer()), e);
         book = { sheets: [{ name: node.name }], read: async () => grid };
       } else {
-        if (node.size > XLSX_CAP) { box.innerHTML = noprev(node); return { destroy }; }
-        const r = await fetch(inlineUrl);
-        if (!r.ok) throw new Error('fetch');
-        book = await mod.xlsxOpen(await r.arrayBuffer(), keepUrl);
+        // Ranged, never whole: opening reads the tail for the directory, then the handful of
+        // small parts that name the sheets. The 79 MB sample answers in a few hundred kilobytes
+        // and pulls a worksheet -- or a picture -- only when one is actually looked at.
+        // 按 Range 读,绝不整取:打开时读文件尾取目录,再读那几个说明"有哪些表"的小部件。
+        // 79 MB 的样本几百 KB 就能作答,只有当某张表、某张图真被看时才去拉它。
+        // A blob URL is already bytes in this tab, and Chrome answers Range on one by handing
+        // back the whole thing -- twelve ranged reads would fetch it twelve times over. Read it
+        // once and range over memory. Everything else, including an archive entry served by the
+        // streaming worker, ranges over the network as intended.
+        // blob URL 的字节已经在本标签页里,而 Chrome 对它的 Range 请求是把整份还回来 ——
+        // 十二次 Range 读会把它整取十二遍。读一次,然后在内存上做 Range。
+        // 其余情形(包括由流式 worker 供给的压缩包内条目)照常在网络上按 Range 读。
+        const src = inlineUrl.startsWith('blob:')
+          ? mod.memSource(new Uint8Array(await (await fetch(inlineUrl)).arrayBuffer()))
+          : mod.httpSource(inlineUrl, node.size);
+        book = await mod.xlsxOpen(src, keepUrl);
       }
       if (!book || dead()) {
         if (!dead()) box.innerHTML = noprev(node);
