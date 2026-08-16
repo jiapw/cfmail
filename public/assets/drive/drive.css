@@ -358,6 +358,11 @@
   animation: drvspin .8s linear infinite;
 }
 @keyframes drvspin { to { transform: rotate(360deg); } }
+/* The sentinel at the foot of a windowed text file: it is what the observer watches, so it has
+   to have height even while it says nothing.
+   分窗文本文件底部的哨兵:观察器盯的就是它,所以哪怕它什么都不说,也必须有高度。 */
+.drv-textmore { min-height: 28px; padding: 8px 4px 2px; font-size: 12.5px; text-align: center; }
+
 /* ---------- Spreadsheet preview ---------- */
 /* ---------- 电子表格预览 ---------- */
 /* The grid scrolls inside the document window on both axes: a sheet is wider than the page far

@@ -4767,3 +4767,13 @@ Object.assign(DICTS.de, { drv_sheet_cut: 'Nur die ersten {0} Zeilen' });
 Object.assign(DICTS.fr, { drv_sheet_cut: 'Seules les {0} premières lignes' });
 Object.assign(DICTS.es, { drv_sheet_cut: 'Solo las primeras {0} filas' });
 Object.assign(DICTS.ru, { drv_sheet_cut: 'Показаны первые {0} строк' });
+
+Object.assign(DICTS['zh-CN'], { drv_text_read: '已读 {0} / {1}' });
+Object.assign(DICTS['zh-TW'], { drv_text_read: '已讀 {0} / {1}' });
+Object.assign(DICTS.en, { drv_text_read: '{0} of {1} read' });
+Object.assign(DICTS.ja, { drv_text_read: '{1} 中 {0} を読み込み' });
+Object.assign(DICTS.ko, { drv_text_read: '{1} 중 {0} 읽음' });
+Object.assign(DICTS.de, { drv_text_read: '{0} von {1} gelesen' });
+Object.assign(DICTS.fr, { drv_text_read: '{0} sur {1} lus' });
+Object.assign(DICTS.es, { drv_text_read: '{0} de {1} leídos' });
+Object.assign(DICTS.ru, { drv_text_read: 'Прочитано {0} из {1}' });
