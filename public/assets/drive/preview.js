@@ -13,6 +13,7 @@ import { renderMarkdown } from '../chat/markdown.js';
 import { store } from '../app.js';
 import { docxParse, drawioDraw, drawioPages, ext as extOf, kindOf, mhtmlParse } from './doc.js';
 import { httpSource, memSource } from './rzip.js';
+import { lazyPages } from './lazypage.js';
 
 /** A ranged source for an OOXML package behind a URL. A blob URL is already bytes in this tab,
  *  and Chrome answers Range on one by handing back the whole thing -- a dozen ranged reads
@@ -252,13 +253,12 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // parsed and only their pictures are fetched.
       // 每页先放一个形状正确的占位，进入视野才填。第一帧起整套幻灯片就可滚动，
       // 但只有被看到的那几页会被解析，也只有它们的图片会被取下来。
-      // The placeholder waits in the deck's own colour with a spinner on it. A slide can take a
-      // second or two to parse and fetch its pictures, and an empty white rectangle says
-      // "finished, and blank" where a spinner says "still coming".
-      // 占位块用整套幻灯片自己的底色等待，上面放一个加载动画。
-      // 一页的解析与取图可能要一两秒，而一块空白矩形说的是“完了，但是空的”，
-      // 加载动画说的才是“还在来”。
-      const slideStyle = `aspect-ratio:${deck.w} / ${deck.h}${deck.bg ? `;background:${deck.bg}` : ''}`;
+      // The placeholder wears the interface's own surface colour, not the deck's. A page not
+      // read yet belongs to the application, not to the document -- dressing it in the
+      // document's colours claims to be showing something nobody has looked at.
+      // 占位块穿的是界面自己的表面色,而不是幻灯片的。尚未读取的一页属于应用而不属于文档 ——
+      // 给它穿上文档的颜色,等于声称展示了一个还没人看过的东西。
+      const slideStyle = `aspect-ratio:${deck.w} / ${deck.h}`;
       for (let i = 0; i < deck.count; i++) {
         const holder = document.createElement('div');
         holder.className = 'drv-slidewrap';
@@ -280,18 +280,12 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         const el = await slideEl(slide, deck, keepUrl);
         if (!dead() && holder.isConnected) holder.replaceWith(el);
       };
-      const io = new IntersectionObserver((entries) => {
-        for (const e of entries) if (e.isIntersecting) fill(e.target);
-        // The document window is the element that scrolls, so it is the observer's root; the
-        // viewport would only fire for whatever happens to be on screen behind the overlay.
-        // 滚动的是文档窗口那一层,所以观察器以它为 root;拿视口当 root,
-        // 只会对"恰好在遮罩后面露出来的东西"触发。
-      }, { root: w, rootMargin: '900px' });
-      for (const h of w.children) io.observe(h);
-      // The first two are drawn without waiting to be scrolled to
-      // 头两页不等滚动，直接画出来
-      for (const h of [...w.children].slice(0, 2)) await fill(h);
-      urls.push({ revoke: () => io.disconnect() });
+      // Which slide to build next is a decision, not a queue: during a fast scroll the slides
+      // that swept past are dropped and the one the reader stopped on is taken first.
+      // 下一页建哪一页是一项决策,而不是一条队列:快速滚动中掠过的那些页被丢掉,
+      // 读者停下来看的那一页最先被取。
+      const pager = lazyPages({ root: w, items: [...w.children], margin: 900, render: fill });
+      urls.push({ revoke: () => pager.destroy() });
       return { destroy };
     }
 
