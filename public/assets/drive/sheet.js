@@ -17,42 +17,14 @@
 // 单元格全解析一遍。与 pptx 同一个道理:工作量按"真正读到的部件"衡量,绝不按文件大小 ——
 // 这里的大小主要是解析器根本不碰的内嵌图片。
 
-import { httpSource, memSource, openZip } from './rzip.js';
+import { fileSource, httpSource, memSource, openZip, zipText } from './rzip.js';
 
-/** A ranged source over a local File, for the thumbnail path -- which holds a File, not a URL.
- *  Same shape httpSource gives, so the workbook reader cannot tell them apart.
- *  本地 File 上的 Range 源,给缩略图那条路径 —— 它手里是 File 而不是 URL。
- *  形状与 httpSource 给的一致,工作簿读取器分辨不出两者。 */
-export const fileSource = (file) => ({
-  size: file.size,
-  async read(off, len) {
-    return new Uint8Array(await file.slice(off, Math.min(off + len, file.size)).arrayBuffer());
-  },
-});
-
-export { httpSource, memSource };
+export { fileSource, httpSource, memSource };
 
 // No single part of a workbook should be this big; one that is has stopped being a spreadsheet.
 // 工作簿的任何单个部件都不该这么大;真有那么大的,它已经不是一张电子表格了。
 const PART_CAP = 64 * 1024 * 1024;
-
-/** One part's bytes, or null when it is not in the package. Every read is a Range request
- *  against the entry's own byte span -- nothing else in the file is touched.
- *  某个部件的字节,不在包里则为 null。每次读取都是针对该条目自身字节区间的 Range 请求 ——
- *  文件里的其它部分一概不碰。 */
-async function part(zip, path) {
-  const e = zip.stat(path);
-  if (!e || e.isDir) return null;
-  try {
-    return (await zip.extract(e, PART_CAP)).bytes;
-  } catch {
-    return null;
-  }
-}
-const partText = async (zip, path) => {
-  const b = await part(zip, path);
-  return b ? new TextDecoder().decode(b) : null;
-};
+const partText = (zip, path) => zipText(zip, path, PART_CAP);
 
 // A preview is something you glance at, not a spreadsheet application. These caps are what
 // keep a 200k-row export from locking the tab while it builds a table nobody will scroll.

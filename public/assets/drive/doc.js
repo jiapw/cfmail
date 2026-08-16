@@ -5,7 +5,17 @@
 // 网盘预览与缩略图共用的文档解析层:类型判定、docx/pptx 解包(走 unzip.js,零依赖)、
 // drawio 解压与绘制、mhtml 复用已自托管的 postal-mime。所有函数都保守处理 ——
 // 解析失败等于"没有预览",绝不炸页面。
-import { unzip } from './unzip.js';
+import { openZip, zipText } from './rzip.js';
+
+// A .docx keeps its whole text in one part, word/document.xml, and its pictures in another the
+// text parser never opens. Read by ranges, that means a 50 MB document costs its central
+// directory plus a couple of hundred kilobytes of XML -- the photographs are simply not
+// fetched. There is nothing to paginate: pages are something Word computes when it lays the
+// document out, and the file has no notion of them at all.
+// 一份 .docx 把全部正文放在 word/document.xml 这一个部件里,图片放在另一个 —— 文本解析器
+// 从不打开它。按 Range 读,一份 50 MB 的文档只需付出中央目录加两百来 KB 的 XML,
+// 照片根本不会被取下来。这里没有"分页"可做:页是 Word 排版时算出来的,文件里没有这个概念。
+const DOCX_CAP = 32 * 1024 * 1024;
 
 // ---------- Type detection ----------
 // ---------- 类型判定 ----------
@@ -96,12 +106,12 @@ const NS = (root, local) => [...root.getElementsByTagNameNS('*', local)];
  * 从 word/document.xml 抽段落模型。读得下去就够:标题层级、粗斜体、列表圆点、简单表格。
  * @returns {Promise<{blocks: any[], text: string}|null>}
  */
-export async function docxParse(buf) {
+export async function docxParse(source) {
   try {
-    const zip = unzip(buf);
-    const docEntry = zip.get('word/document.xml');
-    if (!docEntry) return null;
-    const xml = new DOMParser().parseFromString(await docEntry.text(), 'application/xml');
+    const zip = await openZip(source);
+    const docXml = await zipText(zip, 'word/document.xml', DOCX_CAP);
+    if (!docXml) return null;
+    const xml = new DOMParser().parseFromString(docXml, 'application/xml');
     const body = NS(xml, 'body')[0];
     if (!body) return null;
     const blocks = [];

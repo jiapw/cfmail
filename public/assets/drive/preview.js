@@ -12,6 +12,23 @@ import { t } from '../i18n.js';
 import { renderMarkdown } from '../chat/markdown.js';
 import { store } from '../app.js';
 import { docxParse, drawioDraw, drawioPages, ext as extOf, kindOf, mhtmlParse } from './doc.js';
+import { httpSource, memSource } from './rzip.js';
+
+/** A ranged source for an OOXML package behind a URL. A blob URL is already bytes in this tab,
+ *  and Chrome answers Range on one by handing back the whole thing -- a dozen ranged reads
+ *  would fetch it a dozen times over -- so it is read once and ranged over memory. Everything
+ *  else, including an archive entry served by the streaming worker, ranges over the network as
+ *  intended.
+ *  给"藏在 URL 之后的 OOXML 包"的 Range 源。blob URL 的字节已经在本标签页里,
+ *  而 Chrome 对它的 Range 请求是把整份还回来 —— 十几次 Range 读会把它整取十几遍 ——
+ *  所以读一次,然后在内存上做 Range。其余情形(包括由流式 worker 供给的压缩包内条目)
+ *  照常在网络上按 Range 读。 */
+async function zipSource(url, size) {
+  if (url.startsWith('blob:')) {
+    return memSource(new Uint8Array(await (await fetch(url)).arrayBuffer()));
+  }
+  return httpSource(url, size);
+}
 
 export { kindOf };
 
@@ -108,9 +125,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
     }
 
     if (kind === 'docx') {
-      const r = await fetch(inlineUrl);
-      if (!r.ok) throw new Error('fetch');
-      const parsed = await docxParse(await r.arrayBuffer());
+      const parsed = await docxParse(await zipSource(inlineUrl, node.size));
       if (!parsed || dead()) {
         if (!dead()) box.innerHTML = noprev(node);
         return { destroy };
@@ -163,17 +178,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         // and pulls a worksheet -- or a picture -- only when one is actually looked at.
         // 按 Range 读,绝不整取:打开时读文件尾取目录,再读那几个说明"有哪些表"的小部件。
         // 79 MB 的样本几百 KB 就能作答,只有当某张表、某张图真被看时才去拉它。
-        // A blob URL is already bytes in this tab, and Chrome answers Range on one by handing
-        // back the whole thing -- twelve ranged reads would fetch it twelve times over. Read it
-        // once and range over memory. Everything else, including an archive entry served by the
-        // streaming worker, ranges over the network as intended.
-        // blob URL 的字节已经在本标签页里,而 Chrome 对它的 Range 请求是把整份还回来 ——
-        // 十二次 Range 读会把它整取十二遍。读一次,然后在内存上做 Range。
-        // 其余情形(包括由流式 worker 供给的压缩包内条目)照常在网络上按 Range 读。
-        const src = inlineUrl.startsWith('blob:')
-          ? mod.memSource(new Uint8Array(await (await fetch(inlineUrl)).arrayBuffer()))
-          : mod.httpSource(inlineUrl, node.size);
-        book = await mod.xlsxOpen(src, keepUrl);
+        book = await mod.xlsxOpen(await zipSource(inlineUrl, node.size), keepUrl);
       }
       if (!book || dead()) {
         if (!dead()) box.innerHTML = noprev(node);

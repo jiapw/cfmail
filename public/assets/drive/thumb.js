@@ -17,6 +17,7 @@
 
 import { store } from '../app.js';
 import { docxParse, drawioDraw, drawioPages, ext, htmlText, kindOf, mhtmlParse } from './doc.js';
+import { fileSource } from './rzip.js';
 
 // The pptx engine loads only when a pptx thumbnail is actually being made
 // pptx 引擎只在真的要做 pptx 缩略图时才加载
@@ -338,7 +339,7 @@ async function fromText(file, mono) {
 // ---------- docx / pptx / html / mhtml / svg / drawio ----------
 
 async function fromDocx(file) {
-  const parsed = await docxParse(await file.arrayBuffer());
+  const parsed = await docxParse(fileSource(file));
   return parsed ? typesetText(parsed.text.slice(0, 4096), false) : null;
 }
 
@@ -471,7 +472,7 @@ async function fromSheet(file) {
     // one worksheet, not eighty megabytes.
     // 直接在 File 上按 Range 读:一本 80 MB 工作簿的缩略图,读的是它的目录和一张工作表,
     // 而不是八十兆字节。
-    const book = await mod.xlsxOpen(mod.fileSource(file));
+    const book = await mod.xlsxOpen(fileSource(file));
     if (book) grid = await book.read(0);
   }
   if (!grid || !grid.rows.length) return null;
