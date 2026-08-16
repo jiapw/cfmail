@@ -18,19 +18,39 @@ export function icon(name, size = 20) {
 // Attachment extension -> icon plus colour tile. Unknown extensions fall back to "the extension written inside the tile".
 // 附件扩展名 → 图标 + 色块。认不出的扩展名退化成"色块里写扩展名"
 const FILE_KINDS = [
-  { icon: 'image', color: '#8e5cf7', ext: 'png jpg jpeg gif webp bmp svg heic heif avif tif tiff ico' },
+  { icon: 'image', color: '#8e5cf7', ext: 'png jpg jpeg gif webp bmp svg heic heif avif tif tiff ico psd ai sketch fig xcf' },
   { icon: 'filePdf', color: '#e5484d', ext: 'pdf' },
-  { icon: 'fileDoc', color: '#2e6ff2', ext: 'doc docx odt pages rtf' },
+  { icon: 'fileDoc', color: '#2e6ff2', ext: 'doc docx odt pages rtf epub' },
   { icon: 'fileSheet', color: '#12a150', ext: 'xls xlsx xlsm xltx csv tsv tab ods numbers' },
   { icon: 'fileSlides', color: '#f2820d', ext: 'ppt pptx odp key' },
-  { icon: 'fileZip', color: '#a1795c', ext: 'zip rar 7z gz tar bz2 xz' },
+  { icon: 'fileZip', color: '#a1795c', ext: 'zip rar 7z gz tar bz2 xz jar apk iso dmg' },
   { icon: 'fileAudio', color: '#d6409f', ext: 'mp3 wav flac aac m4a ogg wma' },
   { icon: 'fileVideo', color: '#0e8ca8', ext: 'mp4 mov avi mkv webm wmv flv m4v' },
   { icon: 'fileText', color: '#7a828d', ext: 'txt md log out err trace syslog rst tex' },
-  { icon: 'fileCode', color: '#1f9b8f', ext: 'js mjs cjs ts mts cts jsx tsx json jsonl ndjson har html htm css scss py pyi java c h cpp go rs rb php sh bat ps1 yml yaml toml ini xml sql' },
+  { icon: 'fileCode', color: '#1f9b8f', ext: 'js mjs cjs ts mts cts jsx tsx json jsonl ndjson har html htm css scss py pyi java c h cpp go rs rb php sh bat ps1 yml yaml toml ini xml sql po pot' },
+  // A certificate is a credential, not a document, and the shield says so at a glance
+  // 证书是凭证而不是文档，盾牌一眼就说清了
+  { icon: 'shield', color: '#5b6ee1', ext: 'pem crt cer csr der p7b pfx' },
+  { icon: 'textFormat', color: '#b06a2c', ext: 'ttf otf woff woff2 eot' },
 ];
+
+// Files a project keeps at its root with no extension at all. Without these the tile has
+// nothing to write in it and falls back to a question mark -- on exactly the files whose names
+// are the most recognisable thing about them.
+// 项目根目录下那些根本没有扩展名的文件。没有这张表，
+// 色块里无字可写，只能退化成一个问号 ——
+// 而这恰恰发生在“名字本身就是最显眼特征”的那批文件上。
+const NAME_ICONS = {
+  text: 'readme license licence copying notice authors changelog changes todo install news contributing',
+  code: 'makefile dockerfile rakefile gemfile procfile vagrantfile jenkinsfile cmakelists.txt .gitignore .gitattributes .editorconfig .env .npmrc .nvmrc .prettierrc .eslintrc',
+};
+const NAME_KIND = {};
 const EXT_KIND = {};
 for (const k of FILE_KINDS) for (const e of k.ext.split(' ')) EXT_KIND[e] = k;
+for (const [kind, names] of Object.entries(NAME_ICONS)) {
+  const k = FILE_KINDS.find((f) => f.icon === (kind === 'text' ? 'fileText' : 'fileCode'));
+  for (const n of names.split(' ')) NAME_KIND[n] = k;
+}
 
 export const fileExt = (name) => (/\.([A-Za-z0-9]{1,8})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
 
@@ -38,10 +58,12 @@ export const fileExt = (name) => (/\.([A-Za-z0-9]{1,8})$/.exec(String(name || ''
  *  统一的圆角小正方形:认识的类型给图标,不认识的把扩展名写在色块里 */
 export function fileIcon(filename, size = 20) {
   const ext = fileExt(filename);
-  const kind = EXT_KIND[ext];
+  const base = String(filename || '').toLowerCase();
+  const kind = EXT_KIND[ext] || NAME_KIND[base];
   const box = `width:${size}px;height:${size}px`;
   if (kind) {
-    return `<span class="fileicon" style="${box};background:${kind.color}" title="${esc(ext.toUpperCase())}">${icon(kind.icon, Math.round(size * 0.62))}</span>`;
+    const label = ext ? ext.toUpperCase() : String(filename || '');
+    return `<span class="fileicon" style="${box};background:${kind.color}" title="${esc(label)}">${icon(kind.icon, Math.round(size * 0.62))}</span>`;
   }
   const label = (ext || '?').toUpperCase().slice(0, 4);
   const fs = Math.round(size * (label.length >= 4 ? 0.3 : label.length === 3 ? 0.36 : 0.44));
