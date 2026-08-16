@@ -320,7 +320,9 @@ async function loadInvite(env: Env, token: string) {
   const inv = await env.DB.prepare('SELECT * FROM invites WHERE token_hash=?1').bind(hash).first<any>();
   if (!inv) return { error: 'e_invite_not_found' };
   if (inv.revoked) return { error: 'e_invite_revoked' };
-  if (inv.used_by) return { error: 'e_invite_used' };
+  // A shared link is never claimed, so only a single-use one can be spent
+  // 共享链接从不被认领,所以只有单人链接会被"用掉"
+  if (!inv.multi_use && inv.used_by) return { error: 'e_invite_used' };
   if (inv.expires_at < now()) return { error: 'e_invite_expired' };
   // Links issued before the rework (attached to an existing mailbox) are all refused; ask the administrator for a new one
   // 改造前发出的链接(挂在已存在邮箱上)一律不认,请管理员重新生成
@@ -375,6 +377,13 @@ async function mailboxNameTaken(env: Env, domainId: string, localPart: string): 
 
 const CODE_TTL_MIN = 15;
 const CODE_MAX_ATTEMPTS = 5;
+// Rate window for verification codes sent through a shared invite. Twenty an hour is more
+// than any real intake needs -- people register over days, not in one burst -- while a script
+// pointed at the link runs out after twenty addresses and has to wait an hour for twenty more.
+// 共享邀请发验证码的限流窗口。每小时 20 封远超真实入职节奏(人是几天里陆续注册的,
+// 不会一拥而上),而拿脚本刷这条链接的,发满 20 个地址就得等一小时才有下一批。
+const CODE_WINDOW_MS = 60 * 60 * 1000;
+const CODE_WINDOW_MAX = 20;
 
 /** The domain an invite belongs to (drives the verification sender domain and the brand name)
  *  邀请所属域名(用于验证码发件域与品牌名) */
@@ -416,9 +425,20 @@ app.post('/api/invites/:token/register', async (c) => {
   if (prior && prior.created_at > now() - 60 * 1000) {
     return c.json({ reg_id: prior.id, email, expires_min: CODE_TTL_MIN });
   }
-  // Cap the total codes one invite may send: an invite is single-use, so it has no business mailing many different addresses. This blocks using one link to blast codes at arbitrary mailboxes.
-  // 单个邀请的发码总数封顶:邀请单次使用,不该给一堆不同邮箱发码;拦住向任意邮箱轰炸验证码
-  if ((inv.send_count || 0) >= 10) {
+  // Two shapes of the same defence: an open link must not become a free relay for mailing
+  // codes to addresses of the sender's choosing. A single-use link has a lifetime total to
+  // cap, since it has no business mailing many different addresses at all. A shared link has
+  // no such total -- capping it would cap the registrations it exists to allow -- so it is
+  // capped by rate: a burst is refused, an ordinary intake of a team over days is not.
+  // 同一道防线的两种形态:开放链接不能变成"给任意邮箱发验证码"的免费中继。
+  // 单人链接有总量可封,它本来就不该给很多不同邮箱发码;共享链接没有总量可封
+  // (封了就等于封掉它存在的意义),所以改为限速:挡住突发,不挡一个团队几天内陆续注册。
+  if (inv.multi_use) {
+    const fresh = (inv.send_window_at || 0) > now() - CODE_WINDOW_MS;
+    if (fresh && (inv.send_window_n || 0) >= CODE_WINDOW_MAX) {
+      return c.json({ error: 'e_invite_rate_limited' }, 429);
+    }
+  } else if ((inv.send_count || 0) >= 10) {
     return c.json({ error: 'e_invite_code_limit' }, 429);
   }
 
@@ -453,7 +473,16 @@ app.post('/api/invites/:token/register', async (c) => {
     await c.env.DB.prepare('DELETE FROM pending_regs WHERE id=?1').bind(id).run();
     return c.json(E('e_code_send_failed', sent.error || 'e_unknown'), 502);
   }
-  await c.env.DB.prepare('UPDATE invites SET send_count=send_count+1 WHERE id=?1').bind(inv.id).run();
+  // send_count is the lifetime total; the window pair rolls forward in the same statement so
+  // two requests arriving together cannot both read a stale window and both reset it.
+  // send_count 是生涯总数;窗口那对字段在同一条语句里滚动,
+  // 免得两个并发请求各自读到过期窗口、各自把它重置一遍。
+  await c.env.DB.prepare(
+    `UPDATE invites SET send_count = send_count + 1,
+       send_window_n  = CASE WHEN send_window_at > ?2 THEN send_window_n + 1 ELSE 1 END,
+       send_window_at = CASE WHEN send_window_at > ?2 THEN send_window_at ELSE ?3 END
+     WHERE id = ?1`
+  ).bind(inv.id, now() - CODE_WINDOW_MS, now()).run();
   // Local development returns the code directly, which makes self-testing easy
   // 本地开发直接回传验证码,方便自测
   return c.json({ reg_id: id, email, expires_min: CODE_TTL_MIN, dev_code: c.env.DEV_MODE === '1' ? code : undefined });
@@ -531,12 +560,8 @@ app.post('/api/invites/:token/accept', async (c) => {
 async function applyInvite(env: Env, inv: any, userId: string, chosenName?: string) {
   const mode = inv.mailbox_mode || 'fixed';
   if (!inv.domain_id) throw new HttpError(400, 'e_invite_incomplete');
-  // Atomic claim: under concurrency only one request can flip used_by from NULL to this user, so one invite can never be redeemed into several accounts
-  // 原子认领:并发下只有一个请求能把 used_by 从 NULL 翻成本人,杜绝一条邀请被同时兑换成多个账号
-  const claim = await env.DB.prepare(
-    'UPDATE invites SET used_by=?1, used_at=?2 WHERE id=?3 AND used_by IS NULL AND revoked=0'
-  ).bind(userId, now(), inv.id).run();
-  if (!(claim.meta as any)?.changes) throw new HttpError(409, 'e_invite_used');
+  if (inv.multi_use) await claimShared(env, inv, userId);
+  else await claimOnce(env, inv, userId);
   try {
     const localPart = mode === 'choose' ? String(chosenName || '').trim().toLowerCase() : String(inv.local_part || '');
     if (!LOCAL_PART_RE.test(localPart)) throw new HttpError(400, 'e_bad_mailbox_name');
@@ -561,9 +586,53 @@ async function applyInvite(env: Env, inv: any, userId: string, chosenName?: stri
   } catch (e) {
     // Provisioning failed (a self-chosen name collided, say): hand the claim back so the user can retry with another name instead of burning the invite
     // 开通失败(如自取名撞车):把认领退回去,让用户换个名字重试,不至于白白作废邀请
-    await env.DB.prepare('UPDATE invites SET used_by=NULL, used_at=NULL WHERE id=?1').bind(inv.id).run();
+    if (inv.multi_use) {
+      await env.DB.prepare('DELETE FROM invite_uses WHERE invite_id=?1 AND user_id=?2').bind(inv.id, userId).run();
+    } else {
+      await env.DB.prepare('UPDATE invites SET used_by=NULL, used_at=NULL WHERE id=?1').bind(inv.id).run();
+    }
     throw e;
   }
+}
+
+/** Atomic claim: under concurrency only one request can flip used_by from NULL to this user,
+ *  so one invite can never be redeemed into several accounts
+ *  原子认领:并发下只有一个请求能把 used_by 从 NULL 翻成本人,杜绝一条邀请被同时兑换成多个账号 */
+async function claimOnce(env: Env, inv: any, userId: string) {
+  const claim = await env.DB.prepare(
+    'UPDATE invites SET used_by=?1, used_at=?2 WHERE id=?3 AND used_by IS NULL AND revoked=0'
+  ).bind(userId, now(), inv.id).run();
+  if (!(claim.meta as any)?.changes) throw new HttpError(409, 'e_invite_used');
+}
+
+/**
+ * A shared link is not spent by being used, so there is nothing to claim -- what is recorded
+ * is the redemption. The primary key admits each user once: a second attempt by the same
+ * person changes no row, which is what stops one signed-in user farming mailboxes from a link
+ * meant for a team.
+ *
+ * The insert is guarded by the invite's own state rather than by the check in loadInvite,
+ * because a verification code lives for fifteen minutes and the link can be revoked -- or
+ * simply expire -- while one is in flight.
+ *
+ * 共享链接不会因为被使用而消耗掉,所以没有什么可认领的,要记的是"兑换"这件事。
+ * 主键让每个用户只进得来一次:同一个人再来一次改不动任何行,
+ * 这就挡住了已登录用户拿一条给团队用的链接反复领邮箱。
+ *
+ * 插入用邀请自身的状态做条件,而不是依赖 loadInvite 里那次检查 ——
+ * 验证码有 15 分钟寿命,这期间链接可能被吊销,也可能就是到期了。
+ */
+async function claimShared(env: Env, inv: any, userId: string) {
+  const claim = await env.DB.prepare(
+    `INSERT OR IGNORE INTO invite_uses (invite_id, user_id, created_at)
+     SELECT ?1, ?2, ?3 WHERE EXISTS (
+       SELECT 1 FROM invites WHERE id=?1 AND multi_use=1 AND revoked=0 AND expires_at > ?3
+     )`
+  ).bind(inv.id, userId, now()).run();
+  if ((claim.meta as any)?.changes) return;
+  const mine = await env.DB.prepare('SELECT 1 FROM invite_uses WHERE invite_id=?1 AND user_id=?2')
+    .bind(inv.id, userId).first<any>();
+  throw new HttpError(409, mine ? 'e_invite_already_joined' : 'e_invite_expired');
 }
 
 // ---------- Current user ----------
