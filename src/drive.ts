@@ -1580,7 +1580,13 @@ function agentInstructions(base: string, share: any, roots: Map<string, NodeRow>
     ] : []),
     '',
     'P is a path of names -- append a listed one to the URL you fetched to go deeper.',
-    ...(rw ? ['Create only inside a folder listed below.'] : []),
+    // Five words for the case where the harness happens to hold a WebDAV client. Useless to a
+    // model driving curl, which is most of them -- but the same URL really does mount, and not
+    // saying so would hide a whole second way in behind nothing at all.
+    // 五个词,留给"harness 恰好带着一个 WebDAV 客户端"的情形。对一个驱动 curl 的模型无用,
+    // 而它们多半就是这样 —— 但同一个 URL 确实挂得上,不说出来,
+    // 等于把另一整条进路藏在一个什么也没有的地方。
+    `${rw ? 'Create only inside a folder listed below. ' : ''}WebDAV clients: same URL.`,
     '',
     'B:',
     rootList(roots),
@@ -1623,6 +1629,21 @@ driveAgentApp.all('/*', async (c) => {
 
   const roots = await agentRoots(c.env, share.id);
   const node = segs.length ? await agentWalk(c.env, roots, segs) : null;
+
+  // The other face of the same link. Which one you are talking to is decided by the method, so
+  // a client that mounts and a program that curls can hold the very same URL.
+  // 同一条链接的另一副面孔。你在跟哪一副说话由方法决定,
+  // 于是"挂载的客户端"和"curl 的程序"可以攥着一模一样的 URL。
+  if (DAV_METHODS.has(method)) return davHandle(c, share, roots, node, segs, token);
+  // A lock taken by a mounted volume holds against the plain verbs too. It would be no lock at
+  // all if the other face could write straight through it, and an agent that gets 423 is being
+  // told something true: a person has this file open.
+  // 挂载的卷所持有的锁,对朴素动词同样有效。如果另一副面孔能径直写穿过去,那就根本不算锁;
+  // 而拿到 423 的代理,被告知的是一件真事:有人正开着这个文件。
+  if (write) {
+    const blocked = await davBlocked(c, share, segs);
+    if (blocked) return blocked;
+  }
 
   if (method === 'GET' || method === 'HEAD') {
     if (!segs.length) {
@@ -1763,8 +1784,393 @@ driveAgentApp.all('/*', async (c) => {
   const ad = ancDelta(c.env, parentId, size - oldSize);
   if (ad) stmts.push(ad);
   await c.env.DB.batch(stmts);
-  return txt('ok');
+  // 201 when the file is new, 200 when it was replaced. Both are success to an agent reading a
+  // status class; a WebDAV client reads the exact code and expects this distinction.
+  // 新建回 201,覆盖回 200。对一个只看状态码大类的代理,两者都是成功;
+  // 而 WebDAV 客户端读的是确切的码,它等着这个区分。
+  return txt('ok', clash ? 200 : 201);
 });
+
+// ---------- The same link, seen as a WebDAV volume ----------
+// ---------- 同一条链接,当作 WebDAV 卷来看 ----------
+//
+// The plain-text face above is for a program that was handed a URL. This face is for everything
+// that already knows how to mount one: rclone, Cyberduck, Finder, Explorer. Same URL, same
+// permissions, same paths -- only the grammar differs, and which grammar you get is decided by
+// the method you send.
+//
+// It is deliberately NOT what the instructions describe. A PROPFIND listing of two entries is
+// about 1.2 KB of XML where the plain listing is 21 bytes; telling an agent to speak WebDAV
+// would spend eighty times the tokens on the one call it makes most, to reach the same rows.
+// So the model reads lines and a person mounts a volume, and neither pays for the other.
+//
+// 上面那副纯文本的面孔,是给"拿到一个 URL 的程序"用的。这副面孔是给一切早就会挂载的东西用的:
+// rclone、Cyberduck、Finder、资源管理器。同一个 URL、同一套权限、同一批路径 ——
+// 差别只在语法,而你得到哪种语法,由你发的方法决定。
+//
+// 它刻意不是那份指令所描述的东西。两个条目的 PROPFIND 列表约 1.2 KB XML,
+// 而纯文本列表是 21 字节;让代理去讲 WebDAV,等于在它调用最频繁的那个动作上花八十倍的 token,
+// 换回同样几行。于是模型读行,人挂卷,谁也不替谁付账。
+
+const DAV_METHODS = new Set(['OPTIONS', 'PROPFIND', 'PROPPATCH', 'MKCOL', 'MOVE', 'COPY', 'LOCK', 'UNLOCK']);
+/** Ceiling on a lock's life. The holder proves it is still there by refreshing; this is how long
+ *  after a client vanishes -- crash, sleep, cable out -- its locks survive it.
+ *  一把锁的寿命上限。持有者靠续租证明自己还在;客户端消失之后(崩溃、休眠、拔线),
+ *  它的锁最多再活这么久。 */
+const DAV_LOCK_MAX_S = 600;
+const DAV_COPY_MAX_NODES = 200;
+
+const xesc = (s: string) => String(s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+
+const xml = (body: string, status = 207) =>
+  new Response(`<?xml version="1.0" encoding="utf-8"?>\n${body}`, {
+    status,
+    headers: { 'Content-Type': 'application/xml; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
+  });
+
+/** Where a path lives in URL space. Collections carry the trailing slash clients rely on to tell
+ *  a folder from a file without asking again.
+ *  一条路径在 URL 空间里的位置。目录带上尾斜杠 —— 客户端靠它区分目录与文件,不必再问一次。 */
+const davHref = (token: string, segs: string[], coll: boolean) =>
+  `/agt/${token}/` + segs.map(encodeURIComponent).join('/') + (coll && segs.length ? '/' : '');
+
+/** One <response> block. The property set is fixed rather than following the request: every
+ *  client asks for some subset of these, extras are ignored, and choosing per request would
+ *  mean parsing the body to learn nothing that changes the answer.
+ *  一个 <response> 块。属性集是固定的,不跟着请求走:每个客户端要的都是其中一个子集,
+ *  多给的会被忽略;按请求裁剪意味着解析请求体,却问不出任何能改变答案的东西。 */
+function davEntry(token: string, segs: string[], n: NodeRow | null): string {
+  const coll = !n || n.kind === 'folder';
+  const t = n?.updated_at || now();
+  const name = segs.length ? segs[segs.length - 1] : '';
+  return `<D:response><D:href>${xesc(davHref(token, segs, coll))}</D:href><D:propstat><D:prop>`
+    + `<D:resourcetype>${coll ? '<D:collection/>' : ''}</D:resourcetype>`
+    + `<D:displayname>${xesc(name)}</D:displayname>`
+    + `<D:getlastmodified>${new Date(t).toUTCString()}</D:getlastmodified>`
+    + `<D:creationdate>${new Date(n?.created_at || t).toISOString()}</D:creationdate>`
+    + (coll ? '' : `<D:getcontentlength>${n!.size || 0}</D:getcontentlength>`
+      + `<D:getcontenttype>${xesc(n!.mime || 'application/octet-stream')}</D:getcontenttype>`
+      + `<D:getetag>"${xesc(n!.id)}-${t}"</D:getetag>`)
+    + '<D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope>'
+    + '<D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>'
+    + '<D:lockdiscovery/>'
+    + '</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>';
+}
+
+/** The live lock standing in the way of writing at `path`, if any -- its own, or one taken over a
+ *  folder above it with depth infinity. Expiry is applied here rather than swept, so a lapsed
+ *  lock stops blocking at the instant it lapses and not at the next cleanup.
+ *  挡在"写 path"前面的那把有效的锁 —— 它自己的,或者上层某个目录上带 infinity 深度的那把。
+ *  过期在这里判定而不靠清扫,于是失效的锁在失效那一刻就不再拦人,而不是等下一次清理。 */
+async function davLockAt(env: Env, shareId: string, path: string): Promise<any | null> {
+  const anc: string[] = [''];
+  const parts = path ? path.split('/') : [];
+  for (let i = 1; i <= parts.length; i++) anc.push(parts.slice(0, i).join('/'));
+  const ph = anc.map((_, i) => `?${i + 3}`).join(',');
+  const row = await env.DB.prepare(
+    `SELECT * FROM drive_dav_locks
+      WHERE share_id=?1 AND expires_at>?2 AND path IN (${ph})
+        AND (path=?${anc.length + 3} OR depth=1)
+      LIMIT 1`
+  ).bind(shareId, now(), ...anc, path).first();
+  return row || null;
+}
+
+/** The lock tokens the caller claims to hold. The If header has a small grammar of its own; the
+ *  only part that decides anything here is which tokens it names, so that is all that is read.
+ *  调用者声称持有的锁令牌。If 头自有一套小语法,而在这里唯一能决定什么的只是它点了哪些令牌,
+ *  所以只读这一点。 */
+const davHeld = (c: any): Set<string> =>
+  new Set((String(c.req.header('If') || '').match(/opaquelocktoken:[0-9a-fA-F-]+/g) || []));
+
+/** 423 when someone else holds the path, null when the way is clear.
+ *  别人占着这条路径就回 423,路通就返回 null。 */
+async function davBlocked(c: any, share: any, segs: string[]): Promise<Response | null> {
+  const lock = await davLockAt(c.env, share.id, segs.join('/'));
+  if (!lock || davHeld(c).has(lock.token)) return null;
+  return txt('locked, try again shortly', 423);
+}
+
+async function davMkcol(c: any, share: any, roots: Map<string, NodeRow>, segs: string[]): Promise<Response> {
+  if (!segs.length) return txt('the top level is fixed', 403);
+  if (await agentWalk(c.env, roots, segs)) return txt('already exists', 405);
+  const parent = segs.length > 1 ? await agentWalk(c.env, roots, segs.slice(0, -1)) : null;
+  if (!parent) return txt(segs.length > 1 ? 'no such folder' : 'the top level is fixed', segs.length > 1 ? 409 : 403);
+  if (parent.kind !== 'folder') return txt('not a folder', 409);
+  if ((await c.req.text()).trim()) return txt('body not supported', 415);
+  let name: string;
+  try {
+    name = cleanName(segs[segs.length - 1]);
+  } catch {
+    return txt('bad name', 400);
+  }
+  const chain = await chainOf(c.env, parent.id);
+  if (chain.length >= DEPTH_MAX - 1) return txt('too deep', 403);
+  const t = now();
+  await c.env.DB.prepare(
+    `INSERT INTO drive_nodes (id, owner_id, parent_id, kind, name, created_at, updated_at)
+     VALUES (?1,?2,?3,'folder',?4,?5,?5)`
+  ).bind(uid(), parent.owner_id, parent.id, name, t).run();
+  return txt('', 201);
+}
+
+/** Where a Destination header points, in this link's own terms. Anything outside the link is
+ *  refused rather than followed: the header is a URL, and a URL can name any server there is.
+ *  Destination 头指向何处 —— 按本链接自己的说法。指到链接之外的一律拒绝而不是跟过去:
+ *  那个头是一个 URL,而 URL 可以指向世上任何一台服务器。 */
+function davDest(c: any, token: string): { segs: string[] } | null {
+  const raw = c.req.header('Destination');
+  if (!raw) return null;
+  let path: string;
+  try {
+    path = new URL(raw, c.req.url).pathname;
+  } catch {
+    return null;
+  }
+  const parts = path.split('/').slice(2);
+  if ((parts.shift() || '') !== token) return null;
+  if (parts.length && parts[parts.length - 1] === '') parts.pop();
+  if (parts.some((s) => s === '')) return null;
+  try {
+    const segs = parts.map((s) => decodeURIComponent(s));
+    if (segs.some((s) => s === '.' || s === '..')) return null;
+    return { segs };
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve the parent and name a MOVE or COPY is aiming at, and clear whatever sits there.
+ *  解析 MOVE / COPY 的目标父目录与名字,并清掉占位的东西。 */
+async function davTarget(c: any, share: any, roots: Map<string, NodeRow>, dest: string[], kind: string):
+Promise<{ parent: NodeRow; name: string } | Response> {
+  if (dest.length < 2) return txt('the top level is fixed', 403);
+  const parent = await agentWalk(c.env, roots, dest.slice(0, -1));
+  if (!parent) return txt('no such folder', 409);
+  if (parent.kind !== 'folder') return txt('not a folder', 409);
+  let name: string;
+  try {
+    name = cleanName(dest[dest.length - 1]);
+  } catch {
+    return txt('bad name', 400);
+  }
+  const clash = await findClash(c.env, parent.owner_id, parent.id, name, kind);
+  if (clash) {
+    if (c.req.header('Overwrite') === 'F') return txt('already exists', 412);
+    const stmts = [c.env.DB.prepare('UPDATE drive_nodes SET trashed=1, trashed_at=?1, updated_at=?1 WHERE id=?2')
+      .bind(now(), clash.id)];
+    const ad = ancDelta(c.env, clash.parent_id, -nodeBytes(clash));
+    if (ad) stmts.push(ad);
+    await c.env.DB.batch(stmts);
+  }
+  return { parent, name };
+}
+
+async function davMove(c: any, share: any, roots: Map<string, NodeRow>, node: NodeRow | null, token: string): Promise<Response> {
+  if (!node) return txt('no such path', 404);
+  const dest = davDest(c, token);
+  if (!dest) return txt('bad destination', 400);
+  const t = await davTarget(c, share, roots, dest.segs, node.kind);
+  if (t instanceof Response) return t;
+  // A folder cannot be moved inside itself: the subtree would leave the tree entirely, taking
+  // its bytes and every node in it out of reach of any walk from the root.
+  // 目录不能移进自己里面:那棵子树会整个脱离这棵树,连同它的字节和其中每个节点,
+  // 从根出发的任何遍历都再也够不到。
+  const chain = await chainOf(c.env, t.parent.id);
+  if (chain.some((n) => n.id === node.id)) return txt('cannot move a folder into itself', 409);
+  const moved = t.parent.id !== node.parent_id;
+  const stmts = [c.env.DB.prepare('UPDATE drive_nodes SET parent_id=?1, name=?2, updated_at=?3 WHERE id=?4')
+    .bind(t.parent.id, t.name, now(), node.id)];
+  if (moved) {
+    const out = ancDelta(c.env, node.parent_id, -nodeBytes(node));
+    const into = ancDelta(c.env, t.parent.id, nodeBytes(node));
+    if (out) stmts.push(out);
+    if (into) stmts.push(into);
+  }
+  await c.env.DB.batch(stmts);
+  return txt('', 204);
+}
+
+/** Copy a node, and everything under it if it is a folder. Bytes are re-uploaded rather than
+ *  referenced: two drive entries pointing at one R2 object would make deleting either one
+ *  destroy both. Bounded, because an unbounded recursion here is one request against a whole
+ *  subtree and would run out of CPU somewhere in the middle, leaving half a copy.
+ *  复制一个节点,是目录就连同其下的一切。字节是重新写一份而不是引用:
+ *  两条网盘记录指向同一个 R2 对象,会让删掉任何一条都毁掉两条。
+ *  有上限 —— 这里若无限递归,一次请求要对付整棵子树,中途耗尽 CPU,只留下半份副本。 */
+async function davCopyTree(env: Env, src: NodeRow, parentId: string, name: string, ownerId: string, budget: { n: number; bytes: number }): Promise<void> {
+  if (--budget.n < 0) throw new HttpError(507, 'e_drive_quota');
+  const t = now();
+  const id = uid();
+  if (src.kind === 'folder') {
+    await env.DB.prepare(
+      `INSERT INTO drive_nodes (id, owner_id, parent_id, kind, name, created_at, updated_at)
+       VALUES (?1,?2,?3,'folder',?4,?5,?5)`
+    ).bind(id, ownerId, parentId, name, t).run();
+    const kids = await env.DB.prepare('SELECT * FROM drive_nodes WHERE parent_id=?1 AND trashed=0')
+      .bind(src.id).all();
+    for (const k of (kids.results || []) as unknown as NodeRow[]) {
+      await davCopyTree(env, k, id, k.name, ownerId, budget);
+    }
+    return;
+  }
+  budget.bytes -= src.size || 0;
+  if (budget.bytes < 0) throw new HttpError(507, 'e_drive_quota');
+  const key = `drive/${ownerId}/${id}`;
+  if (src.r2_key) {
+    const obj: any = await env.RAW.get(src.r2_key);
+    if (obj) await env.RAW.put(key, obj.body, { httpMetadata: { contentType: src.mime || 'application/octet-stream' } });
+  }
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO drive_nodes (id, owner_id, parent_id, kind, name, mime, size, r2_key, created_at, updated_at)
+       VALUES (?1,?2,?3,'file',?4,?5,?6,?7,?8,?8)`
+    ).bind(id, ownerId, parentId, name, src.mime || '', src.size || 0, key, t),
+    env.DB.prepare('UPDATE users SET drive_bytes=MAX(drive_bytes+?1,0) WHERE id=?2').bind(src.size || 0, ownerId),
+  ]);
+}
+
+async function davCopy(c: any, share: any, roots: Map<string, NodeRow>, node: NodeRow | null, token: string): Promise<Response> {
+  if (!node) return txt('no such path', 404);
+  const dest = davDest(c, token);
+  if (!dest) return txt('bad destination', 400);
+  const t = await davTarget(c, share, roots, dest.segs, node.kind);
+  if (t instanceof Response) return t;
+  const chain = await chainOf(c.env, t.parent.id);
+  if (chain.some((n) => n.id === node.id)) return txt('cannot copy a folder into itself', 409);
+  const q = await driveQuota(c.env, t.parent.owner_id);
+  if (!q.enabled) return txt('drive disabled', 403);
+  const budget = { n: DAV_COPY_MAX_NODES, bytes: q.quota - q.used };
+  try {
+    await davCopyTree(c.env, node, t.parent.id, t.name, t.parent.owner_id, budget);
+  } catch {
+    return txt('too large to copy here', 507);
+  }
+  const ad = ancDelta(c.env, t.parent.id, nodeBytes(node));
+  if (ad) await ad.run();
+  return txt('', 201);
+}
+
+/** Grant or refresh a write lock. Not a formality: it is stored, it blocks the next writer, and
+ *  it dies on a clock -- which is the only thing that can free it when the holder never comes
+ *  back to say it is done.
+ *  发一把写锁,或给已有的续期。这不是走过场:它被存下来、会挡住下一个写者、并且靠时钟死亡 ——
+ *  当持有者再也没回来说一声"我完事了",能放开它的只有时钟。 */
+async function davLock(c: any, share: any, segs: string[]): Promise<Response> {
+  const path = segs.join('/');
+  const secs = (() => {
+    const m = /Second-(\d+)/i.exec(String(c.req.header('Timeout') || ''));
+    return Math.min(m ? parseInt(m[1], 10) : DAV_LOCK_MAX_S, DAV_LOCK_MAX_S);
+  })();
+  const held = davLockAt(c.env, share.id, path);
+  const existing = await held;
+  const mine = existing && davHeld(c).has(existing.token);
+  if (existing && !mine) return txt('locked, try again shortly', 423);
+  const body = await c.req.text();
+  const ownerTag = (/<[^>]*owner[^>]*>([\s\S]*?)<\/[^>]*owner>/i.exec(body) || ['', ''])[1].slice(0, 400);
+  const depth = String(c.req.header('Depth') || '0').toLowerCase() === 'infinity' ? 1 : 0;
+  const t = now();
+  const tok = existing ? existing.token : `opaquelocktoken:${uid()}`;
+  if (existing) {
+    await c.env.DB.prepare('UPDATE drive_dav_locks SET expires_at=?1 WHERE token=?2')
+      .bind(t + secs * 1000, tok).run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO drive_dav_locks (token, share_id, path, depth, owner, expires_at, created_at)
+       VALUES (?1,?2,?3,?4,?5,?6,?7)`
+    ).bind(tok, share.id, path, depth, ownerTag, t + secs * 1000, t).run();
+  }
+  const r = xml(
+    `<D:prop xmlns:D="DAV:"><D:lockdiscovery><D:activelock>`
+    + '<D:locktype><D:write/></D:locktype><D:lockscope><D:exclusive/></D:lockscope>'
+    + `<D:depth>${depth ? 'infinity' : '0'}</D:depth>`
+    + (ownerTag ? `<D:owner>${ownerTag}</D:owner>` : '')
+    + `<D:timeout>Second-${secs}</D:timeout>`
+    + `<D:locktoken><D:href>${xesc(tok)}</D:href></D:locktoken>`
+    + '</D:activelock></D:lockdiscovery></D:prop>',
+    existing ? 200 : 201
+  );
+  r.headers.set('Lock-Token', `<${tok}>`);
+  return r;
+}
+
+async function davUnlock(c: any, share: any): Promise<Response> {
+  const tok = (String(c.req.header('Lock-Token') || '').match(/opaquelocktoken:[0-9a-fA-F-]+/) || [''])[0];
+  if (!tok) return txt('no lock token', 400);
+  await c.env.DB.prepare('DELETE FROM drive_dav_locks WHERE token=?1 AND share_id=?2')
+    .bind(tok, share.id).run();
+  return txt('', 204);
+}
+
+async function davPropfind(c: any, share: any, roots: Map<string, NodeRow>, node: NodeRow | null, segs: string[], token: string): Promise<Response> {
+  const depth = String(c.req.header('Depth') || '1').toLowerCase();
+  // A whole-subtree listing in one answer is how a mount becomes a denial of service against
+  // its own server: one request, unbounded rows, unbounded XML.
+  // 一次答完整棵子树,正是"挂载把自己的服务器打垮"的方式:一个请求,无上限的行,无上限的 XML。
+  if (depth === 'infinity') {
+    return xml('<D:error xmlns:D="DAV:"><D:propfind-finite-depth/></D:error>', 403);
+  }
+  if (segs.length && !node) return txt('no such path', 404);
+  const out = [davEntry(token, segs, node)];
+  if (depth === '1') {
+    if (!segs.length) {
+      for (const [seg, n] of roots) out.push(davEntry(token, [seg], n));
+    } else if (node!.kind === 'folder') {
+      const rows = await c.env.DB.prepare(
+        `SELECT * FROM drive_nodes WHERE parent_id=?1 AND trashed=0 ORDER BY kind DESC, name LIMIT ${LIST_LIMIT}`
+      ).bind(node!.id).all();
+      for (const r of (rows.results || []) as unknown as NodeRow[]) out.push(davEntry(token, [...segs, r.name], r));
+    }
+  }
+  return xml(`<D:multistatus xmlns:D="DAV:">${out.join('')}</D:multistatus>`);
+}
+
+/** Every WebDAV verb that is not also a plain-HTTP one. GET, PUT and DELETE are shared with the
+ *  text face above -- that sharing is the point, since it is what makes the two faces the same
+ *  drive rather than two drives that resemble each other.
+ *  所有"不同时也是朴素 HTTP"的 WebDAV 动词。GET、PUT、DELETE 与上面那副文本面孔共用 ——
+ *  共用正是要点所在:正因如此,两副面孔才是同一个网盘,而不是两个彼此相像的网盘。 */
+async function davHandle(c: any, share: any, roots: Map<string, NodeRow>, node: NodeRow | null, segs: string[], token: string): Promise<Response> {
+  const method = c.req.method;
+  const rw = share.role === 'editor';
+  if (method === 'OPTIONS') {
+    const r = txt('', 204);
+    // Class 2 is what says "this volume can be written to" to Finder and Explorer; without it
+    // they mount read-only, or refuse. A read-only link answers class 1 and means it.
+    // 类别 2 就是对 Finder 与资源管理器说"这个卷可以写";没有它,它们要么只读挂载,要么干脆不挂。
+    // 只读链接回类别 1,而且说到做到。
+    r.headers.set('DAV', rw ? '1, 2' : '1');
+    r.headers.set('MS-Author-Via', 'DAV');
+    r.headers.set('Allow', rw
+      ? 'OPTIONS, HEAD, GET, POST, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, MOVE, COPY, LOCK, UNLOCK'
+      : 'OPTIONS, HEAD, GET, PROPFIND');
+    r.headers.set('Accept-Ranges', 'bytes');
+    return r;
+  }
+  if (method === 'PROPFIND') return davPropfind(c, share, roots, node, segs, token);
+  if (!rw) return txt('read-only link', 403);
+  if (method === 'UNLOCK') return davUnlock(c, share);
+  if (method === 'LOCK') return davLock(c, share, segs);
+  const blocked = await davBlocked(c, share, segs);
+  if (blocked) return blocked;
+  if (method === 'PROPPATCH') {
+    // Nothing here has properties beyond the ones that come from the file itself, and saying so
+    // with a 403 makes Explorer abandon the copy it was in the middle of. Report success for
+    // whatever was asked and store none of it: the client wanted to set a timestamp or a Win32
+    // attribute bit, and the copy it is actually making matters more than that bit does.
+    // 这里的东西除了文件自身带来的属性之外没有别的属性,而用 403 这么说,
+    // 会让资源管理器放弃它正在进行的复制。对请求的一切报成功,但一样也不存:
+    // 客户端想设的是一个时间戳或 Win32 属性位,而它真正在做的那次复制,比那个位要紧。
+    return xml(`<D:multistatus xmlns:D="DAV:"><D:response><D:href>${xesc(davHref(token, segs, !node || node.kind === 'folder'))}</D:href>`
+      + '<D:propstat><D:prop/><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>');
+  }
+  if (method === 'MKCOL') return davMkcol(c, share, roots, segs);
+  if (method === 'MOVE') return davMove(c, share, roots, node, token);
+  if (method === 'COPY') return davCopy(c, share, roots, node, token);
+  return txt('unsupported method', 405);
+}
 
 // ---------- Admin API (/api/admin/drive) ----------
 // ---------- 管理端 API(/api/admin/drive) ----------
@@ -1884,6 +2290,10 @@ export async function driveCronHourly(env: Env): Promise<void> {
     } catch {}
     await env.DB.prepare('DELETE FROM drive_uploads WHERE id=?1').bind(u.id).run();
   }
+  // Lapsed WebDAV locks stopped blocking anyone the moment they lapsed -- every check is against
+  // the clock. This is only the sweeping up afterwards.
+  // 失效的 WebDAV 锁在失效那一刻就不再拦人了 —— 每一次判定都对着时钟。这里只是事后打扫。
+  await env.DB.prepare('DELETE FROM drive_dav_locks WHERE expires_at<?1').bind(now() - 3600000).run();
 }
 
 /** Daily: purge trash older than 30 days, bounded per run (a huge subtree simply continues tomorrow)
