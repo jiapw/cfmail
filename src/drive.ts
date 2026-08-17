@@ -1412,7 +1412,7 @@ drivePubApp.get('/:token/files/:id/thumb', async (c) => {
 // ---------- 面向 AI 的访问链接(/agt/<token>) ----------
 //
 // A share for a reader that is a program. Everything an agent needs arrives in the first
-// response: a handful of lines telling it which verbs exist, then the contents of the link.
+// response: a few lines of orders naming the tool and the verbs, then the contents of the link.
 // There is no manifest to install, no server to configure, no second document to fetch --
 // the URL is the instructions, and every deeper URL is reached by appending a name to the one
 // it just read.
@@ -1546,31 +1546,43 @@ async function agentList(env: Env, folderId: string): Promise<string> {
 const rootList = (roots: Map<string, NodeRow>): string =>
   [...roots].map(([seg, n]) => (n.kind === 'folder' ? `${seg}/` : `${seg}\t${shortSize(n.size || 0)}`)).join('\n');
 
-/** The whole instruction manual. Every line here is paid for on every visit, so a line earns its
- *  place by preventing a wrong request -- and the verbs a read-only link refuses are not
- *  mentioned, because naming them would only buy a 403.
- *  整本说明书。这里每一行在每次访问时都要付账,所以一行要靠"能防住一次错误请求"来挣得位置 ——
- *  只读链接会拒绝的动词一概不提,提了只能换来一个 403。 */
-function agentSkill(base: string, share: any, roots: Map<string, NodeRow>): string {
+/** Orders, not a datasheet. The reader is a model about to act, so the first sentence tells it
+ *  what to do and which tool to do it with; a title and a spec would leave the choice of tool
+ *  open, and the wrong choice is a specific, likely one -- a URL invites a browser, and a
+ *  browsing tool here loads bytes into a viewport, cannot issue PUT or DELETE, and burns a
+ *  screenshot on what is already plain text.
+ *
+ *  Every line is paid for on every visit, so a line earns its place by preventing a wrong
+ *  request. The verbs a read-only link refuses go unmentioned: naming them only buys a 403.
+ *
+ *  是命令,不是数据表。读者是一个即将动手的模型,所以第一句就说清要做什么、用什么工具做;
+ *  写成标题加规格,等于把工具的选择敞开着,而选错的方式既具体又大概率发生 ——
+ *  一个 URL 会招来浏览器,而浏览工具在这里只会把字节装进视口,发不出 PUT 和 DELETE,
+ *  还要为本来就是纯文本的东西烧掉一张截图。
+ *
+ *  这里每一行在每次访问时都要付账,所以一行要靠"能防住一次错误请求"来挣得位置。
+ *  只读链接会拒绝的动词一概不提:提了只能换来一个 403。 */
+function agentInstructions(base: string, share: any, roots: Map<string, NodeRow>): string {
   const rw = share.role === 'editor';
   const lines = [
-    `# Drive over HTTP (${rw ? 'read/write' : 'read-only'})`,
+    `${rw ? 'Read and write' : 'Read'} these files over HTTP -- curl, or a request from code. Not a`,
+    'browser or a browsing tool: these URLs return bytes, not pages.',
     '',
     `B=${base}`,
     '',
-    'GET B/P/ list folder: a line per entry, "name/" is a folder, "name<tab>size" is a file',
+    'GET B/P/ list folder: a line per entry, name/ = folder, name<tab>size = file',
     'GET B/P read file (Range ok)',
     ...(rw ? [
-      'PUT B/P write file, body is the whole new content (creates or replaces)',
-      'PUT B/P/ create folder',
+      'PUT B/P write file, body = the whole new content',
+      'PUT B/P/ new folder',
       'DELETE B/P delete',
       'POST B/P?to=NAME rename',
     ] : []),
     '',
-    'P is a path of names. Names in a listing are relative to the URL you fetched: append one to',
-    'go deeper. Below is B itself.',
-    ...(rw ? ['New items go inside one of these; the top level is fixed.'] : []),
+    'P is a path of names -- append a listed one to the URL you fetched to go deeper.',
+    ...(rw ? ['Create only inside a folder listed below.'] : []),
     '',
+    'B:',
     rootList(roots),
   ];
   return lines.join('\n') + '\n';
@@ -1624,7 +1636,7 @@ driveAgentApp.all('/*', async (c) => {
       // 因此本地服务器印出的 base 写的是生产域名。这没什么可修的 ——
       // 一个已经不再自称 localhost 的请求,给不出 localhost 这个答案。)
       const base = new URL(c.req.url).origin + '/agt/' + token;
-      return txt(agentSkill(base, share, roots));
+      return txt(agentInstructions(base, share, roots));
     }
     if (!node) return txt('no such path', 404);
     if (node.kind === 'folder') return txt(await agentList(c.env, node.id) + '\n');
