@@ -1683,6 +1683,13 @@ async function agentDialog(nodes) {
     </div>
     <div class="drv-share-line">
       <div class="f">
+        <label>${esc(t('drv_agent_via'))}</label>
+        ${segHtml('ag-via', [
+          { v: 'dav', label: t('drv_agent_via_mount') },
+          { v: 'http', label: t('drv_agent_via_url') },
+        ], 'dav')}
+      </div>
+      <div class="f">
         <label>${esc(t('drv_agent_can'))}</label>
         ${segHtml('ag-role', [
           { v: 'viewer', label: t('drv_agent_ro') },
@@ -1692,9 +1699,18 @@ async function agentDialog(nodes) {
     </div>
     <p class="drv-dim" id="ag-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
 
+  // Two sentences, one per control: what the agent will be holding, then what it may do with it.
+  // Naming the protocols here would answer a question the person choosing is not asking --
+  // they are deciding how their assistant should work, not which RFC it should speak.
+  // 两句话,一个控件一句:代理最后握着的是什么,以及它可以拿它做什么。
+  // 在这里报协议名,是在回答一个"做选择的人"根本没问的问题 ——
+  // 他决定的是助手该怎么干活,而不是它该讲哪份 RFC。
   const sync = () => {
-    qs('#ag-hint', d).textContent = t(segGet(d, 'ag-role') === 'editor' ? 'drv_agent_hint_rw' : 'drv_agent_hint_ro');
+    const via = segGet(d, 'ag-via') === 'dav' ? 'drv_agent_hint_mount' : 'drv_agent_hint_url';
+    const can = segGet(d, 'ag-role') === 'editor' ? 'drv_agent_hint_rw' : 'drv_agent_hint_ro';
+    qs('#ag-hint', d).textContent = `${t(via)} ${t(can)}`;
   };
+  segBind(d, 'ag-via', sync);
   segBind(d, 'ag-role', sync);
   sync();
 
@@ -1704,6 +1720,7 @@ async function agentDialog(nodes) {
       // 不带主题、不带明暗、不带语言:另一端没有任何界面需要对齐。
       const s = await api('POST', '/api/drive/shares', {
         nodes: list.map((n) => n.id), audience: 'agent', role: segGet(d, 'ag-role'),
+        agent_mode: segGet(d, 'ag-via'),
       });
       const url = shareUrl(s);
       // Say when the link is one that already existed. It looks identical to a fresh one, and
@@ -1741,7 +1758,8 @@ function agentCardHtml(s) {
   return `
       <div class="drv-link-card ${dead ? 'dead' : ''}">
         <div class="hd">
-          <span class="badge agent">${icon('robot', 14)}${esc(t(s.role === 'editor' ? 'drv_agent_rw' : 'drv_agent_ro'))}</span>
+          <span class="badge agent">${icon('robot', 14)}${esc(t(s.agent_mode === 'dav' ? 'drv_agent_via_mount' : 'drv_agent_via_url'))}</span>
+          <span class="badge role">${esc(t(s.role === 'editor' ? 'drv_agent_rw' : 'drv_agent_ro'))}</span>
           <span class="st">${esc(dead ? t('drv_share_revoked') : t('drv_share_exp_never'))}</span>
           <span class="st">${esc(t('drv_share_created', fmtDate(s.created_at)))}</span>
           <span style="flex:1"></span>

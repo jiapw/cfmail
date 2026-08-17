@@ -1,0 +1,24 @@
+-- Which way in an access point tells its reader to come.
+--
+-- The link has answered two protocols since WebDAV was added: plain HTTP with a text listing,
+-- and WebDAV for anything that mounts. Both stay available on every link -- the method decides
+-- which one answers -- but only one of them can be the thing the instructions describe, because
+-- instructions that describe both are instructions that make the reader choose, and a reader
+-- that chooses wrong spends its context finding that out.
+--
+-- So the owner decides at creation which way the link introduces itself: come with curl, or
+-- mount me. It changes what the first response says, never what the link can do.
+--
+-- 一个接入点告诉它的读者从哪条路来。
+--
+-- 自从加了 WebDAV,这条链接就同时应答两种协议:朴素 HTTP 配文本列表,以及给一切能挂载的东西
+-- 用的 WebDAV。两者在每条链接上都仍然可用 —— 由方法决定谁来应答 —— 但只有其中一个能成为
+-- 指令所描述的那个,因为同时描述两者的指令,是在让读者做选择,而选错的读者要花掉自己的上下文
+-- 才能发现这一点。
+--
+-- 于是由所有者在创建时决定这条链接如何自我介绍:带着 curl 来,还是把我挂上。
+-- 它改变的是第一个响应说什么,从不改变这条链接能做什么。
+
+-- NULL means 'http': every link that existed before this column introduced itself with curl.
+-- NULL 即 'http':本列存在之前的每一条链接,自我介绍时说的都是 curl。
+ALTER TABLE drive_shares ADD COLUMN agent_mode TEXT;
