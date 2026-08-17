@@ -80,7 +80,7 @@ export async function renderDrive(seg) {
   } else if (seg[0] === 'folder' && seg[1]) {
     dst.view = 'folder';
     dst.folderId = seg[1];
-  } else if (['shared', 'recent', 'starred', 'trash', 'links'].includes(seg[0])) {
+  } else if (['shared', 'recent', 'starred', 'trash', 'links', 'agents'].includes(seg[0])) {
     dst.view = seg[0];
     dst.folderId = null;
   } else if (seg[0] === 'search' && seg[1]) {
@@ -159,6 +159,7 @@ const NAV = [
   { key: 'recent', icon: 'clock', hash: '#/drive/recent' },
   { key: 'starred', icon: 'star', hash: '#/drive/starred' },
   { key: 'links', icon: 'link', hash: '#/drive/links' },
+  { key: 'agents', icon: 'robot', hash: '#/drive/agents' },
   { key: 'trash', icon: 'trash', hash: '#/drive/trash' },
 ];
 
@@ -254,9 +255,18 @@ async function loadView() {
     } else if (dst.view === 'shared') {
       const data = await api('GET', '/api/drive/shared');
       renderSharedView(main, data.shares || []);
-    } else if (dst.view === 'links') {
+    } else if (dst.view === 'links' || dst.view === 'agents') {
       const data = await api('GET', '/api/drive/shares');
-      renderLinksView(main, data.shares || []);
+      // One endpoint, two lists. A link handed to a person and a link handed to a program are
+      // different objects to reason about -- what they cost you if they leak, what you look at
+      // to decide whether to keep them -- so they are never shown in the same column.
+      // 一个端点,两份列表。交给人的链接与交给程序的链接,是两种要分开思考的东西 ——
+      // 泄漏了各自代价不同,决定要不要留下时看的东西也不同 —— 所以不放在同一栏里。
+      const all = data.shares || [];
+      const agent = dst.view === 'agents';
+      const mine = all.filter((s) => (s.audience === 'agent') === agent);
+      if (agent) renderAgentsView(main, mine);
+      else renderLinksView(main, mine);
     } else {
       const ep = { recent: '/api/drive/recent', starred: '/api/drive/starred', trash: '/api/drive/trash', search: `/api/drive/search?q=${encodeURIComponent(dst.q)}` }[dst.view];
       const data = await api('GET', ep);
@@ -1100,6 +1110,14 @@ function menuItems(nodes) {
   // Share whatever is selected: files, folders, or any mix of them
   // 选中什么就分享什么:文件、目录,或者两者混装
   if (own) out.push({ ic: 'share', label: t('drv_share'), fn: () => shareDialog(nodes) });
+  // Its own entry, not a third setting inside Share. What this hands out is not a page for a
+  // person to open -- it is a set of verbs for a program to use -- and burying that choice one
+  // level inside the sharing dialog would make it look like a variation on sending someone a
+  // link, which is the one thing it is not.
+  // 单独一项,而不是"分享"里的第三个设置。它交出去的不是给人打开的页面,
+  // 而是给程序使用的一组动词 —— 把这个选择埋进分享对话框里一层,
+  // 会让它看起来像是"发条链接给谁"的一种变体,而这恰恰是它唯一不是的东西。
+  if (own) out.push({ ic: 'robot', label: t('drv_agent_access'), fn: () => agentDialog(nodes) });
   if (canEdit && !editorOnRoot) out.push({ ic: 'folder-move', label: t('drv_move'), fn: () => moveDialog(nodes) });
   if (own) {
     const allStar = nodes.every((n) => n.starred);
@@ -1433,7 +1451,6 @@ async function shareDialog(nodes) {
         ${segHtml('sh-aud', [
           { v: 'internal', label: t('drv_share_aud_internal') },
           { v: 'public', label: t('drv_share_aud_public') },
-          { v: 'agent', label: t('drv_share_aud_agent') },
         ], 'internal')}
       </div>
       <div class="f" id="f-role">
@@ -1472,9 +1489,7 @@ async function shareDialog(nodes) {
   // 公开链接一律只读:另一端没有任何已认证的人,写操作无从追责。
   // 权限控件置灰而非消失,于是这条约束是看得见的,而不是这一行悄悄少了个字段。
   const sync = () => {
-    const aud = segGet(d, 'sh-aud');
-    const pub = aud === 'public';
-    const ai = aud === 'agent';
+    const pub = segGet(d, 'sh-aud') === 'public';
     // Snap the role back to viewer, not merely grey it out. A greyed control still showing
     // "editor" would be stating something the link will not do -- the request is forced to
     // viewer server-side either way, so the UI must not claim otherwise.
@@ -1486,12 +1501,8 @@ async function shareDialog(nodes) {
     // and reshuffle the remaining controls under the user's cursor.
     // 域名字段连标签一起淡出,但保留占位:这一行不能塌陷,
     // 否则会把剩下的控件在用户指针底下重新排一遍。
-    qs('#f-dom', d).style.visibility = pub || ai ? 'hidden' : '';
-    // An agent link never expires, so the field is not merely disabled -- there is no answer it
-    // could be showing that would be true.
-    // 面向 AI 的链接永不过期,所以这个字段不是"置灰"那么简单 —— 它显示任何值都不会是真的。
-    qs('#f-exp', d).style.visibility = ai ? 'hidden' : '';
-    qs('#sh-hint', d).textContent = t(ai ? 'drv_share_hint_agent' : pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
+    qs('#f-dom', d).style.visibility = pub ? 'hidden' : '';
+    qs('#sh-hint', d).textContent = t(pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
   };
   segBind(d, 'sh-aud', sync);
   segBind(d, 'sh-role');
@@ -1554,7 +1565,7 @@ function shareUrl(s) {
   // the address has to mean something to a plain HTTP client.
   // 面向 AI 的链接是真实路径,而不是 hash 路由:取它的东西根本不会运行这个应用,
   // 于是这个地址必须对一个朴素的 HTTP 客户端就有意义。
-  if (s.audience === 'agent') return `${location.origin}/ai/${s.token}`;
+  if (s.audience === 'agent') return `${location.origin}/agt/${s.token}`;
   return `${location.origin}/#/${s.audience === 'public' ? 'p' : 'drive/s'}/${s.token}`;
 }
 
@@ -1572,9 +1583,7 @@ function renderLinksView(main, shares) {
     const url = shareUrl(s);
     const who = s.audience === 'public'
       ? t('drv_share_aud_public')
-      : s.audience === 'agent'
-        ? t('drv_share_aud_agent')
-        : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
+      : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
     const items = (s.items || []).map((n) =>
       `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
     const stateLbl = s.state === 'ok'
@@ -1604,7 +1613,14 @@ function renderLinksView(main, shares) {
       ${rows || `<div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_share_none_yet'))}</div></div>`}
     </div>`;
   bindBar(main);
+  bindLinkActions(main);
+}
 
+/** Copy, revoke, forget. The same three gestures on a share card and on an agent card -- the
+ *  cards differ in what they say, never in what you can do about them.
+ *  复制、撤销、移除。分享卡片与 AI 卡片上是同样这三个动作 ——
+ *  两种卡片的差别在于它们说了什么,而不在于你能拿它们怎么办。 */
+function bindLinkActions(main) {
   qsa('[data-copy]', main).forEach((b) => b.addEventListener('click', async () => {
     await copyText(b.dataset.copy);
     toast(t('drv_link_copied'));
@@ -1623,6 +1639,117 @@ function renderLinksView(main, shares) {
     } catch (e) { toast(tErr(e && e.message), true); }
   }));
 }
+// ---------- Agent access ----------
+// ---------- 面向 AI 的访问 ----------
+
+/** Hand a set of items to a program. Deliberately not a mode of the share dialog: there is no
+ *  audience to pick, no domain, no expiry -- only how much the program may do -- and putting
+ *  those absent fields on screen greyed out would say the choice exists.
+ *  把一组条目交给一个程序。刻意不做成分享对话框的一种模式:这里没有受众可选、没有域名、
+ *  没有有效期,只有"程序能做到多少" —— 把那些不存在的字段置灰摆在屏幕上,
+ *  等于宣称这些选择是存在的。 */
+async function agentDialog(nodes) {
+  const list = Array.isArray(nodes) ? nodes : [nodes];
+  if (!list.length) return;
+  const d = showModal(`
+    <div class="modal-body" id="drv-agent-body"></div>
+    <div slot="footer" class="drv-share-foot" id="ag-foot">
+      <wa-button variant="brand" id="ag-make">${icon('robot', 16)} ${esc(t('drv_agent_create'))}</wa-button>
+    </div>`);
+  d.addEventListener('click', (e) => { if (e.target.closest('[data-x]')) closeModal(); });
+
+  const items = list.map((n) => `
+    <div class="it">${n.kind === 'folder' ? icon('folder', 22) : fileIcon(n.name, 22)}<span>${esc(n.name)}</span></div>`).join('');
+  const total = list.reduce((s, n) => s + effSize(n), 0);
+
+  qs('#drv-agent-body', d).innerHTML = `
+    <div class="drv-dlg-head">
+      <h3>${icon('robot', 20)} ${esc(t('drv_agent_access'))}</h3>
+      <button class="drv-x" data-x="close" aria-label="${esc(t('close'))}">${icon('close', 18)}</button>
+    </div>
+    <div class="drv-share-items">
+      <div class="lst">${items}</div>
+      <div class="sum">${esc(t('drv_share_n_items', String(list.length)))} · ${esc(fmtSize(total))}</div>
+    </div>
+    <div class="drv-share-line">
+      <div class="f">
+        <label>${esc(t('drv_agent_can'))}</label>
+        ${segHtml('ag-role', [
+          { v: 'viewer', label: t('drv_agent_ro') },
+          { v: 'editor', label: t('drv_agent_rw') },
+        ], 'viewer')}
+      </div>
+    </div>
+    <p class="drv-dim" id="ag-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
+
+  const sync = () => {
+    qs('#ag-hint', d).textContent = t(segGet(d, 'ag-role') === 'editor' ? 'drv_agent_hint_rw' : 'drv_agent_hint_ro');
+  };
+  segBind(d, 'ag-role', sync);
+  sync();
+
+  qs('#ag-make', d).addEventListener('click', async () => {
+    try {
+      // No theme, no mode, no language: nothing on the other end has an interface to match.
+      // 不带主题、不带明暗、不带语言:另一端没有任何界面需要对齐。
+      const s = await api('POST', '/api/drive/shares', {
+        nodes: list.map((n) => n.id), audience: 'agent', role: segGet(d, 'ag-role'),
+      });
+      const url = shareUrl(s);
+      qs('#ag-foot', d).innerHTML = `
+        <div class="drv-share-link">
+          <input readonly value="${esc(url)}" onclick="this.select()">
+          <wa-button size="small" id="ag-copy">${icon('copy', 15)} ${esc(t('drv_copy_link'))}</wa-button>
+        </div>`;
+      qs('#ag-copy', d).addEventListener('click', async () => {
+        await copyText(url);
+        toast(t('drv_link_copied'));
+      });
+      reloadSoon();
+    } catch (e) {
+      toast(tErr(e && e.message), true);
+    }
+  });
+}
+
+/** The agent links this account handed out. Same management gestures as the share list, but on
+ *  its own screen: what matters about one of these is what it can do and what it can reach, not
+ *  who was invited -- there is nobody to invite.
+ *  本账号发出的面向 AI 的链接。管理动作与分享列表相同,但自成一屏:
+ *  这类链接要紧的是"能做什么、能碰到什么",而不是"邀请了谁" —— 这里没有人可邀请。 */
+function renderAgentsView(main, shares) {
+  const rows = shares.map((s) => {
+    const dead = s.state !== 'ok';
+    const url = shareUrl(s);
+    const items = (s.items || []).map((n) =>
+      `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
+    return `
+      <div class="drv-link-card ${dead ? 'dead' : ''}">
+        <div class="hd">
+          <span class="badge agent">${icon('robot', 14)}${esc(t(s.role === 'editor' ? 'drv_agent_rw' : 'drv_agent_ro'))}</span>
+          <span class="st">${esc(dead ? t('drv_share_revoked') : t('drv_share_exp_never'))}</span>
+          <span class="st">${esc(t('drv_share_created', fmtDate(s.created_at)))}</span>
+          <span style="flex:1"></span>
+          ${dead
+            ? `<wa-button size="small" appearance="plain" data-forget="${esc(s.id)}">${esc(t('drv_share_forget'))}</wa-button>`
+            : `<wa-button size="small" appearance="plain" data-copy="${esc(url)}">${icon('copy', 14)} ${esc(t('drv_copy_link'))}</wa-button>
+               <wa-button size="small" appearance="plain" class="danger" data-stop="${esc(s.id)}">${esc(t('drv_share_stop'))}</wa-button>`}
+        </div>
+        ${dead ? '' : `<div class="url"><code>${esc(url)}</code></div>`}
+        <div class="items">${items || `<span class="drv-dim">${esc(t('drv_share_items_gone'))}</span>`}</div>
+      </div>`;
+  }).join('');
+
+  main.innerHTML = `
+    <div id="drv-bar">${barHtml()}</div>
+    <div class="drv-scroll drv-links">
+      ${rows || `<div class="drv-empty">${icon('robot', 48)}<div>${esc(t('drv_agent_none_yet'))}</div>
+        <div class="drv-dim">${esc(t('drv_agent_none_hint'))}</div></div>`}
+    </div>`;
+  bindBar(main);
+  bindLinkActions(main);
+}
+
 // ---------- Shared-with-me view ----------
 // ---------- 共享给我 ----------
 

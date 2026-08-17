@@ -1369,8 +1369,8 @@ drivePubApp.get('/:token/files/:id/thumb', async (c) => {
     },
   });
 });
-// ---------- Agent access links (/ai/<token>) ----------
-// ---------- 面向 AI 的访问链接(/ai/<token>) ----------
+// ---------- Agent access links (/agt/<token>) ----------
+// ---------- 面向 AI 的访问链接(/agt/<token>) ----------
 //
 // A share for a reader that is a program. Everything an agent needs arrives in the first
 // response: a handful of lines telling it which verbs exist, then the contents of the link.
@@ -1517,7 +1517,6 @@ function agentSkill(base: string, share: any, roots: Map<string, NodeRow>): stri
   const lines = [
     `# Drive over HTTP (${rw ? 'read/write' : 'read-only'})`,
     '',
-    ...(share.note ? [share.note, ''] : []),
     `B=${base}`,
     '',
     'GET B/P/ list folder: a line per entry, "name/" is a folder, "name<tab>size" is a file',
@@ -1556,9 +1555,9 @@ driveAgentApp.all('/*', async (c) => {
     return txt('bad path', 400);
   }
   // The URL parser collapses these before we ever see them, and a collapsed path can only land
-  // on another token, never outside /ai. This is the backstop for the day that stops being true.
+  // on another token, never outside /agt. This is the backstop for the day that stops being true.
   // URL 解析器在我们看到之前就把它们折叠掉了,而折叠后的路径只可能落到另一个 token 上,
-  // 出不了 /ai。这行是留给"哪天这条不再成立"的后手。
+  // 出不了 /agt。这行是留给"哪天这条不再成立"的后手。
   if (segs.some((s) => s === '.' || s === '..')) return txt('bad path', 400);
 
   const share = await agentShare(c.env, token);
@@ -1585,7 +1584,7 @@ driveAgentApp.all('/*', async (c) => {
       // (wrangler dev 会把 URL 和 Host 头一起改写成配置里的第一条路由,
       // 因此本地服务器印出的 base 写的是生产域名。这没什么可修的 ——
       // 一个已经不再自称 localhost 的请求,给不出 localhost 这个答案。)
-      const base = new URL(c.req.url).origin + '/ai/' + token;
+      const base = new URL(c.req.url).origin + '/agt/' + token;
       return txt(agentSkill(base, share, roots));
     }
     if (!node) return txt('no such path', 404);

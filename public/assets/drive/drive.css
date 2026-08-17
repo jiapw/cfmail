@@ -762,7 +762,19 @@
 .drv-link-card .badge.public { background: #f5a62333; color: #f5a623; }
 /* An agent link reads and writes with nothing but the URL, so it does not wear the same colour
    as a link a person opens. / 面向 AI 的链接仅凭 URL 就能读写,所以不与"人打开的链接"同色。 */
-.drv-link-card .badge.agent { background: #8b5cf633; color: #8b5cf6; }
+.drv-link-card .badge.agent {
+  background: #8b5cf633; color: #8b5cf6;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+/* The URL itself, printed on the card. A share link is opened by handing it to someone; this one
+   is more often typed into something, or read to check it is the link a running job is using --
+   both of which want it visible without a trip through the clipboard.
+   URL 本身直接印在卡片上。分享链接是交给人去打开的;而这一种更常被填进某个地方,
+   或者被读一眼来核对"某个正在跑的任务用的是不是它" —— 两种情形都希望不必经过剪贴板就能看见。 */
+.drv-link-card .url code {
+  display: block; font-size: 12px; color: var(--text-2);
+  overflow-x: auto; white-space: nowrap; padding: 3px 0;
+}
 .drv-link-card .badge.role { background: var(--hover); color: var(--text-2); }
 .drv-link-card .st { font-size: 12.5px; color: var(--text-2); }
 .drv-link-card .items { display: flex; flex-wrap: wrap; gap: 6px; }
