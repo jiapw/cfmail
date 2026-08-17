@@ -257,16 +257,18 @@ async function loadView() {
       renderSharedView(main, data.shares || []);
     } else if (dst.view === 'links' || dst.view === 'agents') {
       const data = await api('GET', '/api/drive/shares');
-      // One endpoint, two lists. A link handed to a person and a link handed to a program are
-      // different objects to reason about -- what they cost you if they leak, what you look at
-      // to decide whether to keep them -- so they are never shown in the same column.
-      // 一个端点,两份列表。交给人的链接与交给程序的链接,是两种要分开思考的东西 ——
-      // 泄漏了各自代价不同,决定要不要留下时看的东西也不同 —— 所以不放在同一栏里。
+      // One endpoint, two screens. The share list is the whole inventory of what this account
+      // has handed out, agent links included but kept in a group of their own -- the question
+      // "what have I exposed" wants everything in one place, while the question "which link is
+      // that job using" wants only the ones a program holds. Same rows, same revoke, two
+      // readings, so neither screen has to be the compromise between them.
+      // 一个端点,两块屏。分享列表是本账号交出去的全部清单,AI 链接也在其中,但自成一组 ——
+      // "我都暴露了什么"这个问题要的是所有东西在同一处,
+      // "那个任务用的是哪条"要的只是程序持有的那些。同样的行、同样的撤销,两种读法,
+      // 于是哪一块都不必是两者的折中。
       const all = data.shares || [];
-      const agent = dst.view === 'agents';
-      const mine = all.filter((s) => (s.audience === 'agent') === agent);
-      if (agent) renderAgentsView(main, mine);
-      else renderLinksView(main, mine);
+      if (dst.view === 'agents') renderAgentsView(main, all.filter((s) => s.audience === 'agent'));
+      else renderLinksView(main, all);
     } else {
       const ep = { recent: '/api/drive/recent', starred: '/api/drive/starred', trash: '/api/drive/trash', search: `/api/drive/search?q=${encodeURIComponent(dst.q)}` }[dst.view];
       const data = await api('GET', ep);
@@ -1578,7 +1580,8 @@ function shareUrl(s) {
  *  管理列表:本账号发出的每条链接、里面装了什么、给谁、以及是否仍然有效。撤销一键完成、
  *  立刻生效 —— 该行会以墓碑形式留下,让人看清链接是被停掉了,而不是不声不响消失了。 */
 function renderLinksView(main, shares) {
-  const rows = shares.map((s) => {
+  const bots = shares.filter((s) => s.audience === 'agent');
+  const rows = shares.filter((s) => s.audience !== 'agent').map((s) => {
     const dead = s.state !== 'ok';
     const url = shareUrl(s);
     const who = s.audience === 'public'
@@ -1610,7 +1613,14 @@ function renderLinksView(main, shares) {
   main.innerHTML = `
     <div id="drv-bar">${barHtml()}</div>
     <div class="drv-scroll drv-links">
-      ${rows || `<div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_share_none_yet'))}</div></div>`}
+      ${rows}
+      ${bots.length ? `
+        <div class="drv-links-group">${icon('robot', 16)}<span>${esc(t('drv_agents'))}</span>
+          <span class="sp"></span>
+          <a class="more" href="#/drive/agents">${esc(t('drv_agent_manage'))}</a>
+        </div>
+        ${bots.map(agentCardHtml).join('')}` : ''}
+      ${rows || bots.length ? '' : `<div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_share_none_yet'))}</div></div>`}
     </div>`;
   bindBar(main);
   bindLinkActions(main);
@@ -1696,6 +1706,12 @@ async function agentDialog(nodes) {
         nodes: list.map((n) => n.id), audience: 'agent', role: segGet(d, 'ag-role'),
       });
       const url = shareUrl(s);
+      // Say when the link is one that already existed. It looks identical to a fresh one, and
+      // the difference matters: this address may already be in a config somewhere, and it was
+      // created on a day the owner may want to go and look up.
+      // 如果这条链接是本来就有的,要说出来。它和新造的一条看起来一模一样,而这个差别是要紧的:
+      // 这个地址可能早已写在某处的配置里,而它的创建日期可能正是所有者想去查的那一天。
+      if (s.reused) qs('#ag-hint', d).textContent = t('drv_agent_reused');
       qs('#ag-foot', d).innerHTML = `
         <div class="drv-share-link">
           <input readonly value="${esc(url)}" onclick="this.select()">
@@ -1717,13 +1733,12 @@ async function agentDialog(nodes) {
  *  who was invited -- there is nobody to invite.
  *  本账号发出的面向 AI 的链接。管理动作与分享列表相同,但自成一屏:
  *  这类链接要紧的是"能做什么、能碰到什么",而不是"邀请了谁" —— 这里没有人可邀请。 */
-function renderAgentsView(main, shares) {
-  const rows = shares.map((s) => {
-    const dead = s.state !== 'ok';
-    const url = shareUrl(s);
-    const items = (s.items || []).map((n) =>
-      `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
-    return `
+function agentCardHtml(s) {
+  const dead = s.state !== 'ok';
+  const url = shareUrl(s);
+  const items = (s.items || []).map((n) =>
+    `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
+  return `
       <div class="drv-link-card ${dead ? 'dead' : ''}">
         <div class="hd">
           <span class="badge agent">${icon('robot', 14)}${esc(t(s.role === 'editor' ? 'drv_agent_rw' : 'drv_agent_ro'))}</span>
@@ -1738,7 +1753,10 @@ function renderAgentsView(main, shares) {
         ${dead ? '' : `<div class="url"><code>${esc(url)}</code></div>`}
         <div class="items">${items || `<span class="drv-dim">${esc(t('drv_share_items_gone'))}</span>`}</div>
       </div>`;
-  }).join('');
+}
+
+function renderAgentsView(main, shares) {
+  const rows = shares.map(agentCardHtml).join('');
 
   main.innerHTML = `
     <div id="drv-bar">${barHtml()}</div>
