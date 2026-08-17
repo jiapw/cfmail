@@ -1041,6 +1041,25 @@ driveApp.post('/shares', async (c) => {
     if (a.chain.some((n) => n.trashed)) throw new HttpError(400, 'e_drive_trashed');
     nodes.push(a.node);
   }
+  // An agent link that already covers exactly this, at exactly this permission, is handed back
+  // instead of a second one being minted. Links meant for people are made to be given to a
+  // particular person, and two of them are two acts; a link meant for a program is an address,
+  // and a second address to the same place is just one more thing the owner has to remember to
+  // revoke. Permission is part of the identity: asking for write when a read-only link exists is
+  // asking for something that link cannot do, so it gets its own.
+  // 已经覆盖同一批内容、且权限也相同的 AI 链接,直接交还,而不是再造一条。
+  // 给人的链接是要给某个特定的人的,两条就是两件事;给程序的链接是一个地址,
+  // 而同一个地方的第二个地址,只是所有者将来要记得撤销的又一样东西。
+  // 权限属于身份的一部分:在只有只读链接时要求写,要的是那条链接做不到的事,所以它另得一条。
+  if (audience === 'agent') {
+    const same = await sameAgentShare(c.env, user.id, role, ids);
+    if (same) {
+      return c.json({
+        id: same.id, token: same.token, role: same.role, audience: 'agent',
+        domain_id: null, expires_at: null, created_at: same.created_at, reused: true,
+      });
+    }
+  }
   const shareId = uid();
   const token = randomToken(24);
   // One instant for both stamps: "expires in 7 days" should be exactly seven days after the
@@ -1079,6 +1098,26 @@ driveApp.post('/shares', async (c) => {
   await c.env.DB.batch(stmts);
   return c.json({ id: shareId, token, role, audience, domain_id: domainId, expires_at: expires, created_at: t });
 });
+
+/** A live agent link whose items are exactly this set, at this permission. Set equality, not
+ *  overlap: a link over three folders is not the link you asked for when you asked for one of
+ *  them -- it would hand out two more than the caller named.
+ *  一条仍然有效、条目恰好就是这一组、权限也相同的 AI 链接。要的是集合相等而不是相交:
+ *  一条覆盖三个目录的链接,并不是你只要其中一个时所要的那条 —— 那会多交出去两个。 */
+async function sameAgentShare(env: Env, ownerId: string, role: string, nodeIds: string[]): Promise<any | null> {
+  const ids = [...new Set(nodeIds)];
+  if (!ids.length) return null;
+  const ph = ids.map((_, i) => `?${i + 4}`).join(',');
+  const row = await env.DB.prepare(
+    `SELECT s.id, s.token, s.role, s.created_at
+       FROM drive_shares s JOIN drive_share_items si ON si.share_id = s.id
+      WHERE s.owner_id=?1 AND s.audience='agent' AND s.role=?2 AND s.revoked_at IS NULL
+      GROUP BY s.id
+     HAVING COUNT(*) = ?3 AND SUM(CASE WHEN si.node_id IN (${ph}) THEN 1 ELSE 0 END) = ?3
+      ORDER BY s.created_at LIMIT 1`
+  ).bind(ownerId, role, ids.length, ...ids).first();
+  return row || null;
+}
 
 function cleanNote(v: unknown): string {
   return String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 200);

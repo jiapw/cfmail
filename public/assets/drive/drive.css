@@ -771,6 +771,20 @@
    both of which want it visible without a trip through the clipboard.
    URL 本身直接印在卡片上。分享链接是交给人去打开的;而这一种更常被填进某个地方,
    或者被读一眼来核对"某个正在跑的任务用的是不是它" —— 两种情形都希望不必经过剪贴板就能看见。 */
+/* The heading that opens the agent group inside the share list. The links below it are the same
+   rows as on their own screen -- this is one inventory read two ways, not a copy.
+   分享列表里领起 AI 分组的标题。它下面的链接与专属页面上是同一批行 ——
+   这是一份清单的两种读法,不是一份副本。 */
+.drv-links-group {
+  display: flex; align-items: center; gap: 7px;
+  margin: 18px 0 2px; font-size: 12.5px; color: var(--text-2);
+}
+.drv-links-group wa-icon { flex: none; color: var(--text-3); }
+.drv-links-group .sp { flex: 1; }
+.drv-links-group .more { color: var(--link); text-decoration: none; }
+.drv-links-group .more:hover { text-decoration: underline; }
+.drv-links .drv-link-card + .drv-links-group { margin-top: 22px; }
+
 .drv-link-card .url code {
   display: block; font-size: 12px; color: var(--text-2);
   overflow-x: auto; white-space: nowrap; padding: 3px 0;
