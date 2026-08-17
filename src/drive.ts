@@ -1051,12 +1051,18 @@ driveApp.post('/shares', async (c) => {
   // 给人的链接是要给某个特定的人的,两条就是两件事;给程序的链接是一个地址,
   // 而同一个地方的第二个地址,只是所有者将来要记得撤销的又一样东西。
   // 权限属于身份的一部分:在只有只读链接时要求写,要的是那条链接做不到的事,所以它另得一条。
+  // Both protocols answer on every access point; this only decides which one the first
+  // response describes. Describing both would hand the reader a choice it has no basis to make.
+  // 两种协议在每个接入点上都会应答;这里决定的只是第一个响应描述哪一种。
+  // 同时描述两种,等于把一个它没有依据去做的选择丢给读者。
+  const agentMode = body.agent_mode === 'dav' ? 'dav' : 'http';
   if (audience === 'agent') {
-    const same = await sameAgentShare(c.env, user.id, role, ids);
+    const same = await sameAgentShare(c.env, user.id, role, agentMode, ids);
     if (same) {
       return c.json({
         id: same.id, token: same.token, role: same.role, audience: 'agent',
-        domain_id: null, expires_at: null, created_at: same.created_at, reused: true,
+        agent_mode: agentMode, domain_id: null, expires_at: null,
+        created_at: same.created_at, reused: true,
       });
     }
   }
@@ -1088,34 +1094,39 @@ driveApp.post('/shares', async (c) => {
       WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
   ).bind(user.id).first();
   const stmts = [c.env.DB.prepare(
-    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, created_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`
-  ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, showOwner ? 1 : 0, t)];
+    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, created_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)`
+  ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, showOwner ? 1 : 0,
+    audience === 'agent' ? agentMode : null, t)];
   for (const n of nodes) {
     stmts.push(c.env.DB.prepare('INSERT INTO drive_share_items (share_id, node_id) VALUES (?1,?2)')
       .bind(shareId, n.id));
   }
   await c.env.DB.batch(stmts);
-  return c.json({ id: shareId, token, role, audience, domain_id: domainId, expires_at: expires, created_at: t });
+  return c.json({
+    id: shareId, token, role, audience, agent_mode: audience === 'agent' ? agentMode : null,
+    domain_id: domainId, expires_at: expires, created_at: t,
+  });
 });
 
 /** A live agent link whose items are exactly this set, at this permission. Set equality, not
  *  overlap: a link over three folders is not the link you asked for when you asked for one of
  *  them -- it would hand out two more than the caller named.
- *  一条仍然有效、条目恰好就是这一组、权限也相同的 AI 链接。要的是集合相等而不是相交:
+ *  一条仍然有效、条目恰好就是这一组、权限与接入方式也相同的 AI 链接。要的是集合相等而不是相交:
  *  一条覆盖三个目录的链接,并不是你只要其中一个时所要的那条 —— 那会多交出去两个。 */
-async function sameAgentShare(env: Env, ownerId: string, role: string, nodeIds: string[]): Promise<any | null> {
+async function sameAgentShare(env: Env, ownerId: string, role: string, mode: string, nodeIds: string[]): Promise<any | null> {
   const ids = [...new Set(nodeIds)];
   if (!ids.length) return null;
-  const ph = ids.map((_, i) => `?${i + 4}`).join(',');
+  const ph = ids.map((_, i) => `?${i + 5}`).join(',');
   const row = await env.DB.prepare(
     `SELECT s.id, s.token, s.role, s.created_at
        FROM drive_shares s JOIN drive_share_items si ON si.share_id = s.id
       WHERE s.owner_id=?1 AND s.audience='agent' AND s.role=?2 AND s.revoked_at IS NULL
+        AND COALESCE(s.agent_mode,'http')=?4
       GROUP BY s.id
      HAVING COUNT(*) = ?3 AND SUM(CASE WHEN si.node_id IN (${ph}) THEN 1 ELSE 0 END) = ?3
       ORDER BY s.created_at LIMIT 1`
-  ).bind(ownerId, role, ids.length, ...ids).first();
+  ).bind(ownerId, role, ids.length, mode, ...ids).first();
   return row || null;
 }
 
@@ -1140,6 +1151,7 @@ driveApp.get('/shares', async (c) => {
     ).bind(s.id).all();
     out.push({
       id: s.id, token: s.token, role: s.role, audience: s.audience,
+      agent_mode: s.agent_mode || 'http',
       domain_id: s.domain_id, domain_name: s.domain_name || null,
       expires_at: s.expires_at, revoked_at: s.revoked_at, note: s.note, created_at: s.created_at,
       state: shareLiveness(s) || 'ok',
@@ -1564,6 +1576,7 @@ const rootList = (roots: Map<string, NodeRow>): string =>
  *  只读链接会拒绝的动词一概不提:提了只能换来一个 403。 */
 function agentInstructions(base: string, share: any, roots: Map<string, NodeRow>): string {
   const rw = share.role === 'editor';
+  if (share.agent_mode === 'dav') return agentMountInstructions(base, rw, roots);
   const lines = [
     `${rw ? 'Read and write' : 'Read'} these files over HTTP -- curl, or a request from code. Not a`,
     'browser or a browsing tool: these URLs return bytes, not pages.',
@@ -1580,18 +1593,47 @@ function agentInstructions(base: string, share: any, roots: Map<string, NodeRow>
     ] : []),
     '',
     'P is a path of names -- append a listed one to the URL you fetched to go deeper.',
-    // Five words for the case where the harness happens to hold a WebDAV client. Useless to a
-    // model driving curl, which is most of them -- but the same URL really does mount, and not
-    // saying so would hide a whole second way in behind nothing at all.
-    // 五个词,留给"harness 恰好带着一个 WebDAV 客户端"的情形。对一个驱动 curl 的模型无用,
-    // 而它们多半就是这样 —— 但同一个 URL 确实挂得上,不说出来,
-    // 等于把另一整条进路藏在一个什么也没有的地方。
-    `${rw ? 'Create only inside a folder listed below. ' : ''}WebDAV clients: same URL.`,
+    ...(rw ? ['Create only inside a folder listed below.'] : []),
     '',
     'B:',
     rootList(roots),
   ];
   return lines.join('\n') + '\n';
+}
+
+/** The other introduction: put it on the filesystem and then forget it is remote. Written for a
+ *  reader that will run one command and then use its ordinary tools, so what it needs is the
+ *  command and the fact that there is no password -- not a protocol tour.
+ *
+ *  The three clients are named because "use a WebDAV client" is the kind of instruction that
+ *  sends a model looking for one; naming rclone and the two file managers means it can act on
+ *  the first read.
+ *
+ *  另一种自我介绍:把它放到文件系统上,然后忘掉它在远端。写给一个"跑一条命令、之后用自己
+ *  惯常工具"的读者,所以它需要的是那条命令,以及"没有密码"这件事 —— 而不是一趟协议导览。
+ *
+ *  三种客户端点名写出来,是因为"用一个 WebDAV 客户端"这种说法,会让模型跑去找一个;
+ *  点名 rclone 和两个文件管理器,它读第一遍就能动手。 */
+function agentMountInstructions(base: string, rw: boolean, roots: Map<string, NodeRow>): string {
+  return [
+    'Mount this as a local folder, then use your ordinary file tools on it.',
+    'Use rclone or the OS file manager -- not a browser or a browsing tool.',
+    '',
+    `U=${base}`,
+    '',
+    'There is no username or password: the URL is the credential.',
+    'rclone mount --webdav-url U --webdav-vendor other :webdav: DIR',
+    'macOS: Finder, Go > Connect to Server, U',
+    'Windows: File Explorer, Map network drive, U',
+    '',
+    ...(rw
+      ? ['Create, rename and delete as normal files. Locks are honoured, and lapse ten minutes',
+        'after a client stops refreshing them.']
+      : ['The mount is read-only.']),
+    '',
+    'U contains:',
+    rootList(roots),
+  ].join('\n') + '\n';
 }
 
 /** One handler for every method: the path is parsed the same way each time, and a trailing
