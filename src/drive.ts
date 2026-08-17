@@ -939,7 +939,11 @@ async function sharesDomainWith(env: Env, ownerId: string, userId: string): Prom
 }
 
 const SHARE_ROLES = ['viewer', 'editor'];
-const SHARE_AUDIENCES = ['internal', 'public'];
+// agent: the reader is a program holding the link (see the /ai section). It may write, because
+// that is what it is for, and it never expires, because nothing is watching it to renew.
+// agent:读者是持有链接的程序(见 /ai 一节)。它可以写,因为这正是它的用途;
+// 它永不过期,因为没有人守在旁边给它续期。
+const SHARE_AUDIENCES = ['internal', 'public', 'agent'];
 const SHARE_MAX_ITEMS = 100;
 /** The nine the interface actually ships. An allowlist rather than a length cap: this value is
  *  handed straight back to every visitor, and only a code we have a dictionary for is useful.
@@ -1044,7 +1048,11 @@ driveApp.post('/shares', async (c) => {
   // 两个时间戳取同一时刻:"7 天后过期"应当正好是同一行所记创建时间之后的七天,
   // 而不是几次查询之前那一刻之后的七天。
   const t = now();
-  const expires = expiryFromDays(body.expires_days, t);
+  // An agent link has no deadline to offer: whatever holds it is not going to come back and ask
+  // for a fresh one, so the only way it ends is the owner ending it.
+  // 面向 AI 的链接没有期限可给:持有它的东西不会回来讨一条新的,
+  // 于是它唯一的终点就是所有者亲手结束它。
+  const expires = audience === 'agent' ? null : expiryFromDays(body.expires_days, t);
   // Remember how the sharer's app looked and read, so the public page can open the same way
   // 记下分享者当时的界面观感与语言,公开页据此以同样的样子打开
   const theme = String(body.theme || '').slice(0, 32) || null;
@@ -1361,6 +1369,353 @@ drivePubApp.get('/:token/files/:id/thumb', async (c) => {
     },
   });
 });
+// ---------- Agent access links (/ai/<token>) ----------
+// ---------- 面向 AI 的访问链接(/ai/<token>) ----------
+//
+// A share for a reader that is a program. Everything an agent needs arrives in the first
+// response: a handful of lines telling it which verbs exist, then the contents of the link.
+// There is no manifest to install, no server to configure, no second document to fetch --
+// the URL is the instructions, and every deeper URL is reached by appending a name to the one
+// it just read.
+//
+// The token sits in the path, so a single string carries both "who may" and "what". There is
+// no session, no header to set, nothing to remember between requests. That is the whole point
+// and also the whole risk, and it is a deliberate trade the owner makes when creating the link:
+// whoever holds it can do what the link says, until the owner revokes it.
+//
+// Written to be read by a language model, so it is written to be short. Read-only links do not
+// mention writing at all -- describing a verb the link will refuse is worse than useless, it is
+// tokens spent to produce a wrong attempt.
+//
+// 一份写给"读者是程序"的共享。代理所需的一切都在第一次响应里到齐:寥寥数行说明有哪些动词,
+// 接着就是这条链接的内容。没有清单要安装,没有服务要配置,没有第二份文档要取 ——
+// URL 本身就是说明书,而更深处的每个 URL,都由刚读到的那个 URL 追加一个名字得到。
+//
+// token 在路径里,于是一个字符串同时携带"谁可以"和"什么"。没有会话,没有要设的头,
+// 请求之间不必记住任何东西。这既是它的全部意义,也是它的全部风险 ——
+// 这是所有者在创建链接时有意做出的交换:持有者能做链接所说的事,直到所有者撤销它。
+//
+// 它是写给语言模型读的,所以写得短。只读链接压根不提写 ——
+// 描述一个链接会拒绝的动词,比无用更糟:那是花掉 token 去换一次错误的尝试。
+
+export const driveAgentApp = new Hono<Ctx>();
+
+driveAgentApp.use('*', async (c, next) => {
+  await next();
+  // Revocation has to bite at once; a cached 200 would outlive the link.
+  // 撤销必须立刻生效;缓存下来的 200 会让链接活过它的死期。
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Robots-Tag', 'noindex, nofollow');
+});
+
+/** Plain text in, plain text out. These answers are read by a model, not rendered, so an error
+ *  is a short sentence rather than a code the caller would have to look up.
+ *  纯文本进,纯文本出。这些回答是给模型读的、不做渲染,所以错误是一句短话,
+ *  而不是一个还要去查表的错误码。 */
+const txt = (body: string, status = 200) =>
+  new Response(body, {
+    status,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
+  });
+
+/** Sizes an agent reads to decide whether to fetch something, not to do arithmetic on.
+ *  给代理判断"要不要取"用的大小,不是拿来做算术的。 */
+function shortSize(n: number): string {
+  if (n < 1024) return `${n}`;
+  const units = ['K', 'M', 'G', 'T'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v >= 10 ? Math.round(v) : v.toFixed(1)}${units[i]}`;
+}
+
+/** Enough of a type map that text an agent writes comes back as text. Anything unrecognised is
+ *  octet-stream, which is the honest answer and still downloads and previews as a file.
+ *  够用的类型表,好让代理写进去的文本能按文本回来。认不出的一律 octet-stream ——
+ *  这是诚实的答案,而且照样能下载、能当文件预览。 */
+const EXT_MIME: Record<string, string> = {
+  txt: 'text/plain', md: 'text/markdown', csv: 'text/csv', tsv: 'text/tab-separated-values',
+  json: 'application/json', jsonl: 'application/json', ndjson: 'application/json',
+  yaml: 'text/yaml', yml: 'text/yaml', toml: 'text/plain', ini: 'text/plain', log: 'text/plain',
+  html: 'text/html', css: 'text/css', js: 'text/javascript', mjs: 'text/javascript',
+  ts: 'text/plain', tsx: 'text/plain', jsx: 'text/plain', py: 'text/x-python', sh: 'text/x-sh',
+  sql: 'text/plain', xml: 'application/xml', svg: 'image/svg+xml', pdf: 'application/pdf',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  zip: 'application/zip', mp4: 'video/mp4', mp3: 'audio/mpeg',
+};
+
+function mimeOf(name: string, declared?: string | null): string {
+  const d = String(declared || '').toLowerCase().split(';')[0].trim();
+  if (d && d !== 'application/octet-stream' && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(d)) return d.slice(0, 120);
+  const ext = (/\.([A-Za-z0-9]{1,12})$/.exec(name) || ['', ''])[1].toLowerCase();
+  return EXT_MIME[ext] || 'application/octet-stream';
+}
+
+async function agentShare(env: Env, token: string): Promise<any | null> {
+  if (!token) return null;
+  const s = await env.DB.prepare("SELECT * FROM drive_shares WHERE token=?1 AND audience='agent'")
+    .bind(token).first();
+  return shareLiveness(s) ? null : s;
+}
+
+/** The names the selected items answer to at the top level. Two items may well arrive carrying
+ *  the same name from different folders, and a path has to mean one thing, so a repeat gets a
+ *  `~2` suffix. The order is shareItems' order, so the same share always yields the same names.
+ *  被选中的条目在顶层各自应答的名字。两个条目完全可能从不同目录带来同一个名字,
+ *  而一条路径只能有一个含义,所以重复者补一个 `~2` 后缀。
+ *  顺序即 shareItems 的顺序,于是同一条共享永远得到同一组名字。 */
+async function agentRoots(env: Env, shareId: string): Promise<Map<string, NodeRow>> {
+  const out = new Map<string, NodeRow>();
+  for (const n of await shareItems(env, shareId)) {
+    let seg = n.name;
+    for (let k = 2; out.has(seg); k++) seg = `${n.name}~${k}`;
+    out.set(seg, n);
+  }
+  return out;
+}
+
+/** Walk a path of names down from the selection. Intermediate segments must be folders; the last
+ *  one is a file if a file by that name exists, otherwise a folder -- so an agent that forgets
+ *  the trailing slash on a folder still gets its listing instead of an error.
+ *  从选中项出发,按名字逐级往下走。中间的段必须是目录;最后一段若有同名文件就是文件,
+ *  否则是目录 —— 于是代理忘了给目录加尾斜杠,拿到的仍是列表而不是报错。 */
+async function agentWalk(env: Env, roots: Map<string, NodeRow>, segs: string[]): Promise<NodeRow | null> {
+  if (!segs.length) return null;
+  let node = roots.get(segs[0]) || null;
+  if (!node) return null;
+  for (let i = 1; i < segs.length; i++) {
+    if (node.kind !== 'folder') return null;
+    const row: any = await env.DB.prepare(
+      `SELECT * FROM drive_nodes WHERE parent_id=?1 AND name=?2 AND trashed=0
+        ORDER BY kind='file' DESC LIMIT 1`
+    ).bind(node.id, segs[i]).first();
+    if (!row) return null;
+    node = row as NodeRow;
+  }
+  return node;
+}
+
+async function agentList(env: Env, folderId: string): Promise<string> {
+  const rows = await env.DB.prepare(
+    `SELECT name, kind, size FROM drive_nodes WHERE parent_id=?1 AND trashed=0
+      ORDER BY kind DESC, name LIMIT ${LIST_LIMIT}`
+  ).bind(folderId).all();
+  return (rows.results || []).map((n: any) =>
+    n.kind === 'folder' ? `${n.name}/` : `${n.name}\t${shortSize(n.size || 0)}`).join('\n');
+}
+
+const rootList = (roots: Map<string, NodeRow>): string =>
+  [...roots].map(([seg, n]) => (n.kind === 'folder' ? `${seg}/` : `${seg}\t${shortSize(n.size || 0)}`)).join('\n');
+
+/** The whole instruction manual. Every line here is paid for on every visit, so a line earns its
+ *  place by preventing a wrong request -- and the verbs a read-only link refuses are not
+ *  mentioned, because naming them would only buy a 403.
+ *  整本说明书。这里每一行在每次访问时都要付账,所以一行要靠"能防住一次错误请求"来挣得位置 ——
+ *  只读链接会拒绝的动词一概不提,提了只能换来一个 403。 */
+function agentSkill(base: string, share: any, roots: Map<string, NodeRow>): string {
+  const rw = share.role === 'editor';
+  const lines = [
+    `# Drive over HTTP (${rw ? 'read/write' : 'read-only'})`,
+    '',
+    ...(share.note ? [share.note, ''] : []),
+    `B=${base}`,
+    '',
+    'GET B/P/ list folder: a line per entry, "name/" is a folder, "name<tab>size" is a file',
+    'GET B/P read file (Range ok)',
+    ...(rw ? [
+      'PUT B/P write file, body is the whole new content (creates or replaces)',
+      'PUT B/P/ create folder',
+      'DELETE B/P delete',
+      'POST B/P?to=NAME rename',
+    ] : []),
+    '',
+    'P is a path of names. Names in a listing are relative to the URL you fetched: append one to',
+    'go deeper. Below is B itself.',
+    ...(rw ? ['New items go inside one of these; the top level is fixed.'] : []),
+    '',
+    rootList(roots),
+  ];
+  return lines.join('\n') + '\n';
+}
+
+/** One handler for every method: the path is parsed the same way each time, and a trailing
+ *  slash is meaningful, so it is read off the raw URL rather than from a router that may
+ *  normalise it away.
+ *  一个 handler 应付所有方法:路径每次都用同一套解析,而尾斜杠是有含义的,
+ *  所以直接从原始 URL 上读,而不是交给可能把它规整掉的路由。 */
+driveAgentApp.all('/*', async (c) => {
+  const parts = new URL(c.req.url).pathname.split('/').slice(2);
+  const token = parts.shift() || '';
+  const wantDir = parts.length > 0 && parts[parts.length - 1] === '';
+  if (wantDir) parts.pop();
+  if (parts.some((s) => s === '')) return txt('bad path', 400);
+  let segs: string[];
+  try {
+    segs = parts.map((s) => decodeURIComponent(s));
+  } catch {
+    return txt('bad path', 400);
+  }
+  // The URL parser collapses these before we ever see them, and a collapsed path can only land
+  // on another token, never outside /ai. This is the backstop for the day that stops being true.
+  // URL 解析器在我们看到之前就把它们折叠掉了,而折叠后的路径只可能落到另一个 token 上,
+  // 出不了 /ai。这行是留给"哪天这条不再成立"的后手。
+  if (segs.some((s) => s === '.' || s === '..')) return txt('bad path', 400);
+
+  const share = await agentShare(c.env, token);
+  // Wrong, revoked and expired answer alike: a link that no longer works is not worth
+  // explaining to a program, and the distinction would only describe someone else's link.
+  // 错误的、已撤销的、已过期的一律同一个回答:失效的链接不值得向程序解释,
+  // 而分辨它们只会泄露别人那条链接的状态。
+  if (!share) return txt('no such link', 404);
+  const method = c.req.method;
+  const write = method === 'PUT' || method === 'DELETE' || method === 'POST';
+  if (write && share.role !== 'editor') return txt('read-only link', 403);
+
+  const roots = await agentRoots(c.env, share.id);
+  const node = segs.length ? await agentWalk(c.env, roots, segs) : null;
+
+  if (method === 'GET' || method === 'HEAD') {
+    if (!segs.length) {
+      // Taken from the request, not from a configured value: this instance answers on five
+      // domains and the agent must be sent back to the one it actually reached. (wrangler dev
+      // rewrites both the URL and the Host header to the first configured route, so the base
+      // printed by a local server names a production host. Nothing to fix -- there is no
+      // localhost answer to be had from a request that no longer says localhost.)
+      // 取自请求本身,而不是某个配置值:本实例应答五个域名,必须把代理指回它真正到达的那个。
+      // (wrangler dev 会把 URL 和 Host 头一起改写成配置里的第一条路由,
+      // 因此本地服务器印出的 base 写的是生产域名。这没什么可修的 ——
+      // 一个已经不再自称 localhost 的请求,给不出 localhost 这个答案。)
+      const base = new URL(c.req.url).origin + '/ai/' + token;
+      return txt(agentSkill(base, share, roots));
+    }
+    if (!node) return txt('no such path', 404);
+    if (node.kind === 'folder') return txt(await agentList(c.env, node.id) + '\n');
+    const r = await serveFile(c, node);
+    // Say utf-8 out loud on text. A browser has a document to take the encoding from; a program
+    // reading `text/plain` with no charset is entitled to fall back to latin-1, and then every
+    // non-ASCII file in the drive comes back as mojibake.
+    // 文本要把 utf-8 说出口。浏览器有文档可据以推断编码;而一个读到不带 charset 的 text/plain
+    // 的程序,有权退回 latin-1 —— 于是网盘里每个非 ASCII 文件都变成乱码。
+    const ct = r.headers.get('Content-Type') || '';
+    if (!ct.includes('charset') && /^(text\/|application\/(json|xml))/.test(ct)) {
+      r.headers.set('Content-Type', `${ct}; charset=utf-8`);
+    }
+    return r;
+  }
+
+  if (method === 'DELETE') {
+    if (!node) return txt('no such path', 404);
+    // Into the owner's trash, not out of existence: the link is a convenience, and a convenience
+    // should not be the one door in this system that destroys something irreversibly.
+    // 进所有者的回收站,而不是从世上消失:这条链接图的是方便,
+    // 而方便不该成为本系统里唯一一扇能不可逆地毁掉东西的门。
+    const stmts = [
+      c.env.DB.prepare('UPDATE drive_nodes SET trashed=1, trashed_at=?1, updated_at=?1 WHERE id=?2')
+        .bind(now(), node.id),
+    ];
+    const ad = ancDelta(c.env, node.parent_id, -nodeBytes(node));
+    if (ad) stmts.push(ad);
+    await c.env.DB.batch(stmts);
+    return txt('ok');
+  }
+
+  if (method === 'POST') {
+    if (!node) return txt('no such path', 404);
+    let name: string;
+    try {
+      name = cleanName(c.req.query('to'));
+    } catch {
+      return txt('bad name', 400);
+    }
+    if (await findClash(c.env, node.owner_id, node.parent_id, name, node.kind)) return txt('name taken', 409);
+    await c.env.DB.prepare('UPDATE drive_nodes SET name=?1, updated_at=?2 WHERE id=?3')
+      .bind(name, now(), node.id).run();
+    return txt('ok');
+  }
+
+  // PUT: the last segment is the name being written, everything before it says where.
+  // PUT:最后一段是要写的名字,它前面的部分说明写在哪儿。
+  if (method !== 'PUT') return txt('unsupported method', 405);
+  const fixed = 'the top level is fixed; write inside a listed folder';
+  if (!segs.length) return txt(fixed, 400);
+
+  // A top-level name is not a place to create things -- the root is the selection, not a folder.
+  // But writing to something already listed there replaces it, and that is the whole point of
+  // sharing one file with an agent: it has no folder here to put a new file in, only that file.
+  // 顶层的名字不是可供创建的地方 —— 根是"所选内容",不是目录。
+  // 但写到已经列在那里的东西上,是替换它;而这正是"把一个文件分享给 AI"的全部意义:
+  // 它在这里没有目录可放新文件,只有那一个文件。
+  let parent: NodeRow | null = null;
+  let name: string;
+  let clash: NodeRow | null = null;
+  if (segs.length === 1) {
+    if (!node) return txt(fixed, 400);
+    if (wantDir) return node.kind === 'folder' ? txt('ok') : txt('not a folder', 400);
+    if (node.kind !== 'file') return txt('not a file', 400);
+    clash = node;
+    name = node.name;
+  } else {
+    parent = await agentWalk(c.env, roots, segs.slice(0, -1));
+    if (!parent) return txt('no such folder', 404);
+    if (parent.kind !== 'folder') return txt('not a folder', 400);
+    try {
+      name = cleanName(segs[segs.length - 1]);
+    } catch {
+      return txt('bad name', 400);
+    }
+  }
+  const ownerId = clash ? clash.owner_id : parent!.owner_id;
+  const parentId = clash ? clash.parent_id : parent!.id;
+  const q0 = await driveQuota(c.env, ownerId);
+  if (!q0.enabled) return txt('drive disabled', 403);
+
+  if (wantDir) {
+    const existing = await findClash(c.env, ownerId, parentId, name, 'folder');
+    if (existing) return txt('ok');
+    const chain = await chainOf(c.env, parent!.id);
+    if (chain.length >= DEPTH_MAX - 1) return txt('too deep', 400);
+    const t = now();
+    await c.env.DB.prepare(
+      `INSERT INTO drive_nodes (id, owner_id, parent_id, kind, name, created_at, updated_at)
+       VALUES (?1,?2,?3,'folder',?4,?5,?5)`
+    ).bind(uid(), ownerId, parentId, name, t).run();
+    return txt('ok');
+  }
+
+  const len = parseInt(c.req.header('Content-Length') || '', 10);
+  if (!c.req.raw.body || !Number.isFinite(len) || len < 0) return txt('body required', 400);
+  if (len > SINGLE_MAX) return txt(`too big, max ${shortSize(SINGLE_MAX)}`, 413);
+  if (!clash) clash = await findClash(c.env, ownerId, parentId, name, 'file');
+  const oldSize = clash?.size || 0;
+  if (q0.used - oldSize + len > q0.quota) return txt('out of space', 413);
+  const mime = mimeOf(name, c.req.header('Content-Type'));
+  const id = clash ? clash.id : uid();
+  const key = clash?.r2_key || `drive/${ownerId}/${id}`;
+  const obj: any = await c.env.RAW.put(key, c.req.raw.body, { httpMetadata: { contentType: mime } });
+  const size = obj?.size ?? len;
+  const t = now();
+  const stmts = clash
+    ? [
+      c.env.DB.prepare('UPDATE drive_nodes SET mime=?1, size=?2, has_thumb=0, updated_at=?3 WHERE id=?4')
+        .bind(mime, size, t, id),
+      c.env.DB.prepare('UPDATE users SET drive_bytes=MAX(drive_bytes+?1,0) WHERE id=?2')
+        .bind(size - oldSize, ownerId),
+    ]
+    : [
+      c.env.DB.prepare(
+        `INSERT INTO drive_nodes (id, owner_id, parent_id, kind, name, mime, size, r2_key, created_at, updated_at)
+         VALUES (?1,?2,?3,'file',?4,?5,?6,?7,?8,?8)`
+      ).bind(id, ownerId, parentId, name, mime, size, key, t),
+      c.env.DB.prepare('UPDATE users SET drive_bytes=MAX(drive_bytes+?1,0) WHERE id=?2').bind(size, ownerId),
+    ];
+  // The stale thumbnail dies with the bytes it described / 旧缩略图随它所描述的字节一起作废
+  if (clash) await c.env.RAW.delete(key + THUMB_SUFFIX).catch(() => {});
+  const ad = ancDelta(c.env, parentId, size - oldSize);
+  if (ad) stmts.push(ad);
+  await c.env.DB.batch(stmts);
+  return txt('ok');
+});
+
 // ---------- Admin API (/api/admin/drive) ----------
 // ---------- 管理端 API(/api/admin/drive) ----------
 

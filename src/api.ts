@@ -22,7 +22,7 @@ import { verifyMail, resetMail } from './mailtpl';
 import { fontsApp, isKnownFont } from './fonts';
 import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
-import { driveApp, drivePubApp } from './drive';
+import { driveAgentApp, driveApp, drivePubApp } from './drive';
 import { VERSION } from './version';
 import { ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
 
@@ -1375,5 +1375,14 @@ app.route('/api/drive', driveApp);
 // 公开共享链接:刻意不挂在 requireAuth 之后 —— 它的意义就在于没有账号的接收方也能打开。
 // 按构造即只读(见 drive.ts)。
 app.route('/api/pub', drivePubApp);
+
+// Agent access links: no session, no Origin check, no /api prefix. The caller is a program that
+// was handed one URL and nothing else, and everything it may do is expressed in that URL --
+// which is exactly why this must sit outside the cookie-authenticated space. There is no
+// ambient credential to ride on here, so there is no cross-site request to forge.
+// 面向 AI 的访问链接:无会话、不查 Origin、不带 /api 前缀。调用者是一个只拿到一个 URL、
+// 别无他物的程序,而它能做的一切都表达在那个 URL 里 —— 这正是它必须待在 cookie 认证空间
+// 之外的原因。这里没有可搭便车的环境凭证,也就无从伪造跨站请求。
+app.route('/ai', driveAgentApp);
 
 app.route('/api/admin', adminApp);
