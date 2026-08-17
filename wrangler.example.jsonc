@@ -30,11 +30,11 @@
     // fails to decode, which paints nothing at all. Let the worker answer it explicitly.
     // /arc-stream/* 属于压缩包 service worker,绝不能落到 SPA 兜底:把 index.html 以 200
     // 喂给 <img>,它会"加载成功"然后解码失败,画面上什么都没有。交给 worker 明确作答。
-    // /ai/* is the agent access link. Without this the SPA fallback answers it with index.html
+    // /agt/* is the agent access link. Without this the SPA fallback answers it with index.html
     // and a 200, and the agent reads a web page where its instructions should have been.
-    // /ai/* 是面向 AI 的访问链接。不加这条,SPA 兜底会拿 index.html 以 200 作答,
+    // /agt/* 是面向 AI 的访问链接。不加这条,SPA 兜底会拿 index.html 以 200 作答,
     // 代理读到的就是一张网页,而不是它本该读到的说明。
-    "run_worker_first": ["/api/*", "/arc-stream/*", "/ai/*"]
+    "run_worker_first": ["/api/*", "/arc-stream/*", "/agt/*"]
   },
 
   // Create with `wrangler d1 create cfmail`, then paste the returned uuid here.

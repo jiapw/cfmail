@@ -1383,6 +1383,6 @@ app.route('/api/pub', drivePubApp);
 // 面向 AI 的访问链接:无会话、不查 Origin、不带 /api 前缀。调用者是一个只拿到一个 URL、
 // 别无他物的程序,而它能做的一切都表达在那个 URL 里 —— 这正是它必须待在 cookie 认证空间
 // 之外的原因。这里没有可搭便车的环境凭证,也就无从伪造跨站请求。
-app.route('/ai', driveAgentApp);
+app.route('/agt', driveAgentApp);
 
 app.route('/api/admin', adminApp);
