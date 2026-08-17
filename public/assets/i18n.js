@@ -4886,3 +4886,13 @@ Object.assign(DICTS.de, { e_invite_multi_open_only: 'Eine geteilte Einladung kan
 Object.assign(DICTS.fr, { e_invite_multi_open_only: "Une invitation partagée ne peut pas être liée à une adresse ni à un e-mail d'inscription précis" });
 Object.assign(DICTS.es, { e_invite_multi_open_only: 'Una invitación compartida no puede fijarse a una dirección ni a un correo de registro concretos' });
 Object.assign(DICTS.ru, { e_invite_multi_open_only: 'Общее приглашение нельзя привязать к одному адресу или одной почте для регистрации' });
+
+Object.assign(DICTS['zh-CN'], { drv_share_aud_agent: 'AI 访问', drv_share_hint_agent: '给 AI 助手用的链接。打开即是一份简短说明加内容清单,AI 据此逐层读写。永不过期,持链接即可按所选权限操作 —— 不用时请撤销。' });
+Object.assign(DICTS['zh-TW'], { drv_share_aud_agent: 'AI 存取', drv_share_hint_agent: '給 AI 助手用的連結。開啟即是一份簡短說明加內容清單,AI 據此逐層讀寫。永不過期,持連結即可按所選權限操作 —— 不用時請撤銷。' });
+Object.assign(DICTS.en, { drv_share_aud_agent: 'AI agent', drv_share_hint_agent: 'A link for an AI agent. Opening it returns a short set of instructions plus the contents, which the agent follows to read and write. It never expires and asks for nothing else, so revoke it when you are done.' });
+Object.assign(DICTS.ja, { drv_share_aud_agent: 'AI 用', drv_share_hint_agent: 'AI エージェント用のリンク。開くと短い説明と内容一覧が返り、エージェントはそれをたどって読み書きします。無期限で、リンクを持つだけで選んだ権限が使えます。不要になったら取り消してください。' });
+Object.assign(DICTS.ko, { drv_share_aud_agent: 'AI 접근', drv_share_hint_agent: 'AI 에이전트용 링크입니다. 열면 짧은 안내와 내용 목록이 나오고, 에이전트는 그것을 따라 읽고 씁니다. 만료되지 않으며 링크만 있으면 선택한 권한이 적용되니 다 쓰면 취소하세요.' });
+Object.assign(DICTS.de, { drv_share_aud_agent: 'KI-Agent', drv_share_hint_agent: 'Ein Link für einen KI-Agenten. Beim Öffnen kommt eine kurze Anleitung samt Inhalt zurück, der der Agent zum Lesen und Schreiben folgt. Er läuft nie ab und verlangt sonst nichts — widerrufen Sie ihn, wenn er nicht mehr gebraucht wird.' });
+Object.assign(DICTS.fr, { drv_share_aud_agent: 'Agent IA', drv_share_hint_agent: "Un lien pour un agent IA. Son ouverture renvoie de brèves instructions et le contenu, que l'agent suit pour lire et écrire. Il n'expire jamais et ne demande rien d'autre : révoquez-le quand vous avez fini." });
+Object.assign(DICTS.es, { drv_share_aud_agent: 'Agente IA', drv_share_hint_agent: 'Un enlace para un agente de IA. Al abrirlo devuelve unas breves instrucciones y el contenido, que el agente sigue para leer y escribir. Nunca caduca ni pide nada más, así que revócalo cuando termines.' });
+Object.assign(DICTS.ru, { drv_share_aud_agent: 'ИИ-агент', drv_share_hint_agent: 'Ссылка для ИИ-агента. При открытии возвращает краткую инструкцию и содержимое, по которым агент читает и пишет. Она не истекает и больше ничего не спрашивает — отзовите её, когда закончите.' });

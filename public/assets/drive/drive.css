@@ -760,6 +760,9 @@
   background: var(--accent-soft); color: var(--accent);
 }
 .drv-link-card .badge.public { background: #f5a62333; color: #f5a623; }
+/* An agent link reads and writes with nothing but the URL, so it does not wear the same colour
+   as a link a person opens. / 面向 AI 的链接仅凭 URL 就能读写,所以不与"人打开的链接"同色。 */
+.drv-link-card .badge.agent { background: #8b5cf633; color: #8b5cf6; }
 .drv-link-card .badge.role { background: var(--hover); color: var(--text-2); }
 .drv-link-card .st { font-size: 12.5px; color: var(--text-2); }
 .drv-link-card .items { display: flex; flex-wrap: wrap; gap: 6px; }

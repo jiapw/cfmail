@@ -1433,6 +1433,7 @@ async function shareDialog(nodes) {
         ${segHtml('sh-aud', [
           { v: 'internal', label: t('drv_share_aud_internal') },
           { v: 'public', label: t('drv_share_aud_public') },
+          { v: 'agent', label: t('drv_share_aud_agent') },
         ], 'internal')}
       </div>
       <div class="f" id="f-role">
@@ -1471,7 +1472,9 @@ async function shareDialog(nodes) {
   // 公开链接一律只读:另一端没有任何已认证的人,写操作无从追责。
   // 权限控件置灰而非消失,于是这条约束是看得见的,而不是这一行悄悄少了个字段。
   const sync = () => {
-    const pub = segGet(d, 'sh-aud') === 'public';
+    const aud = segGet(d, 'sh-aud');
+    const pub = aud === 'public';
+    const ai = aud === 'agent';
     // Snap the role back to viewer, not merely grey it out. A greyed control still showing
     // "editor" would be stating something the link will not do -- the request is forced to
     // viewer server-side either way, so the UI must not claim otherwise.
@@ -1483,8 +1486,12 @@ async function shareDialog(nodes) {
     // and reshuffle the remaining controls under the user's cursor.
     // 域名字段连标签一起淡出,但保留占位:这一行不能塌陷,
     // 否则会把剩下的控件在用户指针底下重新排一遍。
-    qs('#f-dom', d).style.visibility = pub ? 'hidden' : '';
-    qs('#sh-hint', d).textContent = t(pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
+    qs('#f-dom', d).style.visibility = pub || ai ? 'hidden' : '';
+    // An agent link never expires, so the field is not merely disabled -- there is no answer it
+    // could be showing that would be true.
+    // 面向 AI 的链接永不过期,所以这个字段不是"置灰"那么简单 —— 它显示任何值都不会是真的。
+    qs('#f-exp', d).style.visibility = ai ? 'hidden' : '';
+    qs('#sh-hint', d).textContent = t(ai ? 'drv_share_hint_agent' : pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
   };
   segBind(d, 'sh-aud', sync);
   segBind(d, 'sh-role');
@@ -1543,6 +1550,11 @@ async function shareDialog(nodes) {
 /** Public links carry no account, so they get their own route; internal ones keep the
  *  join-then-browse flow. / 公开链接不带账号,因此走独立路由;内部链接沿用"加入后浏览"。 */
 function shareUrl(s) {
+  // An agent link is a real path, not a hash route: whatever fetches it never runs the app, so
+  // the address has to mean something to a plain HTTP client.
+  // 面向 AI 的链接是真实路径,而不是 hash 路由:取它的东西根本不会运行这个应用,
+  // 于是这个地址必须对一个朴素的 HTTP 客户端就有意义。
+  if (s.audience === 'agent') return `${location.origin}/ai/${s.token}`;
   return `${location.origin}/#/${s.audience === 'public' ? 'p' : 'drive/s'}/${s.token}`;
 }
 
@@ -1560,7 +1572,9 @@ function renderLinksView(main, shares) {
     const url = shareUrl(s);
     const who = s.audience === 'public'
       ? t('drv_share_aud_public')
-      : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
+      : s.audience === 'agent'
+        ? t('drv_share_aud_agent')
+        : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
     const items = (s.items || []).map((n) =>
       `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
     const stateLbl = s.state === 'ok'
