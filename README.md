@@ -1,8 +1,8 @@
 # CFMail — Enterprise Webmail on Cloudflare / 基于 Cloudflare 的企业 Webmail
 
-Run your company's email on your own Cloudflare account. Receiving, storage and the web client all live inside **your** account — nothing is hosted by anyone else.
+Run your company's email **and its file storage** on your own Cloudflare account. Receiving, storage and the web client all live inside **your** account — nothing is hosted by anyone else.
 
-把公司的邮件系统跑在**你自己的** Cloudflare 账号里。收信、存储、网页客户端,全部在你的账号内,没有任何一部分托管在别人那里。
+把公司的邮件系统**和网盘**跑在**你自己的** Cloudflare 账号里。收信、存储、网页客户端,全部在你的账号内,没有任何一部分托管在别人那里。
 
 MIT licensed ([LICENSE](LICENSE)). Data-flow and privacy details in [PRIVACY.md](PRIVACY.md).
 MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
@@ -14,20 +14,139 @@ MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
 
 ## What you get / 功能
 
-- **Multi-domain webmail / 多域名企业邮箱** — one deployment serves any number of company domains, each with its own branding and theme.
+Two peer subsystems behind one sign-in and one nav bar: **Mail** and **Drive**.
+一次登录、一条导航栏,后面是两个平级的子系统:**邮件**和**网盘**。
+
+### Mail / 邮件
+
+- **Multi-domain / 多域名** — one deployment serves any number of company domains, each with its own branding and theme.
   一次部署服务任意多个公司域名,每个域名有独立的品牌和主题。
-- **Gmail-style client / Gmail 风格客户端** — threaded conversations, full-text search, folders, starring, batch actions, drag-and-drop attachments, rich-text composer.
-  会话聚合、全文搜索、文件夹、星标、批量操作、拖拽附件、富文本编辑器。
+- **Gmail-style client / Gmail 风格客户端** — threaded conversations, full-text search, folders, starring, shift-click range selection, batch actions, drag-and-drop attachments, a rich-text composer with inline images and multiple minimisable windows.
+  会话聚合、全文搜索、文件夹、星标、shift 连选、批量操作、拖拽附件,富文本编辑器支持内嵌图片和多窗口最小化。
 - **Shared mailboxes / 共享邮箱** — one mailbox can be granted to several people (owner / member / read-only).
   一个邮箱可授权给多人(所有者 / 成员 / 只读)。
-- **Invite-based signup / 邀请制注册** — admins generate a link, colleagues register themselves with email verification.
-  管理员生成链接,同事自助注册并验证邮箱。
-- **Admin console / 管理后台** — per-domain stats, mailbox and alias management, branding, unrouted-mail inspection, audit log.
-  分域名统计、邮箱与别名管理、品牌设置、未匹配来信查看、审计日志。
+- **Invite-based signup / 邀请制注册** — single-use links for one hire, or a shared link a whole team registers through until it expires. Email verification either way.
+  单人一次性链接用于招一个人;共享链接发给一整队人,在过期前不限注册人数。两种都要验证邮箱。
+- **Aliases and catch-all / 别名与 catch-all** — inbound addresses that map onto a real mailbox, plus a view of mail that matched nothing.
+  可把额外地址映射到真实邮箱,未匹配的来信也能查看。
+
+### Drive / 网盘
+
+- **Per-domain, off by default / 按域名开启,默认关闭** — a domain admin turns it on and sets the default quota; individual users can be raised or lowered.
+  域管理员开启并设定默认配额,可单独调高或调低某个用户。
+- **Google-Drive-style client / Google Drive 风格客户端** — grid and list views, breadcrumbs, drag to move (single tile or a whole selection, with a stacked drag image), marquee selection, shift-range and ctrl-marquee, right-click menus everywhere including empty space, starred / recent / shared-with-me / trash.
+  网格与列表视图、路径面包屑、拖拽移动(单个或整组,带叠层拖影)、框选、shift 连选与 ctrl 加选、包括空白处在内的右键菜单,以及已加星标 / 最近使用 / 共享给我 / 回收站。
+- **Drag a folder in / 整个文件夹拖进来** — the directory tree is walked and recreated; big files go multipart (90 MB single-shot, 32 MB parts above that) straight into R2.
+  目录树会被递归还原;大文件走分片直传 R2(90MB 以内单次,超过按 32MB 分片)。
+- **Rich previews, no download / 不下载即预览** — text and code, Markdown, **docx** typeset onto a sheet, **pptx** drawn slide by slide, **xlsx/xlsm/csv/tsv** as a tabbed workbook, PDF, images, video, SVG, drawio, MHTML, and HTML in a fully sandboxed frame.
+  纯文本与代码、Markdown、**docx** 排版成白纸、**pptx** 逐页绘制、**xlsx/xlsm/csv/tsv** 带工作表标签、PDF、图片、视频、SVG、drawio、MHTML,以及进全沙箱框架的 HTML。
+- **Archives as folders / 压缩包当文件夹** — step into a `.zip` or `.7z` and browse it, preview what is inside, play a video straight out of it. Encrypted archives (7z AES-256, legacy ZipCrypto) open with a password that never leaves the browser.
+  点进 `.zip` / `.7z` 直接浏览、预览里面的文件、甚至直接播放里面的视频。加密压缩包(7z AES-256、传统 ZipCrypto)输入密码即可打开,密码绝不离开浏览器。
+- **Sharing / 分享** — a link per selection, either **internal** (signed-in, optionally restricted to one domain, viewer or editor) or **public** (no account, always read-only). Optional expiry, a note, revocation, and — for internal links — a list of which colleagues have joined, each removable one at a time.
+  按所选内容生成链接:**内部**(需登录,可限定单一域名,只读或可编辑)或**公开**(无需账号,恒为只读)。可设过期、备注、随时撤销;内部链接还会列出哪些同事已加入,可逐个移除。
+- **Thumbnails for everything / 全类型缩略图** — images, video frames, PDF first pages and text files all get one, generated in the browser at upload time.
+  图片、视频抽帧、PDF 首页、文本文件都有缩略图,上传时在浏览器里生成。
+
+### Both / 两边共用
+
+- **Admin console / 管理后台** — per-domain stats, mailbox and alias management, branding, Drive quotas, unrouted-mail inspection, audit log.
+  分域名统计、邮箱与别名管理、品牌设置、网盘配额、未匹配来信查看、审计日志。
 - **Migration tools / 迁移工具** — import `.eml` from Zoho / Outlook / anywhere, export mailboxes back to a local folder. Includes a PowerShell script that pulls a Microsoft 365 mailbox via the Microsoft Graph API.
   从 Zoho / Outlook 等导入 `.eml`,也能把邮箱导出回本地。附带一个用 Microsoft Graph API 拉取 Microsoft 365 邮箱的 PowerShell 脚本。
-- **9 UI languages / 9 种界面语言**, 30 built-in themes, light/dark/auto.
-  30 套内置主题,明暗自动切换。
+- **9 UI languages / 9 种界面语言**, 30 built-in themes, light/dark/auto, and a font picker for interface and body text.
+  30 套内置主题,明暗自动切换,界面与正文字体可自选。
+
+---
+
+## The parts we are proud of / 值得一说的地方
+
+Most of these exist because the Workers runtime cannot decode an image, cannot spend a second
+of CPU on a parse, and charges for every byte it moves. The way out was to stop moving bytes
+that nobody reads, and to do the heavy work in the browser that is already looking at the file.
+下面这些之所以存在,是因为 Workers 运行时解不了图、不能拿一秒 CPU 去解析、并且搬多少字节
+就计多少费。出路是别去搬没人会读的字节,把重活交给那台已经在看这个文件的浏览器。
+
+- **Mail between your own people never leaves your account.** A message from one mailbox to
+  another in the same deployment is delivered directly — no sending provider, no egress, nothing
+  billed, and nothing about it visible to a third party.
+  **自己人之间的邮件根本不出你的账号。** 同一部署内邮箱之间的信直接投递 ——
+  不走发信通道、没有出网流量、不计费,也不会有第三方看到它。
+- **A partial send never turns into a double send.** Outbound mail goes through an outbox table
+  that retries with exponential backoff and, when a send is accepted for some recipients and
+  refused for others, re-sends only to the ones still outstanding.
+  **部分失败不会变成重复投递。** 外发走 outbox 表,自带指数退避重试;
+  一封信部分收件人成功、部分失败时,只补发还没成的那几个。
+- **Importing an old mailbox costs the server nothing.** The `.eml` files are parsed in the
+  browser, by the same parser at the same version the Worker uses — so attachment order matches
+  and downloads can still locate parts by index in the original message.
+  **搬迁旧邮箱不花服务端一分 CPU。** `.eml` 在浏览器里解析,用的是和 Worker 同一个解析器的同一版本 ——
+  这样附件顺序一致,下载时仍能按索引回到原文里定位。
+- **A 50 MB Word document costs a few hundred kilobytes.** docx, pptx and xlsx are zip packages,
+  and they are read over HTTP Range: the tail of the file gives the central directory, then only
+  the parts actually needed are fetched. The photographs inside are never downloaded, because the
+  text lives in a different part. Judge the work by the parts read, never by the file's size.
+  **一份 50MB 的 Word 文档只花几百 KB。** docx / pptx / xlsx 本质是 zip 包,全部按 HTTP Range 读:
+  先读文件尾拿到中央目录,再只取真正需要的部件。里面的照片从不下载,因为正文在另一个部件里。
+  开销应该按"读了哪些部件"算,而不是按文件大小算。
+- **An 80 MB workbook opens in the time it takes to read its tab names.** Only the small header
+  parts are read up front; each worksheet is inflated and parsed when someone actually clicks
+  that tab. Seventeen sheets cost one sheet's work.
+  **一本 80MB 的工作簿,打开只用读出标签名的时间。** 开头只读那几个很小的头部部件,
+  每张工作表等到有人点它才解压解析。十七张表只付一张表的成本。
+- **A flick through a hundred slides builds two pages, not a hundred.** A page observer would
+  queue every slide that sweeps past, ninety-nine of them already behind the reader. So nothing
+  is queued: two builders run at a time, and each one, when free, asks where the viewport is
+  *now* and takes the nearest page not yet built — found by bisection, so a thousand pages cost
+  ten measurements.
+  **在一百页幻灯片里猛甩一下,只会构建两页,而不是一百页。** 用监听器的话,划过的每一页都会
+  排进队列,其中九十九页早已被读者甩在身后。所以这里不排队:两个构建器并行,谁空下来就问
+  一次"视口**现在**在哪",取最近的未构建页 —— 用二分查找定位,一千页也只要十次测量。
+- **Gigabyte solid blocks stream through a few dozen megabytes of RAM.** The LZMA1/LZMA2 decoder
+  is hand-written and resumable: it pauses at clean symbol boundaries when the rolling input runs
+  low or the dictionary window holds enough undrained output, and continues exactly where it
+  stopped. The per-bit hot path never touches a promise.
+  **GB 级 solid 块只用几十 MB 内存就流过去了。** LZMA1/LZMA2 解码器是手写的,且天生可续传:
+  滚动输入不够或字典窗口攒够待排水的输出时,它在干净的符号边界暂停,之后从暂停点精确继续。
+  每比特的热路径上完全没有 Promise。
+- **Play a video straight out of a zip.** A service worker owns a private URL space and answers
+  the player's own Range requests: for stored entries by plain offset arithmetic onto R2 — true
+  ranged streaming, zero decode, zero buffering — and for compressed ones with a sequential
+  decode stream under backpressure.
+  **压缩包里的视频可以直接播。** 一个 service worker 掌管私有的 URL 空间,直接应答播放器自己
+  发出的 Range 请求:store 存放的条目纯偏移平移到 R2 —— 真正的 Range 流式播放,零解码零缓冲;
+  压缩过的则用带背压的顺序解码流。
+- **Encrypted archives open, and the password stays in the tab.** 7-Zip's own KDF (one continuous
+  SHA-256 over 2^N iterations) plus WebCrypto AES-CBC, and the classic three-key ZipCrypto stream
+  for legacy zips. Nothing about the password is sent anywhere.
+  **加密压缩包能打开,而密码留在这个标签页里。** 7-Zip 自家的 KDF(对 2^N 轮做一次连续的
+  SHA-256)配 WebCrypto AES-CBC,老式 zip 走经典的三密钥 ZipCrypto 流。
+  密码相关的东西一个字节都不外发。
+- **Thumbnails are made by the uploader, not the server.** Images get a centre cover-crop; a video
+  is sampled at several positions and the frame kept is the one that is neither blown out nor
+  black *and* has the strongest mean |Laplacian|, i.e. the most detail; PDFs render page one
+  through self-hosted pdf.js; text files are typeset onto a white sheet. Output is always WebP
+  480×360 under 100 KB — and the server re-checks both.
+  **缩略图由上传端生成,不由服务端。** 图片居中 cover 裁切;视频在多个位置抽帧,留下的那一帧
+  既不过曝也不发黑,**并且**平均 |拉普拉斯| 最大(细节最多);PDF 用自托管的 pdf.js 渲染首页;
+  文本文件排版到一张白纸上。产物固定是 WebP 480×360、不超过 100KB —— 两项服务端都会复核。
+- **One reading stack, two doors.** The signed-in Drive and the public share page read the same
+  nodes through different endpoints, so everything downstream of the listing — preview overlay,
+  archive browser, streaming worker — is the same code on the same bytes. A docx, a slide deck or
+  an encrypted 7z behaves for a link recipient exactly as it does for the owner.
+  **一套读取栈,两扇门。** 登录态网盘和公开分享页透过不同端点读同一批节点,
+  于是列表之后的一切 —— 预览层、压缩包浏览器、流式 worker —— 都是同一份代码在同一批字节上跑。
+  一个 docx、一套幻灯片、一个加密 7z,收到链接的人看到的行为和所有者完全一致。
+- **The API returns codes, never prose.** A failure is `{"error": "e_bad_email"}`; the sentence is
+  rendered by the reader's browser in the reader's language. One translation table serves the whole
+  product in nine languages, and the API stays clean enough for any other client to use.
+  **API 只回错误码,不回句子。** 失败一律是 `{"error": "e_bad_email"}`,句子由读者的浏览器
+  按读者的语言渲染。全产品九种语言只有一份翻译表,API 也干净得可以给其它客户端直接用。
+- **None of the above is a dependency.** No zip library, no LZMA library, no Office library, no
+  bundler and no transpiler — `public/` is plain ES modules served as written. The only vendored
+  browser code is Web Awesome (components), Quill (the composer), pdf.js and postal-mime.
+  **上面这些全都不是依赖。** 没有 zip 库、没有 LZMA 库、没有 Office 库、没有打包器、没有转译器,
+  `public/` 就是照原样送出的 ES 模块。自托管的第三方浏览器代码只有 Web Awesome(控件)、
+  Quill(编辑器)、pdf.js 和 postal-mime。
 
 ---
 
@@ -45,6 +164,7 @@ MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
 |---|---|---|
 | Receiving mail (Email Routing) / 收信 | ✅ Free, unlimited / 免费无限 | |
 | Web client, API, D1, R2 / 网页端、API、D1、R2 | ✅ Generous free tier / 免费额度很宽 | D1 5 GB, R2 10 GB |
+| Drive / 网盘 | ✅ Runs on the free tier / 免费额度即可跑 | Shares the same R2 bucket, so the 10 GB is shared with mail storage / 与邮件共用同一个 R2 桶,10 GB 是两边合计 |
 | **Sending to outside recipients / 发信给外部收件人** | ❌ **Needs Workers Paid / 需要付费版** | [Email Sending requires the paid plan](https://developers.cloudflare.com/email-service/platform/pricing/) for arbitrary recipients / 发给任意收件人要求付费版 |
 
 Internal mail and receiving work on the free plan. To send to the outside world you need **Workers Paid ($5/mo, 3,000 emails included)** — or plug in SES / Resend and stay free. **If you already pay for Cloudflare Workers, this adds no new subscription** — CFMail runs inside the plan you have. Rough cost for a small team starting fresh: **$5/month** plus R2 overage beyond 10 GB ($0.015/GB·month). Mail between mailboxes in the same deployment never touches a sending provider and is not billed.
@@ -209,7 +329,8 @@ Open `https://<entry-subdomain>.<your-domain>/#/admin`.
 | **Overview / 总览** | Per-domain mailbox counts, message counts, storage, last activity / 分域名的邮箱数、邮件数、存储量、最后活动时间 |
 | **Domains & mailboxes / 域名与邮箱** | Add domains, create mailboxes and aliases, grant access, set branding. Also **erase a mailbox's contents** or **delete a mailbox** outright / 添加域名、建邮箱和别名、授权成员、设品牌。也可**清空邮箱内容**或**注销整个邮箱** |
 | **Users / 用户** | All registered users, revoke sessions everywhere, delete accounts / 全部用户、撤销所有设备登录、注销账号 |
-| **Invites / 邀请** | Generate signup links. Two independent choices: pin the mailbox name (or let the invitee pick), and pin who may use the link / 生成注册链接。两个独立选项:限不限定邮箱名、限不限定使用者 |
+| **Invites / 邀请** | Generate signup links. Pick the kind first — one person once, or a link a whole team registers through until it expires — then, for a single-use link, whether the mailbox name is pinned and who may use it / 生成注册链接。先选类型:单人一次性,或整队人共用直到过期;单人链接再选限不限定邮箱名、限不限定使用者 |
+| **Drive / 网盘** | Turn the Drive on per domain, set the default quota, override it for one user / 按域名开启网盘、设默认配额、单独调整某个用户 |
 | **Unrouted / 未匹配来信** | Mail sent to addresses that don't exist. Remote images stripped before display / 发给不存在地址的邮件,展示前剥掉远程图片 |
 | **Import / 导入工具** | Bring in `.eml` archives from an old provider / 把旧服务商导出的 `.eml` 搬进来 |
 | **Export / 导出工具** | Write mailboxes back out to a local folder as `.eml` / 把邮箱写回本地目录 |
@@ -222,6 +343,9 @@ Sign in with **either** the personal email used at signup **or** a company addre
 
 Beyond ordinary mail: full-text search, conversation threading, rich-text composing with client-side image resizing, per-user interface and body fonts, light/dark/auto, 9 interface languages.
 除常规收发外:全文搜索、会话聚合、富文本编辑(图片在浏览器端缩放)、每用户可选字体、明暗自动、9 种界面语言。
+
+Where the domain has the Drive enabled, the nav bar carries an entry to it — the two subsystems sit side by side rather than one inside the other, and either entry can be right-clicked to open in a new window. Your Drive space is your own across every domain you hold a mailbox in.
+如果所在域名开了网盘,导航栏上会有网盘入口 —— 两个子系统是并列关系,不是一个套在另一个里面;任一入口都可以右键在新窗口打开。你的网盘空间跨域名归你个人,不随邮箱域名分裂。
 
 ### Adding people / 加人进来
 
@@ -247,10 +371,14 @@ browser ◀──HTTPS──▶ Worker (static SPA + Hono API) ──▶ D1 / R2
 
 - One Worker, three entry points: `fetch` (site + API), `email` (inbound), `scheduled` (every minute: send queue, parse retries, cleanup).
   一个 Worker,三个入口:`fetch`、`email`、`scheduled`(每分钟:发件队列 / 解析重试 / 清理)。
-- Storage: one D1 database (accounts, permissions, message metadata, FTS5 index, audit log), one R2 bucket (raw MIME, attachments, uploads, font cache).
+- Storage: one D1 database (accounts, permissions, message metadata, FTS5 index, Drive tree, audit log), one R2 bucket (raw MIME, attachments, uploads, Drive contents, font cache).
   存储:D1 一个库,R2 一个桶。
 - No Queues — an outbox table plus Cron is simpler at this scale.
   不用 Queues,当前量级 outbox 表 + Cron 更简单。
+- **The Drive keeps its bytes in R2 and its shape in D1.** Contents live under one prefix per user, so a person's files stay together across every domain they hold a mailbox in; the folder tree, quotas, shares and trash are rows. Uploads go straight to R2 (multipart above 90 MB) and downloads are served with Range support, so the Worker never buffers a file.
+  **网盘的字节在 R2,形状在 D1。** 内容按用户各占一个前缀,所以一个人的文件跨域名聚在一起;
+  目录树、配额、分享、回收站都是表里的行。上传直传 R2(超过 90MB 走分片),下载支持 Range,
+  Worker 从不把文件缓进内存。
 - **IMAP-ready schema**: `folders` carry `uidvalidity`/`uidnext`, `messages` carry a per-folder monotonic `uid` and standard IMAP flags. Adding an IMAP gateway later needs no data migration.
   **数据模型 IMAP-ready**,将来加 IMAP 网关不用迁数据。
 - **The API returns error codes, never prose.** A failure is `{"error": "e_bad_email"}`, with an `args` array when the message has values in it. The browser renders the sentence in the reader's language. One translation table serves the whole product, and the API stays usable from any client.
@@ -347,6 +475,10 @@ Command-line import / 命令行导入:
   附件走严格的内联白名单 —— 只有位图和 PDF 在浏览器里打开。SVG 和 HTML 绝不内联(那等于同源 XSS)。
 - CSRF: `Origin` is checked fail-closed on every state-changing request.
   所有变更类请求校验 `Origin`,缺失也拒。
+- Drive previews inherit the same rule: HTML and MHTML render in a fully sandboxed frame with no scripts and no network, SVG is always an image, and a wrong guess at a file id returns 404 rather than 403 — a share link never reveals what exists behind it.
+  网盘预览沿用同一套规则:HTML/MHTML 进无脚本无联网的全沙箱框架,SVG 一律当图片,猜错文件 id 返回 404 而不是 403 —— 分享链接不会泄露背后有什么。
+- Archive passwords are used in the tab and never sent: the key derivation and the cipher both run in the browser through WebCrypto.
+  压缩包密码只在标签页内使用、从不外发:密钥派生与解密都在浏览器里经 WebCrypto 完成。
 - **No IP addresses are logged** anywhere in the application layer.
   **应用层任何地方都不记录 IP。**
 - Google Fonts are proxied **server-side** — the browser never contacts Google, so no visitor IP reaches them.
@@ -367,10 +499,16 @@ See [PRIVACY.md](PRIVACY.md) for exactly what data lives where and what can leav
   纯 webmail,暂无 IMAP/POP/SMTP 客户端接入;数据模型已为此预留,后续计划开发支持。
 - Trash and spam self-purge after 30 days; temporary uploads after 48 hours. **Regular mail is never auto-deleted** — an admin has to do it explicitly.
   回收站和垃圾邮件 30 天后自动清空,临时上传 48 小时清理。**正文邮件不会自动删除。**
-- CJK search uses LIKE, Latin search uses FTS5.
-  中日韩搜索走 LIKE,拉丁文走 FTS5。
+- CJK search uses LIKE, Latin search uses FTS5. Drive search matches file and folder names, not their contents.
+  中日韩搜索走 LIKE,拉丁文走 FTS5。网盘搜索匹配文件与文件夹名,不搜内容。
 - The export tool needs the File System Access API — Chrome or Edge only.
   导出工具依赖 File System Access API,只支持 Chrome / Edge。
+- Drive: single-shot upload caps at 90 MB, larger files go multipart in 32 MB parts. Trash self-purges after 30 days and counts against quota until it does — emptying it releases the space immediately.
+  网盘:单次上传上限 90MB,更大的走 32MB 分片。回收站 30 天后自动清空,在此之前仍占配额 —— 手动清空立即释放。
+- Archives are read-only, and thumbnail-less inside. zip is fully supported including nesting and ZipCrypto; 7z covers Copy, LZMA1, LZMA2 and AES-256 with the delta and x86 filters, while PPMd, bzip2 and BCJ2 report a clean "unsupported". rar is not read.
+  压缩包只读,内部不生成缩略图。zip 完整支持,含嵌套与 ZipCrypto;7z 支持 Copy、LZMA1、LZMA2、AES-256 及 delta/x86 过滤器,PPMd、bzip2、BCJ2 明确报"不支持"。不支持 rar。
+- Previews are renderers, not the original applications: a docx keeps its text, tables and pictures but not Word's pagination (the file has no notion of pages); a pptx is drawn from its shape tree; a workbook shows values and basic formats, capped at 800 rows per sheet with a note when it is cut. SVG is always rendered as an image, never inlined.
+  预览是渲染器,不是原应用:docx 保留文字、表格和图片,但没有 Word 的分页(文件里根本没有"页"这个概念);pptx 按形状树绘制;工作簿显示值和基本格式,每张表最多 800 行,截断时会给出提示。SVG 一律按图片渲染,绝不内联。
 
 ---
 
@@ -403,6 +541,7 @@ migrations/                    # D1 schema, applied in order / D1 schema,按序�
 src/
   index.ts                     # fetch / email / scheduled entry points / 三入口
   api.ts                       # application API (Hono) / 业务 API
+  drive.ts                     # Drive API: tree, quotas, uploads, shares / 网盘 API:目录树、配额、上传、分享
   admin.ts                     # admin API: stats, members, invites, export, audit / 管理后台 API
   auth.ts                      # sessions, PBKDF2 passwords, CSRF / 会话、密码、CSRF
   audit.ts                     # admin action audit trail / 管理员操作审计
@@ -413,6 +552,11 @@ src/
   fonts.ts                     # server-side Google Fonts proxy / 字体服务端代理
   chat/                        # experimental chat agent (Durable Object) / 实验性会话 agent
 public/                        # Gmail-style SPA, no bundler / 无打包无转译
+  assets/drive/                # the Drive client: previews, thumbnails, archive readers
+                               # 网盘前端:预览、缩略图、压缩包读取器
+    preview.js doc.js pptx.js sheet.js thumb.js    # renderers / 各类渲染器
+    rzip.js r7z.js lzma.js arcrypto.js arc.js      # ranged zip/7z, LZMA, decryption / Range 读取与解密
+    arc-sw.js lazypage.js fsrc.js pub.js           # streaming worker, page scheduler, byte source, share page
   vendor/                      # third-party browser libs, not committed / 不入库
   tools/Export-Mailbox.ps1     # Microsoft 365 mailbox exporter / M365 导出脚本
 scripts/

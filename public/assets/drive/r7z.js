@@ -5,12 +5,14 @@
 // machines in bounded chunks: input rolls in a few MB at a time, output drains out of the
 // dictionary window, decoding stops the moment the wanted slice is complete. Gigabyte solid
 // blocks therefore cost bounded memory and only the compressed prefix up to the file's end.
-// PPMd, bzip2, BCJ2 and AES report clean unsupported/encrypted errors.
+// Copy, LZMA1, LZMA2 and AES-256 are decoded, with the delta and x86 filters; PPMd, bzip2 and
+// BCJ2 report a clean unsupported error.
 // Range 式 7z 读取器。列目录只要三次小读取:32 字节签名头(指向尾部头)、尾部头本体、
 // 以及尾部头被 LZMA 打包时(7z 默认如此)它那一小段压缩流。提取时定位文件所在的 solid 块
 // ("folder"),把它的压缩字节按有界分块流经 lzma.js 的可续传状态机:输入每次滚进几 MB,
 // 输出从字典窗口排水而出,目标切片一满立即停止。GB 级 solid 块因此内存有界,流量只到
-// 文件结尾处的压缩前缀为止。PPMd、bzip2、BCJ2、AES 给出明确的不支持/加密错误。
+// 文件结尾处的压缩前缀为止。Copy、LZMA1、LZMA2、AES-256 都能解,含 delta 与 x86 过滤器;
+// PPMd、bzip2、BCJ2 给出明确的"不支持"错误。
 import {
   In, OutWindow, Lzma2Machine, Lzma1Machine, CopyMachine,
   lzma2DictSize, deltaDecode, bcjX86,
