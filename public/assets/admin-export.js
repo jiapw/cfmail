@@ -8,7 +8,7 @@
 // 服务端只给清单和单封原文,打包/落盘全在浏览器做 —— 几 GB 的邮箱在 Worker 里打 zip
 // 既超内存也超 CPU,而且用户还得先下一个大文件再解压。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize, confirmDialog } from './ui.js';
+import { esc, qs, qsa, toast, fmtSize } from './ui.js';
 import { t } from './i18n.js';
 
 const FOLDER_DIRS = {
@@ -121,7 +121,6 @@ export async function tabExport(body) {
     } catch {
       return; // 用户取消
     }
-    if (!(await confirmDialog(t('exp_confirm', sel.length, root.name), t('exp_start')))) return;
 
     qs('#exp-go-row').hidden = true;
     qs('#exp-running').hidden = false;
