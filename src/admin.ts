@@ -527,8 +527,23 @@ adminApp.get('/users', async (c) => {
   ).all<any>();
   const byUser: Record<string, any[]> = {};
   for (const g of grants.results || []) (byUser[g.user_id] ||= []).push(g);
+  // Who administers which domain, so the list can say so next to the person rather than only
+  // on the domain's own page
+  // 谁管着哪个域,好让名单在人旁边就说清楚,而不是只能到那个域的页面上去看
+  const das = await c.env.DB.prepare(
+    `SELECT da.user_id, da.domain_id, d.name AS domain_name
+     FROM domain_admins da JOIN domains d ON d.id=da.domain_id`
+  ).all<any>();
+  const adminBy: Record<string, any[]> = {};
+  for (const r of das.results || []) (adminBy[r.user_id] ||= []).push(r);
   let users = (rows.results || []).map((u: any) => ({
     ...u,
+    // Filtered the same way as the grants below: a domain admin learns nothing here about the
+    // domains outside their own
+    // 与下面的授权同样过滤:域管理员在这里也不会知道自己范围之外的域
+    admin_of: (adminBy[u.id] || [])
+      .filter((r: any) => !scope || scope.has(r.domain_id))
+      .map((r: any) => ({ domain_id: r.domain_id, domain_name: r.domain_name })),
     grants: (byUser[u.id] || [])
       // A domain admin sees only the grants inside their own domains, never this user's addresses and roles elsewhere
       // 域管理员只能看到本域内的授权,不泄露该用户在其它域的邮箱地址与角色
@@ -540,9 +555,12 @@ adminApp.get('/users', async (c) => {
         domain_id: g.domain_id,
       })),
   }));
-  // Empty grants after filtering means the user has nothing in common with this admin's domains, so the whole row is withheld
-  // 过滤后 grants 为空 = 该用户与本管理员的域无交集,整行不返回
-  if (scope) users = users.filter((u: any) => u.grants.length > 0);
+  // Nothing in common with this admin's domains -- neither a mailbox nor an administrator seat
+  // -- means the whole row is withheld. Someone who administers your domain without holding a
+  // mailbox in it still belongs in your list; they are exactly the person you would want to see.
+  // 与本管理员的域毫无交集(既没有邮箱,也不是管理员)= 整行不返回。
+  // 有人管着你的域却没在里面开邮箱,他仍然该出现在你的名单里 —— 那正是你最该看见的人。
+  if (scope) users = users.filter((u: any) => u.grants.length > 0 || u.admin_of.length > 0);
   return c.json({ users });
 });
 
