@@ -32,7 +32,7 @@ const zhCN = {
   inv_mb_mode: '邮箱', inv_mode_fixed: '限定邮箱名', inv_mode_choose: '不限定（注册者自取）', inv_lp_note: '不存在则注册时新建', inv_self_pick: '{0} 下自取名',
   logout_all: '撤销登录', logout_all_confirm: '撤销 {0} 的全部登录，让其在所有设备上重新登录？', logout_all_done: '已使 {0} 个登录失效',
   logout_all_self_confirm: '撤销你自己的全部登录？当前这台设备也会退出，需要重新登录。',
-  a_import: '导入工具', imp_title: '从旧邮箱导入', imp_note: '选中解压后的导出目录，会递归读取其中的 .eml，并先从邮件头里抽出收件人供你核对。重复导入不会产生副本。', imp_pick_dir: '选择目录', imp_no_eml: '该目录里没有 .eml 文件', imp_no_mailbox: '还没有任何邮箱，请先在「域名与邮箱」里创建',
+  a_import: '导入工具', imp_title: "从其他旧邮箱导入 (*.eml)", imp_note: '选中解压后的导出目录，会递归读取其中的 .eml，并先从邮件头里抽出收件人供你核对。重复导入不会产生副本。', imp_pick_dir: '选择目录', imp_no_eml: '该目录里没有 .eml 文件', imp_no_mailbox: '还没有任何邮箱，请先在「域名与邮箱」里创建',
   imp_scanning: '扫描中 {0}', imp_found: '共 {0} 封，{1}', imp_rcpts: '出现最多的收件人', imp_target: '导入目标', imp_mailbox: '导入到', imp_guessed: '已按收件人自动选中 {0}',
   imp_map_note: '每个子目录导入到哪个文件夹，认不出的默认收件箱，可逐行修改', imp_th_dir: '子目录', imp_th_count: '封数', imp_th_folder: '导入到', imp_root: '（根目录）', imp_unknown: '未识别',
   imp_start: '开始导入', imp_pick_mailbox: '请先选择导入到哪个邮箱', imp_confirm: '把 {0} 封邮件导入到 {1}？', imp_progress: '{0}/{1}，新增 {2} / 重复 {3} / 失败 {4}', imp_done: '完成：新增 {0}，跳过重复 {1}，失败 {2}',
@@ -168,7 +168,7 @@ const zhTW = {
   inv_mb_mode: '信箱', inv_mode_fixed: '限定信箱名', inv_mode_choose: '不限定（註冊者自取）', inv_lp_note: '不存在則註冊時新建', inv_self_pick: '{0} 下自取名',
   logout_all: '撤銷登入', logout_all_confirm: '撤銷 {0} 的全部登入，讓其在所有裝置上重新登入？', logout_all_done: '已使 {0} 個登入失效',
   logout_all_self_confirm: '撤銷你自己的全部登入？目前這台裝置也會登出，需要重新登入。',
-  a_import: '匯入工具', imp_title: '從舊信箱匯入', imp_note: '選中解壓後的匯出目錄，會遞迴讀取其中的 .eml，並先從郵件標頭裡抽出收件者供你核對。重複匯入不會產生副本。', imp_pick_dir: '選擇目錄', imp_no_eml: '該目錄裡沒有 .eml 檔案', imp_no_mailbox: '還沒有任何信箱，請先在「域名與信箱」裡建立',
+  a_import: '匯入工具', imp_title: "從其他舊信箱匯入 (*.eml)", imp_note: '選中解壓後的匯出目錄，會遞迴讀取其中的 .eml，並先從郵件標頭裡抽出收件者供你核對。重複匯入不會產生副本。', imp_pick_dir: '選擇目錄', imp_no_eml: '該目錄裡沒有 .eml 檔案', imp_no_mailbox: '還沒有任何信箱，請先在「域名與信箱」裡建立',
   imp_scanning: '掃描中 {0}', imp_found: '共 {0} 封，{1}', imp_rcpts: '出現最多的收件者', imp_target: '匯入目標', imp_mailbox: '匯入到', imp_guessed: '已按收件者自動選中 {0}',
   imp_map_note: '每個子目錄匯入到哪個資料夾，認不出的預設收件匣，可逐行修改', imp_th_dir: '子目錄', imp_th_count: '封數', imp_th_folder: '匯入到', imp_root: '（根目錄）', imp_unknown: '未識別',
   imp_start: '開始匯入', imp_pick_mailbox: '請先選擇匯入到哪個信箱', imp_confirm: '把 {0} 封郵件匯入到 {1}？', imp_progress: '{0}/{1}，新增 {2} / 重複 {3} / 失敗 {4}', imp_done: '完成：新增 {0}，跳過重複 {1}，失敗 {2}',
@@ -304,7 +304,7 @@ const en = {
   inv_mb_mode: 'Mailbox', inv_mode_fixed: 'Fixed name', inv_mode_choose: 'Not fixed (registrant picks)', inv_lp_note: 'Created at registration if it does not exist', inv_self_pick: 'Self-chosen on {0}',
   logout_all: 'Revoke sessions', logout_all_confirm: 'Revoke all sessions for {0} and force sign-in again on every device?', logout_all_done: '{0} session(s) revoked',
   logout_all_self_confirm: 'Revoke all of your own sessions? This device will be signed out too and you will need to sign in again.',
-  a_import: 'Import', imp_title: 'Import from an old mailbox', imp_note: 'Pick the unzipped export directory. Every .eml inside is read recursively, and recipients are extracted from the headers first so you can confirm. Re-importing never creates duplicates.', imp_pick_dir: 'Choose directory', imp_no_eml: 'No .eml files in that directory', imp_no_mailbox: 'No mailboxes yet — create one under Domains & mailboxes first',
+  a_import: 'Import', imp_title: "Import from another old mailbox (*.eml)", imp_note: 'Pick the unzipped export directory. Every .eml inside is read recursively, and recipients are extracted from the headers first so you can confirm. Re-importing never creates duplicates.', imp_pick_dir: 'Choose directory', imp_no_eml: 'No .eml files in that directory', imp_no_mailbox: 'No mailboxes yet — create one under Domains & mailboxes first',
   imp_scanning: 'Scanning {0}', imp_found: '{0} messages, {1}', imp_rcpts: 'Most frequent recipients', imp_target: 'Import target', imp_mailbox: 'Import into', imp_guessed: 'Auto-selected {0} from the recipients',
   imp_map_note: 'Where each subdirectory lands. Unrecognised ones default to Inbox — change any row.', imp_th_dir: 'Subdirectory', imp_th_count: 'Messages', imp_th_folder: 'Import into', imp_root: '(root)', imp_unknown: 'unrecognised',
   imp_start: 'Start import', imp_pick_mailbox: 'Choose a target mailbox first', imp_confirm: 'Import {0} messages into {1}?', imp_progress: '{0}/{1} — added {2} / duplicate {3} / failed {4}', imp_done: 'Done: added {0}, skipped {1} duplicates, {2} failed',
@@ -440,7 +440,7 @@ const ja = {
   inv_mb_mode: 'メールボックス', inv_mode_fixed: '名前を指定', inv_mode_choose: '指定しない（登録者が選ぶ）', inv_lp_note: '存在しなければ登録時に作成', inv_self_pick: '{0} で自由に選択',
   logout_all: 'セッションを取り消す', logout_all_confirm: '{0} の全セッションを取り消し，全端末で再ログインさせますか？', logout_all_done: '{0} 件のセッションを無効化しました',
   logout_all_self_confirm: '自分の全セッションを取り消しますか？この端末もログアウトされ，再ログインが必要になります。',
-  a_import: 'インポート', imp_title: '旧メールからのインポート', imp_note: '解凍したエクスポートディレクトリを選んでください。中の .eml を再帰的に読み，先にヘッダーから宛先を抽出して確認できます。再実行しても重複はできません。', imp_pick_dir: 'ディレクトリを選択', imp_no_eml: '.eml ファイルがありません', imp_no_mailbox: 'メールボックスがまだありません，先に作成してください',
+  a_import: 'インポート', imp_title: "他の旧メールボックスから取り込む (*.eml)", imp_note: '解凍したエクスポートディレクトリを選んでください。中の .eml を再帰的に読み，先にヘッダーから宛先を抽出して確認できます。再実行しても重複はできません。', imp_pick_dir: 'ディレクトリを選択', imp_no_eml: '.eml ファイルがありません', imp_no_mailbox: 'メールボックスがまだありません，先に作成してください',
   imp_scanning: 'スキャン中 {0}', imp_found: '{0} 件，{1}', imp_rcpts: '多い宛先', imp_target: 'インポート先', imp_mailbox: 'インポート先', imp_guessed: '宛先から {0} を自動選択',
   imp_map_note: '各サブディレクトリの行先。不明なものは受信トレイ，行ごとに変更可能', imp_th_dir: 'サブディレクトリ', imp_th_count: '件数', imp_th_folder: 'インポート先', imp_root: '（ルート）', imp_unknown: '未識別',
   imp_start: 'インポート開始', imp_pick_mailbox: '先にメールボックスを選んでください', imp_confirm: '{0} 件を {1} にインポートしますか？', imp_progress: '{0}/{1}，追加 {2} / 重複 {3} / 失敗 {4}', imp_done: '完了：追加 {0}，重複 {1}，失敗 {2}',
@@ -576,7 +576,7 @@ const ko = {
   inv_mb_mode: '메일함', inv_mode_fixed: '이름 지정', inv_mode_choose: '지정 안 함(가입자가 선택)', inv_lp_note: '없으면 가입 시 생성', inv_self_pick: '{0}에서 직접 선택',
   logout_all: '세션 취소', logout_all_confirm: '{0} 님의 모든 세션을 취소하고 모든 기기에서 다시 로그인하게 할까요?', logout_all_done: '세션 {0}개를 해제했습니다',
   logout_all_self_confirm: '본인의 모든 세션을 취소할까요? 현재 기기도 로그아웃되며 다시 로그인해야 합니다.',
-  a_import: '가져오기', imp_title: '이전 메일함에서 가져오기', imp_note: '압축을 푸어둔 내보내기 폴더를 선택하세요. 내부 .eml을 재귀적으로 읽고 먼저 헤더에서 수신자를 추출해 확인합니다. 다시 가져와도 중복되지 않습니다.', imp_pick_dir: '폴더 선택', imp_no_eml: '.eml 파일이 없습니다', imp_no_mailbox: '메일함이 없습니다. 먼저 생성하세요',
+  a_import: '가져오기', imp_title: "다른 기존 메일함에서 가져오기 (*.eml)", imp_note: '압축을 푸어둔 내보내기 폴더를 선택하세요. 내부 .eml을 재귀적으로 읽고 먼저 헤더에서 수신자를 추출해 확인합니다. 다시 가져와도 중복되지 않습니다.', imp_pick_dir: '폴더 선택', imp_no_eml: '.eml 파일이 없습니다', imp_no_mailbox: '메일함이 없습니다. 먼저 생성하세요',
   imp_scanning: '스캔 중 {0}', imp_found: '{0}통, {1}', imp_rcpts: '가장 많은 수신자', imp_target: '가져올 대상', imp_mailbox: '가져올 곳', imp_guessed: '수신자로 {0} 자동 선택',
   imp_map_note: '각 하위 폴더의 행선지. 인식하지 못한 곳은 받은편지함, 행별로 변경 가능', imp_th_dir: '하위 폴더', imp_th_count: '통수', imp_th_folder: '가져올 곳', imp_root: '(루트)', imp_unknown: '미인식',
   imp_start: '가져오기 시작', imp_pick_mailbox: '먼저 메일함을 선택하세요', imp_confirm: '{0}통을 {1}에 가져올까요?', imp_progress: '{0}/{1} — 추가 {2} / 중복 {3} / 실패 {4}', imp_done: '완료: 추가 {0}, 중복 {1}, 실패 {2}',
@@ -712,7 +712,7 @@ const de = {
   inv_mb_mode: 'Postfach', inv_mode_fixed: 'Name festgelegt', inv_mode_choose: 'Nicht festgelegt (Eingeladener wählt)', inv_lp_note: 'Wird bei der Registrierung angelegt, falls nicht vorhanden', inv_self_pick: 'Frei wählbar auf {0}',
   logout_all: 'Sitzungen widerrufen', logout_all_confirm: 'Alle Sitzungen von {0} widerrufen und erneute Anmeldung auf allen Geräten erzwingen?', logout_all_done: '{0} Sitzung(en) beendet',
   logout_all_self_confirm: 'Alle eigenen Sitzungen widerrufen? Auch dieses Gerät wird abgemeldet und du musst dich erneut anmelden.',
-  a_import: 'Import', imp_title: 'Aus altem Postfach importieren', imp_note: 'Wähle das entpackte Export-Verzeichnis. Alle .eml darin werden rekursiv gelesen und die Empfänger zuerst aus den Kopfzeilen extrahiert, damit du prüfen kannst. Erneuter Import erzeugt keine Duplikate.', imp_pick_dir: 'Verzeichnis wählen', imp_no_eml: 'Keine .eml-Dateien in diesem Verzeichnis', imp_no_mailbox: 'Noch keine Postfächer — lege zuerst eines unter Domains & Postfächer an',
+  a_import: 'Import', imp_title: "Aus einem anderen alten Postfach importieren (*.eml)", imp_note: 'Wähle das entpackte Export-Verzeichnis. Alle .eml darin werden rekursiv gelesen und die Empfänger zuerst aus den Kopfzeilen extrahiert, damit du prüfen kannst. Erneuter Import erzeugt keine Duplikate.', imp_pick_dir: 'Verzeichnis wählen', imp_no_eml: 'Keine .eml-Dateien in diesem Verzeichnis', imp_no_mailbox: 'Noch keine Postfächer — lege zuerst eines unter Domains & Postfächer an',
   imp_scanning: 'Scanne {0}', imp_found: '{0} Nachrichten, {1}', imp_rcpts: 'Häufigste Empfänger', imp_target: 'Importziel', imp_mailbox: 'Importieren nach', imp_guessed: '{0} anhand der Empfänger vorausgewählt',
   imp_map_note: 'Wohin jedes Unterverzeichnis geht. Unbekannte landen im Posteingang — pro Zeile änderbar.', imp_th_dir: 'Unterverzeichnis', imp_th_count: 'Anzahl', imp_th_folder: 'Importieren nach', imp_root: '(Wurzel)', imp_unknown: 'unbekannt',
   imp_start: 'Import starten', imp_pick_mailbox: 'Bitte zuerst ein Zielpostfach wählen', imp_confirm: '{0} Nachrichten nach {1} importieren?', imp_progress: '{0}/{1} — neu {2} / doppelt {3} / fehlgeschlagen {4}', imp_done: 'Fertig: {0} neu, {1} Duplikate übersprungen, {2} fehlgeschlagen',
@@ -848,7 +848,7 @@ const fr = {
   inv_mb_mode: 'Boîte', inv_mode_fixed: 'Nom imposé', inv_mode_choose: 'Libre (choisi à l’inscription)', inv_lp_note: 'Créée à l\'inscription si elle n\'existe pas', inv_self_pick: 'Au choix sur {0}',
   logout_all: 'Révoquer les sessions', logout_all_confirm: 'Révoquer toutes les sessions de {0} et forcer une reconnexion sur tous les appareils ?', logout_all_done: '{0} session(s) révoquée(s)',
   logout_all_self_confirm: 'Révoquer toutes vos sessions ? Cet appareil sera également déconnecté et vous devrez vous reconnecter.',
-  a_import: 'Import', imp_title: 'Importer depuis une ancienne boîte', imp_note: 'Choisissez le dossier d\'export décompressé. Tous les .eml sont lus récursivement et les destinataires extraits des en-têtes d\'abord, pour que vous puissiez vérifier. Réimporter ne crée jamais de doublons.', imp_pick_dir: 'Choisir un dossier', imp_no_eml: 'Aucun fichier .eml dans ce dossier', imp_no_mailbox: 'Aucune boîte pour l\'instant — créez-en une dans Domaines et boîtes',
+  a_import: 'Import', imp_title: "Importer depuis une autre ancienne boîte (*.eml)", imp_note: 'Choisissez le dossier d\'export décompressé. Tous les .eml sont lus récursivement et les destinataires extraits des en-têtes d\'abord, pour que vous puissiez vérifier. Réimporter ne crée jamais de doublons.', imp_pick_dir: 'Choisir un dossier', imp_no_eml: 'Aucun fichier .eml dans ce dossier', imp_no_mailbox: 'Aucune boîte pour l\'instant — créez-en une dans Domaines et boîtes',
   imp_scanning: 'Analyse {0}', imp_found: '{0} messages, {1}', imp_rcpts: 'Destinataires les plus fréquents', imp_target: 'Cible d\'import', imp_mailbox: 'Importer dans', imp_guessed: '{0} présélectionné d’après les destinataires',
   imp_map_note: 'Destination de chaque sous-dossier. Les inconnus vont dans la boîte de réception — modifiable ligne par ligne.', imp_th_dir: 'Sous-dossier', imp_th_count: 'Messages', imp_th_folder: 'Importer dans', imp_root: '(racine)', imp_unknown: 'non reconnu',
   imp_start: 'Lancer l\'import', imp_pick_mailbox: 'Choisissez d\'abord une boîte cible', imp_confirm: 'Importer {0} messages dans {1} ?', imp_progress: '{0}/{1} — ajoutés {2} / doublons {3} / échecs {4}', imp_done: 'Terminé : {0} ajoutés, {1} doublons ignorés, {2} échecs',
@@ -984,7 +984,7 @@ const es = {
   inv_mb_mode: 'Buzón', inv_mode_fixed: 'Nombre fijo', inv_mode_choose: 'Sin fijar (lo elige quien se registra)', inv_lp_note: 'Se crea al registrarse si no existe', inv_self_pick: 'A elección en {0}',
   logout_all: 'Revocar sesiones', logout_all_confirm: '¿Revocar todas las sesiones de {0} y forzar un nuevo inicio de sesión en todos los dispositivos?', logout_all_done: '{0} sesión(es) revocada(s)',
   logout_all_self_confirm: '¿Revocar todas tus sesiones? Este dispositivo también se cerrará y tendrás que iniciar sesión de nuevo.',
-  a_import: 'Importar', imp_title: 'Importar desde un buzón antiguo', imp_note: 'Elige la carpeta de exportación descomprimida. Se leen todos los .eml de forma recursiva y primero se extraen los destinatarios de las cabeceras para que puedas comprobarlo. Reimportar nunca crea duplicados.', imp_pick_dir: 'Elegir carpeta', imp_no_eml: 'No hay archivos .eml en esa carpeta', imp_no_mailbox: 'Aún no hay buzones: crea uno en Dominios y buzones',
+  a_import: 'Importar', imp_title: "Importar desde otro buzón antiguo (*.eml)", imp_note: 'Elige la carpeta de exportación descomprimida. Se leen todos los .eml de forma recursiva y primero se extraen los destinatarios de las cabeceras para que puedas comprobarlo. Reimportar nunca crea duplicados.', imp_pick_dir: 'Elegir carpeta', imp_no_eml: 'No hay archivos .eml en esa carpeta', imp_no_mailbox: 'Aún no hay buzones: crea uno en Dominios y buzones',
   imp_scanning: 'Analizando {0}', imp_found: '{0} mensajes, {1}', imp_rcpts: 'Destinatarios más frecuentes', imp_target: 'Destino de importación', imp_mailbox: 'Importar en', imp_guessed: '{0} preseleccionado según los destinatarios',
   imp_map_note: 'A dónde va cada subcarpeta. Las no reconocidas van a Recibidos; puedes cambiar cada fila.', imp_th_dir: 'Subcarpeta', imp_th_count: 'Mensajes', imp_th_folder: 'Importar en', imp_root: '(raíz)', imp_unknown: 'no reconocida',
   imp_start: 'Iniciar importación', imp_pick_mailbox: 'Elige primero un buzón de destino', imp_confirm: '¿Importar {0} mensajes en {1}?', imp_progress: '{0}/{1} — añadidos {2} / duplicados {3} / fallidos {4}', imp_done: 'Listo: {0} añadidos, {1} duplicados omitidos, {2} fallidos',
@@ -1120,7 +1120,7 @@ const ru = {
   inv_mb_mode: 'Ящик', inv_mode_fixed: 'Имя задано', inv_mode_choose: 'Не задано (выбирает приглашённый)', inv_lp_note: 'Будет создан при регистрации, если его нет', inv_self_pick: 'На выбор в {0}',
   logout_all: 'Отозвать сессии', logout_all_confirm: 'Отозвать все сессии {0} и потребовать повторный вход на всех устройствах?', logout_all_done: 'Сессий отозвано: {0}',
   logout_all_self_confirm: 'Отозвать все свои сессии? Это устройство тоже выйдет из системы, потребуется повторный вход.',
-  a_import: 'Импорт', imp_title: 'Импорт из старого ящика', imp_note: 'Выберите распакованную папку экспорта. Все .eml читаются рекурсивно, а получатели сначала извлекаются из заголовков для проверки. Повторный импорт не создаёт дубликатов.', imp_pick_dir: 'Выбрать папку', imp_no_eml: 'В папке нет файлов .eml', imp_no_mailbox: 'Пока нет ящиков — создайте его в разделе доменов',
+  a_import: 'Импорт', imp_title: "Импорт из другого старого ящика (*.eml)", imp_note: 'Выберите распакованную папку экспорта. Все .eml читаются рекурсивно, а получатели сначала извлекаются из заголовков для проверки. Повторный импорт не создаёт дубликатов.', imp_pick_dir: 'Выбрать папку', imp_no_eml: 'В папке нет файлов .eml', imp_no_mailbox: 'Пока нет ящиков — создайте его в разделе доменов',
   imp_scanning: 'Сканирование {0}', imp_found: '{0} писем, {1}', imp_rcpts: 'Чаще всего встречающиеся получатели', imp_target: 'Цель импорта', imp_mailbox: 'Импортировать в', imp_guessed: '{0} выбран по получателям',
   imp_map_note: 'Куда попадёт каждая подпапка. Нераспознанные — во Входящие, можно менять построчно.', imp_th_dir: 'Подпапка', imp_th_count: 'Писем', imp_th_folder: 'Импортировать в', imp_root: '(корень)', imp_unknown: 'не распознано',
   imp_start: 'Начать импорт', imp_pick_mailbox: 'Сначала выберите ящик', imp_confirm: 'Импортировать {0} писем в {1}?', imp_progress: '{0}/{1} — добавлено {2} / дублей {3} / ошибок {4}', imp_done: 'Готово: добавлено {0}, дублей {1}, ошибок {2}',
@@ -1564,7 +1564,7 @@ Object.assign(DICTS.ru, {
 // Import tool: the Microsoft 365 / Outlook export walkthrough
 // 导入工具:Microsoft 365 / Outlook 导出向导
 Object.assign(DICTS['zh-CN'], {
-  imp_o365_title: 'Microsoft 365 / Outlook 邮箱导出（仅 Windows）',
+  imp_o365_title: "Microsoft 365 / Outlook 邮箱搬迁指引(仅 Windows)",
   imp_o365_intro: 'Outlook 网页版不提供批量导出。用下面的 PowerShell 脚本，以官方只读权限登录 Microsoft 账号，把整个邮箱（含子文件夹与附件）导出成 .eml，再用下面的工具导入。无需注册应用、无需密钥、无需安装任何模块。',
   imp_o365_dl: '下载 Export-Mailbox.ps1',
   imp_o365_s1: '下载脚本，放进一个空目录。',
@@ -1576,7 +1576,7 @@ Object.assign(DICTS['zh-CN'], {
   imp_o365_copied: '已复制',
 });
 Object.assign(DICTS['zh-TW'], {
-  imp_o365_title: 'Microsoft 365 / Outlook 信箱匯出（僅 Windows）',
+  imp_o365_title: "Microsoft 365 / Outlook 信箱搬遷指引(僅 Windows)",
   imp_o365_intro: 'Outlook 網頁版不提供批次匯出。用下面的 PowerShell 指令碼，以官方唯讀權限登入 Microsoft 帳號，把整個信箱（含子資料夾與附件）匯出成 .eml，再用下面的工具匯入。無需註冊應用程式、無需金鑰、無需安裝任何模組。',
   imp_o365_dl: '下載 Export-Mailbox.ps1',
   imp_o365_s1: '下載指令碼，放進一個空目錄。',
@@ -1588,7 +1588,7 @@ Object.assign(DICTS['zh-TW'], {
   imp_o365_copied: '已複製',
 });
 Object.assign(DICTS.en, {
-  imp_o365_title: 'Export a Microsoft 365 / Outlook mailbox (Windows only)',
+  imp_o365_title: "Microsoft 365 / Outlook migration guide (Windows only)",
   imp_o365_intro: 'Outlook on the web has no bulk export. The PowerShell script below signs in to your Microsoft account with official read-only permissions and exports the whole mailbox, subfolders and attachments included, as .eml files you can import with the tool below. No app registration, no client secret, no modules to install.',
   imp_o365_dl: 'Download Export-Mailbox.ps1',
   imp_o365_s1: 'Download the script into an empty folder.',
@@ -1600,7 +1600,7 @@ Object.assign(DICTS.en, {
   imp_o365_copied: 'Copied',
 });
 Object.assign(DICTS.ja, {
-  imp_o365_title: 'Microsoft 365 / Outlook メールボックスのエクスポート（Windows のみ）',
+  imp_o365_title: "Microsoft 365 / Outlook 移行ガイド(Windows のみ)",
   imp_o365_intro: 'Outlook on the web には一括エクスポートがありません。下の PowerShell スクリプトは公式の読み取り専用権限で Microsoft アカウントにサインインし、メールボックス全体をサブフォルダーと添付ファイルごと .eml として書き出します。アプリ登録もシークレットもモジュールのインストールも不要です。',
   imp_o365_dl: 'Export-Mailbox.ps1 をダウンロード',
   imp_o365_s1: 'スクリプトを空のフォルダーにダウンロードします。',
@@ -1612,7 +1612,7 @@ Object.assign(DICTS.ja, {
   imp_o365_copied: 'コピーしました',
 });
 Object.assign(DICTS.ko, {
-  imp_o365_title: 'Microsoft 365 / Outlook 사서함 내보내기 (Windows 전용)',
+  imp_o365_title: "Microsoft 365 / Outlook 이전 안내 (Windows 전용)",
   imp_o365_intro: 'Outlook 웹에는 일괄 내보내기가 없습니다. 아래 PowerShell 스크립트는 공식 읽기 전용 권한으로 Microsoft 계정에 로그인해 하위 폴더와 첨부 파일을 포함한 사서함 전체를 .eml로 내보냅니다. 앱 등록, 비밀 키, 모듈 설치가 모두 필요 없습니다.',
   imp_o365_dl: 'Export-Mailbox.ps1 다운로드',
   imp_o365_s1: '스크립트를 빈 폴더에 다운로드합니다.',
@@ -1624,7 +1624,7 @@ Object.assign(DICTS.ko, {
   imp_o365_copied: '복사됨',
 });
 Object.assign(DICTS.de, {
-  imp_o365_title: 'Microsoft 365-/Outlook-Postfach exportieren (nur Windows)',
+  imp_o365_title: "Microsoft 365 / Outlook — Umzugsanleitung (nur Windows)",
   imp_o365_intro: 'Outlook im Web bietet keinen Massenexport. Das PowerShell-Skript unten meldet sich mit offiziellen Leserechten an Ihrem Microsoft-Konto an und exportiert das gesamte Postfach samt Unterordnern und Anhängen als .eml-Dateien, die Sie mit dem Werkzeug unten importieren. Ohne App-Registrierung, ohne Client Secret, ohne Modulinstallation.',
   imp_o365_dl: 'Export-Mailbox.ps1 herunterladen',
   imp_o365_s1: 'Laden Sie das Skript in einen leeren Ordner.',
@@ -1636,7 +1636,7 @@ Object.assign(DICTS.de, {
   imp_o365_copied: 'Kopiert',
 });
 Object.assign(DICTS.fr, {
-  imp_o365_title: 'Exporter une boite aux lettres Microsoft 365 / Outlook (Windows uniquement)',
+  imp_o365_title: "Microsoft 365 / Outlook : guide de migration (Windows uniquement)",
   imp_o365_intro: 'Outlook sur le web ne propose pas d’export en masse. Le script PowerShell ci-dessous se connecte à votre compte Microsoft avec des autorisations officielles en lecture seule et exporte toute la boite aux lettres, sous-dossiers et pièces jointes compris, en fichiers .eml importables avec l’outil ci-dessous. Sans enregistrement d’application, sans secret client, sans module à installer.',
   imp_o365_dl: 'Télécharger Export-Mailbox.ps1',
   imp_o365_s1: 'Téléchargez le script dans un dossier vide.',
@@ -1648,7 +1648,7 @@ Object.assign(DICTS.fr, {
   imp_o365_copied: 'Copié',
 });
 Object.assign(DICTS.es, {
-  imp_o365_title: 'Exportar un buzón de Microsoft 365 / Outlook (solo Windows)',
+  imp_o365_title: "Microsoft 365 / Outlook: guía de migración (solo Windows)",
   imp_o365_intro: 'Outlook en la web no ofrece exportación masiva. El script de PowerShell de abajo inicia sesión en tu cuenta de Microsoft con permisos oficiales de solo lectura y exporta todo el buzón, incluidas subcarpetas y adjuntos, como archivos .eml que puedes importar con la herramienta de abajo. Sin registrar una aplicación, sin secreto de cliente y sin instalar módulos.',
   imp_o365_dl: 'Descargar Export-Mailbox.ps1',
   imp_o365_s1: 'Descarga el script en una carpeta vacía.',
@@ -1660,7 +1660,7 @@ Object.assign(DICTS.es, {
   imp_o365_copied: 'Copiado',
 });
 Object.assign(DICTS.ru, {
-  imp_o365_title: 'Выгрузка почтового ящика Microsoft 365 / Outlook (только Windows)',
+  imp_o365_title: "Microsoft 365 / Outlook: руководство по переезду (только Windows)",
   imp_o365_intro: 'В веб-версии Outlook нет массовой выгрузки. Скрипт PowerShell ниже входит в вашу учётную запись Microsoft с официальными правами только для чтения и выгружает весь ящик вместе с вложенными папками и вложениями в файлы .eml, которые затем импортируются инструментом ниже. Без регистрации приложения, без секрета клиента и без установки модулей.',
   imp_o365_dl: 'Скачать Export-Mailbox.ps1',
   imp_o365_s1: 'Скачайте скрипт в пустую папку.',
@@ -5152,15 +5152,15 @@ Object.assign(DICTS.ru, { e_label_builtin: "Встроенную метку не
 
 // ---------- Gmail import / Gmail 导入 ----------
 
-Object.assign(DICTS['zh-CN'], { gm_title: "从 Google Takeout 导入" });
-Object.assign(DICTS['zh-TW'], { gm_title: "從 Google Takeout 匯入" });
-Object.assign(DICTS.en, { gm_title: "Import from Google Takeout" });
-Object.assign(DICTS.ja, { gm_title: "Google Takeout から取り込む" });
-Object.assign(DICTS.ko, { gm_title: "Google Takeout에서 가져오기" });
-Object.assign(DICTS.de, { gm_title: "Aus Google Takeout importieren" });
-Object.assign(DICTS.fr, { gm_title: "Importer depuis Google Takeout" });
-Object.assign(DICTS.es, { gm_title: "Importar desde Google Takeout" });
-Object.assign(DICTS.ru, { gm_title: "Импорт из Google Takeout" });
+Object.assign(DICTS['zh-CN'], { gm_title: "从 Google Takeout 导入 (*.mbox)" });
+Object.assign(DICTS['zh-TW'], { gm_title: "從 Google Takeout 匯入 (*.mbox)" });
+Object.assign(DICTS.en, { gm_title: "Import from Google Takeout (*.mbox)" });
+Object.assign(DICTS.ja, { gm_title: "Google Takeout から取り込む (*.mbox)" });
+Object.assign(DICTS.ko, { gm_title: "Google Takeout에서 가져오기 (*.mbox)" });
+Object.assign(DICTS.de, { gm_title: "Aus Google Takeout importieren (*.mbox)" });
+Object.assign(DICTS.fr, { gm_title: "Importer depuis Google Takeout (*.mbox)" });
+Object.assign(DICTS.es, { gm_title: "Importar desde Google Takeout (*.mbox)" });
+Object.assign(DICTS.ru, { gm_title: "Импорт из Google Takeout (*.mbox)" });
 
 Object.assign(DICTS['zh-CN'], { gm_intro: "选中 Takeout 解压后的目录,浏览器会自己找到里面的 .mbox。整个过程在你这台机器上完成:切分、解析、判定文件夹与标签都在浏览器里,服务端只负责把结果写进库。" });
 Object.assign(DICTS['zh-TW'], { gm_intro: "選中 Takeout 解壓後的目錄,瀏覽器會自己找到裡面的 .mbox。整個過程在你這台機器上完成:切分、解析、判定資料夾與標籤都在瀏覽器裡,伺服端只負責把結果寫進資料庫。" });
@@ -5422,45 +5422,9 @@ Object.assign(DICTS.fr, { gm_confirm: "Importer {0} messages dans {1} et créer 
 Object.assign(DICTS.es, { gm_confirm: "¿Importar {0} mensajes a {1} y crear {2} etiqueta(s)?" });
 Object.assign(DICTS.ru, { gm_confirm: "Импортировать {0} писем в {1} и создать меток: {2}?" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_gmail: "从 Google Takeout 导入 (*.mbox)" });
-Object.assign(DICTS['zh-TW'], { imp_src_gmail: "從 Google Takeout 匯入 (*.mbox)" });
-Object.assign(DICTS.en, { imp_src_gmail: "Import from Google Takeout (*.mbox)" });
-Object.assign(DICTS.ja, { imp_src_gmail: "Google Takeout から取り込む (*.mbox)" });
-Object.assign(DICTS.ko, { imp_src_gmail: "Google Takeout에서 가져오기 (*.mbox)" });
-Object.assign(DICTS.de, { imp_src_gmail: "Aus Google Takeout importieren (*.mbox)" });
-Object.assign(DICTS.fr, { imp_src_gmail: "Importer depuis Google Takeout (*.mbox)" });
-Object.assign(DICTS.es, { imp_src_gmail: "Importar desde Google Takeout (*.mbox)" });
-Object.assign(DICTS.ru, { imp_src_gmail: "Импорт из Google Takeout (*.mbox)" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_gmail_note: "一个 mbox 文件,带 Gmail 的标签" });
-Object.assign(DICTS['zh-TW'], { imp_src_gmail_note: "一個 mbox 檔案,帶 Gmail 的標籤" });
-Object.assign(DICTS.en, { imp_src_gmail_note: "One mbox file, carrying Gmail's labels" });
-Object.assign(DICTS.ja, { imp_src_gmail_note: "Gmail のラベル付き mbox ファイル 1 つ" });
-Object.assign(DICTS.ko, { imp_src_gmail_note: "Gmail 라벨이 담긴 mbox 파일 하나" });
-Object.assign(DICTS.de, { imp_src_gmail_note: "Eine mbox-Datei mit den Labels von Gmail" });
-Object.assign(DICTS.fr, { imp_src_gmail_note: "Un fichier mbox, avec les libellés de Gmail" });
-Object.assign(DICTS.es, { imp_src_gmail_note: "Un archivo mbox, con las etiquetas de Gmail" });
-Object.assign(DICTS.ru, { imp_src_gmail_note: "Один файл mbox с метками Gmail" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_eml: "从其他旧邮箱导入 (*.eml)" });
-Object.assign(DICTS['zh-TW'], { imp_src_eml: "從其他舊信箱匯入 (*.eml)" });
-Object.assign(DICTS.en, { imp_src_eml: "Import from another old mailbox (*.eml)" });
-Object.assign(DICTS.ja, { imp_src_eml: "他の旧メールボックスから取り込む (*.eml)" });
-Object.assign(DICTS.ko, { imp_src_eml: "다른 기존 메일함에서 가져오기 (*.eml)" });
-Object.assign(DICTS.de, { imp_src_eml: "Aus einem anderen alten Postfach importieren (*.eml)" });
-Object.assign(DICTS.fr, { imp_src_eml: "Importer depuis une autre ancienne boîte (*.eml)" });
-Object.assign(DICTS.es, { imp_src_eml: "Importar desde otro buzón antiguo (*.eml)" });
-Object.assign(DICTS.ru, { imp_src_eml: "Импорт из другого старого ящика (*.eml)" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_eml_note: "Zoho、Outlook 等导出的单封邮件" });
-Object.assign(DICTS['zh-TW'], { imp_src_eml_note: "Zoho、Outlook 等匯出的單封郵件" });
-Object.assign(DICTS.en, { imp_src_eml_note: "Individual messages exported from Zoho, Outlook and the like" });
-Object.assign(DICTS.ja, { imp_src_eml_note: "Zoho や Outlook などから書き出した個別のメール" });
-Object.assign(DICTS.ko, { imp_src_eml_note: "Zoho, Outlook 등에서 내보낸 개별 메일" });
-Object.assign(DICTS.de, { imp_src_eml_note: "Einzelne Nachrichten, exportiert aus Zoho, Outlook und ähnlichen" });
-Object.assign(DICTS.fr, { imp_src_eml_note: "Messages individuels exportés depuis Zoho, Outlook et consorts" });
-Object.assign(DICTS.es, { imp_src_eml_note: "Mensajes sueltos exportados de Zoho, Outlook y similares" });
-Object.assign(DICTS.ru, { imp_src_eml_note: "Отдельные письма, выгруженные из Zoho, Outlook и подобных" });
 
 Object.assign(DICTS['zh-CN'], { gm_look_hint: "点这里改颜色和图标" });
 Object.assign(DICTS['zh-TW'], { gm_look_hint: "點這裡改顏色和圖示" });
@@ -5472,22 +5436,4 @@ Object.assign(DICTS.fr, { gm_look_hint: "Cliquer pour changer la couleur et l'ic
 Object.assign(DICTS.es, { gm_look_hint: "Haga clic para cambiar color e icono" });
 Object.assign(DICTS.ru, { gm_look_hint: "Нажмите, чтобы изменить цвет и значок" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_o365: "Microsoft 365 / Outlook 邮箱搬迁指引(仅 Windows)" });
-Object.assign(DICTS['zh-TW'], { imp_src_o365: "Microsoft 365 / Outlook 信箱搬遷指引(僅 Windows)" });
-Object.assign(DICTS.en, { imp_src_o365: "Microsoft 365 / Outlook migration guide (Windows only)" });
-Object.assign(DICTS.ja, { imp_src_o365: "Microsoft 365 / Outlook 移行ガイド(Windows のみ)" });
-Object.assign(DICTS.ko, { imp_src_o365: "Microsoft 365 / Outlook 이전 안내 (Windows 전용)" });
-Object.assign(DICTS.de, { imp_src_o365: "Microsoft 365 / Outlook — Umzugsanleitung (nur Windows)" });
-Object.assign(DICTS.fr, { imp_src_o365: "Microsoft 365 / Outlook : guide de migration (Windows uniquement)" });
-Object.assign(DICTS.es, { imp_src_o365: "Microsoft 365 / Outlook: guía de migración (solo Windows)" });
-Object.assign(DICTS.ru, { imp_src_o365: "Microsoft 365 / Outlook: руководство по переезду (только Windows)" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_o365_note: "先用它把邮件导成 .eml,再回到上一个磁贴导入" });
-Object.assign(DICTS['zh-TW'], { imp_src_o365_note: "先用它把郵件匯出成 .eml,再回到上一個磁貼匯入" });
-Object.assign(DICTS.en, { imp_src_o365_note: "Use this to obtain .eml files first, then come back to the tile above" });
-Object.assign(DICTS.ja, { imp_src_o365_note: "まずこれで .eml を書き出し、上のタイルに戻って取り込みます" });
-Object.assign(DICTS.ko, { imp_src_o365_note: "먼저 이것으로 .eml을 만든 뒤 위 타일로 돌아와 가져오세요" });
-Object.assign(DICTS.de, { imp_src_o365_note: "Damit zuerst .eml-Dateien beschaffen, dann zurück zur Kachel darüber" });
-Object.assign(DICTS.fr, { imp_src_o365_note: "À utiliser d'abord pour obtenir des .eml, puis revenir à la tuile ci-dessus" });
-Object.assign(DICTS.es, { imp_src_o365_note: "Úselo primero para obtener archivos .eml y vuelva a la tarjeta de arriba" });
-Object.assign(DICTS.ru, { imp_src_o365_note: "Сначала получите .eml с его помощью, затем вернитесь к плитке выше" });
