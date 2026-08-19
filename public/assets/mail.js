@@ -4,6 +4,10 @@ import { t, tStored } from './i18n.js';
 import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName } from './app.js';
 import { openCompose } from './compose.js';
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
+import {
+  BUILTIN, allLabels, labelById, labelName, labelMark, chipHtml, rowLabelsHtml,
+  openLabelMenu, lastLabel, loadLabels,
+} from './labels.js';
 
 // ---------- Conversation list ----------
 // ---------- 会话列表 ----------
@@ -11,6 +15,10 @@ import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
 let listState = { page: 0, hasMore: false, folder: 'inbox', q: '' };
 let sel = { active: false, ids: new Set() };
 let currentThreads = [];
+// The messages of the conversation on screen. The label controls read from it so that clicking
+// one reflects immediately, without refetching the whole conversation.
+// 当前屏幕上这个会话的邮件。标签控件从它读取,点一下就即时反映,不用重新拉整个会话。
+let currentMsgs = [];
 
 export async function renderList(folder, q, page = 0) {
   await loadFolders();
@@ -19,8 +27,16 @@ export async function renderList(folder, q, page = 0) {
   if (folder !== listState.folder || q !== listState.q) sel = { active: false, ids: new Set() };
   listState = { page, hasMore: false, folder, q };
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  else params.set('folder', folder);
+  // "label:名字" narrows a search instead of replacing it, so it is lifted out of the query text
+  // and sent alongside what remains. Resolving the name here rather than on the server is what
+  // lets the built-in label be found by its translated name.
+  // "label:名字" 是把搜索收窄而不是取代它,所以从查询文本里摘出来、与剩下的部分一起发。
+  // 名字在这里解析而不是在服务端,内置标签才可能按它被翻译后的名字找到。
+  const { text: qText, labelId: qLabel } = splitLabelQuery(q);
+  if (qText) params.set('q', qText);
+  else if (folder !== 'label') params.set('folder', folder === 'search' ? 'inbox' : folder);
+  const activeLabel = folder === 'label' ? store.labelId : qLabel;
+  if (activeLabel) params.set('label', activeLabel);
   params.set('page', String(page));
   let data;
   try {
@@ -32,7 +48,9 @@ export async function renderList(folder, q, page = 0) {
   }
   listState.hasMore = data.has_more;
   currentThreads = data.threads;
-  const title = q ? t('search_title', q) : folderName(folder);
+  const title = folder === 'label'
+    ? labelName(labelById(store.labelId)) || t('lbl_title')
+    : q ? t('search_title', q) : folderName(folder);
   const rows = data.threads.map((th) => rowHtml(th, folder)).join('');
 
   const normalBar = `
@@ -55,7 +73,7 @@ export async function renderList(folder, q, page = 0) {
       ${folder === 'trash' || folder === 'spam' ? `<wa-button class="icon" appearance="plain" data-batch="inbox" aria-label="${esc(t('restore_inbox'))}">${icon('inbox', 20)}</wa-button>` : `<wa-button class="icon" appearance="plain" data-batch="spam" aria-label="${esc(t('report_spam'))}">${icon('spam', 20)}</wa-button><wa-button class="icon" appearance="plain" data-batch="trash" aria-label="${esc(t('delete'))}">${icon('trash', 20)}</wa-button>`}
       <wa-button class="icon" appearance="plain" data-batch="read" aria-label="${esc(t('mark_read'))}">${icon('markRead', 20)}</wa-button>
       <wa-button class="icon" appearance="plain" data-batch="unread" aria-label="${esc(t('mark_unread'))}">${icon('mail', 20)}</wa-button>
-      <wa-button class="icon" appearance="plain" data-batch="star" aria-label="${esc(t('star'))}">${icon('star', 20)}</wa-button>
+      <wa-button class="icon" appearance="plain" id="btn-sel-label" aria-label="${esc(t('lbl_title'))}">${icon('tag', 20)}</wa-button>
     </div>`;
 
   const content = `${sel.active ? selBar : normalBar}
@@ -68,6 +86,24 @@ export async function renderList(folder, q, page = 0) {
 
 function safeParse(s) {
   try { return JSON.parse(s || '[]'); } catch { return []; }
+}
+
+/**
+ * Pull a label: term out of a search box query. The name may be quoted, because label names
+ * contain spaces as often as any other name does. An unmatched name is left in the text rather
+ * than silently dropped -- searching for the literal words is a better answer than searching
+ * for nothing.
+ * 从搜索框的查询里摘出 label: 词。名字可以加引号 —— 标签名和别的名字一样,常常带空格。
+ * 匹配不上的名字会留在文本里而不是被悄悄丢掉:按字面去搜,好过什么都不搜。
+ */
+function splitLabelQuery(q) {
+  const raw = String(q || '');
+  const m = raw.match(/(^|\s)label:("([^"]+)"|\S+)/i);
+  if (!m) return { text: raw.trim(), labelId: '' };
+  const name = (m[3] || m[2] || '').trim().toLowerCase();
+  const hit = allLabels().find((l) => labelName(l).toLowerCase() === name);
+  if (!hit) return { text: raw.trim(), labelId: '' };
+  return { text: (raw.slice(0, m.index) + raw.slice(m.index + m[0].length)).trim(), labelId: hit.id };
 }
 
 function senderLine(th, folder) {
@@ -98,9 +134,13 @@ function rowHtml(th, folder) {
     </div>`;
   }
   const checked = sel.ids.has(th.thread_id);
+  // The label cell stays in multi-select too: having picked a batch, the natural place to click
+  // is the same cell you would click for one -- so it is there, and it acts on the whole batch.
+  // 多选模式下标签位照样在:选好一批之后,你最自然会点的还是那一格 ——
+  // 那就让它在,并且作用于整批。
   const lead = sel.active
-    ? `<span class="row-check"><input type="checkbox" ${checked ? 'checked' : ''} tabindex="-1"></span>`
-    : `<wa-button class="row-star icon sm ${th.starred ? 'starred' : ''}" appearance="plain" data-act="star" aria-label="${esc(t('star'))}">${icon(th.starred ? 'starFill' : 'star', 18)}</wa-button>`;
+    ? `<span class="row-check"><input type="checkbox" ${checked ? 'checked' : ''} tabindex="-1"></span>${rowLabelsHtml(th)}`
+    : rowLabelsHtml(th);
   return `
   <div class="row ${unread ? 'unread' : ''} ${checked ? 'selected' : ''}" data-tid="${esc(th.thread_id)}">
     ${lead}
@@ -138,6 +178,12 @@ function bindList(folder, q) {
   });
   // Multi-select: bulk actions
   // 多选:批量操作
+  qs('#btn-sel-label')?.addEventListener('click', (e) => {
+    const ids = [...sel.ids];
+    if (!ids.length) return toast(t('selected_n', 0), true);
+    const r = e.currentTarget.getBoundingClientRect();
+    openThreadLabelMenu(r.left, r.bottom + 4, ids, folder, q);
+  });
   qsa('[data-batch]').forEach((b) =>
     b.addEventListener('click', async () => {
       const action = b.dataset.batch;
@@ -205,6 +251,19 @@ function bindList(folder, q) {
     if (sel.active && row.dataset.tid) {
       row.addEventListener('click', (e) => {
         const tid = row.dataset.tid;
+        // Clicking the label cell is not a selection gesture. Aimed at a row inside the
+        // selection it acts on the whole selection; aimed at one outside it, only on that row --
+        // the same rule the right-click menu follows.
+        // 点标签位不是"选择"这个动作。点在选区之内的行上,作用于整个选区;
+        // 点在选区之外的行上,只作用于那一行 —— 与右键菜单同一条规则。
+        const lb = e.target.closest('[data-act="labels"]');
+        if (lb) {
+          e.stopPropagation();
+          const r = lb.getBoundingClientRect();
+          const targets = sel.ids.has(tid) ? [...sel.ids] : [tid];
+          openThreadLabelMenu(r.left, r.bottom + 4, targets, folder, q);
+          return;
+        }
         if (e.shiftKey && sel.ids.size) {
           selectRangeTo(tid);
           return;
@@ -230,8 +289,12 @@ function bindList(folder, q) {
         }
         const tid = row.dataset.tid;
         if (act === 'forward') { await forwardThread(tid); return; }
-        if (act === 'star' && btn.classList.contains('starred')) await threadAction(tid, 'unstar');
-        else await threadAction(tid, act);
+        if (act === 'labels') {
+          const r = btn.getBoundingClientRect();
+          openThreadLabelMenu(r.left, r.bottom + 4, [tid], folder, q);
+          return;
+        }
+        await threadAction(tid, act);
         reRender(folder, q);
         return;
       }
@@ -248,6 +311,24 @@ function bindList(folder, q) {
 // ---------- Right-click context menu ----------
 // ---------- 右键上下文菜单 ----------
 
+/** One message's marks, for the head of its header row. Same shape as a list row's cell.
+ *  单封邮件的记号,放在它标题行的头上。形状与列表行那一格一致。 */
+function msgLabelsHtml(m) {
+  const marks = [...(m.flag_flagged ? [BUILTIN] : []), ...(m.labels || [])].map(labelById).filter(Boolean);
+  if (!marks.length) return `<span class="lb-empty">${icon('star', 18)}</span>`;
+  return marks.map((l) => labelMark(l, 18)).join('');
+}
+
+/** The same labels with their names, shown above an opened message where there is room for them
+ *  同样这些标签,带上名字,显示在展开的邮件正文上方 —— 那里放得下 */
+function msgChipsHtml(m) {
+  const marks = [...(m.flag_flagged ? [BUILTIN] : []), ...(m.labels || [])].map(labelById).filter(Boolean);
+  if (!marks.length) return '<div class="msg-labels msg-chips"></div>';
+  return `<div class="msg-labels msg-chips">${marks.map((l) => chipHtml(l, { removable: true })).join('')}</div>`;
+}
+
+const idsOfThread = (th) => new Set([...(th?.starred ? [BUILTIN] : []), ...(th?.labels || [])]);
+
 function showRowMenu(x, y, tid, folder, q) {
   const menu = qs('#ctx-menu');
   if (!menu) return;
@@ -263,7 +344,20 @@ function showRowMenu(x, y, tid, folder, q) {
   if (sel.active) items.push({ head: t('selected_n', targets.length) });
   if (single) items.push({ act: 'open', icon: 'mail', label: t('open') });
   items.push(unread ? { act: 'read', icon: 'markRead', label: t('mark_read') } : { act: 'unread', icon: 'mail', label: t('mark_unread') });
-  items.push(th.starred && single ? { act: 'unstar', icon: 'star', label: t('star') } : { act: 'star', icon: 'starFill', label: t('star') });
+  // One entry, no submenu: the label you used last, which is the one you are most likely to want
+  // again. Anything else is one click away on the row's own label cell.
+  // 就一条,没有二级菜单:你上次用过的那个标签,也就是你最可能再要一次的那个。
+  // 要别的,点行首那一格,一下就到。
+  const recent = lastLabel();
+  if (recent) {
+    const on = single && idsOfThread(th).has(recent.id);
+    items.push({
+      act: on ? 'unlabel' : 'label',
+      mark: labelMark(recent, 18),
+      label: t(on ? 'lbl_remove' : 'lbl_apply', labelName(recent)),
+      arg: recent.id,
+    });
+  }
   if (single) items.push({ act: 'forward', icon: 'forward', label: t('forward') });
   items.push({ sep: true });
   if (!inJunk) {
@@ -278,7 +372,7 @@ function showRowMenu(x, y, tid, folder, q) {
     .map((it) => {
       if (it.sep) return '<div class="ctx-sep"></div>';
       if (it.head) return `<div class="ctx-title">${esc(it.head)}</div>`;
-      return `<button class="ctx-item ${it.danger ? 'danger' : ''}" data-act="${it.act}">${icon(it.icon, 18)}<span>${esc(it.label)}</span></button>`;
+      return `<button class="ctx-item ${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg ? `data-arg="${esc(it.arg)}"` : ''}>${it.mark || icon(it.icon, 18)}<span>${esc(it.label)}</span></button>`;
     })
     .join('');
   menu.hidden = false;
@@ -295,6 +389,15 @@ function showRowMenu(x, y, tid, folder, q) {
       ev.stopPropagation();
       close();
       const act = b.dataset.act;
+      if (act === 'label' || act === 'unlabel') {
+        for (const id of targets) {
+          await api('POST', `/api/mailboxes/${store.mbId}/threads/${id}/label`, { label: b.dataset.arg, on: act === 'label' })
+            .catch((e) => toast(e.message, true));
+        }
+        if (sel.active) sel = { active: false, ids: new Set() };
+        await loadLabels();
+        return reRender(folder, q);
+      }
       if (act === 'open') return navigate(`#/mb/${store.mbId}/thread/${targets[0]}`);
       if (act === 'forward') return forwardThread(targets[0]);
       if (act === 'delete_forever' && !(await confirmDialog(t('purge_confirm'), t('purge_forever')))) return;
@@ -307,6 +410,33 @@ function showRowMenu(x, y, tid, folder, q) {
     document.addEventListener('click', close);
     document.addEventListener('scroll', close, true);
   }, 0);
+}
+
+/**
+ * The picker, aimed at one or more conversations. What each label shows -- on, off, or mixed --
+ * is read from the conversations themselves, so with several selected you can tell at a glance
+ * whether clicking will add the label or take it away.
+ * 选择器,作用于一个或多个会话。每个标签显示"有/没有/部分有"是从会话本身读出来的,
+ * 于是选中多个时,你一眼就知道点下去是加还是减。
+ */
+function openThreadLabelMenu(x, y, tids, folder, q) {
+  const idsOf = (tid) => {
+    const th = currentThreads.find((t2) => t2.thread_id === tid) || {};
+    return new Set([...(th.starred ? [BUILTIN] : []), ...(th.labels || [])]);
+  };
+  const sets = tids.map(idsOf);
+  openLabelMenu(x, y, {
+    has: (id) => {
+      const n = sets.filter((set) => set.has(id)).length;
+      return n === 0 ? 'off' : n === sets.length ? 'on' : 'mixed';
+    },
+    toggle: async (id, on) => {
+      for (const tid of tids) {
+        await api('POST', `/api/mailboxes/${store.mbId}/threads/${tid}/label`, { label: id, on });
+      }
+    },
+    onDone: async () => { await loadLabels(); reRender(folder, q); },
+  });
 }
 
 async function threadAction(tid, action) {
@@ -331,6 +461,7 @@ export async function renderThread(tid) {
     return;
   }
   const msgs = data.messages;
+  currentMsgs = msgs;
   const anyUnread = msgs.some((m) => !m.flag_seen);
   const roles = new Set(msgs.map((m) => m.folder_role));
   const inTrash = roles.has('trash') || roles.has('spam');
@@ -408,11 +539,12 @@ function msgHtml(m, expanded) {
       <div class="msg-right">
         ${m.has_attachments ? icon('attach', 16) : ''}
         <span class="msg-date">${fmtDateTime(m.date)}</span>
-        <wa-button class="icon sm ${m.flag_flagged ? 'starred' : ''}" appearance="plain" data-act="msgstar" aria-label="${esc(t('star'))}">${icon(m.flag_flagged ? 'starFill' : 'star', 18)}</wa-button>
+        <span class="row-labels" data-act="msglabels" style="width:auto">${msgLabelsHtml(m)}</span>
       </div>
     </div>
     <div class="msg-collapsed">${esc(cleanSnippet(m.snippet))}</div>
     <div class="msg-bodywrap">
+      ${msgChipsHtml(m)}
       <div class="msg-body" id="body-${esc(m.id)}"><div class="loading">${esc(t('loading'))}</div></div>
       ${(m.attachments || []).length ? attHtml(m) : ''}
       <div class="msg-actions">
@@ -858,13 +990,45 @@ function bindThread(tid, msgs, backFolder) {
       el.classList.add('open');
       loadBody(mid);
     });
-    el.querySelector('[data-act="msgstar"]')?.addEventListener('click', async (e) => {
+    // The reading pane acts on the message in front of you, not on the conversation: this is
+    // where a single message gets classified differently from its neighbours.
+    // 阅读区操作的是眼前这一封,不是整个会话 —— 单封与同会话其它信分开归类,就发生在这里。
+    const msgLabelMenu = (x, y) => {
+      const m = (currentMsgs || []).find((z) => z.id === mid) || {};
+      const have = new Set([...(m.flag_flagged ? [BUILTIN] : []), ...(m.labels || [])]);
+      openLabelMenu(x, y, {
+        has: (id) => (have.has(id) ? 'on' : 'off'),
+        toggle: async (id, on) => {
+          await api('POST', `/api/messages/${mid}/labels`, { label: id, on });
+          if (id === BUILTIN) m.flag_flagged = on ? 1 : 0;
+          else m.labels = on ? [...(m.labels || []), id] : (m.labels || []).filter((x2) => x2 !== id);
+        },
+        onDone: async () => {
+          await loadLabels();
+          el.querySelector('[data-act="msglabels"]').innerHTML = msgLabelsHtml(m);
+          const wrap = el.querySelector('.msg-chips');
+          if (wrap) wrap.outerHTML = msgChipsHtml(m);
+        },
+      });
+    };
+    el.querySelector('[data-act="msglabels"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      const btn = e.currentTarget;
-      const starred = btn.classList.contains('starred');
-      await api('POST', `/api/messages/${mid}/flags`, { flagged: !starred });
-      btn.classList.toggle('starred');
-      btn.innerHTML = icon(!starred ? 'starFill' : 'star', 18);
+      const r = e.currentTarget.getBoundingClientRect();
+      msgLabelMenu(r.left, r.bottom + 4);
+    });
+    el.querySelector('.msg-bodywrap')?.addEventListener('click', async (e) => {
+      const x = e.target.closest('[data-unlabel]');
+      if (!x) return;
+      e.stopPropagation();
+      const m = (currentMsgs || []).find((z) => z.id === mid) || {};
+      await api('POST', `/api/messages/${mid}/labels`, { label: x.dataset.unlabel, on: false })
+        .catch((err) => toast(err.message, true));
+      if (x.dataset.unlabel === BUILTIN) m.flag_flagged = 0;
+      else m.labels = (m.labels || []).filter((z) => z !== x.dataset.unlabel);
+      await loadLabels();
+      el.querySelector('[data-act="msglabels"]').innerHTML = msgLabelsHtml(m);
+      const wrap = el.querySelector('.msg-chips');
+      if (wrap) wrap.outerHTML = msgChipsHtml(m);
     });
     el.querySelectorAll('.att-chip[data-prev]').forEach((chip) => {
       chip.addEventListener('click', (e) => {

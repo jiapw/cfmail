@@ -873,6 +873,204 @@ app.get('/api/mailboxes/:mb/folders', async (c) => {
   });
 });
 
+// ---------- Labels ----------
+// ---------- 标签 ----------
+
+/**
+ * The built-in label is not a row. It is flag_flagged -- IMAP's \Flagged, the bit that has
+ * always backed the star -- handed to the interface under a reserved id so that one list, one
+ * menu and one apply/remove call cover both it and the labels people create.
+ * Its name is not stored either: the browser renders it in the reader's language, the same way
+ * error codes are.
+ *
+ * 内置标签不是一行数据。它就是 flag_flagged —— IMAP 的 \Flagged,一直以来星标背后的那一位 ——
+ * 用一个保留 id 交给界面,于是一份列表、一个菜单、一次打/取的调用,同时管住它和用户自建的标签。
+ * 它的名字也不存:由浏览器按读者的语言渲染,和错误码一个路子。
+ */
+const FLAGGED = 'flagged';
+
+// A closed set on both counts. A free colour picker guarantees somebody picks the one colour
+// that is invisible in dark mode, and a free icon field guarantees a broken glyph.
+// 两者都是封闭集合。开放取色必然有人选中在暗色主题下看不见的那个颜色,
+// 开放图标名则必然出现画不出来的字形。
+const LABEL_ICONS = ['tag', 'flag', 'bookmark', 'bell', 'pin', 'heart', 'bolt', 'leaf',
+  'fire', 'cube', 'eye', 'clock', 'check', 'person', 'globe', 'folder'];
+const LABEL_COLORS = ['amber', 'red', 'orange', 'green', 'teal', 'blue', 'indigo', 'violet', 'pink', 'gray'];
+
+/** Threads carrying each label, and how many of them hold something unread. Trash and spam are
+ *  excluded so a label's count matches what its view actually lists.
+ *  每个标签下有多少会话、其中多少含未读。排除回收站和垃圾邮件,让数字与该标签视图里看到的一致。 */
+async function labelCounts(env: Env, mailboxId: string) {
+  const rows = await env.DB.prepare(
+    `SELECT ml.label_id AS id, COUNT(DISTINCT m.thread_id) AS n,
+            COUNT(DISTINCT CASE WHEN m.flag_seen=0 THEN m.thread_id END) AS unread
+       FROM message_labels ml
+       JOIN messages m ON m.id=ml.message_id
+       JOIN folders f ON f.id=m.folder_id
+      WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam')
+      GROUP BY ml.label_id`
+  ).bind(mailboxId).all<any>();
+  const map = new Map<string, { n: number; unread: number }>();
+  for (const r of rows.results || []) map.set(r.id, { n: r.n || 0, unread: r.unread || 0 });
+  return map;
+}
+
+app.get('/api/mailboxes/:mb/labels', async (c) => {
+  const { mb } = await requireGrant(c, c.req.param('mb'));
+  const [rows, counts, flagged] = await Promise.all([
+    c.env.DB.prepare('SELECT id, name, icon, color, sort FROM labels WHERE mailbox_id=?1 ORDER BY sort, name')
+      .bind(mb.id).all<any>(),
+    labelCounts(c.env, mb.id),
+    c.env.DB.prepare(
+      `SELECT COUNT(DISTINCT m.thread_id) AS n,
+              COUNT(DISTINCT CASE WHEN m.flag_seen=0 THEN m.thread_id END) AS unread
+         FROM messages m JOIN folders f ON f.id=m.folder_id
+        WHERE m.mailbox_id=?1 AND m.flag_flagged=1 AND f.role NOT IN ('trash','spam')`
+    ).bind(mb.id).first<any>(),
+  ]);
+  const labels = [
+    { id: FLAGGED, name: '', icon: 'star', color: 'amber', builtin: 1, sort: -1, n: flagged?.n || 0, unread: flagged?.unread || 0 },
+    ...(rows.results || []).map((r: any) => ({
+      ...r, builtin: 0, n: counts.get(r.id)?.n || 0, unread: counts.get(r.id)?.unread || 0,
+    })),
+  ];
+  return c.json({ labels });
+});
+
+app.post('/api/mailboxes/:mb/labels', async (c) => {
+  const { mb } = await requireGrant(c, c.req.param('mb'), true);
+  const b = await c.req.json<any>();
+  const name = String(b.name || '').trim().slice(0, 40);
+  if (!name) return c.json({ error: 'e_label_name_required' }, 400);
+  const icon = LABEL_ICONS.includes(b.icon) ? b.icon : LABEL_ICONS[0];
+  const color = LABEL_COLORS.includes(b.color) ? b.color : LABEL_COLORS[0];
+  const dup = await c.env.DB.prepare('SELECT id FROM labels WHERE mailbox_id=?1 AND name=?2')
+    .bind(mb.id, name).first<any>();
+  if (dup) return c.json({ error: 'e_label_exists' }, 409);
+  const id = uid();
+  const next = await c.env.DB.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM labels WHERE mailbox_id=?1')
+    .bind(mb.id).first<any>();
+  await c.env.DB.prepare(
+    'INSERT INTO labels (id, mailbox_id, name, icon, color, sort, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)'
+  ).bind(id, mb.id, name, icon, color, next?.s || 1, now()).run();
+  return c.json({ id, name, icon, color });
+});
+
+app.post('/api/mailboxes/:mb/labels/:id', async (c) => {
+  const { mb } = await requireGrant(c, c.req.param('mb'), true);
+  // The built-in has nothing to edit: renaming it would break the translation it is rendered
+  // from, and it is the one label every mailbox is guaranteed to have.
+  // 内置标签没有可改之处:改名会打断它赖以渲染的那份翻译,而它是每个邮箱都保证存在的那一个。
+  if (c.req.param('id') === FLAGGED) return c.json({ error: 'e_label_builtin' }, 400);
+  const row = await c.env.DB.prepare('SELECT * FROM labels WHERE id=?1 AND mailbox_id=?2')
+    .bind(c.req.param('id'), mb.id).first<any>();
+  if (!row) return c.json({ error: 'e_label_not_found' }, 404);
+  const b = await c.req.json<any>();
+  const name = b.name === undefined ? row.name : String(b.name || '').trim().slice(0, 40);
+  if (!name) return c.json({ error: 'e_label_name_required' }, 400);
+  const icon = LABEL_ICONS.includes(b.icon) ? b.icon : row.icon;
+  const color = LABEL_COLORS.includes(b.color) ? b.color : row.color;
+  const sort = Number.isFinite(b.sort) ? Math.trunc(b.sort) : row.sort;
+  if (name !== row.name) {
+    const dup = await c.env.DB.prepare('SELECT id FROM labels WHERE mailbox_id=?1 AND name=?2')
+      .bind(mb.id, name).first<any>();
+    if (dup) return c.json({ error: 'e_label_exists' }, 409);
+  }
+  await c.env.DB.prepare('UPDATE labels SET name=?1, icon=?2, color=?3, sort=?4 WHERE id=?5')
+    .bind(name, icon, color, sort, row.id).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/mailboxes/:mb/labels/:id', async (c) => {
+  const { mb } = await requireGrant(c, c.req.param('mb'), true);
+  if (c.req.param('id') === FLAGGED) return c.json({ error: 'e_label_builtin' }, 400);
+  const row = await c.env.DB.prepare('SELECT id FROM labels WHERE id=?1 AND mailbox_id=?2')
+    .bind(c.req.param('id'), mb.id).first<any>();
+  if (!row) return c.json({ error: 'e_label_not_found' }, 404);
+  // Deleting a label unclassifies mail; it never deletes mail.
+  // 删标签是取消分类,绝不删邮件。
+  await c.env.DB.prepare('DELETE FROM message_labels WHERE label_id=?1').bind(row.id).run();
+  await c.env.DB.prepare('DELETE FROM labels WHERE id=?1').bind(row.id).run();
+  return c.json({ ok: true });
+});
+
+/** Resolve a label id against this mailbox, or null when it is not one of ours
+ *  把标签 id 解析到本邮箱,不属于本邮箱则返回 null */
+async function ownLabel(env: Env, mailboxId: string, id: string) {
+  if (id === FLAGGED) return { id: FLAGGED, builtin: true };
+  const row = await env.DB.prepare('SELECT id FROM labels WHERE id=?1 AND mailbox_id=?2')
+    .bind(id, mailboxId).first<any>();
+  return row ? { id: row.id, builtin: false } : null;
+}
+
+/**
+ * Put a label on a conversation, or take it off. Applying marks the latest message and removing
+ * clears the whole conversation -- exactly what starring has always done, so a conversation that
+ * shows a label keeps showing it until you take it off, no matter which message a reply lands on.
+ * 给会话打标签或取消。打标签作用于最新一封,取消作用于整个会话 —— 星标一直就是这个行为,
+ * 于是一个显示着某标签的会话会一直显示,直到你取消它,与新回复落在哪一封无关。
+ */
+app.post('/api/mailboxes/:mb/threads/:tid/label', async (c) => {
+  const { mb } = await requireGrant(c, c.req.param('mb'), true);
+  const tid = c.req.param('tid');
+  const b = await c.req.json<any>();
+  const label = await ownLabel(c.env, mb.id, String(b.label || ''));
+  if (!label) return c.json({ error: 'e_label_not_found' }, 404);
+  const on = !!b.on;
+  if (label.builtin) {
+    if (on) {
+      const latest = await c.env.DB.prepare(
+        'SELECT id FROM messages WHERE mailbox_id=?1 AND thread_id=?2 ORDER BY date DESC LIMIT 1'
+      ).bind(mb.id, tid).first<any>();
+      if (latest) await c.env.DB.prepare('UPDATE messages SET flag_flagged=1 WHERE id=?1').bind(latest.id).run();
+    } else {
+      await c.env.DB.prepare('UPDATE messages SET flag_flagged=0 WHERE mailbox_id=?1 AND thread_id=?2')
+        .bind(mb.id, tid).run();
+    }
+    return c.json({ ok: true });
+  }
+  if (on) {
+    const latest = await c.env.DB.prepare(
+      'SELECT id FROM messages WHERE mailbox_id=?1 AND thread_id=?2 ORDER BY date DESC LIMIT 1'
+    ).bind(mb.id, tid).first<any>();
+    if (latest) {
+      await c.env.DB.prepare('INSERT OR IGNORE INTO message_labels (message_id, label_id) VALUES (?1,?2)')
+        .bind(latest.id, label.id).run();
+    }
+  } else {
+    await c.env.DB.prepare(
+      `DELETE FROM message_labels WHERE label_id=?1 AND message_id IN
+         (SELECT id FROM messages WHERE mailbox_id=?2 AND thread_id=?3)`
+    ).bind(label.id, mb.id, tid).run();
+  }
+  return c.json({ ok: true });
+});
+
+/** The same, for one message -- what the reading pane acts on
+ *  同上,但作用于单封邮件 —— 阅读区操作的就是这个 */
+app.post('/api/messages/:id/labels', async (c) => {
+  const user = await userFromRequest(c as any);
+  if (!user) return c.json({ error: 'e_login_required' }, 401);
+  const msg = await c.env.DB.prepare('SELECT id, mailbox_id FROM messages WHERE id=?1')
+    .bind(c.req.param('id')).first<any>();
+  if (!msg) return c.json({ error: 'e_message_not_found' }, 404);
+  const { mb } = await requireGrant(c, msg.mailbox_id, true);
+  const b = await c.req.json<any>();
+  const label = await ownLabel(c.env, mb.id, String(b.label || ''));
+  if (!label) return c.json({ error: 'e_label_not_found' }, 404);
+  const on = !!b.on;
+  if (label.builtin) {
+    await c.env.DB.prepare('UPDATE messages SET flag_flagged=?1 WHERE id=?2').bind(on ? 1 : 0, msg.id).run();
+  } else if (on) {
+    await c.env.DB.prepare('INSERT OR IGNORE INTO message_labels (message_id, label_id) VALUES (?1,?2)')
+      .bind(msg.id, label.id).run();
+  } else {
+    await c.env.DB.prepare('DELETE FROM message_labels WHERE message_id=?1 AND label_id=?2')
+      .bind(msg.id, label.id).run();
+  }
+  return c.json({ ok: true });
+});
+
 const PAGE_SIZE = 50;
 
 app.get('/api/mailboxes/:mb/threads', async (c) => {
@@ -912,6 +1110,21 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
   // 与 sql 同一套过滤条件、只数会话数,用来算总页数;两条一起 batch 出去,省一个往返
   let countSql: string;
   let countBinds: any[];
+
+  // A label narrows whatever is being listed rather than replacing it, so it composes with a
+  // search instead of competing with it. The clause is generated per query because the
+  // placeholder number depends on how many binds that particular query already has.
+  // 标签是把正在列的东西收窄,而不是取而代之,所以它与搜索是叠加关系而非二选一。
+  // 子句按查询生成,因为占位符编号取决于那条查询本身已经有几个绑定值。
+  const labelId = String(c.req.query('label') || '');
+  const labelFilter = (idx: number) =>
+    !labelId ? ''
+      : labelId === FLAGGED
+        ? ' AND m.thread_id IN (SELECT thread_id FROM messages WHERE mailbox_id=?1 AND flag_flagged=1)'
+        : ` AND m.thread_id IN (SELECT m2.thread_id FROM message_labels ml
+             JOIN messages m2 ON m2.id=ml.message_id WHERE ml.label_id=?${idx} AND m2.mailbox_id=?1)`;
+  const labelBind = labelId && labelId !== FLAGGED ? [labelId] : [];
+
   if (q) {
     const like = !hasCJK(q) && q.length >= 3 ? null : `%${q.replace(/[%_]/g, ' ')}%`;
     const hitWhere = like
@@ -922,7 +1135,7 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
         JOIN message_texts mt ON mt.message_id = m.id
         JOIN messages_fts ON messages_fts.rowid = mt.mrow
         JOIN folders f ON f.id = m.folder_id
-        WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam') AND ${hitWhere}
+        WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam') AND ${hitWhere}${labelFilter(5)}
       ), t AS (SELECT thread_id, MAX(date) AS last_date, COUNT(*) AS cnt FROM hit GROUP BY thread_id)
       SELECT t.thread_id, t.last_date, t.cnt,
         (SELECT SUM(CASE WHEN flag_seen=0 THEN 1 ELSE 0 END) FROM messages WHERE mailbox_id=?1 AND thread_id=t.thread_id) AS unread,
@@ -930,13 +1143,31 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
         MAX(m.has_attachments) AS hasatt, m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json, m.parse_status
       FROM t JOIN messages m ON m.mailbox_id=?1 AND m.thread_id=t.thread_id AND m.date=t.last_date
       GROUP BY t.thread_id ORDER BY t.last_date DESC LIMIT ?3 OFFSET ?4`;
-    binds = [mb.id, like || ftsQuery(q), PAGE_SIZE + 1, page * PAGE_SIZE];
+    binds = [mb.id, like || ftsQuery(q), PAGE_SIZE + 1, page * PAGE_SIZE, ...labelBind];
     countSql = `SELECT COUNT(DISTINCT m.thread_id) AS n FROM messages m
         JOIN message_texts mt ON mt.message_id = m.id
         JOIN messages_fts ON messages_fts.rowid = mt.mrow
         JOIN folders f ON f.id = m.folder_id
-        WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam') AND ${hitWhere}`;
-    countBinds = [mb.id, like || ftsQuery(q)];
+        WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam') AND ${hitWhere}${labelFilter(3)}`;
+    countBinds = [mb.id, like || ftsQuery(q), ...labelBind];
+  } else if (labelId) {
+    // One labelled message selects the whole conversation, and its counts span every folder the
+    // conversation reaches -- the same rule the star has always followed.
+    // 任一封带该标签即整个会话入选,数量按会话跨文件夹统计 —— 与星标一直以来的规则相同。
+    sql = `WITH tw AS (
+        SELECT m.thread_id, MAX(m.date) AS last_date, COUNT(*) AS cnt,
+          SUM(CASE WHEN m.flag_seen=0 THEN 1 ELSE 0 END) AS unread,
+          MAX(m.flag_flagged) AS starred, MAX(m.has_attachments) AS hasatt
+        FROM messages m JOIN folders f ON f.id=m.folder_id
+        WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam')${labelFilter(4)}
+        GROUP BY m.thread_id)
+      SELECT tw.*, m.subject, m.snippet, m.from_addr, m.from_name, m.direction, m.to_json, m.parse_status
+      FROM tw JOIN messages m ON m.mailbox_id=?1 AND m.thread_id=tw.thread_id AND m.date=tw.last_date
+      GROUP BY tw.thread_id ORDER BY tw.last_date DESC LIMIT ?2 OFFSET ?3`;
+    binds = [mb.id, PAGE_SIZE + 1, page * PAGE_SIZE, ...labelBind];
+    countSql = `SELECT COUNT(DISTINCT m.thread_id) AS n FROM messages m JOIN folders f ON f.id=m.folder_id
+        WHERE m.mailbox_id=?1 AND f.role NOT IN ('trash','spam')${labelFilter(2)}`;
+    countBinds = [mb.id, ...labelBind];
   } else if (folder === 'starred') {
     // Conversations aggregate across folders (Gmail semantics): one starred message selects the whole conversation, and counts and unread totals span it
     // 会话跨文件夹聚合(Gmail 语义):任一封被星标即入选,数量/未读按整个会话算
@@ -989,8 +1220,31 @@ app.get('/api/mailboxes/:mb/threads', async (c) => {
   const list = rows.results || [];
   const hasMore = list.length > PAGE_SIZE;
   const total = Number((cnt.results?.[0] as any)?.n || 0);
+  const page1 = list.slice(0, PAGE_SIZE);
+  // Labels for the conversations on this page only. Joining them into the query above would
+  // multiply its rows; a second query bounded by the page size costs one round trip and stays
+  // the same size no matter how large the mailbox is.
+  // 只取本页会话的标签。并进上面那条查询会让行数翻倍;单独查一次的代价是一个往返,
+  // 而它的规模由页大小决定,和邮箱有多大无关。
+  if (page1.length) {
+    const ids = page1.map((r: any) => r.thread_id).filter(Boolean);
+    if (ids.length) {
+      const marks = ids.map((_: any, i: number) => `?${i + 2}`).join(',');
+      const lr = await c.env.DB.prepare(
+        `SELECT DISTINCT m.thread_id AS tid, ml.label_id AS id
+           FROM message_labels ml JOIN messages m ON m.id=ml.message_id
+          WHERE m.mailbox_id=?1 AND m.thread_id IN (${marks})`
+      ).bind(mb.id, ...ids).all<any>();
+      const byThread = new Map<string, string[]>();
+      for (const r of lr.results || []) {
+        if (!byThread.has(r.tid)) byThread.set(r.tid, []);
+        byThread.get(r.tid)!.push(r.id);
+      }
+      for (const th of page1 as any[]) th.labels = byThread.get(th.thread_id) || [];
+    }
+  }
   return c.json({
-    threads: list.slice(0, PAGE_SIZE),
+    threads: page1,
     page,
     has_more: hasMore,
     total,
@@ -1011,6 +1265,23 @@ app.get('/api/mailboxes/:mb/threads/:tid', async (c) => {
   ).bind(mb.id, tid).all<any>();
   const msgs = rows.results || [];
   if (!msgs.length) throw new HttpError(404, 'e_thread_not_found');
+
+  // Labels hang off individual messages here, not off the conversation: the reading pane acts on
+  // the message you are looking at, so it has to show what that one carries.
+  // 这里标签挂在单封邮件上,而不是会话上:阅读区操作的是你正在看的这一封,
+  // 那就得显示这一封身上有什么。
+  {
+    const qs2 = msgs.map((_: any, j: number) => `?${j + 1}`).join(',');
+    const lr = await c.env.DB.prepare(
+      `SELECT message_id AS mid, label_id AS id FROM message_labels WHERE message_id IN (${qs2})`
+    ).bind(...msgs.map((m: any) => m.id)).all<any>();
+    const byMsg = new Map<string, string[]>();
+    for (const r of lr.results || []) {
+      if (!byMsg.has(r.mid)) byMsg.set(r.mid, []);
+      byMsg.get(r.mid)!.push(r.id);
+    }
+    for (const m of msgs as any[]) m.labels = byMsg.get(m.id) || [];
+  }
 
   const attByMsg: Record<string, any[]> = {};
   for (let i = 0; i < msgs.length; i += 50) {
@@ -1184,19 +1455,6 @@ app.get('/api/messages/:id/cid/:cid', async (c) => {
   return c.body(att.content);
 });
 
-app.post('/api/messages/:id/flags', async (c) => {
-  const { msg } = await requireMessage(c, c.req.param('id'), true);
-  const body = await c.req.json<any>();
-  const sets: string[] = [];
-  const binds: any[] = [];
-  if (typeof body.seen === 'boolean') { sets.push(`flag_seen=?${binds.length + 1}`); binds.push(body.seen ? 1 : 0); }
-  if (typeof body.flagged === 'boolean') { sets.push(`flag_flagged=?${binds.length + 1}`); binds.push(body.flagged ? 1 : 0); }
-  if (!sets.length) return c.json({ ok: true });
-  binds.push(msg.id);
-  await c.env.DB.prepare(`UPDATE messages SET ${sets.join(',')} WHERE id=?${binds.length}`).bind(...binds).run();
-  return c.json({ ok: true });
-});
-
 // ---------- Conversation actions ----------
 // ---------- 会话操作 ----------
 
@@ -1224,16 +1482,6 @@ app.post('/api/mailboxes/:mb/threads/:tid/action', async (c) => {
     case 'unread':
       await c.env.DB.prepare('UPDATE messages SET flag_seen=?1 WHERE mailbox_id=?2 AND thread_id=?3')
         .bind(action === 'read' ? 1 : 0, mb.id, tid).run();
-      break;
-    case 'star': {
-      const latest = await c.env.DB.prepare(
-        'SELECT id FROM messages WHERE mailbox_id=?1 AND thread_id=?2 ORDER BY date DESC LIMIT 1'
-      ).bind(mb.id, tid).first<any>();
-      if (latest) await c.env.DB.prepare('UPDATE messages SET flag_flagged=1 WHERE id=?1').bind(latest.id).run();
-      break;
-    }
-    case 'unstar':
-      await c.env.DB.prepare('UPDATE messages SET flag_flagged=0 WHERE mailbox_id=?1 AND thread_id=?2').bind(mb.id, tid).run();
       break;
     case 'trash':
       await moveThread(c, mb, tid, null, 'trash');
