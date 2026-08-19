@@ -115,6 +115,34 @@ export async function loadBrand() {
   if (fav && store.brand?.logo_url) fav.href = store.brand.logo_url;
 }
 
+/**
+ * A bar across the top of every page for as long as this session belongs to somebody else. It
+ * lives on <body> rather than inside a page, because forgetting whose mailbox you are reading is
+ * exactly the mistake it exists to prevent -- and pages come and go.
+ * 只要这个会话属于别人,每一页顶上就横着这条。它挂在 <body> 上而不是页面里:
+ * 忘了自己正在读谁的邮箱,正是它要防的那个错误 —— 而页面是会来会去的。
+ */
+function applyImpersonationBar() {
+  const who = store.me?.impersonated_by ? store.me.user.email : '';
+  document.body.classList.toggle('impersonating', !!who);
+  let bar = qs('#imp-bar');
+  if (!who) { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'imp-bar';
+    bar.className = 'imp-bar';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `${icon('eye', 16)}<span>${esc(t('imp_bar', who))}</span>
+    <wa-button size="small" appearance="filled" id="imp-out">${esc(t('imp_leave'))}</wa-button>`;
+  qs('#imp-out').addEventListener('click', async () => {
+    await api('POST', '/api/auth/unimpersonate', {}).catch(() => {});
+    store.me = null;
+    location.hash = '#/admin/users';
+    location.reload();
+  });
+}
+
 export async function refreshMe() {
   try {
     store.me = await api('GET', '/api/me');
@@ -126,6 +154,7 @@ export async function refreshMe() {
   } catch {
     store.me = null;
   }
+  applyImpersonationBar();
   return store.me;
 }
 
@@ -186,7 +215,10 @@ function brandLogoHtml(size = 26) {
 
 export function renderShell(contentHtml) {
   const me = store.me;
-  const canAdmin = me.user.is_admin || (me.domain_admin_of || []).length > 0;
+  // No door to the console while the session is borrowed -- the server refuses it anyway, and
+  // offering a button that only produces an error is worse than not offering it.
+  // 会话是借来的时候,后台没有门 —— 服务端本来就会拒,给一个只会报错的按钮不如不给。
+  const canAdmin = !me.impersonated_by && (me.user.is_admin || (me.domain_admin_of || []).length > 0);
   const brandName = store.brand?.name || 'CFMail';
   const contactsItem = `
     <a class="side-item ${store.folder === 'contacts' ? 'active' : ''}" href="#/mb/${store.mbId}/contacts">
@@ -267,7 +299,10 @@ export function renderShell(contentHtml) {
  */
 export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValue = '', extra = '' }) {
   const me = store.me;
-  const canAdmin = me.user.is_admin || (me.domain_admin_of || []).length > 0;
+  // No door to the console while the session is borrowed -- the server refuses it anyway, and
+  // offering a button that only produces an error is worse than not offering it.
+  // 会话是借来的时候,后台没有门 —— 服务端本来就会拒,给一个只会报错的按钮不如不给。
+  const canAdmin = !me.impersonated_by && (me.user.is_admin || (me.domain_admin_of || []).length > 0);
   const brandName = store.brand?.name || 'CFMail';
   // The logo goes to this subsystem's own home, never to the other one
   // 品牌 logo 回本子系统的首页,不会跳到对方那边

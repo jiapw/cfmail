@@ -3,7 +3,7 @@ import PostalMime from 'postal-mime';
 import type { Env, User } from './types';
 import { THEME_NAMES } from './themes-list';
 import { isKnownFont } from './fonts';
-import { requireAuth, revokeAllSessions } from './auth';
+import { beginImpersonation, requireAuth, revokeAllSessions } from './auth';
 import { createSystemFolders, ingestEml, type PreParsed } from './parse';
 import { HttpError, E } from './errors';
 import { isEmail, jsonTry, normalizeAddr, now, randomToken, sha256Hex, uid } from './util';
@@ -34,6 +34,21 @@ async function addrOf(env: Env, mb: any): Promise<string> {
 export const adminApp = new Hono<Ctx>();
 
 adminApp.use('*', requireAuth);
+
+/**
+ * A borrowed session cannot enter the console. Everything else -- mail, Drive, chat, settings --
+ * behaves exactly as it does for the person being looked at, which is the point; but an audit
+ * line reading "she deleted the mailbox" when it was somebody else at the keyboard is the system
+ * lying about itself, and the console is where those lines are written.
+ *
+ * 借来的会话进不了后台。其余一切 —— 邮件、网盘、助手、设置 —— 与被查看者本人完全一致,
+ * 这正是这个功能的意义;但当键盘后面坐的是别人时,一条写着"她删掉了这个邮箱"的审计,
+ * 是系统在对自己说谎 —— 而后台正是写这些记录的地方。
+ */
+adminApp.use('*', async (c, next) => {
+  if (c.get('user')?.impersonator_id) throw new HttpError(403, 'e_impersonating');
+  await next();
+});
 
 // AI assistant settings (global admins only -- chatAdminApp checks that itself)
 // AI 助手设置(仅全局管理员,chatAdminApp 内部自查)
@@ -688,6 +703,34 @@ adminApp.post('/import', async (c) => {
     await c.env.RAW.delete(key).catch(() => {});
     throw new HttpError(400, 'e_parse_failed', e?.message || 'unknown');
   }
+});
+
+/**
+ * Look at the system as one of its users -- their mail, their Drive, their permissions exactly.
+ * "It works for me" is the hardest support answer to argue with; this is how you go and see.
+ *
+ * Kept to the global administrator, and only towards someone who is not themselves one: an
+ * administrator borrowing another administrator's session could act in the console under that
+ * name, and no audit trail survives that. Both ends of the visit are recorded.
+ *
+ * 以某个用户的身份看这套系统 —— 他的邮件、他的网盘、和他一模一样的权限。
+ * "我这儿是好的"是最难反驳的一句支持答复;这就是过去亲眼看看的办法。
+ *
+ * 只给全局管理员,且对象不能也是全局管理员:借用另一位管理员的会话就能以他的名义在后台动手,
+ * 那样的审计记录等于没有。进出两端都留痕。
+ */
+adminApp.post('/users/:id/impersonate', async (c) => {
+  const me = requireGlobalAdmin(c);
+  const targetId = c.req.param('id');
+  if (targetId === me.id) throw new HttpError(400, 'e_impersonate_self');
+  const tu = await c.env.DB.prepare('SELECT id, email, name, is_admin, disabled FROM users WHERE id=?1')
+    .bind(targetId).first<any>();
+  if (!tu) throw new HttpError(404, 'e_user_not_found');
+  if (tu.disabled) throw new HttpError(400, 'e_impersonate_disabled');
+  if (tu.is_admin) throw new HttpError(400, 'e_impersonate_admin');
+  await beginImpersonation(c, tu.id, me.id);
+  await audit(c.env, me, 'user.impersonate', tu.email, { user_id: tu.id });
+  return c.json({ ok: true, email: tu.email, name: tu.name });
 });
 
 /** Force a user to sign in again on every device (sessions persist for a month locally, so this is how you stop the bleeding after a leak)
