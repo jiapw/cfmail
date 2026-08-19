@@ -112,7 +112,7 @@ adminApp.get('/domains', async (c) => {
 });
 
 adminApp.post('/domains', async (c) => {
-  const user = requireGlobalAdmin(c);
+  requireGlobalAdmin(c);
   const body = await c.req.json<any>();
   const name = normalizeAddr(String(body.name || ''));
   if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/.test(name)) return c.json({ error: 'e_bad_domain' }, 400);
@@ -120,9 +120,13 @@ adminApp.post('/domains', async (c) => {
   if (exists) return c.json({ error: 'e_domain_exists' }, 409);
   const id = uid();
   await c.env.DB.prepare('INSERT INTO domains (id, name, created_at) VALUES (?1,?2,?3)').bind(id, name, now()).run();
-  // Whoever creates a domain automatically becomes one of its domain admins
-  // 创建者自动成为该域名的域管理员
-  await c.env.DB.prepare('INSERT OR IGNORE INTO domain_admins (user_id, domain_id) VALUES (?1,?2)').bind(user.id, id).run();
+  // The creator is not made a domain admin of it. Only a global admin can get here, and a
+  // global admin needs no such row -- adminScope lets them through on is_admin alone. The row
+  // would only ever matter later, on the day that person stops being a global admin, and it
+  // would quietly leave them administering every domain they ever created.
+  // 创建者不会被写成该域的域管理员。能走到这里的只有全局管理员,而全局管理员根本不需要这一行 ——
+  // adminScope 见到 is_admin 就直接放行。这一行唯一会起作用的时刻,是这个人不再是全局管理员的那天,
+  // 那时它会让他悄悄保留着自己建过的每一个域的管理权。
   return c.json({ id, name });
 });
 
