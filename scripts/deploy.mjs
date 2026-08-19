@@ -77,7 +77,8 @@ function usage(code) {
   --help          显示本说明。
 
 权限:token 需要 Account(Workers Scripts / D1 / Workers R2 Storage · Edit)
-      与 Zone(Zone · Read,DNS / Email Routing Rules / Workers Routes · Edit)。
+      与 Zone(Zone · Read,DNS / Email Routing Rules / Email Sending / Workers Routes · Edit)。
+      少了 Email Sending 那项只影响"对外发信"这一步,其余照常。
       详见 README 的「API token permissions」。
 `);
   process.exit(code);
@@ -484,6 +485,62 @@ if (zone) {
   });
   if (ca.ok) log(`catch-all → Worker "${WORKER}"`);
   else log('⚠ 设置 catch-all 失败:' + why(ca));
+
+  // --- Sending -----------------------------------------------------------
+  // --- 发信 ---------------------------------------------------------------
+  // Receiving and sending are two different services on the same domain, and a domain that can
+  // receive is not thereby allowed to send. Until it is onboarded to Email Sending, the
+  // send_email binding falls back to Email Routing's rule -- only verified destination
+  // addresses -- so the first thing that breaks is the verification code sent to a new
+  // colleague's personal mailbox, with an error nobody would connect to a missing onboarding.
+  // 收信和发信是同一个域名上的两个不同服务,能收不等于获准能发。没有在 Email Sending 里
+  // onboard 之前,send_email 绑定会退回 Email Routing 的规则 —— 只允许发给已验证的目的地址 ——
+  // 于是最先坏掉的,是发往新同事私人邮箱的那封验证码,而它的报错没人会联想到"少做了一步开通"。
+  step(`对外发信:${domain}`);
+  if (await sendingReady(zone.id, domain)) {
+    skip('Email Sending 已开通(bounce/DKIM 记录已在)');
+  } else {
+    const r = wranglerOut(['email', 'sending', 'enable', domain, '--zone-id', zone.id]);
+    // Cloudflare publishes the records itself when the zone is on its own DNS, which is a
+    // precondition here -- so their presence is the honest check that it actually took.
+    // 域名用的就是 Cloudflare 自己的 DNS(这是本脚本的前提),记录由 Cloudflare 下发,
+    // 所以"记录在不在"才是这一步是否真的成功的诚实判据。
+    if (await sendingReady(zone.id, domain)) {
+      log('Email Sending 已开通(DKIM/SPF/DMARC 与 bounce 记录已下发)');
+    } else if (/already exists|2040/i.test(r.out)) {
+      // Onboarded on the service side but the records are not in DNS. Refusing to guess why is
+      // the point -- this is not the permission problem below, and saying so would send someone
+      // to fix the wrong thing.
+      // 服务端已经开通,但 DNS 里没有那几条记录。这不是下面那个权限问题,
+      // 不猜原因正是关键 —— 说错了会把人引去修错的地方。
+      log('⚠ 这个域名在 Email Sending 里已存在,但 DNS 里缺少 bounce/DKIM 记录,发信仍会失败。');
+      log(`  看一眼它要求哪些记录:npx wrangler email sending dns get ${domain}`);
+    } else {
+      log('⚠ 没能自动开通 Email Sending —— 这个域名现在只能收信,不能对外发信。');
+      log('  最常见的两个原因:');
+      log('    · token 缺少 Email Sending · Edit 权限。注意它在 Account 作用域下,');
+      log('      不在 Zone(All Domains)那一栏里 —— Zone 那栏只有 Email Routing Rules,管的是收信。');
+      log('    · 账号不是 Workers 付费版 —— 对外发信要求付费版');
+      log('  也可以在 Dashboard → Compute → Email Service → Email Sending → Onboard Domain 点一次,');
+      log(`  或单独执行:npx wrangler email sending enable ${domain}`);
+    }
+  }
+}
+
+/**
+ * Is this domain onboarded for sending? Asked of DNS rather than of the Email Sending API,
+ * because the answer has to be available to a token that cannot read that API -- and because
+ * the records are what actually make mail from this domain deliverable.
+ * 这个域名开通发信了吗?问 DNS 而不是问 Email Sending 接口 —— 因为读不到那个接口的 token
+ * 也必须能得到答案,而且真正让这个域名发出的信可送达的,正是这几条记录。
+ */
+async function sendingReady(zoneId, name) {
+  const r = await cf('GET', `/zones/${zoneId}/dns_records?per_page=200`);
+  if (!r.ok) return false;
+  const rec = r.data.result || [];
+  const bounceMx = rec.some((x) => x.type === 'MX' && x.name === `cf-bounce.${name}`);
+  const bounceKey = rec.some((x) => x.type === 'TXT' && x.name === `cf-bounce._domainkey.${name}`);
+  return bounceMx && bounceKey;
 }
 
 // --- Done -----------------------------------------------------------------
@@ -498,8 +555,6 @@ console.log(`
   加域名     再跑一次本命令,换 --domain(--entry 会沿用现在的 "${entry || derived}")
   升级       git pull 之后跑同一条命令即可,数据不动
 
-  另外两件与本脚本无关、需要你自己决定的事:
-    · 对外发信要在 Dashboard → Compute → Email Service → Email Sending 里
-      为每个发信域名点一次 Onboard Domain(需要 Workers 付费版)
-    · 人机验证(可选):node scripts/setup-turnstile.mjs
+  可选:人机验证 node scripts/setup-turnstile.mjs
+        (接入新域名后也要再跑一次,widget 才认得新的入口主机)
 `);
