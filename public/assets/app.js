@@ -125,17 +125,17 @@ export async function loadBrand() {
 function applyImpersonationBar() {
   const who = store.me?.impersonated_by ? store.me.user.email : '';
   document.body.classList.toggle('impersonating', !!who);
-  let bar = qs('#imp-bar');
+  let bar = qs('#actas-bar');
   if (!who) { bar?.remove(); return; }
   if (!bar) {
     bar = document.createElement('div');
-    bar.id = 'imp-bar';
-    bar.className = 'imp-bar';
+    bar.id = 'actas-bar';
+    bar.className = 'actas-bar';
     document.body.appendChild(bar);
   }
-  bar.innerHTML = `${icon('eye', 16)}<span>${esc(t('imp_bar', who))}</span>
-    <wa-button size="small" appearance="filled" id="imp-out">${esc(t('imp_leave'))}</wa-button>`;
-  qs('#imp-out').addEventListener('click', async () => {
+  bar.innerHTML = `${icon('eye', 16)}<span>${esc(t('actas_bar', who))}</span>
+    <wa-button size="small" appearance="filled" id="actas-out">${esc(t('actas_leave'))}</wa-button>`;
+  qs('#actas-out').addEventListener('click', async () => {
     await api('POST', '/api/auth/unimpersonate', {}).catch(() => {});
     store.me = null;
     location.hash = '#/admin/users';
