@@ -4897,3 +4897,44 @@ Object.assign(DICTS.de, { drv_agent_manage: 'Verwalten' });
 Object.assign(DICTS.fr, { drv_agent_manage: 'Gérer' });
 Object.assign(DICTS.es, { drv_agent_manage: 'Gestionar' });
 Object.assign(DICTS.ru, { drv_agent_manage: 'Управление' });
+
+// ---------- Domain administrators / 域管理员 ----------
+Object.assign(DICTS['zh-CN'], { t_removed: "已移除" });
+Object.assign(DICTS['zh-TW'], { t_removed: "已移除" });
+Object.assign(DICTS.en, { t_removed: "Removed" });
+Object.assign(DICTS.ja, { t_removed: "解除しました" });
+Object.assign(DICTS.ko, { t_removed: "해제했습니다" });
+Object.assign(DICTS.de, { t_removed: "Entfernt" });
+Object.assign(DICTS.fr, { t_removed: "Retiré" });
+Object.assign(DICTS.es, { t_removed: "Eliminado" });
+Object.assign(DICTS.ru, { t_removed: "Удалено" });
+
+Object.assign(DICTS['zh-CN'], { revoke_grant: "撤销此邮箱的访问权限" });
+Object.assign(DICTS['zh-TW'], { revoke_grant: "撤銷此信箱的存取權限" });
+Object.assign(DICTS.en, { revoke_grant: "Revoke access to this mailbox" });
+Object.assign(DICTS.ja, { revoke_grant: "このメールボックスへのアクセスを解除" });
+Object.assign(DICTS.ko, { revoke_grant: "이 메일함 접근 권한 해제" });
+Object.assign(DICTS.de, { revoke_grant: "Zugriff auf dieses Postfach entziehen" });
+Object.assign(DICTS.fr, { revoke_grant: "Révoquer l'accès à cette boîte" });
+Object.assign(DICTS.es, { revoke_grant: "Revocar el acceso a este buzón" });
+Object.assign(DICTS.ru, { revoke_grant: "Отозвать доступ к этому ящику" });
+
+Object.assign(DICTS['zh-CN'], { revoke_grant_confirm: "撤销 {0} 对 {1} 的访问权限?该账号本身不受影响。" });
+Object.assign(DICTS['zh-TW'], { revoke_grant_confirm: "撤銷 {0} 對 {1} 的存取權限?該帳號本身不受影響。" });
+Object.assign(DICTS.en, { revoke_grant_confirm: "Revoke {0}'s access to {1}? The account itself is not affected." });
+Object.assign(DICTS.ja, { revoke_grant_confirm: "{0} の {1} へのアクセスを解除しますか?アカウント自体には影響しません。" });
+Object.assign(DICTS.ko, { revoke_grant_confirm: "{0}의 {1} 접근 권한을 해제할까요? 계정 자체는 영향을 받지 않습니다." });
+Object.assign(DICTS.de, { revoke_grant_confirm: "Zugriff von {0} auf {1} entziehen? Das Konto selbst bleibt unberührt." });
+Object.assign(DICTS.fr, { revoke_grant_confirm: "Révoquer l'accès de {0} à {1} ? Le compte lui-même n'est pas affecté." });
+Object.assign(DICTS.es, { revoke_grant_confirm: "¿Revocar el acceso de {0} a {1}? La cuenta en sí no se ve afectada." });
+Object.assign(DICTS.ru, { revoke_grant_confirm: "Отозвать доступ {0} к {1}? Сама учётная запись не затрагивается." });
+
+Object.assign(DICTS['zh-CN'], { da_global_only: "域管理员由全局管理员设定,这里只显示名单。" });
+Object.assign(DICTS['zh-TW'], { da_global_only: "網域管理員由全域管理員設定,這裡只顯示名單。" });
+Object.assign(DICTS.en, { da_global_only: "Domain admins are appointed by the global administrator; this list is read-only here." });
+Object.assign(DICTS.ja, { da_global_only: "ドメイン管理者はグローバル管理者が任命します。ここでは一覧の表示のみです。" });
+Object.assign(DICTS.ko, { da_global_only: "도메인 관리자는 전역 관리자가 지정합니다. 여기서는 목록만 표시됩니다." });
+Object.assign(DICTS.de, { da_global_only: "Domänen-Administratoren werden vom globalen Administrator ernannt; diese Liste ist hier nur lesbar." });
+Object.assign(DICTS.fr, { da_global_only: "Les administrateurs de domaine sont désignés par l'administrateur global ; cette liste est en lecture seule ici." });
+Object.assign(DICTS.es, { da_global_only: "Los administradores de dominio los designa el administrador global; aquí la lista es de solo lectura." });
+Object.assign(DICTS.ru, { da_global_only: "Администраторов домена назначает глобальный администратор; здесь список доступен только для чтения." });

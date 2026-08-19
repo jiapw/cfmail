@@ -134,21 +134,30 @@ adminApp.get('/domains/:id/admins', async (c) => {
   return c.json({ admins: rows.results || [] });
 });
 
+/* Appointing is the global admin's alone: a domain admin who could appoint another could hand
+ * out their own authority, and nothing above them would stop it. Reading the list stays open --
+ * knowing who else administers your domain is not a privilege, it is how you know whom to ask.
+ * 任命权只属于全局管理员:域管理员若能任命,就能把自己的权限复制出去,而上面没有任何东西拦得住。
+ * 名单仍然对域管理员开放 —— 知道自己这个域还有谁在管,不是特权,而是你该找谁的常识。 */
 adminApp.post('/domains/:id/admins', async (c) => {
   const domainId = c.req.param('id');
-  await checkDomainScope(c, domainId);
+  const actor = requireGlobalAdmin(c);
   const body = await c.req.json<any>();
   const email = normalizeAddr(String(body.email || ''));
   const u = await c.env.DB.prepare('SELECT id FROM users WHERE email=?1').bind(email).first<any>();
   if (!u) return c.json({ error: 'e_user_not_registered' }, 404);
   await c.env.DB.prepare('INSERT OR IGNORE INTO domain_admins (user_id, domain_id) VALUES (?1,?2)').bind(u.id, domainId).run();
+  await audit(c.env, actor, 'domain.admin_add', email, undefined, domainId);
   return c.json({ ok: true });
 });
 
 adminApp.delete('/domains/:id/admins/:userId', async (c) => {
-  await checkDomainScope(c, c.req.param('id'));
+  const actor = requireGlobalAdmin(c);
+  const gone = await c.env.DB.prepare('SELECT email FROM users WHERE id=?1')
+    .bind(c.req.param('userId')).first<any>();
   await c.env.DB.prepare('DELETE FROM domain_admins WHERE domain_id=?1 AND user_id=?2')
     .bind(c.req.param('id'), c.req.param('userId')).run();
+  await audit(c.env, actor, 'domain.admin_remove', gone?.email || c.req.param('userId'), undefined, c.req.param('id'));
   return c.json({ ok: true });
 });
 
@@ -478,6 +487,7 @@ adminApp.post('/mailboxes/:id/grants', async (c) => {
   await c.env.DB.prepare(
     'INSERT INTO grants (user_id, mailbox_id, role, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(user_id, mailbox_id) DO UPDATE SET role=?3'
   ).bind(u.id, mb.id, role, now()).run();
+  await audit(c.env, c.get('user'), 'grant.add', await addrOf(c.env, mb), { user: email, role }, mb.domain_id);
   return c.json({ ok: true });
 });
 
@@ -485,8 +495,12 @@ adminApp.delete('/mailboxes/:id/grants/:userId', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
   if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
   await checkDomainScope(c, mb.domain_id);
+  const gone = await c.env.DB.prepare('SELECT email FROM users WHERE id=?1')
+    .bind(c.req.param('userId')).first<any>();
   await c.env.DB.prepare('DELETE FROM grants WHERE mailbox_id=?1 AND user_id=?2')
     .bind(mb.id, c.req.param('userId')).run();
+  await audit(c.env, c.get('user'), 'grant.remove', await addrOf(c.env, mb),
+    { user: gone?.email || c.req.param('userId') }, mb.domain_id);
   return c.json({ ok: true });
 });
 
@@ -558,15 +572,20 @@ const IMPORT_FOLDERS = ['inbox', 'sent', 'drafts', 'archive', 'spam', 'trash'] a
  * 与正常收信的区别:不做收件人匹配、不做垃圾判定、时间一律取 Date 头。
  */
 adminApp.post('/import', async (c) => {
-  requireGlobalAdmin(c);
   const addr = normalizeAddr(String(c.req.query('mailbox') || ''));
   const at = addr.lastIndexOf('@');
   if (at < 1) throw new HttpError(400, 'e_bad_mailbox_param');
   const mb = await c.env.DB.prepare(
-    `SELECT mb.id FROM mailboxes mb JOIN domains d ON d.id=mb.domain_id
+    `SELECT mb.id, mb.domain_id FROM mailboxes mb JOIN domains d ON d.id=mb.domain_id
      WHERE mb.local_part=?1 AND d.name=?2`
   ).bind(addr.slice(0, at), addr.slice(at + 1)).first<any>();
   if (!mb) throw new HttpError(404, 'e_mailbox_missing_create', addr);
+  // Scoped like everything else that writes into a mailbox: the target's domain has to be one
+  // this administrator manages. The check comes after the lookup because the domain is a
+  // property of the mailbox, not of the address the caller typed.
+  // 与其它一切写入邮箱的操作同规:目标邮箱所在的域必须归本管理员管。
+  // 检查放在查库之后,因为"哪个域"是邮箱的属性,不是调用方输入的地址说了算。
+  await checkDomainScope(c, mb.domain_id);
 
   const folder = String(c.req.query('folder') || 'inbox');
   if (!IMPORT_FOLDERS.includes(folder as any)) throw new HttpError(400, 'e_unknown_folder');
@@ -742,6 +761,24 @@ adminApp.get('/mailboxes/:id/export-list', async (c) => {
     page,
     has_more: list.length > PAGE,
   });
+});
+
+/** Reported once by the frontend when an import run finishes. Import is per-message, so
+ *  auditing inside it would write a row per email; the run is the unit worth recording.
+ *  导入结束后由前端回报一次。导入是一封一请求,在里面写审计等于一封一行;
+ *  值得记录的单位是"这一次导入",不是每封信。 */
+adminApp.post('/mailboxes/:id/import-done', async (c) => {
+  const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
+  await checkDomainScope(c, mb.domain_id);
+  const body = await c.req.json<any>().catch(() => ({}));
+  await audit(c.env, c.get('user'), 'mail.import', await addrOf(c.env, mb), {
+    ok: Number(body.ok) || 0,
+    duplicate: Number(body.duplicate) || 0,
+    failed: Number(body.failed) || 0,
+    cancelled: !!body.cancelled,
+  }, mb.domain_id);
+  return c.json({ ok: true });
 });
 
 /** Fetch one raw MIME message, written straight to a local .eml

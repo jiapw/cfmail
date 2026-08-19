@@ -105,7 +105,10 @@ export async function tabImport(body) {
   const boxes = [];
   for (const d of domains) {
     const { mailboxes } = await api('GET', `/api/admin/domains/${d.id}/mailboxes`);
-    for (const m of mailboxes) if (!m.disabled) boxes.push(`${m.local_part}@${d.name}`);
+    // The id travels with the address: the address is what the administrator picks, the id is
+    // what reports the finished run.
+    // id 跟着地址一起带上:管理员挑的是地址,回报这次运行用的是 id。
+    for (const m of mailboxes) if (!m.disabled) boxes.push({ addr: `${m.local_part}@${d.name}`, id: m.id });
   }
 
   // Outlook on the web has no bulk export, so give the administrator a way to obtain .eml first, then feed it into the directory import above
@@ -148,7 +151,7 @@ export async function tabImport(body) {
       <h3>${esc(t('imp_target'))}</h3>
       <div class="form-row">
         <label>${esc(t('imp_mailbox'))}</label>
-        <wa-select id="imp-mb" style="width:300px">${boxes.map((b) => `<wa-option value="${esc(b)}">${esc(b)}</wa-option>`).join('')}</wa-select>
+        <wa-select id="imp-mb" style="width:300px">${boxes.map((b) => `<wa-option value="${esc(b.addr)}">${esc(b.addr)}</wa-option>`).join('')}</wa-select>
         <span class="dim" id="imp-guess"></span>
       </div>
       <p class="dim" style="margin:14px 0 6px">${esc(t('imp_map_note'))}</p>
@@ -309,7 +312,7 @@ export async function tabImport(body) {
     if (boxes.length) qs('#imp-run').hidden = false;
     // If exactly one existing company address shows up among the recipients, preselect it for the administrator
     // 收件人里正好有一个已存在的企业邮箱就替管理员预选上
-    const hit = topRcpts.map(([a]) => a).find((a) => boxes.includes(a));
+    const hit = topRcpts.map(([a]) => a).find((a) => boxes.some((b) => b.addr === a));
     if (hit) {
       qs('#imp-mb').value = hit;
       qs('#imp-guess').textContent = t('imp_guessed', hit);
@@ -320,6 +323,7 @@ export async function tabImport(body) {
     if (!picked.length) return;
     const mailbox = qs('#imp-mb').value;
     if (!mailbox) return toast(t('imp_pick_mailbox'), true);
+    const mailboxId = boxes.find((b) => b.addr === mailbox)?.id;
     const roleByDir = {};
     for (const sel of qsa('.imp-role')) roleByDir[sel.dataset.dir] = sel.value;
     if (!(await confirmDialog(t('imp_confirm', picked.length, mailbox), t('imp_start')))) return;
@@ -379,6 +383,15 @@ export async function tabImport(body) {
     qs('#imp-go-row').hidden = false; // 取消或跑完都放回按钮,可以接着导(重复的会自动跳过)
     // The single-line result sits to the right of the button; the failure detail is multi-line and keeps its own block
     // 结果一行放在按钮右边;失败明细是多行的,仍然单独占一块
+    // Importing carries a whole archive of somebody's mail into the system, so the run leaves a
+    // trace even when it was cancelled. Reported once, not once per message.
+    // 导入等于把别人的一整批邮件搬进系统,所以哪怕中途取消,这次运行也要留痕。
+    // 只回报一次,不是每封一次。
+    if (mailboxId && (stat.ok || stat.dup || stat.fail)) {
+      await api('POST', `/api/admin/mailboxes/${mailboxId}/import-done`, {
+        ok: stat.ok, duplicate: stat.dup, failed: stat.fail, cancelled,
+      }).catch(() => {});
+    }
     qs('#imp-result').textContent = cancelled
       ? t('imp_cancelled', stat.ok, stat.dup, stat.fail)
       : t('imp_done', stat.ok, stat.dup, stat.fail);
