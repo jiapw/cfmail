@@ -245,7 +245,15 @@ async function parseLocally(bytes) {
   };
 }
 
-export async function tabGmail(body) {
+/**
+ * @param opts.onExclusive  called with true when the mapping takes over the page, false on the way
+ *                          back -- the tab uses it to fold the other sources away
+ * @param opts.onBack       return to the sources; the tab re-renders from scratch
+ * onExclusive:映射表接管页面时传 true、返回时传 false —— 页签据此把另外两个来源收起来
+ * onBack:回到来源列表;页签会整个重画
+ */
+export async function tabGmail(body, opts = {}) {
+  let running = false;
   const { mailboxes } = await api('GET', '/api/admin/mailbox-options');
   let handle = null;
   let mboxes = [];        // [{name, file}]
@@ -255,7 +263,7 @@ export async function tabGmail(body) {
   const supported = !!window.showDirectoryPicker;
 
   body.innerHTML = `
-    <section class="card">
+    <section class="card" id="gm-pick-card">
       <h3>${esc(t('gm_title'))}</h3>
       <p class="dim">${esc(t('gm_intro'))}</p>
       ${supported ? '' : `<p class="dim">${esc(t('exp_unsupported'))}</p>`}
@@ -355,8 +363,17 @@ export async function tabGmail(body) {
       </tr>`;
     }).join('');
 
+    // The mapping is a step, not a panel: while you are filling it in, the other ways in are not
+    // choices you are weighing, they are clutter. They come back when you go back.
+    // 映射是一个步骤,不是一块面板:你在填它的时候,另外几条路不是待选项,只是干扰。
+    // 返回时它们再回来。
+    qs('#gm-pick-card').hidden = true;
+    opts.onExclusive?.(true);
     qs('#gm-map').hidden = false;
     qs('#gm-map').innerHTML = `
+      <div class="row-flex" style="margin-bottom:10px">
+        <wa-button appearance="plain" size="small" id="gm-back">${icon('back', 16)} ${esc(t('back'))}</wa-button>
+      </div>
       <h3>${esc(t('gm_map_folders'))}</h3>
       <p class="dim">${esc(t('gm_map_folders_note'))}</p>
       <table class="table"><thead><tr>
@@ -405,6 +422,7 @@ export async function tabGmail(body) {
           },
         });
       }));
+    qs('#gm-back').addEventListener('click', () => { if (!running) opts.onBack?.(); });
     qs('#gm-go').addEventListener('click', run);
   }
 
@@ -433,14 +451,23 @@ export async function tabGmail(body) {
 
     // Labels are created once, before anything is uploaded, so every message can name them by id
     // and the server never has to look one up by name.
+    //
+    // Through the admin API, not the user-facing one: the latter asks whether you hold a grant on
+    // the mailbox, and an administrator importing into a mailbox they do not personally read holds
+    // none -- which came back as "no access to that mailbox" for a mailbox they had just created.
+    //
     // 标签在上传任何东西之前一次建好,于是每封信都能直接用 id 指名,服务端不必按名字去找。
-    const existing = (await api('GET', `/api/mailboxes/${mbId}/labels`)).labels || [];
+    //
+    // 走管理接口而不是面向用户的那套:后者问的是"你在这个邮箱上有没有授权",
+    // 而管理员往一个自己并不阅读的邮箱里导入时并没有授权 ——
+    // 于是会对着一个他刚建好的邮箱收到"无权访问该邮箱"。
+    const existing = (await api('GET', `/api/admin/mailboxes/${mbId}/labels`)).labels || [];
     const idOf = new Map();
     for (const w of wanted) {
-      const hit = existing.find((l) => !l.builtin && l.name === w.name);
+      const hit = existing.find((l) => l.name === w.name);
       if (hit) { idOf.set(w.src, hit.id); continue; }
       try {
-        const r = await api('POST', `/api/mailboxes/${mbId}/labels`, { name: w.name, icon: w.icon, color: w.color });
+        const r = await api('POST', `/api/admin/mailboxes/${mbId}/labels`, { name: w.name, icon: w.icon, color: w.color });
         idOf.set(w.src, r.id);
       } catch (e) {
         toast(e.message, true);
@@ -451,6 +478,10 @@ export async function tabGmail(body) {
     qs('#gm-run').hidden = false;
     qs('#gm-fails').innerHTML = '';
     cancelled = false;
+    // Going back mid-run would leave half an import behind with no way to see how far it got.
+    // 跑到一半返回,会留下半次导入,而且再也看不到它跑到哪儿了。
+    running = true;
+    qs('#gm-back').disabled = true;
     const prog = qs('#gm-progress');
     const eta = qs('#gm-eta');
     const fill = qs('#gm-fill');
@@ -511,6 +542,9 @@ export async function tabGmail(body) {
         ok: stat.ok, duplicate: stat.dup, failed: stat.fail, cancelled,
       }).catch(() => {});
     }
+    running = false;
+    const back = qs('#gm-back');
+    if (back) back.disabled = false;
     prog.textContent = cancelled
       ? t('imp_cancelled', stat.ok, stat.dup, stat.fail)
       : t('imp_done', stat.ok, stat.dup, stat.fail);

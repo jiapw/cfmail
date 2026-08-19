@@ -106,7 +106,18 @@ async function peekEml(file) {
  */
 export async function tabImport(body) {
   body.innerHTML = '<div id="imp-gmail"></div><div id="imp-eml"></div><div id="imp-o365"></div>';
-  await tabGmail(body.querySelector('#imp-gmail'));
+  const others = ['#imp-eml', '#imp-o365'];
+  await tabGmail(body.querySelector('#imp-gmail'), {
+    // Once a Takeout has been scanned, filling in its mapping is the task; the other two ways in
+    // are no longer choices being weighed. They fold away, and the mapping carries the way back.
+    // 一份 Takeout 扫完之后,填映射就是当前的任务;另外两条路已经不是在权衡的选项了。
+    // 它们收起来,回去的路由映射那一步自己提供。
+    onExclusive: (on) => others.forEach((sel) => {
+      const el = body.querySelector(sel);
+      if (el) el.hidden = on;
+    }),
+    onBack: () => tabImport(body),
+  });
   await emlImport(body.querySelector('#imp-eml'));
   await o365Guide(body.querySelector('#imp-o365'));
 }

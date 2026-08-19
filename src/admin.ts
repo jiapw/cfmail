@@ -12,6 +12,7 @@ import { chatAdminApp } from './chat/routes';
 // 有意的循环引用(drive.ts 反向引 adminScope);两边用到的都是提升的函数声明,安全
 import { driveAdminApp } from './drive';
 import { audit } from './audit';
+import { pickColor, pickIcon } from './labels';
 
 type Ctx = { Bindings: Env; Variables: { user: User } };
 
@@ -787,6 +788,60 @@ adminApp.delete('/unrouted/:id', async (c) => {
  * 列出某邮箱要导出的全部邮件(只给清单,不给正文)。浏览器拿到清单后逐封取原文写本地目录,
  * 服务端不打包 —— 几 GB 的邮箱在 Worker 里打 zip 既超内存也超 CPU。
  */
+/**
+ * Labels, for an administrator acting on a mailbox rather than a member reading one.
+ *
+ * The user-facing label API asks whether you hold a grant on the mailbox, which is the right
+ * question there and the wrong one here: an administrator importing somebody's Gmail archive into
+ * a new mailbox has authority over that mailbox and no grant on it, and would be told they have
+ * no access to a mailbox they just created. So these two answer the administrator's question --
+ * is this mailbox in a domain you manage -- and do only what an import needs: read the list, and
+ * add one.
+ *
+ * 标签接口的管理员版:面对的是"管理员在处理某个邮箱",而不是"成员在读自己的邮箱"。
+ *
+ * 面向用户的那套问的是"你在这个邮箱上有没有授权",在那边问得对,在这边问错了:
+ * 管理员把别人的 Gmail 存档导进一个新建的邮箱时,他对这个邮箱有管辖权、却没有授权,
+ * 结果会被告知"无权访问"一个他刚刚亲手建出来的邮箱。所以这两个接口问管理员该被问的问题 ——
+ * 这个邮箱在不在你管的域里 —— 并且只做导入需要的两件事:读列表、加一个。
+ */
+adminApp.get('/mailboxes/:id/labels', async (c) => {
+  const mb = await c.env.DB.prepare('SELECT id, domain_id FROM mailboxes WHERE id=?1')
+    .bind(c.req.param('id')).first<any>();
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
+  await checkDomainScope(c, mb.domain_id);
+  const rows = await c.env.DB.prepare(
+    'SELECT id, name, icon, color, sort FROM labels WHERE mailbox_id=?1 ORDER BY sort, name'
+  ).bind(mb.id).all<any>();
+  return c.json({ labels: rows.results || [] });
+});
+
+adminApp.post('/mailboxes/:id/labels', async (c) => {
+  const mb = await c.env.DB.prepare('SELECT id, domain_id FROM mailboxes WHERE id=?1')
+    .bind(c.req.param('id')).first<any>();
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
+  await checkDomainScope(c, mb.domain_id);
+  const b = await c.req.json<any>();
+  const name = String(b.name || '').trim().slice(0, 40);
+  if (!name) return c.json({ error: 'e_label_name_required' }, 400);
+  // An import runs twice more often than anyone admits, so a name that is already there is not an
+  // error: hand back the label that exists and let the messages attach to it.
+  // 导入被跑第二遍的次数比谁都愿意承认的要多,所以名字已存在不是错误:
+  // 把已有的那个还回去,让邮件挂上去就是了。
+  const dup = await c.env.DB.prepare('SELECT id, name, icon, color FROM labels WHERE mailbox_id=?1 AND name=?2')
+    .bind(mb.id, name).first<any>();
+  if (dup) return c.json(dup);
+  const id = uid();
+  const next = await c.env.DB.prepare('SELECT COALESCE(MAX(sort),0)+1 AS s FROM labels WHERE mailbox_id=?1')
+    .bind(mb.id).first<any>();
+  const icon = pickIcon(b.icon);
+  const color = pickColor(b.color);
+  await c.env.DB.prepare(
+    'INSERT INTO labels (id, mailbox_id, name, icon, color, sort, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)'
+  ).bind(id, mb.id, name, icon, color, next?.s || 1, now()).run();
+  return c.json({ id, name, icon, color });
+});
+
 adminApp.get('/mailboxes/:id/export-list', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
   if (!mb) throw new HttpError(404, 'e_mailbox_not_found');

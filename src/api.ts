@@ -25,6 +25,7 @@ import { chatDomainForHost } from './chat/settings';
 import { driveAgentApp, driveApp, drivePubApp } from './drive';
 import { VERSION } from './version';
 import { ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
+import { FLAGGED, pickColor, pickIcon } from './labels';
 
 export const UI_LANGS = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'ru'];
 
@@ -876,26 +877,10 @@ app.get('/api/mailboxes/:mb/folders', async (c) => {
 // ---------- Labels ----------
 // ---------- 标签 ----------
 
-/**
- * The built-in label is not a row. It is flag_flagged -- IMAP's \Flagged, the bit that has
- * always backed the star -- handed to the interface under a reserved id so that one list, one
- * menu and one apply/remove call cover both it and the labels people create.
- * Its name is not stored either: the browser renders it in the reader's language, the same way
- * error codes are.
- *
- * 内置标签不是一行数据。它就是 flag_flagged —— IMAP 的 \Flagged,一直以来星标背后的那一位 ——
- * 用一个保留 id 交给界面,于是一份列表、一个菜单、一次打/取的调用,同时管住它和用户自建的标签。
- * 它的名字也不存:由浏览器按读者的语言渲染,和错误码一个路子。
- */
-const FLAGGED = 'flagged';
-
-// A closed set on both counts. A free colour picker guarantees somebody picks the one colour
-// that is invisible in dark mode, and a free icon field guarantees a broken glyph.
-// 两者都是封闭集合。开放取色必然有人选中在暗色主题下看不见的那个颜色,
-// 开放图标名则必然出现画不出来的字形。
-const LABEL_ICONS = ['tag', 'flag', 'bookmark', 'bell', 'pin', 'heart', 'bolt', 'leaf',
-  'fire', 'cube', 'eye', 'clock', 'check', 'person', 'globe', 'folder'];
-const LABEL_COLORS = ['amber', 'red', 'orange', 'green', 'teal', 'blue', 'indigo', 'violet', 'pink', 'gray'];
+// FLAGGED and the two closed sets live in ./labels: the admin router needs them too, and putting
+// them where both can reach keeps either from having to import the other.
+// FLAGGED 和那两个封闭集合放在 ./labels 里:管理后台的路由同样需要它们,
+// 放在两边都够得着的地方,谁也不必反过来引对方。
 
 /** Threads carrying each label, and how many of them hold something unread. Trash and spam are
  *  excluded so a label's count matches what its view actually lists.
@@ -942,8 +927,8 @@ app.post('/api/mailboxes/:mb/labels', async (c) => {
   const b = await c.req.json<any>();
   const name = String(b.name || '').trim().slice(0, 40);
   if (!name) return c.json({ error: 'e_label_name_required' }, 400);
-  const icon = LABEL_ICONS.includes(b.icon) ? b.icon : LABEL_ICONS[0];
-  const color = LABEL_COLORS.includes(b.color) ? b.color : LABEL_COLORS[0];
+  const icon = pickIcon(b.icon);
+  const color = pickColor(b.color);
   const dup = await c.env.DB.prepare('SELECT id FROM labels WHERE mailbox_id=?1 AND name=?2')
     .bind(mb.id, name).first<any>();
   if (dup) return c.json({ error: 'e_label_exists' }, 409);
@@ -968,8 +953,8 @@ app.post('/api/mailboxes/:mb/labels/:id', async (c) => {
   const b = await c.req.json<any>();
   const name = b.name === undefined ? row.name : String(b.name || '').trim().slice(0, 40);
   if (!name) return c.json({ error: 'e_label_name_required' }, 400);
-  const icon = LABEL_ICONS.includes(b.icon) ? b.icon : row.icon;
-  const color = LABEL_COLORS.includes(b.color) ? b.color : row.color;
+  const icon = b.icon === undefined ? row.icon : pickIcon(b.icon);
+  const color = b.color === undefined ? row.color : pickColor(b.color);
   const sort = Number.isFinite(b.sort) ? Math.trunc(b.sort) : row.sort;
   if (name !== row.name) {
     const dup = await c.env.DB.prepare('SELECT id FROM labels WHERE mailbox_id=?1 AND name=?2')
