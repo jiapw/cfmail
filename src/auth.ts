@@ -8,6 +8,12 @@ import { b64decode, b64encode, now, randomToken, sha256Hex, timingSafeEqual, uid
 const PBKDF2_ITER = 100000;
 const SESSION_TTL = 30 * 24 * 3600 * 1000;
 export const COOKIE = 'sid';
+/** Where an administrator's own session is parked while they are looking as somebody else
+ *  管理员以他人身份查看期间,自己那把钥匙寄存的地方 */
+export const COOKIE_BACK = 'sid_back';
+/** An hour is long enough to answer "what does she see?" and short enough not to be forgotten
+ *  一小时,足够回答"她那边看到的是什么",又短到不会被忘在那儿 */
+const IMPERSONATE_TTL = 60 * 60 * 1000;
 
 async function pbkdf2(pw: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
@@ -53,6 +59,61 @@ export async function createSession(c: Context<any>, userId: string): Promise<vo
   });
 }
 
+/**
+ * Open a session as somebody else, parking the administrator's own key in a second cookie so
+ * that stepping back out needs no password. The target's last_login is deliberately left alone:
+ * it is their record of their own sign-ins, and an administrator looking over their shoulder is
+ * not one of them.
+ *
+ * 以他人身份打开一个会话,同时把管理员自己那把钥匙寄存在另一个 cookie 里,退出时不必再登一次。
+ * 有意不动对方的 last_login:那是他自己的登录记录,管理员在旁边看一眼不算他登录过。
+ */
+export async function beginImpersonation(c: Context<any>, targetId: string, adminId: string): Promise<void> {
+  const own = getCookie(c, COOKIE);
+  const token = randomToken(32);
+  const id = await sha256Hex(token);
+  const t = now();
+  await c.env.DB.prepare(
+    'INSERT INTO sessions (id, user_id, ua, created_at, expires_at, impersonator_id) VALUES (?1,?2,?3,?4,?5,?6)'
+  )
+    .bind(id, targetId, (c.req.header('User-Agent') || '').slice(0, 200), t, t + IMPERSONATE_TTL, adminId)
+    .run();
+  const secure = new URL(c.req.url).protocol === 'https:';
+  const opts = { httpOnly: true, secure, sameSite: 'Lax' as const, path: '/' };
+  if (own) setCookie(c, COOKIE_BACK, own, { ...opts, maxAge: IMPERSONATE_TTL / 1000 });
+  setCookie(c, COOKIE, token, { ...opts, maxAge: IMPERSONATE_TTL / 1000 });
+}
+
+/** Step back out: the borrowed session is destroyed, the parked one comes back.
+ *  Returns false when there is nothing to come back to -- an expired park, or a stale cookie.
+ *  退出扮演:借来的会话销毁,寄存的那把钥匙拿回来。
+ *  没得可退时返回 false —— 寄存已过期,或 cookie 已失效。 */
+export async function endImpersonation(c: Context<any>): Promise<boolean> {
+  const cur = getCookie(c, COOKIE);
+  const back = getCookie(c, COOKIE_BACK);
+  if (cur) {
+    await c.env.DB.prepare('DELETE FROM sessions WHERE id=?1 AND impersonator_id IS NOT NULL')
+      .bind(await sha256Hex(cur)).run();
+  }
+  const secure = new URL(c.req.url).protocol === 'https:';
+  deleteCookie(c, COOKIE_BACK, { path: '/' });
+  if (!back) {
+    deleteCookie(c, COOKIE, { path: '/' });
+    return false;
+  }
+  const row = (await c.env.DB.prepare('SELECT expires_at FROM sessions WHERE id=?1')
+    .bind(await sha256Hex(back)).first()) as any;
+  if (!row || row.expires_at <= now()) {
+    deleteCookie(c, COOKIE, { path: '/' });
+    return false;
+  }
+  setCookie(c, COOKIE, back, {
+    httpOnly: true, secure, sameSite: 'Lax', path: '/',
+    maxAge: Math.max(1, Math.floor((row.expires_at - now()) / 1000)),
+  });
+  return true;
+}
+
 /** Invalidate a user's sessions on every device at once (admin revoke, password change and password reset all come through here)
  *  让某个用户在所有设备上的登录立刻失效(管理员强制下线、改密码、重置密码都走这里) */
 export async function revokeAllSessions(env: Env, userId: string): Promise<number> {
@@ -67,6 +128,7 @@ export async function destroySession(c: Context<any>): Promise<void> {
     await c.env.DB.prepare('DELETE FROM sessions WHERE id=?1').bind(id).run();
   }
   deleteCookie(c, COOKIE, { path: '/' });
+  deleteCookie(c, COOKIE_BACK, { path: '/' });
 }
 
 export async function userFromRequest(c: Context<any>): Promise<User | null> {
@@ -74,7 +136,7 @@ export async function userFromRequest(c: Context<any>): Promise<User | null> {
   if (!token) return null;
   const id = await sha256Hex(token);
   const row = (await c.env.DB.prepare(
-    `SELECT u.id, u.email, u.name, u.is_admin, u.disabled
+    `SELECT u.id, u.email, u.name, u.is_admin, u.disabled, s.impersonator_id
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.id=?1 AND s.expires_at > ?2`
   )

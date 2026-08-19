@@ -931,3 +931,32 @@ html[data-webawesome].wa-dark {
 }
 .gm-look:hover { background: var(--hover); }
 .gm-look wa-icon { color: inherit; }
+
+/* ---------- 扮演他人时的顶部横幅 ----------
+   Fixed to the top of the viewport and given its own strip of it: the shells below are 100vh
+   tall, so the bar takes its height out of them rather than pushing the page down past the fold.
+   固定在视口顶端,并且实实在在占掉一条:下面几个外壳都是 100vh 高,
+   所以这条的高度是从它们身上减掉的,而不是把整页往下顶出屏幕。 */
+.imp-bar {
+  position: fixed; inset: 0 0 auto 0; height: 34px; z-index: 300;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 0 12px; font-size: 13px;
+  background: var(--wa-color-warning-fill-loud); color: var(--wa-color-warning-on-loud);
+  box-shadow: 0 1px 4px color-mix(in srgb, #000 22%, transparent);
+}
+.imp-bar wa-icon { font-size: 16px; flex: none; }
+.imp-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-bar wa-button::part(base) {
+  height: 24px; padding: 0 10px; font-size: 12px;
+  background: color-mix(in srgb, #000 18%, transparent); color: inherit; border: none;
+}
+.imp-bar wa-button::part(base):hover { background: color-mix(in srgb, #000 30%, transparent); }
+body.impersonating { padding-top: 34px; }
+body.impersonating .shell { height: calc(100vh - 34px); }
+body.impersonating .chat-shell { height: calc(100vh - 34px); height: calc(100dvh - 34px); }
+body.impersonating .page,
+body.impersonating .auth-wrap,
+body.impersonating .boot-loading { min-height: calc(100vh - 34px); }
+@media (max-width: 900px) {
+  body.impersonating .sidebar { top: 94px; }
+}

@@ -486,6 +486,8 @@ async function tabUsers(body) {
       <td>${u.last_login ? fmtDateTime(u.last_login) : `<span class="dim">${esc(t('never_login'))}</span>`}</td>
       ${me.user.is_admin ? `
       <td class="nowrap">
+        ${u.id !== me.user.id && !u.is_admin && !u.disabled ? `
+        <wa-button appearance="plain" size="small" data-imp="${esc(u.id)}|${esc(u.email)}">${esc(t('impersonate'))}</wa-button>` : ''}
         <wa-button appearance="plain" size="small" data-logoutall="${esc(u.id)}|${esc(u.email)}|${u.id === me.user.id ? 1 : 0}">${esc(t('logout_all'))}</wa-button>
         ${u.id !== me.user.id ? `
         <wa-button appearance="plain" size="small" data-status="${esc(u.id)}:${u.disabled ? 0 : 1}">${esc(u.disabled ? t('enable') : t('disable'))}</wa-button>
@@ -517,6 +519,22 @@ async function tabUsers(body) {
         await api('DELETE', `/api/admin/mailboxes/${mailboxId}/grants/${userId}`);
         toast(t('t_removed'));
         renderAdmin('users');
+      } catch (err) {
+        toast(err.message, true);
+      }
+      return;
+    }
+    // Going in as somebody else replaces this tab's session, so everything in memory belongs to
+    // the wrong person now: reload from the mail home rather than trying to patch the page.
+    // 换成别人的身份后,内存里的一切都属于错的人了:直接从邮件首页重载,而不是就地打补丁。
+    const im = e.target.closest('[data-imp]');
+    if (im) {
+      const [id, email] = im.dataset.imp.split('|');
+      if (!(await confirmDialog(t('impersonate_confirm', email), t('impersonate')))) return;
+      try {
+        await api('POST', `/api/admin/users/${id}/impersonate`, {});
+        location.hash = '#/';
+        location.reload();
       } catch (err) {
         toast(err.message, true);
       }

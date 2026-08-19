@@ -9,7 +9,7 @@ export type AuditAction =
   | 'mailbox.create' | 'mailbox.update' | 'mailbox.purge' | 'mailbox.delete'
   | 'alias.create' | 'alias.delete'
   | 'grant.add' | 'grant.remove'
-  | 'user.status' | 'user.delete' | 'user.logout_all'
+  | 'user.status' | 'user.delete' | 'user.logout_all' | 'user.impersonate' | 'user.impersonate_end'
   | 'invite.create' | 'invite.revoke'
   | 'domain.create' | 'domain.admin_add' | 'domain.admin_remove'
   | 'brand.update'

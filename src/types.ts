@@ -30,6 +30,8 @@ export interface User {
   name: string;
   is_admin: number;
   disabled: number;
+  /** Set when a global administrator opened this session as this user / 全局管理员以此人身份打开会话时,记下那位管理员 */
+  impersonator_id?: string | null;
 }
 
 export interface Mailbox {

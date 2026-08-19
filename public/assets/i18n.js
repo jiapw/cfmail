@@ -5465,3 +5465,83 @@ Object.assign(DICTS.de, { gm_checking: "Prüfe, was schon da ist … {0}/{1}" })
 Object.assign(DICTS.fr, { gm_checking: "Vérification de ce qui est déjà là… {0}/{1}" });
 Object.assign(DICTS.es, { gm_checking: "Comprobando lo que ya está… {0}/{1}" });
 Object.assign(DICTS.ru, { gm_checking: "Проверка того, что уже есть… {0}/{1}" });
+
+Object.assign(DICTS['zh-CN'], { impersonate: "扮演" });
+Object.assign(DICTS['zh-TW'], { impersonate: "扮演" });
+Object.assign(DICTS.en, { impersonate: "View as" });
+Object.assign(DICTS.ja, { impersonate: "なりかわる" });
+Object.assign(DICTS.ko, { impersonate: "대신 보기" });
+Object.assign(DICTS.de, { impersonate: "Ansehen als" });
+Object.assign(DICTS.fr, { impersonate: "Voir comme" });
+Object.assign(DICTS.es, { impersonate: "Ver como" });
+Object.assign(DICTS.ru, { impersonate: "Войти как" });
+
+Object.assign(DICTS['zh-CN'], { impersonate_confirm: "以 {0} 的身份进入系统?你会看到他的邮件和网盘,权限与他完全一致。整个过程会记入审计,后台在此期间不可进入。" });
+Object.assign(DICTS['zh-TW'], { impersonate_confirm: "以 {0} 的身分進入系統?你會看到他的郵件與雲端硬碟,權限與他完全一致。整個過程會記入稽核,後台在此期間不可進入。" });
+Object.assign(DICTS.en, { impersonate_confirm: "Enter the system as {0}? You will see their mail and Drive with exactly their permissions. The visit is audited, and the admin console is closed while it lasts." });
+Object.assign(DICTS.ja, { impersonate_confirm: "{0} として入りますか?そのユーザーのメールとドライブを、まったく同じ権限で見ることになります。この訪問は監査に記録され、その間は管理コンソールに入れません。" });
+Object.assign(DICTS.ko, { impersonate_confirm: "{0} 님으로 들어가시겠습니까? 그분의 메일과 드라이브를 동일한 권한으로 보게 됩니다. 이 방문은 감사에 기록되며, 그동안 관리 콘솔에는 들어갈 수 없습니다." });
+Object.assign(DICTS.de, { impersonate_confirm: "Als {0} eintreten? Sie sehen deren Mail und Drive mit genau deren Rechten. Der Besuch wird protokolliert, und die Konsole bleibt so lange geschlossen." });
+Object.assign(DICTS.fr, { impersonate_confirm: "Entrer en tant que {0} ? Vous verrez sa messagerie et son Drive avec exactement ses droits. La visite est auditée et la console reste fermée pendant ce temps." });
+Object.assign(DICTS.es, { impersonate_confirm: "¿Entrar como {0}? Verá su correo y su Drive con exactamente sus permisos. La visita queda auditada y la consola permanece cerrada mientras dure." });
+Object.assign(DICTS.ru, { impersonate_confirm: "Войти как {0}? Вы увидите его почту и диск ровно с его правами. Посещение фиксируется в журнале, а консоль администратора на это время закрыта." });
+
+Object.assign(DICTS['zh-CN'], { imp_bar: "你正在以 {0} 的身份浏览" });
+Object.assign(DICTS['zh-TW'], { imp_bar: "你正在以 {0} 的身分瀏覽" });
+Object.assign(DICTS.en, { imp_bar: "You are viewing as {0}" });
+Object.assign(DICTS.ja, { imp_bar: "{0} として表示しています" });
+Object.assign(DICTS.ko, { imp_bar: "{0} 님으로 보는 중입니다" });
+Object.assign(DICTS.de, { imp_bar: "Sie sehen dies als {0}" });
+Object.assign(DICTS.fr, { imp_bar: "Vous consultez en tant que {0}" });
+Object.assign(DICTS.es, { imp_bar: "Está viendo como {0}" });
+Object.assign(DICTS.ru, { imp_bar: "Вы просматриваете как {0}" });
+
+Object.assign(DICTS['zh-CN'], { imp_leave: "退出扮演" });
+Object.assign(DICTS['zh-TW'], { imp_leave: "退出扮演" });
+Object.assign(DICTS.en, { imp_leave: "Leave" });
+Object.assign(DICTS.ja, { imp_leave: "終了" });
+Object.assign(DICTS.ko, { imp_leave: "나가기" });
+Object.assign(DICTS.de, { imp_leave: "Beenden" });
+Object.assign(DICTS.fr, { imp_leave: "Quitter" });
+Object.assign(DICTS.es, { imp_leave: "Salir" });
+Object.assign(DICTS.ru, { imp_leave: "Выйти" });
+
+Object.assign(DICTS['zh-CN'], { e_impersonating: "扮演他人期间不能进入后台,请先退出扮演。" });
+Object.assign(DICTS['zh-TW'], { e_impersonating: "扮演他人期間不能進入後台,請先退出扮演。" });
+Object.assign(DICTS.en, { e_impersonating: "The admin console is closed while you are viewing as somebody else. Leave first." });
+Object.assign(DICTS.ja, { e_impersonating: "他のユーザーとして表示している間は管理コンソールに入れません。先に終了してください。" });
+Object.assign(DICTS.ko, { e_impersonating: "다른 사용자로 보는 동안에는 관리 콘솔에 들어갈 수 없습니다. 먼저 나가세요." });
+Object.assign(DICTS.de, { e_impersonating: "Die Konsole ist geschlossen, solange Sie als jemand anderes ansehen. Beenden Sie das zuerst." });
+Object.assign(DICTS.fr, { e_impersonating: "La console est fermée tant que vous consultez en tant qu'un autre. Quittez d'abord." });
+Object.assign(DICTS.es, { e_impersonating: "La consola está cerrada mientras ve como otra persona. Salga primero." });
+Object.assign(DICTS.ru, { e_impersonating: "Консоль закрыта, пока вы просматриваете от чужого имени. Сначала выйдите." });
+
+Object.assign(DICTS['zh-CN'], { e_impersonate_self: "不用扮演你自己。" });
+Object.assign(DICTS['zh-TW'], { e_impersonate_self: "不用扮演你自己。" });
+Object.assign(DICTS.en, { e_impersonate_self: "No need to view as yourself." });
+Object.assign(DICTS.ja, { e_impersonate_self: "自分自身になりかわる必要はありません。" });
+Object.assign(DICTS.ko, { e_impersonate_self: "자기 자신으로 볼 필요는 없습니다." });
+Object.assign(DICTS.de, { e_impersonate_self: "Sie müssen sich nicht selbst ansehen." });
+Object.assign(DICTS.fr, { e_impersonate_self: "Inutile de vous consulter vous-même." });
+Object.assign(DICTS.es, { e_impersonate_self: "No hace falta verse a sí mismo." });
+Object.assign(DICTS.ru, { e_impersonate_self: "Не нужно входить как вы сами." });
+
+Object.assign(DICTS['zh-CN'], { e_impersonate_admin: "不能扮演另一位全局管理员 —— 那样的审计记录等于没有。" });
+Object.assign(DICTS['zh-TW'], { e_impersonate_admin: "不能扮演另一位全域管理員 —— 那樣的稽核記錄等於沒有。" });
+Object.assign(DICTS.en, { e_impersonate_admin: "Another global administrator cannot be viewed as -- no audit trail would survive it." });
+Object.assign(DICTS.ja, { e_impersonate_admin: "他の全体管理者にはなりかわれません —— 監査記録が意味を失います。" });
+Object.assign(DICTS.ko, { e_impersonate_admin: "다른 전체 관리자로는 볼 수 없습니다 — 감사 기록이 무의미해집니다." });
+Object.assign(DICTS.de, { e_impersonate_admin: "Ein anderer globaler Administrator lässt sich nicht ansehen -- kein Protokoll überlebt das." });
+Object.assign(DICTS.fr, { e_impersonate_admin: "Impossible de consulter en tant qu'un autre administrateur global : aucune piste d'audit n'y survit." });
+Object.assign(DICTS.es, { e_impersonate_admin: "No se puede ver como otro administrador global: ninguna auditoría sobrevive a eso." });
+Object.assign(DICTS.ru, { e_impersonate_admin: "Нельзя войти как другой глобальный администратор — журнал аудита это не переживёт." });
+
+Object.assign(DICTS['zh-CN'], { e_impersonate_disabled: "这个账号已被禁用。" });
+Object.assign(DICTS['zh-TW'], { e_impersonate_disabled: "這個帳號已被停用。" });
+Object.assign(DICTS.en, { e_impersonate_disabled: "That account is disabled." });
+Object.assign(DICTS.ja, { e_impersonate_disabled: "このアカウントは無効です。" });
+Object.assign(DICTS.ko, { e_impersonate_disabled: "이 계정은 비활성화되어 있습니다." });
+Object.assign(DICTS.de, { e_impersonate_disabled: "Dieses Konto ist deaktiviert." });
+Object.assign(DICTS.fr, { e_impersonate_disabled: "Ce compte est désactivé." });
+Object.assign(DICTS.es, { e_impersonate_disabled: "Esa cuenta está deshabilitada." });
+Object.assign(DICTS.ru, { e_impersonate_disabled: "Эта учётная запись отключена." });

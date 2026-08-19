@@ -500,21 +500,28 @@ export async function tabGmail(body, opts = {}) {
     const prog = qs('#gm-progress');
     const eta = qs('#gm-eta');
     const fill = qs('#gm-fill');
-    const started = Date.now();
     const stat = { ok: 0, dup: 0, fail: 0 };
     const fails = [];
 
     const total = index.msgs.length;
     let done = 0;
+    // What is left to do is measured in messages that still have to be sent, at the rate at which
+    // messages are actually being sent. On a resumed import the first few thousand are already
+    // here and go past in seconds; counting those would put the remaining time at a minute when
+    // it is really twenty, and then watch it climb.
+    // 剩余时间按"还要发多少封"算,速度也只从"真的发出去的那些"里量。续跑时开头几千封都已经在了,
+    // 几秒钟就刷过去 —— 把它们算进去,二十分钟的活会先报成一分钟,然后一路往上爬。
+    let sendable = 0;   // 需要真发的封数(预检查之后才知道)
+    let sent = 0;       // 已经真发出去的封数
+    let sendStart = 0;  // 第一封真的开始发的时刻
     const tick = () => {
       done++;
       fill.style.width = ((done / total) * 100).toFixed(1) + '%';
       prog.textContent = t('imp_progress', done, total, stat.ok, stat.dup, stat.fail);
-      if (done >= 3 && done < total) {
-        const per = (Date.now() - started) / done;
-        eta.textContent = t('imp_eta', fmtDuration(per * (total - done)));
-      } else if (done >= total) {
-        eta.textContent = '';
+      if (done >= total) { eta.textContent = ''; return; }
+      if (sent >= 3 && sent < sendable) {
+        const per = (Date.now() - sendStart) / sent;
+        eta.textContent = t('imp_eta', fmtDuration(per * (sendable - sent)));
       }
     };
 
@@ -532,6 +539,8 @@ export async function tabGmail(body, opts = {}) {
       const r = await api('POST', `/api/admin/mailboxes/${mbId}/have`, { message_ids: batch }).catch(() => ({ have: [] }));
       for (const id of r.have || []) already.add(id);
     }
+    sendable = index.msgs.filter((m) => !(m.msgId && already.has(m.msgId))).length;
+    prog.textContent = t('imp_progress', 0, total, 0, 0, 0);
 
     /** Everything one message needs, once its turn comes / 轮到某封信时,它需要的全部东西 */
     const send = async (m) => {
@@ -605,6 +614,9 @@ export async function tabGmail(body, opts = {}) {
           continue;
         }
         if (m.thrid) busy.add(m.thrid);
+        // Only messages that actually go over the wire are timed / 只有真的要发出去的那些参与计时
+        const wire = !(m.msgId && already.has(m.msgId));
+        if (wire && !sendStart) sendStart = Date.now();
         try {
           await send(m);
         } catch (err) {
@@ -618,6 +630,7 @@ export async function tabGmail(body, opts = {}) {
             if (fails.length < 20) fails.push(`${m.msgId || '#' + next}: ${err2.message}`);
           }
         } finally {
+          if (wire) sent++;
           if (m.thrid) busy.delete(m.thrid);
           tick();
         }

@@ -6,6 +6,7 @@ import {
   createSession,
   createUser,
   destroySession,
+  endImpersonation,
   hashPassword,
   originCheck,
   registerLoginFailure,
@@ -17,6 +18,7 @@ import {
 import { createSystemFolders, deleteMessageDerived, findMailboxByAddress, getFolder, allocUid, ingestEml, insertFailedPlaceholder, logUnrouted, type MailboxRow } from './parse';
 import { queueSend, sendSystemMail, MAX_CONTENT_BYTES } from './send';
 import { HttpError, E } from './errors';
+import { audit } from './audit';
 import { adminApp, LOCAL_PART_RE } from './admin';
 import { verifyMail, resetMail } from './mailtpl';
 import { fontsApp, isKnownFont } from './fonts';
@@ -225,6 +227,21 @@ app.post('/api/auth/login', async (c) => {
 app.post('/api/auth/logout', async (c) => {
   await destroySession(c as any);
   return c.json({ ok: true });
+});
+
+/** Hand the borrowed session back. Open to any session, because the only session it can end is one
+ *  that was borrowed -- and the way out must not depend on the borrowed identity having any rights.
+ *  归还借来的会话。任何会话都能调,因为它只结束得了"借来的"那一个 ——
+ *  而且退路不该依赖借来的那个身份有什么权限。 */
+app.post('/api/auth/unimpersonate', async (c) => {
+  const who = await userFromRequest(c as any);
+  const back = await endImpersonation(c as any);
+  if (who?.impersonator_id) {
+    const admin = await c.env.DB.prepare('SELECT id, email, name, is_admin, disabled FROM users WHERE id=?1')
+      .bind(who.impersonator_id).first<User>();
+    await audit(c.env, admin, 'user.impersonate_end', who.email, { user_id: who.id });
+  }
+  return c.json({ ok: true, restored: back });
 });
 
 // ---------- Password reset ----------
@@ -679,7 +696,13 @@ app.get('/api/me', async (c) => {
     `SELECT 1 AS ok FROM domains d WHERE d.drive_enabled=1 AND d.id IN
      (SELECT mb.domain_id FROM grants g JOIN mailboxes mb ON mb.id=g.mailbox_id WHERE g.user_id=?1) LIMIT 1`
   ).bind(user.id).first();
+  // Who is really at the keyboard. Read off the session row, never off anything the page says.
+  // 键盘后面真正坐着谁。从会话行上读,绝不听页面自己说。
+  const imp = user.impersonator_id
+    ? await c.env.DB.prepare('SELECT email FROM users WHERE id=?1').bind(user.impersonator_id).first<any>()
+    : null;
   return c.json({
+    impersonated_by: imp?.email || null,
     user: {
       id: user.id, email: user.email, name: user.name, is_admin: !!user.is_admin,
       lang: langRow?.lang || null, appearance: langRow?.appearance || null,
