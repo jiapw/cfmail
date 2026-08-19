@@ -47,7 +47,12 @@ export const labelName = (l) => (l ? (l.builtin ? t('lbl_important') : l.name) :
  *  标签的记号:它的字形,用它的颜色。凡是要一眼认出来的地方都用它。 */
 export function labelMark(l, size = 17) {
   if (!l) return '';
-  return `<span style="color:var(--lb-${l.color || 'gray'});display:inline-flex">${icon(l.icon || 'tag', size)}</span>`;
+  // The class is load-bearing: dropped into a menu row, a bare <span> is claimed by the layout
+  // rule that makes the label text fill the row, and the icon rule that paints every glyph grey.
+  // A mark has to keep its own colour and its own width wherever it is put.
+  // 这个类名是承重的:光秃秃的 <span> 放进菜单行里,会被"让文字撑满整行"的布局规则
+  // 和"把所有字形涂灰"的图标规则一并接管。记号无论放在哪,都得留住自己的颜色和自己的宽度。
+  return `<span class="lb-mark" style="color:var(--lb-${l.color || 'gray'})">${icon(l.icon || 'tag', size)}</span>`;
 }
 
 export function chipHtml(l, { removable = false } = {}) {

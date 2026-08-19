@@ -839,7 +839,7 @@ html[data-webawesome].wa-dark {
    so the columns beside it stay aligned down the whole list.
    行首那一格。无论装 0 个还是 3 个,宽度固定,右边的列才能整列对齐。 */
 .row-labels {
-  flex: none; width: 44px; display: flex; align-items: center; gap: 2px;
+  flex: none; width: 44px; display: flex; align-items: center; gap: 1px;
   cursor: pointer; user-select: none;
 }
 .row-labels wa-icon { font-size: 17px; flex: none; }
@@ -905,3 +905,16 @@ html[data-webawesome].wa-dark {
 .lb-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; }
 .lb-row:hover { background: var(--hover); }
 .lb-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A label's mark keeps its colour and its width anywhere it lands -- including inside a menu
+   row, whose own rules would otherwise grey the glyph and let it push the text aside.
+   标签记号无论放到哪里都保持自己的颜色和宽度 —— 包括菜单行里:
+   那里的规则本会把字形涂灰,并让它把文字挤到一边去。 */
+.lb-mark, .ctx-item > .lb-mark { display: inline-flex; flex: none; }
+.lb-mark wa-icon { color: inherit !important; width: auto; }
+/* Inside a menu row the mark stands where a plain icon would, so it carries the same trailing
+   space that icon carries (0.75em of its own size) -- otherwise the labelled row's text starts
+   further left than every other row's and the column of words stops being a column.
+   菜单行里,记号站的是普通图标的位置,那就得带上普通图标同样的尾随留白(自身字号的 0.75em)——
+   否则带标签那一行的文字会比其它行更靠左,那一列字就不成列了。 */
+.ctx-item > .lb-mark wa-icon { margin-inline-end: 0.75em; }
