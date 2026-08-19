@@ -303,8 +303,11 @@ npm run deploy -- --token <token> --domain another.com
 Same command, different `--domain`. It enables Email Routing (publishing MX/SPF), points the catch-all at the Worker, adds `<entry>.<domain>` to `routes` and republishes, which is what binds the custom domain.
 同一条命令,换个 `--domain`。它会启用 Email Routing(下发 MX/SPF)、把 catch-all 指向 Worker、把 `<入口子域>.<域名>` 加进 `routes` 并重新发布 —— 自定义域就是这样绑上去的。
 
-> **Careful**: enabling Email Routing takes over that domain's MX records. If the domain already has mail service, confirm before switching.
-> **注意**:启用 Email Routing 会接管该域名的 MX 记录。如域名原有邮件服务,切换前先确认。
+> **Careful**: enabling Email Routing takes over that domain's MX records, and the catch-all rule is repointed at the Worker. If the domain already receives mail — forwarding to a personal address, say — that stops. Check the domain's existing Email Routing rules before connecting it.
+> **注意**:启用 Email Routing 会接管该域名的 MX 记录,catch-all 也会被改指向 Worker。如果这个域名原本在收信(比如转发到某个私人邮箱),那就会停。接入前先看一眼该域名现有的 Email Routing 规则。
+
+If you use Turnstile, run `node scripts/setup-turnstile.mjs` again after connecting a domain: a widget only answers for the hostnames on its own allowlist, and a new entry host is not on it yet. The script syncs the list and leaves the sitekey alone, so no redeploy is needed.
+用了 Turnstile 的话,接完域名再跑一次 `node scripts/setup-turnstile.mjs`:widget 只对自己允许列表里的主机名作答,新的入口主机还不在里面。脚本会同步列表且不动 sitekey,不需要重新部署。
 
 ### 3. Hardening / 加固(可选,但建议做)
 

@@ -60,10 +60,44 @@ const existing = (list.data.result || []).find((w) => w.name === NAME);
 let sitekey, secret;
 if (existing) {
   sitekey = existing.sitekey;
+
+  // A widget only answers for the hostnames on its own allowlist. Connecting a domain adds an
+  // entry host, and a widget that has not been told about it fails every challenge served from
+  // there -- which looks like "login is broken on the new domain", not like a captcha setting.
+  // widget 只对自己允许列表里的主机名作答。接入一个域名就多一个入口主机,
+  // 而没被告知这件事的 widget 会让那台主机上的每一次验证都失败 ——
+  // 现象是"新域名上登录不了",而不像是个验证码配置问题。
+  const have = [...(existing.domains || [])].sort().join(',');
+  const want = [...DOMAINS].sort().join(',');
+  if (have !== want) {
+    const upd = await cf('PUT', `/accounts/${ACCOUNT}/challenges/widgets/${sitekey}`, {
+      name: NAME, domains: DOMAINS, mode: existing.mode || 'managed',
+    });
+    if (!upd.ok) {
+      console.error('✗ 更新 widget 域名失败:', JSON.stringify(upd.data.errors || upd.data).slice(0, 200));
+      process.exit(1);
+    }
+    console.log(`✓ widget「${NAME}」域名已更新为:${DOMAINS.join(', ')}`);
+  } else {
+    console.log(`✓ widget「${NAME}」的域名已经是对的:${DOMAINS.join(', ')}`);
+  }
+
+  // Rotating invalidates the old secret immediately, so it is worth a few seconds of failed
+  // challenges only when the Worker does not already hold a matching one. When the sitekey in
+  // wrangler.jsonc is this widget's, the pair is already in place and syncing domains is all
+  // that was needed.
+  // 轮换会立刻作废旧 secret,只有在 Worker 手上还没有配套 secret 时,才值得付出那几秒的验证失败。
+  // 如果 wrangler.jsonc 里的 sitekey 就是这个 widget 的,说明两半早已配好,刚才同步域名就够了。
+  const inConfig = loadWranglerConfig()?.vars?.TURNSTILE_SITEKEY;
+  if (inConfig === sitekey) {
+    console.log('  Worker 里已有配套的 secret,不轮换(轮换会立刻作废旧的,造成短暂验证失败)');
+    console.log(`\n完成。sitekey ${sitekey} 已在 wrangler.jsonc 里,无需重新部署。\n`);
+    process.exit(0);
+  }
   const rot = await cf('POST', `/accounts/${ACCOUNT}/challenges/widgets/${sitekey}/rotate_secret`, { invalidate_immediately: true });
   if (!rot.ok) { console.error('✗ 轮换 secret 失败:', JSON.stringify(rot.data.errors || rot.data).slice(0, 200)); process.exit(1); }
   secret = rot.data.result.secret;
-  console.log(`✓ 复用已有 widget「${NAME}」,已轮换出新 secret`);
+  console.log('✓ 已轮换出新 secret');
 } else {
   const cr = await cf('POST', `/accounts/${ACCOUNT}/challenges/widgets`, { name: NAME, domains: DOMAINS, mode: 'managed' });
   if (!cr.ok) { console.error('✗ 创建 widget 失败:', JSON.stringify(cr.data.errors || cr.data).slice(0, 200)); process.exit(1); }
