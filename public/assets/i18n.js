@@ -4938,3 +4938,23 @@ Object.assign(DICTS.de, { da_global_only: "Domänen-Administratoren werden vom g
 Object.assign(DICTS.fr, { da_global_only: "Les administrateurs de domaine sont désignés par l'administrateur global ; cette liste est en lecture seule ici." });
 Object.assign(DICTS.es, { da_global_only: "Los administradores de dominio los designa el administrador global; aquí la lista es de solo lectura." });
 Object.assign(DICTS.ru, { da_global_only: "Администраторов домена назначает глобальный администратор; здесь список доступен только для чтения." });
+
+Object.assign(DICTS['zh-CN'], { chip_domain_admin: "域管理员 · {0}" });
+Object.assign(DICTS['zh-TW'], { chip_domain_admin: "網域管理員 · {0}" });
+Object.assign(DICTS.en, { chip_domain_admin: "Domain admin · {0}" });
+Object.assign(DICTS.ja, { chip_domain_admin: "ドメイン管理者 · {0}" });
+Object.assign(DICTS.ko, { chip_domain_admin: "도메인 관리자 · {0}" });
+Object.assign(DICTS.de, { chip_domain_admin: "Domänen-Admin · {0}" });
+Object.assign(DICTS.fr, { chip_domain_admin: "Admin du domaine · {0}" });
+Object.assign(DICTS.es, { chip_domain_admin: "Admin del dominio · {0}" });
+Object.assign(DICTS.ru, { chip_domain_admin: "Админ домена · {0}" });
+
+Object.assign(DICTS['zh-CN'], { da_no_candidates: "这个域下还没有可选的人。域管理员必须先用个人邮箱注册,再在这里填他的注册邮箱。" });
+Object.assign(DICTS['zh-TW'], { da_no_candidates: "這個網域下還沒有可選的人。網域管理員必須先用個人信箱註冊,再在這裡填他的註冊信箱。" });
+Object.assign(DICTS.en, { da_no_candidates: "Nobody in this domain to pick yet. A domain admin must have registered with a personal email first; enter that email here." });
+Object.assign(DICTS.ja, { da_no_candidates: "このドメインにはまだ候補がいません。ドメイン管理者は先に個人メールで登録が必要で、ここにはその登録メールを入力します。" });
+Object.assign(DICTS.ko, { da_no_candidates: "이 도메인에는 아직 선택할 사람이 없습니다. 도메인 관리자는 먼저 개인 이메일로 가입해야 하며, 여기에는 그 가입 이메일을 입력합니다." });
+Object.assign(DICTS.de, { da_no_candidates: "In dieser Domäne gibt es noch niemanden zur Auswahl. Ein Domänen-Administrator muss sich zuerst mit einer persönlichen E-Mail registrieren; diese Adresse wird hier eingetragen." });
+Object.assign(DICTS.fr, { da_no_candidates: "Personne à choisir dans ce domaine pour l'instant. Un administrateur de domaine doit d'abord s'inscrire avec un e-mail personnel ; saisissez cet e-mail ici." });
+Object.assign(DICTS.es, { da_no_candidates: "Todavía no hay nadie que elegir en este dominio. Un administrador de dominio debe registrarse antes con un correo personal; introduzca aquí ese correo." });
+Object.assign(DICTS.ru, { da_no_candidates: "В этом домене пока некого выбрать. Администратор домена сначала должен зарегистрироваться с личной почтой; её и укажите здесь." });

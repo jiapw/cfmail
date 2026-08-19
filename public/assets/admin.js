@@ -166,6 +166,21 @@ async function renderDomainDetail(domainId) {
   // 谁能任命域管理员由服务端说了算;界面只是不再提供注定 403 的操作 ——
   // 域管理员看得到名单,但没有改动它的控件。
   const isGlobal = !!store.me.user.is_admin;
+  // The field wants a registration email, which is not something anyone can be expected to
+  // remember -- and a company address typed in its place simply fails to match. So offer the
+  // people already in this domain, by the address the lookup actually uses.
+  // 这个框要的是注册邮箱,而注册邮箱不是谁都记得住的 —— 填成企业地址则根本匹配不上。
+  // 所以把本域已有的人列出来,用接口真正拿去查的那个地址。
+  const seen = new Set(admins.map((a) => a.id));
+  const candidates = [];
+  for (const m of mailboxes) {
+    for (const g of m.members || []) {
+      if (seen.has(g.user_id)) continue;
+      seen.add(g.user_id);
+      candidates.push({ email: g.email, name: g.name });
+    }
+  }
+  candidates.sort((a, b) => a.email.localeCompare(b.email));
   const rows = mailboxes
     .map(
       (m) => `
@@ -257,9 +272,12 @@ async function renderDomainDetail(domainId) {
       ${isGlobal ? `
       <form id="f-da" class="form-row" style="margin-top:12px">
         <label>${esc(t('add_da'))}</label>
-        <input name="email" type="email" placeholder="${esc(t('reg_email_ph'))}" required style="width:260px">
+        <input name="email" type="email" list="da-cands" placeholder="${esc(t('reg_email_ph'))}"
+               autocomplete="off" required style="width:260px">
+        <datalist id="da-cands">${candidates.map((u) => `<option value="${esc(u.email)}">${esc(u.name ? `${u.name} — ${u.email}` : u.email)}</option>`).join('')}</datalist>
         <wa-button appearance="outlined" type="submit">${esc(t('add_da'))}</wa-button>
-      </form>`
+      </form>
+      ${candidates.length ? '' : `<p class="dim">${esc(t('da_no_candidates'))}</p>`}`
       : `<p class="dim" style="margin-top:12px">${esc(t('da_global_only'))}</p>`}
     </section>`;
 
@@ -461,7 +479,7 @@ async function tabUsers(body) {
       (u) => `
     <tr class="${u.disabled ? 'disabled-row' : ''}">
       <td><b>${esc(u.name || '')}</b><div class="dim">${esc(u.email)}</div></td>
-      <td>${u.is_admin ? `<span class="chip chip-ok">${esc(t('chip_global_admin'))}</span>` : ''}${u.disabled ? `<span class="chip chip-err">${esc(t('t_disabled'))}</span>` : `<span class="chip">${esc(t('chip_normal'))}</span>`}</td>
+      <td>${u.is_admin ? `<span class="chip chip-ok">${esc(t('chip_global_admin'))}</span>` : ''}${(u.admin_of || []).map((d) => `<span class="chip chip-ok">${esc(t('chip_domain_admin', d.domain_name))}</span>`).join('')}${u.disabled ? `<span class="chip chip-err">${esc(t('t_disabled'))}</span>` : `<span class="chip">${esc(t('chip_normal'))}</span>`}</td>
       <td>${u.grants.map((g) => `<span class="chip" title="${roleName(g.role)}">${esc(g.address)}<span class="chip-x" role="button" tabindex="0" title="${esc(t('revoke_grant'))}" data-ungrant="${esc(g.mailbox_id)}|${esc(u.id)}|${esc(g.address)}|${esc(u.email)}">×</span></span>`).join(' ') || `<span class="dim">${esc(t('none'))}</span>`}</td>
       <td>${u.msg_count}</td>
       <td>${fmtSize(u.bytes || 0)}</td>
