@@ -3,6 +3,7 @@ import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showMod
 import { t } from './i18n.js';
 import { tabImport } from './admin-import.js';
 import { tabExport } from './admin-export.js';
+import { tabGmail } from './admin-gmail.js';
 import { store, navigate, show, applyTheme, applyFonts, refreshMe } from './app.js';
 import { pickFont, ensureFont } from './fontpicker.js';
 import { roleName } from './auth.js';
@@ -26,6 +27,7 @@ const TABS = () => [
   { key: 'invites', name: t('a_invites') },
   { key: 'unrouted', name: t('a_unrouted') },
   { key: 'import', name: t('a_import') },
+  { key: 'gmail', name: t('a_gmail') },
   { key: 'export', name: t('a_export') },
   { key: 'audit', name: t('a_audit') },
   { key: 'ai', name: t('a_ai') },
@@ -59,6 +61,7 @@ export async function renderAdmin(tab) {
     else if (tab === 'invites') await tabInvites(body);
     else if (tab === 'unrouted') await tabUnrouted(body);
     else if (tab === 'import') await tabImport(body);
+    else if (tab === 'gmail') await tabGmail(body);
     else if (tab === 'export') await tabExport(body);
     else if (tab === 'audit') await tabAudit(body);
     else if (tab === 'ai') await tabAI(body);

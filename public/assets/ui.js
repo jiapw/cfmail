@@ -10,6 +10,17 @@ export const qsa = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const ICON_ALIAS = { starFill: 'star-fill', expandLess: 'expand-less', markRead: 'mark-read' };
 
+/** Remaining time: minutes and seconds are enough, and the hour field only appears past an hour
+ *  剩余时间:分秒够用,超过一小时才带小时位 */
+export function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const p = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`;
+}
+
 export function icon(name, size = 20) {
   const n = ICON_ALIAS[name] || name;
   return `<wa-icon name="${esc(n)}" style="font-size:${size}px" aria-hidden="true"></wa-icon>`;

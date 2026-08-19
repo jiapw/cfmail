@@ -5149,3 +5149,284 @@ Object.assign(DICTS.de, { e_label_builtin: "Das eingebaute Label kann weder umbe
 Object.assign(DICTS.fr, { e_label_builtin: "Le libellé intégré ne peut être ni renommé ni supprimé" });
 Object.assign(DICTS.es, { e_label_builtin: "La etiqueta integrada no se puede renombrar ni eliminar" });
 Object.assign(DICTS.ru, { e_label_builtin: "Встроенную метку нельзя переименовать или удалить" });
+
+// ---------- Gmail import / Gmail 导入 ----------
+Object.assign(DICTS['zh-CN'], { a_gmail: "Gmail 导入" });
+Object.assign(DICTS['zh-TW'], { a_gmail: "Gmail 匯入" });
+Object.assign(DICTS.en, { a_gmail: "Gmail import" });
+Object.assign(DICTS.ja, { a_gmail: "Gmail 取り込み" });
+Object.assign(DICTS.ko, { a_gmail: "Gmail 가져오기" });
+Object.assign(DICTS.de, { a_gmail: "Gmail-Import" });
+Object.assign(DICTS.fr, { a_gmail: "Import Gmail" });
+Object.assign(DICTS.es, { a_gmail: "Importar de Gmail" });
+Object.assign(DICTS.ru, { a_gmail: "Импорт из Gmail" });
+
+Object.assign(DICTS['zh-CN'], { gm_title: "从 Google Takeout 导入" });
+Object.assign(DICTS['zh-TW'], { gm_title: "從 Google Takeout 匯入" });
+Object.assign(DICTS.en, { gm_title: "Import from Google Takeout" });
+Object.assign(DICTS.ja, { gm_title: "Google Takeout から取り込む" });
+Object.assign(DICTS.ko, { gm_title: "Google Takeout에서 가져오기" });
+Object.assign(DICTS.de, { gm_title: "Aus Google Takeout importieren" });
+Object.assign(DICTS.fr, { gm_title: "Importer depuis Google Takeout" });
+Object.assign(DICTS.es, { gm_title: "Importar desde Google Takeout" });
+Object.assign(DICTS.ru, { gm_title: "Импорт из Google Takeout" });
+
+Object.assign(DICTS['zh-CN'], { gm_intro: "选中 Takeout 解压后的目录,浏览器会自己找到里面的 .mbox。整个过程在你这台机器上完成:切分、解析、判定文件夹与标签都在浏览器里,服务端只负责把结果写进库。" });
+Object.assign(DICTS['zh-TW'], { gm_intro: "選中 Takeout 解壓後的目錄,瀏覽器會自己找到裡面的 .mbox。整個過程在你這台機器上完成:切分、解析、判定資料夾與標籤都在瀏覽器裡,伺服端只負責把結果寫進資料庫。" });
+Object.assign(DICTS.en, { gm_intro: "Pick the folder you unpacked Takeout into and the browser finds the .mbox inside it. Everything happens on this machine: splitting, parsing and deciding folders and labels all run in the browser, and the server only writes the result." });
+Object.assign(DICTS.ja, { gm_intro: "Takeout を展開したフォルダーを選ぶと、ブラウザーが中の .mbox を見つけます。処理はすべてこの端末で行われ、分割・解析・フォルダーとラベルの判定はブラウザー内、サーバーは結果を書き込むだけです。" });
+Object.assign(DICTS.ko, { gm_intro: "Takeout을 푼 폴더를 고르면 브라우저가 안의 .mbox를 찾습니다. 모든 처리는 이 컴퓨터에서 이루어지며, 분할·파싱·폴더와 라벨 결정은 브라우저가, 서버는 결과 저장만 합니다." });
+Object.assign(DICTS.de, { gm_intro: "Wählen Sie den Ordner, in den Sie Takeout entpackt haben; der Browser findet die .mbox darin. Alles geschieht auf diesem Rechner: Aufteilen, Parsen und die Entscheidung über Ordner und Labels laufen im Browser, der Server schreibt nur das Ergebnis." });
+Object.assign(DICTS.fr, { gm_intro: "Choisissez le dossier où vous avez décompressé Takeout : le navigateur y trouve le .mbox. Tout se passe sur cette machine — découpage, analyse et choix des dossiers et libellés dans le navigateur ; le serveur ne fait qu'écrire le résultat." });
+Object.assign(DICTS.es, { gm_intro: "Elija la carpeta donde descomprimió Takeout y el navegador encontrará el .mbox. Todo ocurre en esta máquina: dividir, analizar y decidir carpetas y etiquetas se hace en el navegador; el servidor solo escribe el resultado." });
+Object.assign(DICTS.ru, { gm_intro: "Выберите папку, куда распакован Takeout, — браузер сам найдёт в ней .mbox. Всё происходит на этой машине: разбор, парсинг и выбор папок и меток идут в браузере, сервер только записывает результат." });
+
+Object.assign(DICTS['zh-CN'], { gm_folder: "Takeout 目录" });
+Object.assign(DICTS['zh-TW'], { gm_folder: "Takeout 目錄" });
+Object.assign(DICTS.en, { gm_folder: "Takeout folder" });
+Object.assign(DICTS.ja, { gm_folder: "Takeout フォルダー" });
+Object.assign(DICTS.ko, { gm_folder: "Takeout 폴더" });
+Object.assign(DICTS.de, { gm_folder: "Takeout-Ordner" });
+Object.assign(DICTS.fr, { gm_folder: "Dossier Takeout" });
+Object.assign(DICTS.es, { gm_folder: "Carpeta de Takeout" });
+Object.assign(DICTS.ru, { gm_folder: "Папка Takeout" });
+
+Object.assign(DICTS['zh-CN'], { gm_pick: "选择目录" });
+Object.assign(DICTS['zh-TW'], { gm_pick: "選擇目錄" });
+Object.assign(DICTS.en, { gm_pick: "Choose folder" });
+Object.assign(DICTS.ja, { gm_pick: "フォルダーを選択" });
+Object.assign(DICTS.ko, { gm_pick: "폴더 선택" });
+Object.assign(DICTS.de, { gm_pick: "Ordner wählen" });
+Object.assign(DICTS.fr, { gm_pick: "Choisir le dossier" });
+Object.assign(DICTS.es, { gm_pick: "Elegir carpeta" });
+Object.assign(DICTS.ru, { gm_pick: "Выбрать папку" });
+
+Object.assign(DICTS['zh-CN'], { gm_found: "找到 {0} 个 mbox,共 {1}" });
+Object.assign(DICTS['zh-TW'], { gm_found: "找到 {0} 個 mbox,共 {1}" });
+Object.assign(DICTS.en, { gm_found: "{0} mbox file(s), {1} in total" });
+Object.assign(DICTS.ja, { gm_found: "mbox {0} 件、合計 {1}" });
+Object.assign(DICTS.ko, { gm_found: "mbox {0}개, 총 {1}" });
+Object.assign(DICTS.de, { gm_found: "{0} mbox-Datei(en), insgesamt {1}" });
+Object.assign(DICTS.fr, { gm_found: "{0} fichier(s) mbox, {1} au total" });
+Object.assign(DICTS.es, { gm_found: "{0} archivo(s) mbox, {1} en total" });
+Object.assign(DICTS.ru, { gm_found: "Файлов mbox: {0}, всего {1}" });
+
+Object.assign(DICTS['zh-CN'], { gm_none: "这个目录里没有 .mbox 文件" });
+Object.assign(DICTS['zh-TW'], { gm_none: "這個目錄裡沒有 .mbox 檔案" });
+Object.assign(DICTS.en, { gm_none: "No .mbox file in that folder" });
+Object.assign(DICTS.ja, { gm_none: "そのフォルダーに .mbox はありません" });
+Object.assign(DICTS.ko, { gm_none: "해당 폴더에 .mbox 파일이 없습니다" });
+Object.assign(DICTS.de, { gm_none: "Keine .mbox-Datei in diesem Ordner" });
+Object.assign(DICTS.fr, { gm_none: "Aucun fichier .mbox dans ce dossier" });
+Object.assign(DICTS.es, { gm_none: "No hay ningún archivo .mbox en esa carpeta" });
+Object.assign(DICTS.ru, { gm_none: "В этой папке нет файла .mbox" });
+
+Object.assign(DICTS['zh-CN'], { gm_scanning: "正在扫描 {0} … {1}%,已找到 {2} 封" });
+Object.assign(DICTS['zh-TW'], { gm_scanning: "正在掃描 {0} … {1}%,已找到 {2} 封" });
+Object.assign(DICTS.en, { gm_scanning: "Scanning {0} … {1}%, {2} messages so far" });
+Object.assign(DICTS.ja, { gm_scanning: "{0} をスキャン中… {1}%、これまで {2} 通" });
+Object.assign(DICTS.ko, { gm_scanning: "{0} 스캔 중… {1}%, 지금까지 {2}통" });
+Object.assign(DICTS.de, { gm_scanning: "Scanne {0} … {1} %, bisher {2} Nachrichten" });
+Object.assign(DICTS.fr, { gm_scanning: "Analyse de {0} … {1} %, {2} messages jusqu'ici" });
+Object.assign(DICTS.es, { gm_scanning: "Analizando {0} … {1} %, {2} mensajes hasta ahora" });
+Object.assign(DICTS.ru, { gm_scanning: "Сканирование {0} … {1} %, найдено {2} писем" });
+
+Object.assign(DICTS['zh-CN'], { gm_scanned: "扫描完成:{0} 封邮件,{1} 种 Gmail 标签" });
+Object.assign(DICTS['zh-TW'], { gm_scanned: "掃描完成:{0} 封郵件,{1} 種 Gmail 標籤" });
+Object.assign(DICTS.en, { gm_scanned: "Scanned: {0} messages, {1} distinct Gmail labels" });
+Object.assign(DICTS.ja, { gm_scanned: "スキャン完了:{0} 通、Gmail ラベル {1} 種類" });
+Object.assign(DICTS.ko, { gm_scanned: "스캔 완료: {0}통, Gmail 라벨 {1}종" });
+Object.assign(DICTS.de, { gm_scanned: "Gescannt: {0} Nachrichten, {1} verschiedene Gmail-Labels" });
+Object.assign(DICTS.fr, { gm_scanned: "Analyse terminée : {0} messages, {1} libellés Gmail distincts" });
+Object.assign(DICTS.es, { gm_scanned: "Analizado: {0} mensajes, {1} etiquetas de Gmail distintas" });
+Object.assign(DICTS.ru, { gm_scanned: "Просканировано: писем {0}, различных меток Gmail {1}" });
+
+Object.assign(DICTS['zh-CN'], { gm_map_folders: "分组映射" });
+Object.assign(DICTS['zh-TW'], { gm_map_folders: "分組映射" });
+Object.assign(DICTS.en, { gm_map_folders: "Folder mapping" });
+Object.assign(DICTS.ja, { gm_map_folders: "フォルダーの対応" });
+Object.assign(DICTS.ko, { gm_map_folders: "폴더 매핑" });
+Object.assign(DICTS.de, { gm_map_folders: "Ordner-Zuordnung" });
+Object.assign(DICTS.fr, { gm_map_folders: "Correspondance des dossiers" });
+Object.assign(DICTS.es, { gm_map_folders: "Asignación de carpetas" });
+Object.assign(DICTS.ru, { gm_map_folders: "Сопоставление папок" });
+
+Object.assign(DICTS['zh-CN'], { gm_map_folders_note: "一封信只能落在一个文件夹里。从上往下,第一条命中的规则决定它去哪。" });
+Object.assign(DICTS['zh-TW'], { gm_map_folders_note: "一封信只能落在一個資料夾裡。從上往下,第一條命中的規則決定它去哪。" });
+Object.assign(DICTS.en, { gm_map_folders_note: "A message lands in exactly one folder. Reading top to bottom, the first rule it matches decides where." });
+Object.assign(DICTS.ja, { gm_map_folders_note: "1 通は 1 つのフォルダーにしか入りません。上から順に、最初に一致した規則が行き先を決めます。" });
+Object.assign(DICTS.ko, { gm_map_folders_note: "메일은 폴더 하나에만 들어갑니다. 위에서부터 처음 일치하는 규칙이 목적지를 정합니다." });
+Object.assign(DICTS.de, { gm_map_folders_note: "Eine Nachricht landet in genau einem Ordner. Von oben nach unten entscheidet die erste zutreffende Regel." });
+Object.assign(DICTS.fr, { gm_map_folders_note: "Un message atterrit dans un seul dossier. De haut en bas, la première règle qui correspond décide." });
+Object.assign(DICTS.es, { gm_map_folders_note: "Un mensaje cae en una sola carpeta. De arriba abajo, decide la primera regla que coincide." });
+Object.assign(DICTS.ru, { gm_map_folders_note: "Письмо попадает ровно в одну папку. Сверху вниз: решает первое подошедшее правило." });
+
+Object.assign(DICTS['zh-CN'], { gm_map_labels: "标签映射" });
+Object.assign(DICTS['zh-TW'], { gm_map_labels: "標籤映射" });
+Object.assign(DICTS.en, { gm_map_labels: "Label mapping" });
+Object.assign(DICTS.ja, { gm_map_labels: "ラベルの対応" });
+Object.assign(DICTS.ko, { gm_map_labels: "라벨 매핑" });
+Object.assign(DICTS.de, { gm_map_labels: "Label-Zuordnung" });
+Object.assign(DICTS.fr, { gm_map_labels: "Correspondance des libellés" });
+Object.assign(DICTS.es, { gm_map_labels: "Asignación de etiquetas" });
+Object.assign(DICTS.ru, { gm_map_labels: "Сопоставление меток" });
+
+Object.assign(DICTS['zh-CN'], { gm_map_labels_note: "标签不搬动邮件,只是给它建索引 —— 一封信可以有多个。勾上的会在目标邮箱里建成标签。" });
+Object.assign(DICTS['zh-TW'], { gm_map_labels_note: "標籤不搬動郵件,只是給它建索引 —— 一封信可以有多個。勾選的會在目標信箱裡建成標籤。" });
+Object.assign(DICTS.en, { gm_map_labels_note: "Labels do not move mail; they index it, and a message may carry several. The ticked ones are created as labels in the target mailbox." });
+Object.assign(DICTS.ja, { gm_map_labels_note: "ラベルはメールを移動しません。索引を付けるだけで、1 通に複数付けられます。チェックしたものが対象メールボックスにラベルとして作られます。" });
+Object.assign(DICTS.ko, { gm_map_labels_note: "라벨은 메일을 옮기지 않고 색인만 합니다. 한 통에 여러 개를 붙일 수 있으며, 체크한 것이 대상 메일함에 라벨로 만들어집니다." });
+Object.assign(DICTS.de, { gm_map_labels_note: "Labels verschieben keine Nachrichten, sie indizieren sie, und eine Nachricht kann mehrere tragen. Die angehakten werden im Zielpostfach als Labels angelegt." });
+Object.assign(DICTS.fr, { gm_map_labels_note: "Les libellés ne déplacent rien : ils indexent, et un message peut en porter plusieurs. Ceux qui sont cochés seront créés dans la boîte de destination." });
+Object.assign(DICTS.es, { gm_map_labels_note: "Las etiquetas no mueven el correo: lo indexan, y un mensaje puede llevar varias. Las marcadas se crean como etiquetas en el buzón de destino." });
+Object.assign(DICTS.ru, { gm_map_labels_note: "Метки не перемещают письма, а индексируют их, и у письма их может быть несколько. Отмеченные будут созданы как метки в целевом ящике." });
+
+Object.assign(DICTS['zh-CN'], { gm_gmail_label: "Gmail 标签" });
+Object.assign(DICTS['zh-TW'], { gm_gmail_label: "Gmail 標籤" });
+Object.assign(DICTS.en, { gm_gmail_label: "Gmail label" });
+Object.assign(DICTS.ja, { gm_gmail_label: "Gmail ラベル" });
+Object.assign(DICTS.ko, { gm_gmail_label: "Gmail 라벨" });
+Object.assign(DICTS.de, { gm_gmail_label: "Gmail-Label" });
+Object.assign(DICTS.fr, { gm_gmail_label: "Libellé Gmail" });
+Object.assign(DICTS.es, { gm_gmail_label: "Etiqueta de Gmail" });
+Object.assign(DICTS.ru, { gm_gmail_label: "Метка Gmail" });
+
+Object.assign(DICTS['zh-CN'], { gm_count: "邮件数" });
+Object.assign(DICTS['zh-TW'], { gm_count: "郵件數" });
+Object.assign(DICTS.en, { gm_count: "Messages" });
+Object.assign(DICTS.ja, { gm_count: "通数" });
+Object.assign(DICTS.ko, { gm_count: "통수" });
+Object.assign(DICTS.de, { gm_count: "Nachrichten" });
+Object.assign(DICTS.fr, { gm_count: "Messages" });
+Object.assign(DICTS.es, { gm_count: "Mensajes" });
+Object.assign(DICTS.ru, { gm_count: "Писем" });
+
+Object.assign(DICTS['zh-CN'], { gm_target_folder: "落到" });
+Object.assign(DICTS['zh-TW'], { gm_target_folder: "落到" });
+Object.assign(DICTS.en, { gm_target_folder: "Goes to" });
+Object.assign(DICTS.ja, { gm_target_folder: "入れる先" });
+Object.assign(DICTS.ko, { gm_target_folder: "이동 위치" });
+Object.assign(DICTS.de, { gm_target_folder: "Kommt nach" });
+Object.assign(DICTS.fr, { gm_target_folder: "Va dans" });
+Object.assign(DICTS.es, { gm_target_folder: "Va a" });
+Object.assign(DICTS.ru, { gm_target_folder: "Куда" });
+
+Object.assign(DICTS['zh-CN'], { gm_target_label: "建成标签" });
+Object.assign(DICTS['zh-TW'], { gm_target_label: "建成標籤" });
+Object.assign(DICTS.en, { gm_target_label: "As label" });
+Object.assign(DICTS.ja, { gm_target_label: "ラベル名" });
+Object.assign(DICTS.ko, { gm_target_label: "라벨 이름" });
+Object.assign(DICTS.de, { gm_target_label: "Als Label" });
+Object.assign(DICTS.fr, { gm_target_label: "Comme libellé" });
+Object.assign(DICTS.es, { gm_target_label: "Como etiqueta" });
+Object.assign(DICTS.ru, { gm_target_label: "Как метка" });
+
+Object.assign(DICTS['zh-CN'], { gm_look: "外观" });
+Object.assign(DICTS['zh-TW'], { gm_look: "外觀" });
+Object.assign(DICTS.en, { gm_look: "Look" });
+Object.assign(DICTS.ja, { gm_look: "見た目" });
+Object.assign(DICTS.ko, { gm_look: "모양" });
+Object.assign(DICTS.de, { gm_look: "Aussehen" });
+Object.assign(DICTS.fr, { gm_look: "Apparence" });
+Object.assign(DICTS.es, { gm_look: "Aspecto" });
+Object.assign(DICTS.ru, { gm_look: "Вид" });
+
+Object.assign(DICTS['zh-CN'], { gm_default_folder: "其余邮件落到" });
+Object.assign(DICTS['zh-TW'], { gm_default_folder: "其餘郵件落到" });
+Object.assign(DICTS.en, { gm_default_folder: "Everything else goes to" });
+Object.assign(DICTS.ja, { gm_default_folder: "それ以外の行き先" });
+Object.assign(DICTS.ko, { gm_default_folder: "나머지는" });
+Object.assign(DICTS.de, { gm_default_folder: "Alles Übrige kommt nach" });
+Object.assign(DICTS.fr, { gm_default_folder: "Tout le reste va dans" });
+Object.assign(DICTS.es, { gm_default_folder: "El resto va a" });
+Object.assign(DICTS.ru, { gm_default_folder: "Всё остальное — в" });
+
+Object.assign(DICTS['zh-CN'], { gm_none_system: "这份导出里没有 Gmail 的系统标签" });
+Object.assign(DICTS['zh-TW'], { gm_none_system: "這份匯出裡沒有 Gmail 的系統標籤" });
+Object.assign(DICTS.en, { gm_none_system: "This export carries none of Gmail's own labels" });
+Object.assign(DICTS.ja, { gm_none_system: "この書き出しには Gmail 標準のラベルがありません" });
+Object.assign(DICTS.ko, { gm_none_system: "이 내보내기에는 Gmail 기본 라벨이 없습니다" });
+Object.assign(DICTS.de, { gm_none_system: "Dieser Export enthält keine Gmail-eigenen Labels" });
+Object.assign(DICTS.fr, { gm_none_system: "Cet export ne contient aucun libellé propre à Gmail" });
+Object.assign(DICTS.es, { gm_none_system: "Esta exportación no trae etiquetas propias de Gmail" });
+Object.assign(DICTS.ru, { gm_none_system: "В этом экспорте нет собственных меток Gmail" });
+
+Object.assign(DICTS['zh-CN'], { gm_none_labels: "没有可映射的标签" });
+Object.assign(DICTS['zh-TW'], { gm_none_labels: "沒有可映射的標籤" });
+Object.assign(DICTS.en, { gm_none_labels: "No labels to map" });
+Object.assign(DICTS.ja, { gm_none_labels: "対応させるラベルがありません" });
+Object.assign(DICTS.ko, { gm_none_labels: "매핑할 라벨이 없습니다" });
+Object.assign(DICTS.de, { gm_none_labels: "Keine Labels zuzuordnen" });
+Object.assign(DICTS.fr, { gm_none_labels: "Aucun libellé à faire correspondre" });
+Object.assign(DICTS.es, { gm_none_labels: "No hay etiquetas que asignar" });
+Object.assign(DICTS.ru, { gm_none_labels: "Нечего сопоставлять" });
+
+Object.assign(DICTS['zh-CN'], { gm_noisy_hint: "这个标签贴在九成以上的邮件上,分不出什么,默认不导入" });
+Object.assign(DICTS['zh-TW'], { gm_noisy_hint: "這個標籤貼在九成以上的郵件上,分不出什麼,預設不匯入" });
+Object.assign(DICTS.en, { gm_noisy_hint: "On more than nine in ten messages — it classifies nothing, so it is left out by default" });
+Object.assign(DICTS.ja, { gm_noisy_hint: "9 割以上のメールに付いており、分類の役に立たないため既定では取り込みません" });
+Object.assign(DICTS.ko, { gm_noisy_hint: "메일의 90% 이상에 붙어 있어 분류에 도움이 되지 않으므로 기본적으로 가져오지 않습니다" });
+Object.assign(DICTS.de, { gm_noisy_hint: "Auf mehr als neun von zehn Nachrichten — das ordnet nichts ein und bleibt daher standardmäßig außen vor" });
+Object.assign(DICTS.fr, { gm_noisy_hint: "Présent sur plus de neuf messages sur dix : il ne classe rien, donc il est exclu par défaut" });
+Object.assign(DICTS.es, { gm_noisy_hint: "Está en más de nueve de cada diez mensajes: no clasifica nada, así que se omite por defecto" });
+Object.assign(DICTS.ru, { gm_noisy_hint: "Стоит более чем на девяти письмах из десяти — ничего не классифицирует, поэтому по умолчанию пропускается" });
+
+Object.assign(DICTS['zh-CN'], { gm_state_note: "Unread、Starred、Opened 这类说的是状态不是内容,不会建成标签:未读会保留未读,Starred 会变成内置的「重要」。" });
+Object.assign(DICTS['zh-TW'], { gm_state_note: "Unread、Starred、Opened 這類說的是狀態不是內容,不會建成標籤:未讀會保留未讀,Starred 會變成內建的「重要」。" });
+Object.assign(DICTS.en, { gm_state_note: "Unread, Starred and Opened describe state rather than subject matter, so they do not become labels: unread stays unread, and Starred becomes the built-in Important." });
+Object.assign(DICTS.ja, { gm_state_note: "Unread・Starred・Opened は内容ではなく状態を表すのでラベルにはしません。未読は未読のまま、Starred は組み込みの「重要」になります。" });
+Object.assign(DICTS.ko, { gm_state_note: "Unread, Starred, Opened는 내용이 아니라 상태를 뜻하므로 라벨로 만들지 않습니다. 읽지 않음은 그대로, Starred는 기본 라벨 \"중요\"가 됩니다." });
+Object.assign(DICTS.de, { gm_state_note: "Unread, Starred und Opened beschreiben einen Zustand, kein Thema, und werden daher nicht zu Labels: ungelesen bleibt ungelesen, Starred wird das eingebaute „Wichtig\"." });
+Object.assign(DICTS.fr, { gm_state_note: "Unread, Starred et Opened décrivent un état, pas un sujet : ils ne deviennent pas des libellés. Non lu reste non lu, et Starred devient le libellé intégré « Important »." });
+Object.assign(DICTS.es, { gm_state_note: "Unread, Starred y Opened describen un estado, no un tema, así que no se convierten en etiquetas: lo no leído sigue sin leer y Starred pasa a ser la etiqueta integrada «Importante»." });
+Object.assign(DICTS.ru, { gm_state_note: "Unread, Starred и Opened описывают состояние, а не тему, поэтому метками не становятся: непрочитанное остаётся непрочитанным, а Starred превращается во встроенную метку «Важное»." });
+
+Object.assign(DICTS['zh-CN'], { gm_into: "导入到邮箱" });
+Object.assign(DICTS['zh-TW'], { gm_into: "匯入到信箱" });
+Object.assign(DICTS.en, { gm_into: "Into mailbox" });
+Object.assign(DICTS.ja, { gm_into: "取り込み先" });
+Object.assign(DICTS.ko, { gm_into: "가져올 메일함" });
+Object.assign(DICTS.de, { gm_into: "In Postfach" });
+Object.assign(DICTS.fr, { gm_into: "Vers la boîte" });
+Object.assign(DICTS.es, { gm_into: "Al buzón" });
+Object.assign(DICTS.ru, { gm_into: "В ящик" });
+
+Object.assign(DICTS['zh-CN'], { gm_start: "开始导入" });
+Object.assign(DICTS['zh-TW'], { gm_start: "開始匯入" });
+Object.assign(DICTS.en, { gm_start: "Start import" });
+Object.assign(DICTS.ja, { gm_start: "取り込みを開始" });
+Object.assign(DICTS.ko, { gm_start: "가져오기 시작" });
+Object.assign(DICTS.de, { gm_start: "Import starten" });
+Object.assign(DICTS.fr, { gm_start: "Démarrer l'import" });
+Object.assign(DICTS.es, { gm_start: "Iniciar importación" });
+Object.assign(DICTS.ru, { gm_start: "Начать импорт" });
+
+Object.assign(DICTS['zh-CN'], { gm_running: "导入进行中" });
+Object.assign(DICTS['zh-TW'], { gm_running: "匯入進行中" });
+Object.assign(DICTS.en, { gm_running: "Importing" });
+Object.assign(DICTS.ja, { gm_running: "取り込み中" });
+Object.assign(DICTS.ko, { gm_running: "가져오는 중" });
+Object.assign(DICTS.de, { gm_running: "Import läuft" });
+Object.assign(DICTS.fr, { gm_running: "Import en cours" });
+Object.assign(DICTS.es, { gm_running: "Importando" });
+Object.assign(DICTS.ru, { gm_running: "Идёт импорт" });
+
+Object.assign(DICTS['zh-CN'], { gm_dedup_note: "按 Message-ID 去重,同一份导出重跑不会产生副本" });
+Object.assign(DICTS['zh-TW'], { gm_dedup_note: "按 Message-ID 去重,同一份匯出重跑不會產生副本" });
+Object.assign(DICTS.en, { gm_dedup_note: "Deduplicated by Message-ID — running the same export twice creates no copies" });
+Object.assign(DICTS.ja, { gm_dedup_note: "Message-ID で重複排除。同じ書き出しを二度流しても複製は増えません" });
+Object.assign(DICTS.ko, { gm_dedup_note: "Message-ID로 중복을 제거하므로 같은 내보내기를 두 번 실행해도 사본이 생기지 않습니다" });
+Object.assign(DICTS.de, { gm_dedup_note: "Dedupliziert über die Message-ID — derselbe Export zweimal ausgeführt erzeugt keine Kopien" });
+Object.assign(DICTS.fr, { gm_dedup_note: "Dédoublonné par Message-ID : relancer le même export ne crée pas de copies" });
+Object.assign(DICTS.es, { gm_dedup_note: "Se descartan duplicados por Message-ID: repetir la misma exportación no crea copias" });
+Object.assign(DICTS.ru, { gm_dedup_note: "Дедупликация по Message-ID — повторный прогон того же экспорта не создаёт копий" });
+
+Object.assign(DICTS['zh-CN'], { gm_confirm: "把 {0} 封邮件导入 {1},并建立 {2} 个标签?" });
+Object.assign(DICTS['zh-TW'], { gm_confirm: "把 {0} 封郵件匯入 {1},並建立 {2} 個標籤?" });
+Object.assign(DICTS.en, { gm_confirm: "Import {0} messages into {1} and create {2} label(s)?" });
+Object.assign(DICTS.ja, { gm_confirm: "{0} 通を {1} に取り込み、ラベルを {2} 個作成しますか?" });
+Object.assign(DICTS.ko, { gm_confirm: "{0}통을 {1}(으)로 가져오고 라벨 {2}개를 만들까요?" });
+Object.assign(DICTS.de, { gm_confirm: "{0} Nachrichten in {1} importieren und {2} Label(s) anlegen?" });
+Object.assign(DICTS.fr, { gm_confirm: "Importer {0} messages dans {1} et créer {2} libellé(s) ?" });
+Object.assign(DICTS.es, { gm_confirm: "¿Importar {0} mensajes a {1} y crear {2} etiqueta(s)?" });
+Object.assign(DICTS.ru, { gm_confirm: "Импортировать {0} писем в {1} и создать меток: {2}?" });
