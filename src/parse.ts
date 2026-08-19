@@ -473,6 +473,7 @@ export async function deleteMessageDerived(env: Env, messageIds: string[]): Prom
       await env.DB.prepare('DELETE FROM message_texts WHERE mrow=?1').bind(t.mrow).run();
     }
     await env.DB.prepare('DELETE FROM attachments WHERE message_id=?1').bind(mid).run();
+    await env.DB.prepare('DELETE FROM message_labels WHERE message_id=?1').bind(mid).run();
   }
 }
 

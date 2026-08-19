@@ -4968,3 +4968,184 @@ Object.assign(DICTS.de, { drv_up_preparing: 'Upload wird vorbereitet' });
 Object.assign(DICTS.fr, { drv_up_preparing: "Préparation de l'envoi" });
 Object.assign(DICTS.es, { drv_up_preparing: 'Preparando la subida' });
 Object.assign(DICTS.ru, { drv_up_preparing: 'Подготовка загрузки' });
+
+// ---------- Labels / 标签 ----------
+Object.assign(DICTS['zh-CN'], { lbl_important: "重要" });
+Object.assign(DICTS['zh-TW'], { lbl_important: "重要" });
+Object.assign(DICTS.en, { lbl_important: "Important" });
+Object.assign(DICTS.ja, { lbl_important: "重要" });
+Object.assign(DICTS.ko, { lbl_important: "중요" });
+Object.assign(DICTS.de, { lbl_important: "Wichtig" });
+Object.assign(DICTS.fr, { lbl_important: "Important" });
+Object.assign(DICTS.es, { lbl_important: "Importante" });
+Object.assign(DICTS.ru, { lbl_important: "Важное" });
+
+Object.assign(DICTS['zh-CN'], { lbl_title: "标签" });
+Object.assign(DICTS['zh-TW'], { lbl_title: "標籤" });
+Object.assign(DICTS.en, { lbl_title: "Labels" });
+Object.assign(DICTS.ja, { lbl_title: "ラベル" });
+Object.assign(DICTS.ko, { lbl_title: "라벨" });
+Object.assign(DICTS.de, { lbl_title: "Labels" });
+Object.assign(DICTS.fr, { lbl_title: "Libellés" });
+Object.assign(DICTS.es, { lbl_title: "Etiquetas" });
+Object.assign(DICTS.ru, { lbl_title: "Метки" });
+
+Object.assign(DICTS['zh-CN'], { lbl_add: "新建标签…" });
+Object.assign(DICTS['zh-TW'], { lbl_add: "新增標籤…" });
+Object.assign(DICTS.en, { lbl_add: "New label…" });
+Object.assign(DICTS.ja, { lbl_add: "ラベルを作成…" });
+Object.assign(DICTS.ko, { lbl_add: "새 라벨…" });
+Object.assign(DICTS.de, { lbl_add: "Neues Label…" });
+Object.assign(DICTS.fr, { lbl_add: "Nouveau libellé…" });
+Object.assign(DICTS.es, { lbl_add: "Nueva etiqueta…" });
+Object.assign(DICTS.ru, { lbl_add: "Создать метку…" });
+
+Object.assign(DICTS['zh-CN'], { lbl_manage: "管理标签…" });
+Object.assign(DICTS['zh-TW'], { lbl_manage: "管理標籤…" });
+Object.assign(DICTS.en, { lbl_manage: "Manage labels…" });
+Object.assign(DICTS.ja, { lbl_manage: "ラベルを管理…" });
+Object.assign(DICTS.ko, { lbl_manage: "라벨 관리…" });
+Object.assign(DICTS.de, { lbl_manage: "Labels verwalten…" });
+Object.assign(DICTS.fr, { lbl_manage: "Gérer les libellés…" });
+Object.assign(DICTS.es, { lbl_manage: "Gestionar etiquetas…" });
+Object.assign(DICTS.ru, { lbl_manage: "Управление метками…" });
+
+Object.assign(DICTS['zh-CN'], { lbl_manage_note: "标签属于这个邮箱,同一邮箱的成员共用。删除标签不会删除邮件。" });
+Object.assign(DICTS['zh-TW'], { lbl_manage_note: "標籤屬於這個信箱,同一信箱的成員共用。刪除標籤不會刪除郵件。" });
+Object.assign(DICTS.en, { lbl_manage_note: "Labels belong to this mailbox and are shared by everyone who has access to it. Deleting one never deletes mail." });
+Object.assign(DICTS.ja, { lbl_manage_note: "ラベルはこのメールボックスのもので、アクセス権のある全員で共有します。削除してもメールは消えません。" });
+Object.assign(DICTS.ko, { lbl_manage_note: "라벨은 이 메일함에 속하며 접근 권한이 있는 모두가 공유합니다. 라벨을 지워도 메일은 지워지지 않습니다." });
+Object.assign(DICTS.de, { lbl_manage_note: "Labels gehören zu diesem Postfach und werden von allen geteilt, die Zugriff darauf haben. Ein Label zu löschen löscht nie E-Mails." });
+Object.assign(DICTS.fr, { lbl_manage_note: "Les libellés appartiennent à cette boîte et sont partagés par toutes les personnes qui y ont accès. En supprimer un ne supprime jamais de courrier." });
+Object.assign(DICTS.es, { lbl_manage_note: "Las etiquetas pertenecen a este buzón y las comparten todas las personas con acceso. Eliminar una nunca elimina correo." });
+Object.assign(DICTS.ru, { lbl_manage_note: "Метки принадлежат этому ящику, и их разделяют все, у кого есть к нему доступ. Удаление метки никогда не удаляет письма." });
+
+Object.assign(DICTS['zh-CN'], { lbl_none: "还没有自定义标签" });
+Object.assign(DICTS['zh-TW'], { lbl_none: "還沒有自訂標籤" });
+Object.assign(DICTS.en, { lbl_none: "No labels yet" });
+Object.assign(DICTS.ja, { lbl_none: "ラベルはまだありません" });
+Object.assign(DICTS.ko, { lbl_none: "아직 라벨이 없습니다" });
+Object.assign(DICTS.de, { lbl_none: "Noch keine Labels" });
+Object.assign(DICTS.fr, { lbl_none: "Aucun libellé pour le moment" });
+Object.assign(DICTS.es, { lbl_none: "Todavía no hay etiquetas" });
+Object.assign(DICTS.ru, { lbl_none: "Меток пока нет" });
+
+Object.assign(DICTS['zh-CN'], { lbl_new_title: "新建标签" });
+Object.assign(DICTS['zh-TW'], { lbl_new_title: "新增標籤" });
+Object.assign(DICTS.en, { lbl_new_title: "New label" });
+Object.assign(DICTS.ja, { lbl_new_title: "ラベルを作成" });
+Object.assign(DICTS.ko, { lbl_new_title: "새 라벨" });
+Object.assign(DICTS.de, { lbl_new_title: "Neues Label" });
+Object.assign(DICTS.fr, { lbl_new_title: "Nouveau libellé" });
+Object.assign(DICTS.es, { lbl_new_title: "Nueva etiqueta" });
+Object.assign(DICTS.ru, { lbl_new_title: "Новая метка" });
+
+Object.assign(DICTS['zh-CN'], { lbl_edit_title: "编辑标签" });
+Object.assign(DICTS['zh-TW'], { lbl_edit_title: "編輯標籤" });
+Object.assign(DICTS.en, { lbl_edit_title: "Edit label" });
+Object.assign(DICTS.ja, { lbl_edit_title: "ラベルを編集" });
+Object.assign(DICTS.ko, { lbl_edit_title: "라벨 편집" });
+Object.assign(DICTS.de, { lbl_edit_title: "Label bearbeiten" });
+Object.assign(DICTS.fr, { lbl_edit_title: "Modifier le libellé" });
+Object.assign(DICTS.es, { lbl_edit_title: "Editar etiqueta" });
+Object.assign(DICTS.ru, { lbl_edit_title: "Изменить метку" });
+
+Object.assign(DICTS['zh-CN'], { lbl_name: "名称" });
+Object.assign(DICTS['zh-TW'], { lbl_name: "名稱" });
+Object.assign(DICTS.en, { lbl_name: "Name" });
+Object.assign(DICTS.ja, { lbl_name: "名前" });
+Object.assign(DICTS.ko, { lbl_name: "이름" });
+Object.assign(DICTS.de, { lbl_name: "Name" });
+Object.assign(DICTS.fr, { lbl_name: "Nom" });
+Object.assign(DICTS.es, { lbl_name: "Nombre" });
+Object.assign(DICTS.ru, { lbl_name: "Название" });
+
+Object.assign(DICTS['zh-CN'], { lbl_color: "颜色" });
+Object.assign(DICTS['zh-TW'], { lbl_color: "顏色" });
+Object.assign(DICTS.en, { lbl_color: "Colour" });
+Object.assign(DICTS.ja, { lbl_color: "色" });
+Object.assign(DICTS.ko, { lbl_color: "색상" });
+Object.assign(DICTS.de, { lbl_color: "Farbe" });
+Object.assign(DICTS.fr, { lbl_color: "Couleur" });
+Object.assign(DICTS.es, { lbl_color: "Color" });
+Object.assign(DICTS.ru, { lbl_color: "Цвет" });
+
+Object.assign(DICTS['zh-CN'], { lbl_icon: "图标" });
+Object.assign(DICTS['zh-TW'], { lbl_icon: "圖示" });
+Object.assign(DICTS.en, { lbl_icon: "Icon" });
+Object.assign(DICTS.ja, { lbl_icon: "アイコン" });
+Object.assign(DICTS.ko, { lbl_icon: "아이콘" });
+Object.assign(DICTS.de, { lbl_icon: "Symbol" });
+Object.assign(DICTS.fr, { lbl_icon: "Icône" });
+Object.assign(DICTS.es, { lbl_icon: "Icono" });
+Object.assign(DICTS.ru, { lbl_icon: "Значок" });
+
+Object.assign(DICTS['zh-CN'], { lbl_delete_confirm: "删除标签「{0}」?邮件不会被删除,只是取消这个分类。" });
+Object.assign(DICTS['zh-TW'], { lbl_delete_confirm: "刪除標籤「{0}」?郵件不會被刪除,只是取消這個分類。" });
+Object.assign(DICTS.en, { lbl_delete_confirm: "Delete the label \"{0}\"? No mail is deleted — it only stops being classified this way." });
+Object.assign(DICTS.ja, { lbl_delete_confirm: "ラベル「{0}」を削除しますか?メールは削除されず、この分類が外れるだけです。" });
+Object.assign(DICTS.ko, { lbl_delete_confirm: "라벨 \"{0}\"을(를) 삭제할까요? 메일은 삭제되지 않고 이 분류만 해제됩니다." });
+Object.assign(DICTS.de, { lbl_delete_confirm: "Label „{0}\" löschen? Es wird keine E-Mail gelöscht — nur diese Einordnung entfällt." });
+Object.assign(DICTS.fr, { lbl_delete_confirm: "Supprimer le libellé « {0} » ? Aucun courrier n'est supprimé : seul ce classement disparaît." });
+Object.assign(DICTS.es, { lbl_delete_confirm: "¿Eliminar la etiqueta «{0}»? No se elimina ningún correo: solo deja de tener esta clasificación." });
+Object.assign(DICTS.ru, { lbl_delete_confirm: "Удалить метку «{0}»? Письма не удаляются — исчезает только эта классификация." });
+
+Object.assign(DICTS['zh-CN'], { lbl_apply: "加上 {0}" });
+Object.assign(DICTS['zh-TW'], { lbl_apply: "加上 {0}" });
+Object.assign(DICTS.en, { lbl_apply: "Label as {0}" });
+Object.assign(DICTS.ja, { lbl_apply: "{0} を付ける" });
+Object.assign(DICTS.ko, { lbl_apply: "{0} 붙이기" });
+Object.assign(DICTS.de, { lbl_apply: "Als {0} markieren" });
+Object.assign(DICTS.fr, { lbl_apply: "Marquer {0}" });
+Object.assign(DICTS.es, { lbl_apply: "Marcar como {0}" });
+Object.assign(DICTS.ru, { lbl_apply: "Пометить: {0}" });
+
+Object.assign(DICTS['zh-CN'], { lbl_remove: "取消 {0}" });
+Object.assign(DICTS['zh-TW'], { lbl_remove: "取消 {0}" });
+Object.assign(DICTS.en, { lbl_remove: "Remove {0}" });
+Object.assign(DICTS.ja, { lbl_remove: "{0} を外す" });
+Object.assign(DICTS.ko, { lbl_remove: "{0} 해제" });
+Object.assign(DICTS.de, { lbl_remove: "{0} entfernen" });
+Object.assign(DICTS.fr, { lbl_remove: "Retirer {0}" });
+Object.assign(DICTS.es, { lbl_remove: "Quitar {0}" });
+Object.assign(DICTS.ru, { lbl_remove: "Снять: {0}" });
+
+Object.assign(DICTS['zh-CN'], { e_label_name_required: "标签名不能为空" });
+Object.assign(DICTS['zh-TW'], { e_label_name_required: "標籤名稱不能為空" });
+Object.assign(DICTS.en, { e_label_name_required: "A label needs a name" });
+Object.assign(DICTS.ja, { e_label_name_required: "ラベル名を入力してください" });
+Object.assign(DICTS.ko, { e_label_name_required: "라벨 이름이 필요합니다" });
+Object.assign(DICTS.de, { e_label_name_required: "Ein Label braucht einen Namen" });
+Object.assign(DICTS.fr, { e_label_name_required: "Un libellé doit avoir un nom" });
+Object.assign(DICTS.es, { e_label_name_required: "La etiqueta necesita un nombre" });
+Object.assign(DICTS.ru, { e_label_name_required: "У метки должно быть название" });
+
+Object.assign(DICTS['zh-CN'], { e_label_exists: "这个邮箱里已经有同名标签了" });
+Object.assign(DICTS['zh-TW'], { e_label_exists: "這個信箱裡已經有同名標籤了" });
+Object.assign(DICTS.en, { e_label_exists: "This mailbox already has a label with that name" });
+Object.assign(DICTS.ja, { e_label_exists: "このメールボックスには同名のラベルが既にあります" });
+Object.assign(DICTS.ko, { e_label_exists: "이 메일함에 같은 이름의 라벨이 이미 있습니다" });
+Object.assign(DICTS.de, { e_label_exists: "Dieses Postfach hat bereits ein Label mit diesem Namen" });
+Object.assign(DICTS.fr, { e_label_exists: "Cette boîte a déjà un libellé de ce nom" });
+Object.assign(DICTS.es, { e_label_exists: "Este buzón ya tiene una etiqueta con ese nombre" });
+Object.assign(DICTS.ru, { e_label_exists: "В этом ящике уже есть метка с таким названием" });
+
+Object.assign(DICTS['zh-CN'], { e_label_not_found: "标签不存在" });
+Object.assign(DICTS['zh-TW'], { e_label_not_found: "標籤不存在" });
+Object.assign(DICTS.en, { e_label_not_found: "No such label" });
+Object.assign(DICTS.ja, { e_label_not_found: "ラベルが見つかりません" });
+Object.assign(DICTS.ko, { e_label_not_found: "라벨을 찾을 수 없습니다" });
+Object.assign(DICTS.de, { e_label_not_found: "Label nicht gefunden" });
+Object.assign(DICTS.fr, { e_label_not_found: "Libellé introuvable" });
+Object.assign(DICTS.es, { e_label_not_found: "No existe esa etiqueta" });
+Object.assign(DICTS.ru, { e_label_not_found: "Метка не найдена" });
+
+Object.assign(DICTS['zh-CN'], { e_label_builtin: "内置标签不能改名或删除" });
+Object.assign(DICTS['zh-TW'], { e_label_builtin: "內建標籤不能改名或刪除" });
+Object.assign(DICTS.en, { e_label_builtin: "The built-in label cannot be renamed or deleted" });
+Object.assign(DICTS.ja, { e_label_builtin: "組み込みラベルの名前変更・削除はできません" });
+Object.assign(DICTS.ko, { e_label_builtin: "기본 라벨은 이름 변경이나 삭제를 할 수 없습니다" });
+Object.assign(DICTS.de, { e_label_builtin: "Das eingebaute Label kann weder umbenannt noch gelöscht werden" });
+Object.assign(DICTS.fr, { e_label_builtin: "Le libellé intégré ne peut être ni renommé ni supprimé" });
+Object.assign(DICTS.es, { e_label_builtin: "La etiqueta integrada no se puede renombrar ni eliminar" });
+Object.assign(DICTS.ru, { e_label_builtin: "Встроенную метку нельзя переименовать или удалить" });

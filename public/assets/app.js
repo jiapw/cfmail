@@ -6,6 +6,7 @@ import { openCompose } from './compose.js';
 import { renderLogin, renderSetup, renderInvite, renderSettings, renderNoMailbox, renderForgot, renderReset } from './auth.js';
 import { renderAdmin } from './admin.js';
 import { ensureFont, fontStack } from './fontpicker.js';
+import { loadLabels, allLabels, labelName, labelMark, openLabelManager } from './labels.js';
 
 export const store = {
   me: null,
@@ -14,9 +15,20 @@ export const store = {
   folder: 'inbox',
   q: '',
   folders: null,
+  labels: [],
+  labelId: '',          // 当前正在看哪个标签(空 = 不按标签过滤)
   sidebarHidden: false,
   routeKey: '',
 };
+
+// Whether the label group under the star is folded. It is a view preference, not data, so it
+// lives in this browser -- and it is remembered, because refolding it on every page load would
+// undo the choice as fast as it was made.
+// 星标下面那组标签是否折叠。这是视图偏好不是数据,所以只存在这个浏览器里 ——
+// 而且要记住,否则每次加载都重新折叠,等于刚做的选择立刻被撤销。
+const LB_OPEN_KEY = 'cf_labels_open';
+export const labelsOpen = () => localStorage.getItem(LB_OPEN_KEY) !== '0';
+export const setLabelsOpen = (v) => localStorage.setItem(LB_OPEN_KEY, v ? '1' : '0');
 
 export function navigate(hash) {
   if (location.hash === hash) route();
@@ -141,6 +153,7 @@ export function show(html) {
 
 export async function loadFolders() {
   if (!store.mbId) return null;
+  await loadLabels(store.mbId).catch(() => {});
   try {
     store.folders = await api('GET', `/api/mailboxes/${store.mbId}/folders`);
   } catch {
@@ -181,12 +194,31 @@ export function renderShell(contentHtml) {
     </a>`;
   // Contacts sit right after the inbox
   // 通讯录紧跟在收件箱之后
-  const sideFolders = FOLDERS.map(
-    (f) => `
+  // The star row is a group header: clicking it folds and unfolds, and nothing else. What the
+  // list shows is decided by the label you click inside it, so folding never changes the view.
+  // 星标那一行是分组头:点它只管开合,别的什么都不做。右侧列什么由你在里面点的标签决定,
+  // 所以折叠永远不会改变当前视图。
+  const open = labelsOpen();
+  const labelItems = !open ? '' : allLabels()
+    .map((l) => `
+    <a class="side-item side-label ${store.labelId === l.id ? 'active' : ''}" href="#/mb/${store.mbId}/label/${encodeURIComponent(l.id)}">
+      ${labelMark(l, 17)}<span class="side-name">${esc(labelName(l))}</span>${l.n ? `<span class="side-count">${l.n}</span>` : ''}
+    </a>`)
+    .join('') +
+    `<a class="side-item side-label side-manage" href="#" id="lb-manage-link">${icon('gear', 16)}<span class="side-name">${esc(t('lbl_manage'))}</span></a>`;
+
+  const sideFolders = FOLDERS.map((f) => {
+    if (f.key === 'starred') {
+      return `
+    <div class="side-item group ${open ? 'open' : ''}" id="lb-group" role="button" tabindex="0">
+      ${icon(f.icon, 20)}<span class="side-name">${esc(t('lbl_title'))}</span><span class="side-caret">${icon('next', 16)}</span>
+    </div>` + labelItems;
+    }
+    return `
     <a class="side-item ${store.folder === f.key && !store.q ? 'active' : ''}" href="#/mb/${store.mbId}/${f.key}">
       ${icon(f.icon, 20)}<span class="side-name">${esc(folderName(f.key))}</span>${folderBadge(f.key)}
-    </a>` + (f.key === 'inbox' ? contactsItem : '')
-  ).join('');
+    </a>` + (f.key === 'inbox' ? contactsItem : '');
+  }).join('');
   const accounts = me.mailboxes
     .map(
       (m) => `
@@ -314,6 +346,17 @@ export function bindTopbar() {
 
 export function bindShell() {
   bindTopbar();
+  qs('#lb-group')?.addEventListener('click', () => {
+    setLabelsOpen(!labelsOpen());
+    // Re-render the shell only; the list on the right is untouched, which is the whole point of
+    // this control being a fold rather than a link.
+    // 只重绘外壳,右侧列表原样不动 —— 这个控件是"折叠"而不是"链接",要点就在这里。
+    route();
+  });
+  qs('#lb-manage-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openLabelManager(() => route());
+  });
   qs('#btn-compose')?.addEventListener('click', () => openCompose({ mbId: store.mbId }));
   qs('#search-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -389,12 +432,19 @@ async function route() {
       store.q = seg[3];
       return renderList('search', seg[3]);
     }
+    if (seg[2] === 'label' && seg[3]) {
+      store.q = '';
+      store.folder = 'starred';
+      store.labelId = decodeURIComponent(seg[3]);
+      return renderList('label', '');
+    }
     if (seg[2] === 'contacts') {
       store.q = '';
       store.folder = 'contacts';
       return renderContacts();
     }
     store.q = '';
+    store.labelId = '';
     store.folder = FOLDERS.find((f) => f.key === seg[2]) ? seg[2] : 'inbox';
     return renderList(store.folder, '');
   }
