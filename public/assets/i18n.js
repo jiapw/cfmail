@@ -4958,3 +4958,13 @@ Object.assign(DICTS.de, { da_no_candidates: "In dieser Domäne gibt es noch niem
 Object.assign(DICTS.fr, { da_no_candidates: "Personne à choisir dans ce domaine pour l'instant. Un administrateur de domaine doit d'abord s'inscrire avec un e-mail personnel ; saisissez cet e-mail ici." });
 Object.assign(DICTS.es, { da_no_candidates: "Todavía no hay nadie que elegir en este dominio. Un administrador de dominio debe registrarse antes con un correo personal; introduzca aquí ese correo." });
 Object.assign(DICTS.ru, { da_no_candidates: "В этом домене пока некого выбрать. Администратор домена сначала должен зарегистрироваться с личной почтой; её и укажите здесь." });
+
+Object.assign(DICTS['zh-CN'], { drv_up_preparing: '正在整理要上传的文件' });
+Object.assign(DICTS['zh-TW'], { drv_up_preparing: '正在整理要上傳的檔案' });
+Object.assign(DICTS.en, { drv_up_preparing: 'Preparing upload' });
+Object.assign(DICTS.ja, { drv_up_preparing: 'アップロードの準備中' });
+Object.assign(DICTS.ko, { drv_up_preparing: '업로드 준비 중' });
+Object.assign(DICTS.de, { drv_up_preparing: 'Upload wird vorbereitet' });
+Object.assign(DICTS.fr, { drv_up_preparing: "Préparation de l'envoi" });
+Object.assign(DICTS.es, { drv_up_preparing: 'Preparando la subida' });
+Object.assign(DICTS.ru, { drv_up_preparing: 'Подготовка загрузки' });
