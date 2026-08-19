@@ -14,10 +14,13 @@
 //   (PowerShell 里先 . .env.deploy 载入两个变量,或直接 set-a 后 source)
 
 import { spawnSync } from 'node:child_process';
-import { entryHosts, readWranglerText, writeWranglerConfig } from './wrangler-config.mjs';
+import { entryHosts, loadWranglerConfig, readWranglerText, writeWranglerConfig } from './wrangler-config.mjs';
 
 const TOKEN = process.env.CLOUDFLARE_API_TOKEN;
-const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
+// The account id is already written in wrangler.jsonc by the deploy, so asking for it again
+// would only be a way to get it wrong.
+// account id 部署时已经写进 wrangler.jsonc 了,再要一遍只是多一个填错的机会。
+const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID || loadWranglerConfig().account_id;
 const API = 'https://api.cloudflare.com/client/v4';
 const H = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 
@@ -27,7 +30,7 @@ const NAME = 'CFMail';
 const DOMAINS = entryHosts();
 
 if (!TOKEN || !ACCOUNT) {
-  console.error('✗ 缺少 CLOUDFLARE_API_TOKEN 或 CLOUDFLARE_ACCOUNT_ID');
+  console.error('✗ 缺少 CLOUDFLARE_API_TOKEN(或 wrangler.jsonc 里没有 account_id)');
   process.exit(1);
 }
 if (!DOMAINS.length) {
