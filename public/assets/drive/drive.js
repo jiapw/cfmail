@@ -972,8 +972,7 @@ function bindFolderView(main) {
       e.preventDefault();
       depth = 0;
       box.classList.remove('droppable');
-      const items = await filesFromDataTransfer(e.dataTransfer);
-      enqueueFiles(items);
+      dropUpload(e.dataTransfer);
     });
   }
 }
@@ -2334,7 +2333,7 @@ const up = { tasks: [], active: 0, panel: null, min: false, seq: 0 };
 // generic dialog; the handler only has to flag the situation.
 // 离开页面会杀掉所有进行中的上传,先警告。浏览器弹它自己的通用确认框,这里只负责标记。
 window.addEventListener('beforeunload', (e) => {
-  if (up.tasks.some((x) => x.status === 'up' || x.status === 'wait')) {
+  if (up.tasks.some((x) => x.status === 'up' || x.status === 'wait' || x.status === 'prep')) {
     e.preventDefault();
     e.returnValue = '';
   }
@@ -2398,19 +2397,45 @@ function upTick() {
   if (el) el.textContent = upStats.text;
 }
 
-async function filesFromDataTransfer(dt) {
+/** A dropped folder has to be walked before anything about it is known -- how many files, how
+ *  deep, how large -- and the browser hands it over one batch at a time. That walk used to
+ *  happen before the panel existed, so dropping ten thousand files looked exactly like dropping
+ *  nothing: several seconds of a page that had not reacted. It is the same wait either way; the
+ *  difference is whether it is visible. So the panel opens first, with a row that spins.
+ *  一个拖进来的目录必须先走一遍才知道它是什么 —— 多少个文件、多深、多大 ——
+ *  而浏览器是一批一批交出来的。这次遍历过去发生在面板存在之前,于是拖进一万个文件,
+ *  看起来与什么都没拖完全一样:好几秒钟,页面毫无反应。等待时间两种做法一样长,
+ *  区别只在于它是否被看见。所以先把面板打开,里面放一行转着圈的东西。 */
+async function dropUpload(dt) {
+  const prep = beginPrep();
+  try {
+    const items = await filesFromDataTransfer(dt, (n) => {
+      prep.found = n;
+      // Every twenty-fifth file, not every file: a big drop would otherwise spend more time
+      // painting the count than reading the directory.
+      // 每二十五个文件才画一次,而不是每个都画:否则一次大拖放花在画数字上的时间会超过读目录。
+      if (n === 1 || n % 25 === 0) paintPrep(prep);
+    });
+    await enqueueFiles(items, prep);
+  } finally {
+    endPrep(prep);
+  }
+}
+
+async function filesFromDataTransfer(dt, onFound) {
   const out = [];
   const entries = [...(dt.items || [])].map((it) => it.webkitGetAsEntry?.()).filter(Boolean);
   if (!entries.length) return [...(dt.files || [])].map((f) => ({ file: f, rel: f.webkitRelativePath || '' }));
-  for (const e of entries) await walkEntry(e, '', out);
+  for (const e of entries) await walkEntry(e, '', out, onFound);
   return out;
 }
 
-function walkEntry(entry, prefix, out) {
+function walkEntry(entry, prefix, out, onFound) {
   return new Promise((resolve) => {
     if (entry.isFile) {
       entry.file((f) => {
         out.push({ file: f, rel: prefix ? `${prefix}/${f.name}` : '' });
+        onFound?.(out.length);
         resolve();
       }, () => resolve());
     } else if (entry.isDirectory) {
@@ -2428,7 +2453,7 @@ function walkEntry(entry, prefix, out) {
             return;
           }
           first = false;
-          for (const e of batch) await walkEntry(e, sub, out);
+          for (const e of batch) await walkEntry(e, sub, out, onFound);
           loop();
         }, () => resolve());
       })();
@@ -2436,13 +2461,28 @@ function walkEntry(entry, prefix, out) {
   });
 }
 
-async function enqueueFiles(items) {
+/** `prep` is the spinning row the caller already put on screen. A drop passes its own so the
+ *  walk and the folder building read as one phase; a file picker has nothing to pass and gets
+ *  one made here -- building the skeleton is its own wait, one API call per new directory.
+ *  `prep` 是调用方已经摆上屏幕的那一行转圈。拖放会把自己那一行传进来,
+ *  好让"遍历"与"建目录"读作同一个阶段;文件选择器没有可传的,就在这里造一个 ——
+ *  建骨架本身也是一段等待,每个新目录一次 API 调用。 */
+async function enqueueFiles(items, prep) {
   if (dst.view === 'arc') return; // archives are read-only / 压缩包内只读
   if (!items.length) return;
   if (!canWriteHere()) {
     toast(tErr('e_drive_forbidden'), true);
     return;
   }
+  const mine = prep || beginPrep();
+  try {
+    await buildUploads(items);
+  } finally {
+    if (!prep) endPrep(mine);
+  }
+}
+
+async function buildUploads(items) {
   const base = currentParent();
   // Create the folder skeleton first, sequentially and cached per path
   // 先按路径把文件夹骨架建好。逐级建、同路径缓存
@@ -2504,6 +2544,34 @@ async function enqueueFiles(items) {
   renderUpPanel();
   pump();
   if (items.some((it) => it.dir !== undefined || (it.rel || '').includes('/'))) reloadSoon();
+}
+
+// ---------- The preparing row ----------
+// ---------- 那一行"正在准备" ----------
+
+/** Nothing here can be measured: the file system says what it found, never how much is left, so
+ *  this spins rather than fills. The running count is not progress -- it has no denominator --
+ *  it is only the difference between "working" and "hung", which for a folder that takes ten
+ *  seconds to read is the whole question.
+ *  这里没有任何东西可以度量:文件系统告诉你它找到了什么,从不告诉你还剩多少,
+ *  所以这一行是转圈而不是填充。那个不断上涨的数字不是进度 —— 它没有分母 ——
+ *  它只是"在动"与"卡死"之间的差别,而对一个要读十秒的目录来说,那就是全部的问题。 */
+function beginPrep() {
+  const task = { id: ++up.seq, prep: true, name: t('drv_up_preparing'), found: 0, status: 'prep' };
+  up.tasks.unshift(task);
+  renderUpPanel();
+  return task;
+}
+
+function endPrep(task) {
+  const i = up.tasks.indexOf(task);
+  if (i >= 0) up.tasks.splice(i, 1);
+  renderUpPanel();
+}
+
+function paintPrep(task) {
+  const el = up.panel?.querySelector(`[data-tid="${task.id}"] .gcnt`);
+  if (el) el.textContent = task.found || '';
 }
 
 function pump() {
@@ -2688,6 +2756,11 @@ function cancelTask(task) {
 
 function renderUpPanel() {
   const live = up.tasks.filter((x) => x.status === 'wait' || x.status === 'up');
+  // Counting a dropped tree is work in progress even though no bytes are moving yet, so the
+  // panel must not offer to close and must not claim to be done.
+  // 清点一棵拖进来的目录树是"正在进行",尽管还没有任何字节在动 ——
+  // 所以面板此时既不能给出关闭,也不能宣称已经完成。
+  const busy = live.length || up.tasks.some((x) => x.status === 'prep');
   if (!up.tasks.length) {
     up.panel?.remove();
     up.panel = null;
@@ -2699,11 +2772,14 @@ function renderUpPanel() {
     document.body.appendChild(up.panel);
   }
   up.panel.classList.toggle('min', up.min);
-  const head = live.length ? t('drv_up_title', live.length) : t('drv_up_done', up.tasks.filter((x) => x.status === 'ok').length);
+  const head = live.length
+    ? t('drv_up_title', live.length)
+    : busy ? t('drv_up_preparing') : t('drv_up_done', up.tasks.filter((x) => x.status === 'ok').length);
   const status = (x) => {
     if (x.status === 'ok') return `<span class="st st-ok">${icon('check', 18)}</span>`;
     if (x.status === 'err') return `<span class="st st-err" title="${esc(x.err || '')}">${esc(t('drv_up_failed'))}</span>`;
     if (x.status === 'cancel') return `<span class="st st-cancel">${esc(t('drv_up_canceled'))}</span>`;
+    if (x.status === 'prep') return '<span class="st"><span class="upspin"></span></span>';
     // Progress as a closing ring (dashoffset shrinks to 0); paintTask updates it in place
     // 进度用逐渐闭合的圆环表示。dashoffset 收敛到 0。paintTask 原地更新
     const off = (RING_CIRC * (1 - Math.min(1, x.sent / (x.size || 1)))).toFixed(2);
@@ -2716,14 +2792,14 @@ function renderUpPanel() {
     <div class="drv-up-head">
       <span>${esc(head)}<span class="drv-up-stats">${esc(upStats.text)}</span></span><span class="sp"></span>
       <wa-button class="icon" appearance="plain" data-up="min">${icon(up.min ? 'expand-less' : 'minimize', 16)}</wa-button>
-      <wa-button class="icon" appearance="plain" data-up="close" ${live.length ? 'disabled' : ''}>${icon('close', 16)}</wa-button>
+      <wa-button class="icon" appearance="plain" data-up="close" ${busy ? 'disabled' : ''}>${icon('close', 16)}</wa-button>
     </div>
     <div class="drv-up-list">
       ${up.tasks.map((x) => `
       <div class="drv-up-item${x.status === 'ok' && (x.node || x.topId) ? ' goto' : ''}" data-tid="${x.id}"${x.status === 'ok' && (x.node || x.topId) ? ` data-goto="${x.id}" title="${esc(t('drv_up_locate'))}"` : ''}>
-        ${x.group ? `<span class="gfold">${icon('folder', 22)}</span>` : fileIcon(x.name, 24)}
+        ${x.prep ? `<span class="gfold">${icon('upload', 22)}</span>` : x.group ? `<span class="gfold">${icon('folder', 22)}</span>` : fileIcon(x.name, 24)}
         <span class="nm" title="${esc(x.name)}">${esc(x.name)}</span>
-        ${x.group ? `<span class="gcnt">${x.done}/${x.total}</span>` : ''}
+        ${x.prep ? `<span class="gcnt">${x.found || ''}</span>` : x.group ? `<span class="gcnt">${x.done}/${x.total}</span>` : ''}
         ${status(x)}
         ${x.status === 'wait' || x.status === 'up' ? `<wa-button class="icon" appearance="plain" data-cancel="${x.id}" aria-label="${esc(t('cancel'))}">${icon('close', 14)}</wa-button>` : ''}
       </div>`).join('')}

@@ -371,6 +371,16 @@
 .drv-up-item .st-cancel { color: var(--text-3); }
 /* The ring starts at 12 o'clock (rotate) and closes clockwise as dashoffset approaches 0 */
 /* 圆环从 12 点方向起笔。dashoffset 趋近 0 时顺时针闭合 */
+/* The preparing row spins rather than fills, because a directory read reports what it found and
+   never what is left. Sized to the ring it gives way to, so the row does not shift when the
+   count of files turns into a count of bytes.
+   "正在准备"那一行是转圈而不是填充,因为读目录只报告找到了什么,从不报告还剩什么。
+   尺寸对齐它稍后让位给的那个进度环,好让"文件数"变成"字节数"时这一行不跳动。 */
+.drv-up-item .upspin {
+  flex: none; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--primary);
+  animation: drvspin .8s linear infinite;
+}
 .drv-up-item .ring { flex: none; width: 20px; height: 20px; transform: rotate(-90deg); }
 .drv-up-item .ring .tr { fill: none; stroke: var(--border); stroke-width: 2.5; }
 .drv-up-item .ring .pr {
