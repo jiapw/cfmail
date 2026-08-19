@@ -800,8 +800,57 @@ app.get('/api/mailboxes/:mb/contacts', async (c) => {
        WHERE mailbox_id=?1 ORDER BY internal DESC, times DESC, last_seen DESC LIMIT ?2`
     ).bind(mb.id, limit).all();
   }
-  return c.json({ contacts: rows.results || [] });
+  const colleagues = await directoryOf(c.env, mb, q);
+  const seen = new Set(colleagues.map((x: any) => x.addr));
+  const rest = (rows.results || []).filter((x: any) => !seen.has(x.addr));
+  return c.json({ contacts: [...colleagues, ...rest].slice(0, limit) });
 });
+
+/**
+ * The addresses in your own company, which the deployment has known since the day they were
+ * created. Waiting for a message to pass before offering to complete a colleague's address makes
+ * the address book useless in exactly the situation it is needed most: a mailbox opened this
+ * morning, whose owner wants to write to the person sitting next to them.
+ *
+ * Scoped to the domain of the mailbox being written from, not to every domain the user holds a
+ * mailbox in -- writing as sales@company-a is not an occasion to be shown who works at company-b.
+ *
+ * 你自己公司里的地址 —— 从它们被创建那天起,这套部署就知道。
+ * 非要等双方通过一次信才肯补全同事的地址,恰恰让通讯录在最需要它的场景里失效:
+ * 今天早上刚开的邮箱,主人想给旁边那位同事写封信。
+ *
+ * 范围取"正在用哪个邮箱写信"的那个域名,而不是该用户持有邮箱的所有域名 ——
+ * 以 sales@甲公司 的身份写信,不构成让你看到乙公司有哪些人的理由。
+ */
+async function directoryOf(env: Env, mb: any, q: string) {
+  const rows = await env.DB.prepare(
+    `SELECT mb2.local_part AS lp, mb2.display_name AS name, d.name AS domain
+       FROM mailboxes mb2 JOIN domains d ON d.id=mb2.domain_id
+      WHERE mb2.domain_id=?1 AND mb2.disabled=0 AND mb2.id<>?2
+     UNION ALL
+     SELECT a.local_part AS lp, tgt.display_name AS name, d.name AS domain
+       FROM aliases a JOIN domains d ON d.id=a.domain_id
+       JOIN mailboxes tgt ON tgt.id=a.mailbox_id
+      WHERE a.domain_id=?1 AND tgt.disabled=0 AND tgt.id<>?2`
+  ).bind(mb.domain_id, mb.id).all<any>();
+
+  const out = (rows.results || []).map((r: any) => ({
+    addr: `${r.lp}@${r.domain}`,
+    name: r.name || '',
+    internal: 1,
+    times: 0,
+    last_seen: 0,
+    safe: 1,
+    // Says this came from the company directory rather than from correspondence, so the
+    // interface can avoid reporting "0 messages exchanged" as though it were a fact about a person
+    // 标明它来自公司通讯录而不是往来记录,界面才不会把"往来 0 次"当成关于某个人的事实来报
+    directory: 1,
+  }));
+  const hit = q
+    ? out.filter((x) => x.addr.toLowerCase().includes(q) || x.name.toLowerCase().includes(q))
+    : out;
+  return hit.sort((a, b) => a.addr.localeCompare(b.addr));
+}
 
 app.get('/api/mailboxes/:mb/folders', async (c) => {
   const { mb } = await requireGrant(c, c.req.param('mb'));

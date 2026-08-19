@@ -1003,7 +1003,7 @@ export async function renderContacts() {
             <div class="contact-name">${esc(ct.name || ct.addr.split('@')[0])}</div>
             <div class="contact-addr">${esc(ct.addr)}</div>
           </div>
-          <span class="dim">${esc(t('times_n', ct.times))}</span>
+          <span class="dim">${ct.directory && !ct.times ? '' : esc(t('times_n', ct.times))}</span>
           ${safeHtml(ct)}
           <wa-button appearance="outlined" size="small" data-write="${esc(ct.addr)}">${icon('pencil', 14)} ${esc(t('write_to'))}</wa-button>
         </div>`
