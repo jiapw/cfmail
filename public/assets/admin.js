@@ -161,6 +161,11 @@ async function renderDomainDetail(domainId) {
     api('GET', '/api/admin/mailbox-options'),
     api('GET', `/api/admin/domains/${domainId}/brand`),
   ]);
+  // Who may appoint a domain admin is decided on the server; the interface only stops offering
+  // what would come back 403, so a domain admin sees the list without controls to change it.
+  // 谁能任命域管理员由服务端说了算;界面只是不再提供注定 403 的操作 ——
+  // 域管理员看得到名单,但没有改动它的控件。
+  const isGlobal = !!store.me.user.is_admin;
   const rows = mailboxes
     .map(
       (m) => `
@@ -248,12 +253,14 @@ async function renderDomainDetail(domainId) {
     </section>
     <section class="card">
       <h3>${esc(t('da_title'))}</h3>
-      <div>${admins.map((a) => `<span class="chip">${esc(a.name || a.email)}<span class="chip-x" role="button" tabindex="0" data-unadmin="${esc(a.id)}">×</span></span>`).join(' ') || `<span class="dim">${esc(t('none'))}</span>`}</div>
+      <div>${admins.map((a) => `<span class="chip">${esc(a.name || a.email)}${isGlobal ? `<span class="chip-x" role="button" tabindex="0" data-unadmin="${esc(a.id)}">×</span>` : ''}</span>`).join(' ') || `<span class="dim">${esc(t('none'))}</span>`}</div>
+      ${isGlobal ? `
       <form id="f-da" class="form-row" style="margin-top:12px">
         <label>${esc(t('add_da'))}</label>
         <input name="email" type="email" placeholder="${esc(t('reg_email_ph'))}" required style="width:260px">
         <wa-button appearance="outlined" type="submit">${esc(t('add_da'))}</wa-button>
-      </form>
+      </form>`
+      : `<p class="dim" style="margin-top:12px">${esc(t('da_global_only'))}</p>`}
     </section>`;
 
   qs('#f-mb').addEventListener('submit', async (e) => {
@@ -345,7 +352,7 @@ async function renderDomainDetail(domainId) {
     toast(t('t_logo_removed'));
     renderDomainDetail(domainId);
   });
-  qs('#f-da').addEventListener('submit', async (e) => {
+  qs('#f-da')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
       await api('POST', `/api/admin/domains/${domainId}/admins`, { email: new FormData(e.target).get('email') });
@@ -455,7 +462,7 @@ async function tabUsers(body) {
     <tr class="${u.disabled ? 'disabled-row' : ''}">
       <td><b>${esc(u.name || '')}</b><div class="dim">${esc(u.email)}</div></td>
       <td>${u.is_admin ? `<span class="chip chip-ok">${esc(t('chip_global_admin'))}</span>` : ''}${u.disabled ? `<span class="chip chip-err">${esc(t('t_disabled'))}</span>` : `<span class="chip">${esc(t('chip_normal'))}</span>`}</td>
-      <td>${u.grants.map((g) => `<span class="chip" title="${roleName(g.role)}">${esc(g.address)}</span>`).join(' ') || `<span class="dim">${esc(t('none'))}</span>`}</td>
+      <td>${u.grants.map((g) => `<span class="chip" title="${roleName(g.role)}">${esc(g.address)}<span class="chip-x" role="button" tabindex="0" title="${esc(t('revoke_grant'))}" data-ungrant="${esc(g.mailbox_id)}|${esc(u.id)}|${esc(g.address)}|${esc(u.email)}">×</span></span>`).join(' ') || `<span class="dim">${esc(t('none'))}</span>`}</td>
       <td>${u.msg_count}</td>
       <td>${fmtSize(u.bytes || 0)}</td>
       <td>${u.last_login ? fmtDateTime(u.last_login) : `<span class="dim">${esc(t('never_login'))}</span>`}</td>
@@ -479,6 +486,24 @@ async function tabUsers(body) {
       </table>
     </section>`;
   body.addEventListener('click', async (e) => {
+    // Revoking one grant is the domain-scoped way to remove somebody: an account can hold
+    // mailboxes in several domains, so disabling it is a global act and stays with the global
+    // admin, while the door to THIS mailbox is the domain admin's own to close.
+    // 撤销单条授权,是"按域"把人请出去的正确形态:一个账号可能在多个域持有邮箱,
+    // 禁用账号是全局动作、留给全局管理员;而这个邮箱的门,归本域管理员自己关。
+    const ug = e.target.closest('[data-ungrant]');
+    if (ug) {
+      const [mailboxId, userId, address, email] = ug.dataset.ungrant.split('|');
+      if (!(await confirmDialog(t('revoke_grant_confirm', email, address), t('revoke_grant')))) return;
+      try {
+        await api('DELETE', `/api/admin/mailboxes/${mailboxId}/grants/${userId}`);
+        toast(t('t_removed'));
+        renderAdmin('users');
+      } catch (err) {
+        toast(err.message, true);
+      }
+      return;
+    }
     const lo = e.target.closest('[data-logoutall]');
     if (lo) {
       const [id, email, selfFlag] = lo.dataset.logoutall.split('|');
