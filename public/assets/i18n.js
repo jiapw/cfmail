@@ -5436,4 +5436,32 @@ Object.assign(DICTS.fr, { gm_look_hint: "Cliquer pour changer la couleur et l'ic
 Object.assign(DICTS.es, { gm_look_hint: "Haga clic para cambiar color e icono" });
 Object.assign(DICTS.ru, { gm_look_hint: "Нажмите, чтобы изменить цвет и значок" });
 
+Object.assign(DICTS['zh-CN'], { gm_parallel: "同时上传" });
+Object.assign(DICTS['zh-TW'], { gm_parallel: "同時上傳" });
+Object.assign(DICTS.en, { gm_parallel: "In parallel" });
+Object.assign(DICTS.ja, { gm_parallel: "同時アップロード" });
+Object.assign(DICTS.ko, { gm_parallel: "동시 업로드" });
+Object.assign(DICTS.de, { gm_parallel: "Parallel" });
+Object.assign(DICTS.fr, { gm_parallel: "En parallèle" });
+Object.assign(DICTS.es, { gm_parallel: "En paralelo" });
+Object.assign(DICTS.ru, { gm_parallel: "Параллельно" });
 
+Object.assign(DICTS['zh-CN'], { gm_parallel_note: "时间几乎全花在往返上,并发能成倍缩短。被限流就调小。" });
+Object.assign(DICTS['zh-TW'], { gm_parallel_note: "時間幾乎全花在往返上,並行能成倍縮短。被限流就調小。" });
+Object.assign(DICTS.en, { gm_parallel_note: "Nearly all the time is round trips, so this shortens a run several-fold. Lower it if you get rate limited." });
+Object.assign(DICTS.ja, { gm_parallel_note: "時間のほとんどは往復通信です。並列にすれば数倍速くなります。制限された場合は下げてください。" });
+Object.assign(DICTS.ko, { gm_parallel_note: "대부분의 시간이 왕복 통신입니다. 병렬로 하면 몇 배 빨라집니다. 제한이 걸리면 낮추세요." });
+Object.assign(DICTS.de, { gm_parallel_note: "Fast die ganze Zeit sind Roundtrips, das verkürzt einen Lauf um ein Vielfaches. Bei Ratenbegrenzung niedriger setzen." });
+Object.assign(DICTS.fr, { gm_parallel_note: "Le temps passe presque entièrement en allers-retours : la parallélisation divise la durée d'autant. À réduire en cas de limitation." });
+Object.assign(DICTS.es, { gm_parallel_note: "Casi todo el tiempo son viajes de ida y vuelta, así que esto acorta la ejecución varias veces. Redúzcalo si le limitan la tasa." });
+Object.assign(DICTS.ru, { gm_parallel_note: "Почти всё время уходит на обмен с сервером, поэтому параллельность ускоряет в разы. Уменьшите, если сработает ограничение частоты." });
+
+Object.assign(DICTS['zh-CN'], { gm_checking: "正在核对已导入的部分… {0}/{1}" });
+Object.assign(DICTS['zh-TW'], { gm_checking: "正在核對已匯入的部分… {0}/{1}" });
+Object.assign(DICTS.en, { gm_checking: "Checking what is already here… {0}/{1}" });
+Object.assign(DICTS.ja, { gm_checking: "取り込み済みを確認中… {0}/{1}" });
+Object.assign(DICTS.ko, { gm_checking: "이미 가져온 것 확인 중… {0}/{1}" });
+Object.assign(DICTS.de, { gm_checking: "Prüfe, was schon da ist … {0}/{1}" });
+Object.assign(DICTS.fr, { gm_checking: "Vérification de ce qui est déjà là… {0}/{1}" });
+Object.assign(DICTS.es, { gm_checking: "Comprobando lo que ya está… {0}/{1}" });
+Object.assign(DICTS.ru, { gm_checking: "Проверка того, что уже есть… {0}/{1}" });
