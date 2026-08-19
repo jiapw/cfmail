@@ -401,6 +401,7 @@ adminApp.post('/mailboxes/:id/purge', async (c) => {
     }
     stmts.push(c.env.DB.prepare(`DELETE FROM message_texts WHERE message_id IN (${qs})`).bind(...ids));
     stmts.push(c.env.DB.prepare(`DELETE FROM attachments WHERE message_id IN (${qs})`).bind(...ids));
+    stmts.push(c.env.DB.prepare(`DELETE FROM message_labels WHERE message_id IN (${qs})`).bind(...ids));
     stmts.push(c.env.DB.prepare(`DELETE FROM messages WHERE id IN (${qs})`).bind(...ids));
     await c.env.DB.batch(stmts);
   }
@@ -447,6 +448,12 @@ adminApp.delete('/mailboxes/:id', async (c) => {
     c.env.DB.prepare('DELETE FROM aliases WHERE mailbox_id=?1').bind(mb.id),
     c.env.DB.prepare('DELETE FROM grants WHERE mailbox_id=?1').bind(mb.id),
     c.env.DB.prepare('DELETE FROM folders WHERE mailbox_id=?1').bind(mb.id),
+    // Labels belong to the mailbox, so they go with it. Erasing a mailbox's contents does not
+    // touch them -- that leaves the mailbox standing, and its taxonomy is configuration rather
+    // than mail.
+    // 标签属于邮箱,邮箱没了它们也没了。但"清空内容"不动它们 ——
+    // 那时邮箱还在,而它的分类体系是配置,不是邮件。
+    c.env.DB.prepare('DELETE FROM labels WHERE mailbox_id=?1').bind(mb.id),
     c.env.DB.prepare('DELETE FROM mailboxes WHERE id=?1').bind(mb.id),
   ]);
 

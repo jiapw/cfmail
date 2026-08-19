@@ -324,13 +324,24 @@ export async function retryFailedParses(env: Env): Promise<void> {
         continue;
       }
       const buf = await obj.arrayBuffer();
-      await ingestEml(env, {
+      const fresh = await ingestEml(env, {
         mailboxId: row.mailbox_id,
         buf,
         r2Key: row.r2_key,
         size: row.size,
         envelopeFrom: row.from_addr,
       });
+      // The placeholder is not being deleted so much as replaced: it is the same message, parsed
+      // properly this time. Anything a person said about it while it sat there unreadable --
+      // which is what a label is -- belongs to the message, so it moves across rather than
+      // vanishing with the row that happened to be holding it.
+      // 这里的占位行与其说是被删除,不如说是被替换:同一封信,这次解析成功了。
+      // 它还读不出来的那段时间里,有人对它做过的判断(标签就是这种判断)属于这封信本身,
+      // 所以要跟着搬过去,而不是随着那个恰好承载它的行一起消失。
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO message_labels (message_id, label_id) SELECT ?1, label_id FROM message_labels WHERE message_id=?2'
+      ).bind(fresh, row.id).run();
+      await env.DB.prepare('DELETE FROM message_labels WHERE message_id=?1').bind(row.id).run();
       await env.DB.prepare('DELETE FROM messages WHERE id=?1').bind(row.id).run();
     } catch (e) {
       await env.DB.prepare('UPDATE messages SET parse_attempts=parse_attempts+1 WHERE id=?1').bind(row.id).run();
