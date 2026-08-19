@@ -8,10 +8,11 @@
     "vendor": "node scripts/sync-vendor.mjs",
     "vendor:check": "node scripts/sync-vendor.mjs --check",
     "dev": "node scripts/sync-vendor.mjs --check && wrangler dev",
-    "deploy": "node scripts/sync-vendor.mjs && wrangler deploy",
+    "deploy": "node scripts/deploy.mjs",
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply cfmail --local",
-    "migrate:remote": "wrangler d1 migrations apply cfmail --remote"
+    "migrate:remote": "wrangler d1 migrations apply cfmail --remote",
+    "deploy:worker": "node scripts/sync-vendor.mjs && wrangler deploy"
   },
   "dependencies": {
     "agents": "^0.20.1",

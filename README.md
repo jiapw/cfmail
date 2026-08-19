@@ -179,47 +179,43 @@ Everything below is **shell commands** — type them in a terminal, one line at 
 
 下面全部是**终端命令**,在命令行里一行一行敲。写法按 bash/zsh(macOS、Linux、Git Bash、WSL),PowerShell 里也能直接用,只有一点:Windows PowerShell 5.1 不认 `&&`,把那两条拆开分别执行。
 
+Three commands, start to finish:
+从头到尾三条命令:
+
 ```bash
 git clone https://github.com/jiapw/cfmail.git
 cd cfmail
-npm install                              # also syncs public/vendor/ from node_modules
-cp wrangler.example.jsonc wrangler.jsonc # then fill in the <placeholders>
+npm install
+npm run deploy -- --token <your API token> --domain example.com --entry mail
 ```
 
-> **What are `npx` and `wrangler`?** `npx` ships with Node.js (18+) — it runs a command-line tool out of `node_modules` without installing anything globally. `wrangler` is Cloudflare's official CLI; it is listed in this project's `devDependencies`, so `npm install` already put it there. That is why every command below is `npx wrangler …` and why there is nothing extra to install. First run may ask you to log in — you don't need to: the token in `.env.deploy` is what authenticates.
+That is the whole installation. The third command creates the database and the storage bucket, writes your `wrangler.jsonc`, applies the migrations, publishes the Worker, turns on Email Routing for the domain and points its catch-all at CFMail. Then open `https://mail.example.com` and create the first admin account.
+
+这就是全部安装过程。第三条命令会建数据库和存储桶、生成你的 `wrangler.jsonc`、跑迁移、发布 Worker、为该域名启用 Email Routing 并把 catch-all 指向 CFMail。之后打开 `https://mail.example.com` 创建第一个管理员账号。
+
+- **The token is never stored.** It is used for this one run and passed to `wrangler` through the child process's environment — it is not written to `wrangler.jsonc`, not to a dotfile, not to the log. Closing the terminal is enough to be rid of it. (`CLOUDFLARE_API_TOKEN` in the environment works too, if you would rather not have it in your shell history.)
+  **token 不会被保存。** 它只用于这一次运行,通过子进程的环境变量交给 `wrangler`,不写进 `wrangler.jsonc`、不写进任何 dotfile、不打印到日志。关掉终端就没了。(不想让它留在 shell 历史里,也可以放在环境变量 `CLOUDFLARE_API_TOKEN` 里。)
+- **Running it again is safe.** Every step checks the account first: an existing database or bucket is reused, never recreated; migrations only add. That is also how you upgrade — `git pull` and run the same command.
+  **重复运行是安全的。** 每一步都先查账号:已有的数据库和存储桶直接复用,绝不重建;迁移只做加法。升级也是这么做 —— `git pull` 之后跑同一条命令。
+- **Adding a domain** is the same command with a different `--domain`; `--entry` is remembered, so you only pass it the first time.
+  **加域名**就是换个 `--domain` 再跑一次;`--entry` 会被记住,只需在第一次给。
+- **`--dry-run`** reports exactly what it would do and changes nothing.
+  **`--dry-run`** 会把打算做的事完整报一遍,不做任何改动。
+
+> **What are `npx` and `wrangler`?** `npx` ships with Node.js (18+) — it runs a command-line tool out of `node_modules` without installing anything globally. `wrangler` is Cloudflare's official CLI; it is listed in this project's `devDependencies`, so `npm install` already put it there. `npm run deploy` drives it for you; the `npx wrangler …` commands further down are for the occasional thing you do by hand. There is nothing extra to install, and nothing to log into — the token you pass is what authenticates.
 >
-> **`npx` 和 `wrangler` 是什么?** `npx` 是 Node.js(18+)自带的命令,作用是直接运行 `node_modules` 里的命令行工具,不用全局安装。`wrangler` 是 Cloudflare 官方 CLI,已写在本项目的 `devDependencies` 里,`npm install` 时就装好了 —— 所以下面一律写成 `npx wrangler …`,不需要你另外装任何东西。首次运行它可能提示登录,不用管:认证走 `.env.deploy` 里的 token。
+> **`npx` 和 `wrangler` 是什么?** `npx` 是 Node.js(18+)自带的命令,作用是直接运行 `node_modules` 里的命令行工具,不用全局安装。`wrangler` 是 Cloudflare 官方 CLI,已写在本项目的 `devDependencies` 里,`npm install` 时就装好了。`npm run deploy` 会替你调用它;后文那些 `npx wrangler …` 是留给偶尔手工操作用的。不需要另外装任何东西,也不需要登录 —— 认证靠你传进去的那个 token。
 
-Create an API token (permissions below) and put it in `.env.deploy` — that is a plain text file you create in the project root, not a command:
-创建 API Token(权限见下),写进 `.env.deploy` —— 这是你在项目根目录新建的一个纯文本文件,不是命令:
+Where the token comes from: **Cloudflare Dashboard → My Profile → API Tokens → Create Token → Custom token**, with the permissions in the table below. An account-owned token (Manage Account → API Tokens) works just as well.
+token 从哪来:**Cloudflare Dashboard → My Profile → API Tokens → Create Token → Custom token**,权限按下面的表格勾。账号级 token(Manage Account → API Tokens)同样可用。
 
-```ini
-CLOUDFLARE_API_TOKEN=<your token>
-CLOUDFLARE_ACCOUNT_ID=<your account id>
-```
-
-Load it into the current shell, then create the resources and ship it:
-把它载入当前终端,然后创建资源并上线:
+Adding more domains later, and upgrading, are the same command:
+之后加域名、升级,都是同一条命令:
 
 ```bash
-set -a && . ./.env.deploy && set +a       # PowerShell: Get-Content .env.deploy | %{ $k,$v = $_ -split '=',2; Set-Item "env:$k" $v }
-npx wrangler d1 create cfmail             # paste the database_id it prints into wrangler.jsonc
-npx wrangler r2 bucket create cfmail-raw
-npm run migrate:remote
-npm run deploy                            # first deploy has no domains yet — that is expected
+npm run deploy -- --token <token> --domain another.com   # --entry 沿用第一次的前缀
+git pull && npm install && npm run deploy -- --token <token>
 ```
-
-Wire up each domain (once per domain). The second argument is the **entry subdomain** — the host people will actually visit:
-接入域名(每个域名跑一次)。第二个参数是**入口子域**,也就是用户实际访问的那个主机名:
-
-```bash
-node scripts/setup-zone.mjs example.com mail    # -> https://mail.example.com
-node scripts/setup-zone.mjs another.com         # reuses "mail", no need to repeat it
-npm run deploy                                  # publish the routes the script just added
-```
-
-Open `https://mail.example.com` and create the first admin account. Done.
-打开 `https://mail.example.com`,创建第一个管理员账号。完成。
 
 ### Where the entry subdomain is set / 入口子域在哪里指定
 
@@ -236,12 +232,12 @@ There is **one** source of truth: the `routes` array in `wrangler.jsonc`. Everyt
 ]
 ```
 
-- You pick the prefix the first time you run `setup-zone.mjs` (the optional second argument). The script binds the custom domain and appends the route to `wrangler.jsonc` for you; later runs read the prefix back out of `routes`, so every domain gets the same one.
-  前缀由你第一次跑 `setup-zone.mjs` 时的第二个参数决定。脚本会绑定自定义域并把 route 追加进 `wrangler.jsonc`;之后再跑就从 `routes` 里读回同一个前缀,保证各域名一致。
-- `npm run deploy` reconciles live custom domains against `routes`. A domain missing from that array gets detached on the next deploy — which is also how you remove one.
-  `npm run deploy` 会拿 `routes` 跟线上自定义域对账。不在数组里的域名,下次部署就会被摘掉 —— 想下线某个域名,也正是这么做。
-- `APP_ORIGIN` must match the first entry; it is what invite and password-reset links point at.
-  `APP_ORIGIN` 要和第一条保持一致 —— 邀请链接和密码重置链接都指向它。
+- You pick the prefix with `--entry` the first time. Every later run reads it back out of `routes`, so every domain gets the same one and you never pass it again.
+  前缀由第一次的 `--entry` 决定。之后每次运行都从 `routes` 里读回来,保证各域名一致,你也不用再传第二遍。
+- Deploying reconciles live custom domains against `routes`, so a domain missing from that array would be detached. `npm run deploy` protects you from doing that by accident: any host that is live but absent from the file is added back before publishing. Pass `--prune-domains` when detaching is what you actually mean — that is how a domain is taken offline.
+  部署会拿 `routes` 跟线上自定义域对账,不在数组里的域名会被摘掉。`npm run deploy` 会防止你误伤:线上有、文件里没有的入口域,发布前会被补回数组。确实要下线某个域名时,加 `--prune-domains`。
+- `APP_ORIGIN` is what invite and password-reset links point at; `npm run deploy` keeps it equal to the first entry, so it is not something you maintain by hand.
+  `APP_ORIGIN` 是邀请链接和密码重置链接的指向;`npm run deploy` 会让它始终等于第一条 route,不用你手工维护。
 - The pattern must be `<subdomain>.<zone>`: the scripts derive the Cloudflare zone by dropping the leftmost label.
   格式必须是 `<子域>.<域名>`:脚本靠"去掉最左一段"推导 Cloudflare zone。
 
@@ -249,7 +245,8 @@ There is **one** source of truth: the `routes` array in `wrangler.jsonc`. Everyt
 
 ## API token permissions / API Token 权限
 
-Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom token**.
+Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom token**. An account-owned token from **Manage Account → API Tokens** works too.
+Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom token**;**Manage Account → API Tokens** 下创建的账号级 token 同样可用。
 
 ### Required / 必需
 
@@ -278,27 +275,33 @@ Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom
 
 ## Deployment in detail / 部署细节
 
-### 1. Configuration / 配置文件
+### 1. What `npm run deploy` does / 它到底做了什么
 
-`wrangler.jsonc` is **not** in the repository — it holds your account id, database id and domains. Copy the template and replace every `<placeholder>`: `account_id`, `database_id` and `APP_ORIGIN`. Leave `routes` empty; `setup-zone.mjs` fills it in as you connect domains.
-`wrangler.jsonc` **不在仓库里** —— 它含你的 account_id、database_id 和域名。从模板复制一份,把所有 `<占位符>` 替换掉:`account_id`、`database_id`、`APP_ORIGIN`。`routes` 留空即可,接域名时由 `setup-zone.mjs` 自动填。
+In order, checking the account's current state before each step so that running it twice is the same as running it once:
+按顺序,每一步动手前先读账号当前状态 —— 所以跑两次和跑一次结果一样:
+
+| Step / 步骤 | Idempotent because / 为什么可重复 |
+|---|---|
+| Verify the token and resolve the account / 校验 token、确定账号 | Read-only. Refuses to guess when the token can see several accounts — pass `--account` / 只读。token 能看到多个账号时拒绝猜,要你用 `--account` 指定 |
+| Look for a Worker, database and bucket already named `cfmail` / 查有没有同名的 Worker、数据库、存储桶 | Read-only. If they exist but this checkout has no `wrangler.jsonc`, it stops rather than publish over somebody else's deployment — `--adopt` says you mean it / 只读。若它们存在而本地没有 `wrangler.jsonc`,脚本停下来,不会覆盖别人的部署 —— 确实是你的,用 `--adopt` |
+| Create the D1 database and the R2 bucket / 建 D1 与 R2 | Only when missing; an existing one is reused, with its data / 只在缺失时建;已有的直接复用,数据不动 |
+| Write `wrangler.jsonc` / 写配置文件 | Generated from the template and your arguments. Fills `account_id`, `database_id`, `APP_ORIGIN`, appends the route / 由模板加你的参数生成:填好 `account_id`、`database_id`、`APP_ORIGIN`,追加 route |
+| Keep live custom domains / 保住线上已有的入口域 | Anything bound on the account but missing from `routes` is added back, so a fresh clone cannot detach domains it never knew about / 线上绑了但配置里没有的,补回数组 —— 新 clone 不会把它没见过的域名摘掉 |
+| Apply migrations / 跑迁移 | Migrations only add; `wrangler` runs just the ones not yet applied, and the script re-checks afterwards that none are left / 迁移只做加法;wrangler 只跑没跑过的,脚本事后再查一遍确认没有遗留 |
+| Publish the Worker / 发布 Worker | Same code, same result / 同样的代码,同样的结果 |
+| Enable Email Routing, point catch-all at the Worker / 启用 Email Routing、catch-all 指向 Worker | Enabling is skipped when already on; the catch-all rule is a `PUT` / 已开启就跳过;catch-all 本身是 `PUT` |
+
+`wrangler.jsonc` is **not** in the repository — it holds your account id, database id and domains, and `npm run deploy` generates it. Losing it costs nothing: the next run rebuilds it from the account.
+`wrangler.jsonc` **不在仓库里** —— 它含你的 account_id、database_id 和域名,由 `npm run deploy` 生成。丢了也不要紧:下次运行会照着账号里的现状重建。
+
+### 2. Connect another domain / 再接一个域名
 
 ```bash
-cp wrangler.example.jsonc wrangler.jsonc
+npm run deploy -- --token <token> --domain another.com
 ```
 
-Since it is not in git, **keep your own copy somewhere safe** — losing it means rebuilding the account and database ids by hand.
-因为它不入库,**自己另存一份** —— 丢了就得手工把 account_id、database_id 一个个找回来。
-
-### 2. Connect a domain / 接入域名
-
-```bash
-node scripts/setup-zone.mjs example.com [entry-subdomain]
-npm run deploy
-```
-
-The script does four things: enables Email Routing (publishing MX/SPF), points the catch-all rule at the cfmail Worker, binds `<entry-subdomain>.<domain>` as a custom domain, and writes that route into `wrangler.jsonc`. The second argument is only needed the first time — after that the prefix is read back out of `routes`. Deploy afterwards so the new route is published.
-脚本做四件事:启用 Email Routing(下发 MX/SPF)、把 catch-all 指向 cfmail Worker、绑定 `<入口子域>.<域名>` 自定义域、把这条 route 写进 `wrangler.jsonc`。第二个参数只有第一次需要,之后从 `routes` 里读回同一个前缀。跑完记得部署一次,新 route 才会生效。
+Same command, different `--domain`. It enables Email Routing (publishing MX/SPF), points the catch-all at the Worker, adds `<entry>.<domain>` to `routes` and republishes, which is what binds the custom domain.
+同一条命令,换个 `--domain`。它会启用 Email Routing(下发 MX/SPF)、把 catch-all 指向 Worker、把 `<入口子域>.<域名>` 加进 `routes` 并重新发布 —— 自定义域就是这样绑上去的。
 
 > **Careful**: enabling Email Routing takes over that domain's MX records. If the domain already has mail service, confirm before switching.
 > **注意**:启用 Email Routing 会接管该域名的 MX 记录。如域名原有邮件服务,切换前先确认。
@@ -306,9 +309,10 @@ The script does four things: enables Email Routing (publishing MX/SPF), points t
 ### 3. Hardening / 加固(可选,但建议做)
 
 ```bash
-node scripts/setup-turnstile.mjs   # create the widget, wire up both halves
-node scripts/push-ratelimit.mjs    # push edge rate-limit rules to every zone
-npm run deploy
+export CLOUDFLARE_API_TOKEN=<token>   # PowerShell: $env:CLOUDFLARE_API_TOKEN="<token>"
+node scripts/setup-turnstile.mjs      # create the widget, wire up both halves
+node scripts/push-ratelimit.mjs       # push edge rate-limit rules to every zone
+npm run deploy -- --token $CLOUDFLARE_API_TOKEN
 ```
 
 - **Turnstile** protects login, password reset and invite signup. The script handles both halves itself: the secret goes into the Worker via `wrangler secret` (never printed, never on disk) and the public sitekey is written into `wrangler.jsonc` under `vars` — nothing to copy by hand. **Both must be present for it to activate**, so to disable in a hurry, delete `TURNSTILE_SITEKEY` and redeploy.
@@ -530,7 +534,8 @@ See [PRIVACY.md](PRIVACY.md) for exactly what data lives where and what can leav
 `major.feature.fix`. The current version lives in `src/version.ts` and shows up in the account menu and settings page. Bump it before each deploy.
 规则 `主版本.功能.修复`。当前版本在 `src/version.ts`,每次部署前更新。
 
-Release checklist / 发布清单: edit code → run `build-themes.mjs` if themes changed → `npm run typecheck` → `npm run migrate:remote` if there are new migrations → `npm run deploy`.
+Release checklist / 发布清单: edit code → run `build-themes.mjs` if themes changed → `npm run typecheck` → `npm run deploy -- --token <token>` (it applies any new migrations first, and stops before publishing if one fails).
+改代码 → 动过主题就跑 `build-themes.mjs` → `npm run typecheck` → `npm run deploy -- --token <token>`(它会先跑新迁移;迁移失败就停在发布之前)。
 
 ---
 
@@ -561,8 +566,9 @@ public/                        # Gmail-style SPA, no bundler / 无打包无转�
   tools/Export-Mailbox.ps1     # Microsoft 365 mailbox exporter / M365 导出脚本
 scripts/
   sync-vendor.mjs              # sync public/vendor/ from node_modules (postinstall)
+  deploy.mjs                   # install and upgrade: resources, config, migrations, publish, mail routing
+                               # 安装与升级:建资源、生成配置、跑迁移、发布、接收信
   wrangler-config.mjs          # reads wrangler.jsonc, feeds domains/zones to other scripts
-  setup-zone.mjs               # connect a domain, write its route / 接入域名并写回 route
   setup-turnstile.mjs          # create the Turnstile widget / 建 Turnstile widget
   push-ratelimit.mjs           # push edge rate-limit rules / 推限速规则
   build-themes.mjs             # generate themes / 生成主题
