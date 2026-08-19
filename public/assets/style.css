@@ -919,22 +919,6 @@ html[data-webawesome].wa-dark {
    否则带标签那一行的文字会比其它行更靠左,那一列字就不成列了。 */
 .ctx-item > .lb-mark wa-icon { margin-inline-end: 0.75em; }
 
-/* Source tiles: the import tab picks a source before it shows a tool. */
-/* 来源磁贴:导入页签先让你选来源,再显示对应的工具。 */
-.src-tiles { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-.src-tile {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-  min-width: 240px; flex: 1 1 240px; padding: 14px 16px; cursor: pointer; text-align: left;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; color: var(--text);
-  font: inherit;
-}
-.src-tile:hover { background: var(--hover); }
-.src-tile.on { border-color: var(--primary); background: var(--selected); }
-.src-tile wa-icon { font-size: 22px; color: var(--text-2); }
-.src-tile.on wa-icon { color: var(--accent-text); }
-.src-name { font-weight: 600; font-size: 14.5px; }
-.src-note { font-size: 12.5px; }
-
 /* The appearance popup: same shell as a menu, but a pair of grids rather than a list. */
 /* 外观浮层:外壳与菜单相同,内容是两组网格而不是一列条目。 */
 .lb-look { padding: 10px 12px; }
