@@ -667,6 +667,21 @@ adminApp.post('/import', async (c) => {
       flagged: c.req.query('flagged') === '1',
       keepDate: true,
     });
+    // Labels ride along on the same request. A Gmail export carries them per message, and asking
+    // the browser to come back once per message to attach them would double the number of round
+    // trips for eight thousand messages while the rows are two columns wide.
+    // 标签搭同一趟车。Gmail 导出里标签本来就是逐封带的,让浏览器为此每封再回来一次,
+    // 八千封就是把往返次数翻倍 —— 而要写的不过是两列宽的几行。
+    const labelIds = String(c.req.query('labels') || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 20);
+    if (labelIds.length) {
+      const qs = labelIds.map((_, i) => `?${i + 2}`).join(',');
+      const own = await c.env.DB.prepare(
+        `SELECT id FROM labels WHERE mailbox_id=?1 AND id IN (${qs})`
+      ).bind(mb.id, ...labelIds).all<any>();
+      const stmts = (own.results || []).map((r: any) =>
+        c.env.DB.prepare('INSERT OR IGNORE INTO message_labels (message_id, label_id) VALUES (?1,?2)').bind(id, r.id));
+      if (stmts.length) await c.env.DB.batch(stmts);
+    }
     return c.json({ ok: true, id });
   } catch (e: any) {
     await c.env.RAW.delete(key).catch(() => {});

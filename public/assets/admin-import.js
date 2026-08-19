@@ -3,7 +3,7 @@
 // 管理后台「导入工具」:把旧邮箱(Zoho / Outlook 等)导出的 .eml 目录搬进来。
 // 流程:选目录 → 扫描表头,统计收件人和子目录 → 管理员确认目标邮箱和每个子目录的去向 → 逐封上传。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize, confirmDialog } from './ui.js';
+import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
 import { t } from './i18n.js';
 // Same parser, same version as the Worker: the attachment order must match, because downloads locate parts by part_index in the original
 // 和 Worker 用同一个解析器同一版本:附件顺序必须一致,下载时是按 part_index 回原文里定位的
@@ -89,17 +89,6 @@ async function peekEml(file) {
   };
 }
 
-/** Remaining time: minutes and seconds are enough, and the hour field only appears past an hour
- *  剩余时间:分秒够用,超过一小时才带小时位 */
-function fmtDuration(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const p = (n) => String(n).padStart(2, '0');
-  return h ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`;
-}
-
 export async function tabImport(body) {
   const { domains } = await api('GET', '/api/admin/domains');
   const boxes = [];
@@ -151,7 +140,7 @@ export async function tabImport(body) {
       <h3>${esc(t('imp_target'))}</h3>
       <div class="form-row">
         <label>${esc(t('imp_mailbox'))}</label>
-        <wa-select id="imp-mb" style="width:300px">${boxes.map((b) => `<wa-option value="${esc(b.addr)}">${esc(b.addr)}</wa-option>`).join('')}</wa-select>
+        <wa-select id="imp-mb" value="${esc(boxes[0]?.addr || '')}" style="width:300px">${boxes.map((b) => `<wa-option value="${esc(b.addr)}">${esc(b.addr)}</wa-option>`).join('')}</wa-select>
         <span class="dim" id="imp-guess"></span>
       </div>
       <p class="dim" style="margin:14px 0 6px">${esc(t('imp_map_note'))}</p>

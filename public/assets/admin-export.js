@@ -8,7 +8,7 @@
 // 服务端只给清单和单封原文,打包/落盘全在浏览器做 —— 几 GB 的邮箱在 Worker 里打 zip
 // 既超内存也超 CPU,而且用户还得先下一个大文件再解压。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize } from './ui.js';
+import { esc, qs, qsa, toast, fmtSize, fmtDuration } from './ui.js';
 import { t } from './i18n.js';
 
 const FOLDER_DIRS = {
@@ -24,17 +24,6 @@ const BAD_NAME_CHARS = /[<>:"\/\\|?* -]/g;
  *  文件名净化:去掉非法字符,掐长度免得路径超限,尾部的点和空格 Windows 也不接受 */
 const safeName = (s) =>
   String(s || '').replace(BAD_NAME_CHARS, '_').replace(/[. ]+$/, '').slice(0, 60) || 'unnamed';
-
-/** Remaining time: minutes and seconds are enough, and the hour field only appears past an hour
- *  剩余时间:分秒够用,超过一小时才带小时位 */
-function fmtDuration(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const p = (n) => String(n).padStart(2, '0');
-  return h ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`;
-}
 
 export async function tabExport(body) {
   const { domains } = await api('GET', '/api/admin/domains');
