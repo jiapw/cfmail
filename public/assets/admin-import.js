@@ -3,7 +3,8 @@
 // 管理后台「导入工具」:把旧邮箱(Zoho / Outlook 等)导出的 .eml 目录搬进来。
 // 流程:选目录 → 扫描表头,统计收件人和子目录 → 管理员确认目标邮箱和每个子目录的去向 → 逐封上传。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
+import { tabGmail } from './admin-gmail.js';
 import { t } from './i18n.js';
 // Same parser, same version as the Worker: the attachment order must match, because downloads locate parts by part_index in the original
 // 和 Worker 用同一个解析器同一版本:附件顺序必须一致,下载时是按 part_index 回原文里定位的
@@ -89,7 +90,38 @@ async function peekEml(file) {
   };
 }
 
+/**
+ * The import tab is a choice of source before it is a tool. Gmail comes first because a Takeout is
+ * what most people arrive holding; the directory of .eml files is what you fall back to when the
+ * old provider had no export of its own.
+ * 导入工具页签首先是"选来源",然后才是工具。Gmail 排在第一位,因为大多数人手里拿着的就是
+ * 一份 Takeout;.eml 目录是旧服务商没有自家导出时的退路。
+ */
 export async function tabImport(body) {
+  const SOURCES = [
+    { key: 'gmail', icon: 'mail', name: () => t('imp_src_gmail'), note: () => t('imp_src_gmail_note') },
+    { key: 'eml', icon: 'folder', name: () => t('imp_src_eml'), note: () => t('imp_src_eml_note') },
+  ];
+  let picked = 'gmail';
+  body.innerHTML = '<div class="src-tiles" id="imp-src"></div><div id="imp-host"></div>';
+  const host = body.querySelector('#imp-host');
+  const paint = async () => {
+    body.querySelector('#imp-src').innerHTML = SOURCES.map((sx) => `
+      <button type="button" class="src-tile ${sx.key === picked ? 'on' : ''}" data-src="${sx.key}">
+        ${icon(sx.icon, 22)}
+        <span class="src-name">${esc(sx.name())}</span>
+        <span class="src-note dim">${esc(sx.note())}</span>
+      </button>`).join('');
+    body.querySelectorAll('.src-tile').forEach((b) =>
+      b.addEventListener('click', () => { picked = b.dataset.src; paint(); }));
+    host.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
+    if (picked === 'gmail') await tabGmail(host);
+    else await emlImport(host);
+  };
+  await paint();
+}
+
+async function emlImport(body) {
   const { domains } = await api('GET', '/api/admin/domains');
   const boxes = [];
   for (const d of domains) {

@@ -31,7 +31,7 @@
 import { api } from './api.js';
 import { esc, icon, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
 import { t } from './i18n.js';
-import { LABEL_COLORS, LABEL_ICONS } from './labels.js';
+import { LABEL_COLORS, LABEL_ICONS, openLookPicker } from './labels.js';
 import PostalMime from '../vendor/postal-mime/postal-mime.js';
 
 // Folders a Gmail label may be routed into. Drafts is deliberately absent: CFMail keeps drafts in
@@ -98,6 +98,13 @@ const utf8 = (s) => {
 // 而 0xA0 在许多 UTF-8 序列里就是普通的一个字节 —— 放它走,就等于从别人的标签中间啃掉一口。
 const rawTrim = (s) => s.replace(/^[\x09\x20]+|[\x09\x20]+$/g, '');
 const norm = (s) => utf8(s).trim();
+
+// Gmail files its own tabs as "Category updates", "Category promotions" and so on. That prefix is
+// Gmail's filing system talking about itself; what the label means is the word after it. The
+// original still shows in the table, so nobody has to guess where the suggestion came from.
+// Gmail 把自己的分类写成 "Category updates"、"Category promotions" 之类。那个前缀是 Gmail
+// 在讲它自己的归档方式,标签的含义是后面那个词。表里仍然显示原名,不用猜这个建议是哪来的。
+const suggestName = (s) => s.replace(/^Category\s+/i, '').trim() || s;
 
 /** One pass over an mbox, remembering where every message starts and what Gmail said about it.
  *
@@ -339,10 +346,11 @@ export async function tabGmail(body) {
         <td><input type="checkbox" class="gm-use" ${noisy ? '' : 'checked'}></td>
         <td><code>${esc(name)}</code></td>
         <td class="dim">${n}${noisy ? ` <span title="${esc(t('gm_noisy_hint'))}">⚠</span>` : ''}</td>
-        <td><input type="text" class="gm-name" maxlength="40" value="${esc(name)}" style="width:180px"></td>
+        <td><input type="text" class="gm-name" maxlength="40" value="${esc(suggestName(name))}" style="width:180px"></td>
         <td>
-          <select class="gm-color">${LABEL_COLORS.map((c, j) => `<option value="${c}" ${j === i % LABEL_COLORS.length ? 'selected' : ''}>${c}</option>`).join('')}</select>
-          <select class="gm-icon">${LABEL_ICONS.map((g, j) => `<option value="${g}" ${j === i % LABEL_ICONS.length ? 'selected' : ''}>${g}</option>`).join('')}</select>
+          <button type="button" class="gm-look" title="${esc(t('gm_look_hint'))}"
+            data-color="${LABEL_COLORS[i % LABEL_COLORS.length]}" data-icon="${LABEL_ICONS[i % LABEL_ICONS.length]}"
+            style="color:var(--lb-${LABEL_COLORS[i % LABEL_COLORS.length]})">${icon(LABEL_ICONS[i % LABEL_ICONS.length], 20)}</button>
         </td>
       </tr>`;
     }).join('');
@@ -380,6 +388,23 @@ export async function tabGmail(body) {
         <wa-button variant="brand" id="gm-go">${esc(t('gm_start'))}</wa-button>
         <span class="dim">${esc(t('gm_dedup_note'))}</span>
       </div>`;
+    // The mark is the control: click the coloured glyph and the popup changes that glyph. Two
+    // dropdowns naming a colour and a shape describe the thing; the thing itself is quicker.
+    // 记号本身就是控件:点那个彩色字形,浮层改的就是它。
+    // 两个写着颜色名和形状名的下拉框是在"描述"它,而直接点它更快。
+    qsa('#gm-map .gm-look').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        const r = b.getBoundingClientRect();
+        openLookPicker(r.left, r.bottom + 4, {
+          color: b.dataset.color, icon: b.dataset.icon,
+          onPick: ({ color, icon: ic }) => {
+            b.dataset.color = color;
+            b.dataset.icon = ic;
+            b.style.color = `var(--lb-${color})`;
+            b.innerHTML = icon(ic, 20);
+          },
+        });
+      }));
     qs('#gm-go').addEventListener('click', run);
   }
 
@@ -400,8 +425,8 @@ export async function tabGmail(body) {
       .map((tr) => ({
         src: tr.dataset.src,
         name: tr.querySelector('.gm-name').value.trim() || tr.dataset.src,
-        color: tr.querySelector('.gm-color').value,
-        icon: tr.querySelector('.gm-icon').value,
+        color: tr.querySelector('.gm-look').dataset.color,
+        icon: tr.querySelector('.gm-look').dataset.icon,
       }));
 
     if (!(await confirmDialog(t('gm_confirm', index.msgs.length, mbAddr, wanted.length), t('gm_start')))) return;

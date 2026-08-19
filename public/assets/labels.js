@@ -174,15 +174,69 @@ export function openLabelMenu(x, y, { has, toggle, onDone } = {}) {
 // ---------- Create / edit / delete ----------
 // ---------- 新建 / 编辑 / 删除 ----------
 
+/** The colour and glyph choosers, as markup. One definition, so the modal that creates a label and
+ *  the popup that restyles one cannot drift apart.
+ *  颜色与字形的选择器,只此一份 —— 建标签的弹窗和改外观的浮层不会各长各的。 */
+export const swatchesHtml = () => LABEL_COLORS.map(
+  (c) => `<button type="button" class="lb-swatch" data-color="${c}" aria-label="${c}" style="background:var(--lb-${c})"></button>`
+).join('');
+export const glyphsHtml = () => LABEL_ICONS.map(
+  (g) => `<button type="button" class="lb-glyph" data-icon="${g}" aria-label="${g}">${icon(g, 18)}</button>`
+).join('');
+
+/** Wire a pair of chooser grids so the selected swatch and glyph show what they are
+ *  给一对选择器网格接上联动,让选中的颜色和字形自己显示出来 */
+export function bindLook(root, state, onChange) {
+  const paint = () => {
+    root.querySelectorAll('.lb-swatch').forEach((b) => b.classList.toggle('on', b.dataset.color === state.color));
+    root.querySelectorAll('.lb-glyph').forEach((b) => {
+      b.classList.toggle('on', b.dataset.icon === state.icon);
+      b.style.color = b.dataset.icon === state.icon ? `var(--lb-${state.color})` : '';
+    });
+  };
+  root.querySelectorAll('.lb-swatch').forEach((b) =>
+    b.addEventListener('click', () => { state.color = b.dataset.color; paint(); onChange?.(state); }));
+  root.querySelectorAll('.lb-glyph').forEach((b) =>
+    b.addEventListener('click', () => { state.icon = b.dataset.icon; paint(); onChange?.(state); }));
+  paint();
+  return paint;
+}
+
+/**
+ * Change a label's colour and glyph in place, anchored to whatever was clicked. Used where a row
+ * shows a mark and the mark itself is the control -- clicking the thing you want to change is a
+ * shorter path than finding a pair of dropdowns that describe it.
+ * 就地改一个标签的颜色和字形,浮层贴着被点的那个元素。用在"行里显示一个记号、记号本身就是控件"
+ * 的地方 —— 点你想改的那个东西,比去找两个描述它的下拉框要短。
+ */
+export function openLookPicker(x, y, { color, icon: ic, onPick } = {}) {
+  closeLabelMenu();
+  const state = { color: color || LABEL_COLORS[0], icon: ic || LABEL_ICONS[0] };
+  menuEl = document.createElement('div');
+  menuEl.className = 'ctx-menu lb-look';
+  menuEl.innerHTML = `
+    <div class="lb-look-row"><span class="dim">${esc(t('lbl_color'))}</span><div class="lb-swatches">${swatchesHtml()}</div></div>
+    <div class="lb-look-row"><span class="dim">${esc(t('lbl_icon'))}</span><div class="lb-glyphs">${glyphsHtml()}</div></div>`;
+  document.body.appendChild(menuEl);
+  bindLook(menuEl, state, (s) => onPick?.({ ...s }));
+
+  const r = menuEl.getBoundingClientRect();
+  menuEl.style.left = Math.min(x, window.innerWidth - r.width - 8) + 'px';
+  menuEl.style.top = Math.min(y, window.innerHeight - r.height - 8) + 'px';
+
+  closer = (e) => {
+    if (e.type === 'keydown' && e.key !== 'Escape') return;
+    if (e.type === 'mousedown' && menuEl?.contains(e.target)) return;
+    closeLabelMenu();
+  };
+  document.addEventListener('mousedown', closer, true);
+  document.addEventListener('keydown', closer, true);
+}
+
 export async function editLabel(existing, onDone) {
   const cur = existing || { name: '', icon: LABEL_ICONS[0], color: LABEL_COLORS[0] };
-  const swatches = LABEL_COLORS.map(
-    (c) => `<button type="button" class="lb-swatch" data-color="${c}" aria-label="${c}"
-      style="background:var(--lb-${c})"></button>`
-  ).join('');
-  const glyphs = LABEL_ICONS.map(
-    (g) => `<button type="button" class="lb-glyph" data-icon="${g}" aria-label="${g}">${icon(g, 18)}</button>`
-  ).join('');
+  const swatches = swatchesHtml();
+  const glyphs = glyphsHtml();
   const m = showModal(`
     <h3 style="margin:0 0 12px">${esc(existing ? t('lbl_edit_title') : t('lbl_new_title'))}</h3>
     <form id="f-lb">
@@ -197,25 +251,16 @@ export async function editLabel(existing, onDone) {
         <wa-button variant="brand" type="submit">${esc(t('save'))}</wa-button>
       </div>
     </form>`);
-  let color = cur.color;
-  let ic = cur.icon;
-  const paint = () => {
-    m.querySelectorAll('.lb-swatch').forEach((b) => b.classList.toggle('on', b.dataset.color === color));
-    m.querySelectorAll('.lb-glyph').forEach((b) => {
-      b.classList.toggle('on', b.dataset.icon === ic);
-      b.style.color = b.dataset.icon === ic ? `var(--lb-${color})` : '';
-    });
-  };
-  m.querySelectorAll('.lb-swatch').forEach((b) => b.addEventListener('click', () => { color = b.dataset.color; paint(); }));
-  m.querySelectorAll('.lb-glyph').forEach((b) => b.addEventListener('click', () => { ic = b.dataset.icon; paint(); }));
-  paint();
+  const look = { color: cur.color, icon: cur.icon };
+  bindLook(m, look);
   m.querySelector('#lb-cancel').onclick = () => closeModal();
   m.querySelector('#f-lb').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = new FormData(e.target).get('name').toString().trim();
     try {
-      if (existing) await api('POST', `/api/mailboxes/${store.mbId}/labels/${existing.id}`, { name, icon: ic, color });
-      else await api('POST', `/api/mailboxes/${store.mbId}/labels`, { name, icon: ic, color });
+      const body = { name, icon: look.icon, color: look.color };
+      if (existing) await api('POST', `/api/mailboxes/${store.mbId}/labels/${existing.id}`, body);
+      else await api('POST', `/api/mailboxes/${store.mbId}/labels`, body);
       closeModal();
       await loadLabels();
       onDone?.();
