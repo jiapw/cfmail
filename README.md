@@ -258,7 +258,11 @@ Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom
 | Zone | **Zone** | Read | Look up zone ids by domain name / 按域名查 zone id |
 | Zone | **DNS** | Edit | Bind the entry custom domain, publish mail records / 绑定入口自定义域、下发邮件记录 |
 | Zone | **Email Routing Rules** | Edit | Enable Email Routing, point catch-all at the Worker / 启用 Email Routing、设 catch-all |
+| Zone | **Email Sending** | Edit | Onboard the domain so it may send to outside recipients / 开通对外发信 |
 | Zone | **Workers Routes** | Edit | Attach custom domains to the Worker / 把自定义域挂到 Worker 上 |
+
+> Without **Email Sending**, everything else still works and the domain still receives mail — but it cannot send to the outside world, and the first thing to break is the verification code mailed to a new colleague's personal address. `npm run deploy` says so plainly when it hits that.
+> 少了 **Email Sending** 这项,其余一切照常、收信也正常 —— 但这个域名发不出信,最先坏掉的是发往新同事私人邮箱的那封验证码。`npm run deploy` 遇到这种情况会明确说出来。
 
 ### Optional / 可选
 
@@ -425,7 +429,8 @@ users(用既有个人邮箱注册)                            grants(所有者/�
 ### Cloudflare Email Sending (default, public beta) / 默认通道
 
 - Already wired via the `send_email` binding — no keys needed. / 已配好 binding,零密钥。
-- Each sending domain must be onboarded once: Dashboard → **Compute → Email Service → Email Sending → Onboard Domain**. DKIM/SPF/DMARC and bounce records publish automatically.
+- Each sending domain must be onboarded once, which `npm run deploy` does for you (`wrangler email sending enable <domain>`); DKIM/SPF/DMARC and bounce records publish automatically. If the token lacks **Email Sending · Edit** it says so and you can click it instead: Dashboard → **Compute → Email Service → Email Sending → Onboard Domain**.
+  每个发信域名要开通一次,`npm run deploy` 会替你做(`wrangler email sending enable <域名>`),DKIM/SPF/DMARC 和 bounce 记录自动下发。token 少了 **Email Sending · Edit** 时它会说明,你也可以到 Dashboard → **Compute → Email Service → Email Sending → Onboard Domain** 点一次。
   每个发信域名需在该处点一次,DKIM/SPF/DMARC 和退信记录自动下发。
 - Billing: 3,000 messages/month included with Workers Paid, then $0.35 per thousand. / 付费版含 3000 封/月,超出 $0.35/千封。
 - Limits: 5 MiB per message, 50 recipients per message. / 单封 5 MiB、50 收件人/封。
