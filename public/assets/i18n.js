@@ -5486,25 +5486,25 @@ Object.assign(DICTS.fr, { impersonate_confirm: "Entrer en tant que {0} ? Vous ve
 Object.assign(DICTS.es, { impersonate_confirm: "¿Entrar como {0}? Verá su correo y su Drive con exactamente sus permisos. La visita queda auditada y la consola permanece cerrada mientras dure." });
 Object.assign(DICTS.ru, { impersonate_confirm: "Войти как {0}? Вы увидите его почту и диск ровно с его правами. Посещение фиксируется в журнале, а консоль администратора на это время закрыта." });
 
-Object.assign(DICTS['zh-CN'], { imp_bar: "你正在以 {0} 的身份浏览" });
-Object.assign(DICTS['zh-TW'], { imp_bar: "你正在以 {0} 的身分瀏覽" });
-Object.assign(DICTS.en, { imp_bar: "You are viewing as {0}" });
-Object.assign(DICTS.ja, { imp_bar: "{0} として表示しています" });
-Object.assign(DICTS.ko, { imp_bar: "{0} 님으로 보는 중입니다" });
-Object.assign(DICTS.de, { imp_bar: "Sie sehen dies als {0}" });
-Object.assign(DICTS.fr, { imp_bar: "Vous consultez en tant que {0}" });
-Object.assign(DICTS.es, { imp_bar: "Está viendo como {0}" });
-Object.assign(DICTS.ru, { imp_bar: "Вы просматриваете как {0}" });
+Object.assign(DICTS['zh-CN'], { actas_bar: "你正在以 {0} 的身份浏览" });
+Object.assign(DICTS['zh-TW'], { actas_bar: "你正在以 {0} 的身分瀏覽" });
+Object.assign(DICTS.en, { actas_bar: "You are viewing as {0}" });
+Object.assign(DICTS.ja, { actas_bar: "{0} として表示しています" });
+Object.assign(DICTS.ko, { actas_bar: "{0} 님으로 보는 중입니다" });
+Object.assign(DICTS.de, { actas_bar: "Sie sehen dies als {0}" });
+Object.assign(DICTS.fr, { actas_bar: "Vous consultez en tant que {0}" });
+Object.assign(DICTS.es, { actas_bar: "Está viendo como {0}" });
+Object.assign(DICTS.ru, { actas_bar: "Вы просматриваете как {0}" });
 
-Object.assign(DICTS['zh-CN'], { imp_leave: "退出扮演" });
-Object.assign(DICTS['zh-TW'], { imp_leave: "退出扮演" });
-Object.assign(DICTS.en, { imp_leave: "Leave" });
-Object.assign(DICTS.ja, { imp_leave: "終了" });
-Object.assign(DICTS.ko, { imp_leave: "나가기" });
-Object.assign(DICTS.de, { imp_leave: "Beenden" });
-Object.assign(DICTS.fr, { imp_leave: "Quitter" });
-Object.assign(DICTS.es, { imp_leave: "Salir" });
-Object.assign(DICTS.ru, { imp_leave: "Выйти" });
+Object.assign(DICTS['zh-CN'], { actas_leave: "退出扮演" });
+Object.assign(DICTS['zh-TW'], { actas_leave: "退出扮演" });
+Object.assign(DICTS.en, { actas_leave: "Leave" });
+Object.assign(DICTS.ja, { actas_leave: "終了" });
+Object.assign(DICTS.ko, { actas_leave: "나가기" });
+Object.assign(DICTS.de, { actas_leave: "Beenden" });
+Object.assign(DICTS.fr, { actas_leave: "Quitter" });
+Object.assign(DICTS.es, { actas_leave: "Salir" });
+Object.assign(DICTS.ru, { actas_leave: "Выйти" });
 
 Object.assign(DICTS['zh-CN'], { e_impersonating: "扮演他人期间不能进入后台,请先退出扮演。" });
 Object.assign(DICTS['zh-TW'], { e_impersonating: "扮演他人期間不能進入後台,請先退出扮演。" });
