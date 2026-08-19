@@ -99,8 +99,9 @@ async function peekEml(file) {
  */
 export async function tabImport(body) {
   const SOURCES = [
-    { key: 'gmail', icon: 'mail', name: () => t('imp_src_gmail'), note: () => t('imp_src_gmail_note') },
-    { key: 'eml', icon: 'folder', name: () => t('imp_src_eml'), note: () => t('imp_src_eml_note') },
+    { key: 'gmail', icon: 'mail', name: () => t('imp_src_gmail'), note: () => t('imp_src_gmail_note'), run: tabGmail },
+    { key: 'eml', icon: 'folder', name: () => t('imp_src_eml'), note: () => t('imp_src_eml_note'), run: emlImport },
+    { key: 'o365', icon: 'download', name: () => t('imp_src_o365'), note: () => t('imp_src_o365_note'), run: o365Guide },
   ];
   let picked = 'gmail';
   body.innerHTML = '<div class="src-tiles" id="imp-src"></div><div id="imp-host"></div>';
@@ -115,27 +116,21 @@ export async function tabImport(body) {
     body.querySelectorAll('.src-tile').forEach((b) =>
       b.addEventListener('click', () => { picked = b.dataset.src; paint(); }));
     host.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
-    if (picked === 'gmail') await tabGmail(host);
-    else await emlImport(host);
+    await (SOURCES.find((sx) => sx.key === picked) || SOURCES[0]).run(host);
   };
   await paint();
 }
 
-async function emlImport(body) {
-  const { domains } = await api('GET', '/api/admin/domains');
-  const boxes = [];
-  for (const d of domains) {
-    const { mailboxes } = await api('GET', `/api/admin/domains/${d.id}/mailboxes`);
-    // The id travels with the address: the address is what the administrator picks, the id is
-    // what reports the finished run.
-    // id 跟着地址一起带上:管理员挑的是地址,回报这次运行用的是 id。
-    for (const m of mailboxes) if (!m.disabled) boxes.push({ addr: `${m.local_part}@${d.name}`, id: m.id });
-  }
-
-  // Outlook on the web has no bulk export, so give the administrator a way to obtain .eml first, then feed it into the directory import above
-  // Outlook 网页版没有批量导出,先给管理员一条能拿到 .eml 的路,再接上面的目录导入
+/**
+ * Outlook on the web has no bulk export, so this is a way to obtain .eml files in the first place
+ * rather than a way to import them. It is its own tile because it is a different errand: you come
+ * here before you have anything to import, and go to the .eml tile afterwards.
+ * Outlook 网页版没有批量导出,所以这一块讲的是"怎么先拿到 .eml",而不是"怎么导入"。
+ * 它单独成一个磁贴,因为这是另一件事:你在手里还没有东西可导的时候来这里,
+ * 拿到文件之后再去 .eml 那个磁贴。
+ */
+async function o365Guide(body) {
   const O365_CMD = 'powershell -ExecutionPolicy Bypass -File .\\Export-Mailbox.ps1';
-
   body.innerHTML = `
     <section class="card">
       <h3>${esc(t('imp_o365_title'))}</h3>
@@ -156,7 +151,50 @@ async function emlImport(body) {
         <li>${esc(t('imp_o365_s4'))}</li>
       </ol>
       <p class="dim" style="margin-top:10px">${esc(t('imp_o365_note'))}</p>
-    </section>
+    </section>`;
+
+  // wa-button does not forward download, and .ps1 gets no Content-Type, so a temporary <a download> is the reliable way to land the file
+  // wa-button 不透传 download,而 .ps1 又拿不到 Content-Type;用临时 <a download> 稳妥落盘
+  qs('#imp-o365-dl').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = '/tools/Export-Mailbox.ps1';
+    a.download = 'Export-Mailbox.ps1';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
+  qs('#imp-o365-copy').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try {
+      await navigator.clipboard.writeText(O365_CMD);
+    } catch {
+      // Clipboard refused (not https, or no permission): fall back to selecting the whole line so the user can press Ctrl+C
+      // 剪贴板被拒(非 https / 无权限):退回选中整段,用户自己 Ctrl+C
+      const r = document.createRange();
+      r.selectNodeContents(qs('#imp-o365-cmd'));
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return;
+    }
+    btn.textContent = t('imp_o365_copied');
+    setTimeout(() => { btn.textContent = t('imp_o365_copy'); }, 1500);
+  });
+}
+
+async function emlImport(body) {
+  const { domains } = await api('GET', '/api/admin/domains');
+  const boxes = [];
+  for (const d of domains) {
+    const { mailboxes } = await api('GET', `/api/admin/domains/${d.id}/mailboxes`);
+    // The id travels with the address: the address is what the administrator picks, the id is
+    // what reports the finished run.
+    // id 跟着地址一起带上:管理员挑的是地址,回报这次运行用的是 id。
+    for (const m of mailboxes) if (!m.disabled) boxes.push({ addr: `${m.local_part}@${d.name}`, id: m.id });
+  }
+
+  body.innerHTML = `
     <section class="card">
       <h3>${esc(t('imp_title'))}</h3>
       <p class="dim">${esc(t('imp_note'))}</p>
@@ -197,34 +235,7 @@ async function emlImport(body) {
       <div id="imp-fails"></div>
     </section>`;
 
-  // wa-button does not forward download, and .ps1 gets no Content-Type, so a temporary <a download> is the reliable way to land the file
-  // wa-button 不透传 download,而 .ps1 又拿不到 Content-Type;用临时 <a download> 稳妥落盘
-  qs('#imp-o365-dl').addEventListener('click', () => {
-    const a = document.createElement('a');
-    a.href = '/tools/Export-Mailbox.ps1';
-    a.download = 'Export-Mailbox.ps1';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  });
 
-  qs('#imp-o365-copy').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    try {
-      await navigator.clipboard.writeText(O365_CMD);
-    } catch {
-      // Clipboard refused (not https, or no permission): fall back to selecting the whole line so the user can press Ctrl+C
-      // 剪贴板被拒(非 https / 无权限):退回选中整段,用户自己 Ctrl+C
-      const r = document.createRange();
-      r.selectNodeContents(qs('#imp-o365-cmd'));
-      const sel = getSelection();
-      sel.removeAllRanges();
-      sel.addRange(r);
-      return;
-    }
-    btn.textContent = t('imp_o365_copied');
-    setTimeout(() => { btn.textContent = t('imp_o365_copy'); }, 1500);
-  });
 
   let picked = [];
   let cancelled = false;
