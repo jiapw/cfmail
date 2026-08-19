@@ -412,7 +412,25 @@ driveApp.get('/list', async (c) => {
     });
   }
   const a = await accessNode(c, parent, 'view');
-  if (a.node.kind !== 'folder') throw new HttpError(400, 'e_drive_not_folder');
+  // A share can be one file, and its recipient still has to land somewhere. Listing a file
+  // answers with that file as its only entry -- a folder wrapped around it -- because the
+  // alternative was an error on the one link the recipient was given. Everything downstream
+  // then works without knowing this happened: the row opens a preview, the menu offers the
+  // download, the breadcrumb names where you are.
+  // 一条共享可以只有一个文件,而收到它的人总得落在某个地方。对一个文件列目录,
+  // 答的就是"以它自身为唯一条目" —— 相当于给它套了一层目录 ——
+  // 因为另一种做法是:对方拿到的唯一一条链接直接报错。
+  // 这之后的一切都不必知道这里发生过什么:那一行能打开预览,菜单里有下载,面包屑说得清你在哪。
+  if (a.node.kind !== 'folder') {
+    const own = a.chain.slice().reverse();
+    const cut = a.shareRoot ? own.findIndex((n) => n.id === a.shareRoot) : 0;
+    return c.json({
+      access: a.level, share_root: a.shareRoot,
+      in_trash: a.chain.some((n) => n.trashed),
+      path: own.slice(cut).map((n) => ({ id: n.id, name: n.name })),
+      nodes: [nodeJson(a.node, a.level === 'owner')],
+    });
+  }
   const rows = await c.env.DB.prepare(childrenSql('n.parent_id=?1')).bind(a.node.id).all();
   // Breadcrumbs: the owner sees the full path; a share member's path stops at the share root
   // 面包屑:所有者看全路径;共享成员只能看到共享顶点以下
@@ -1285,8 +1303,16 @@ driveApp.get('/shared', async (c) => {
   for (const r of (rows.results || []) as any[]) {
     if (shareLiveness(r)) continue; // revoked or expired shares drop off the list / 已撤销或过期的不再列出
     for (const n of await shareItems(c.env, r.share_id)) {
-      out.push({ share_id: r.share_id, node_id: n.id, name: n.name, kind: n.kind, size: n.size,
-        role: r.role, joined_at: r.joined_at, owner_name: r.owner_name, owner_email: r.owner_email });
+      // The whole node, because this list is now drawn by the same code that draws a folder:
+      // it wants the mime to pick a preview, the thumbnail flag to show one, the dates to sort
+      // by. A hand-picked summary was enough while this screen had its own bespoke table.
+      // 整个节点 —— 因为这份列表现在由"画文件夹"的同一段代码来画:
+      // 它需要 mime 来挑预览、需要缩略图标记来显示图、需要日期来排序。
+      // 当这块屏幕还有自己那张专用表格时,一份手挑的摘要就够了。
+      out.push({
+        ...nodeJson(n, false), node_id: n.id, share_id: r.share_id,
+        role: r.role, joined_at: r.joined_at, owner_name: r.owner_name, owner_email: r.owner_email,
+      });
     }
   }
   return c.json({ shares: out });

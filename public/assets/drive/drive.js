@@ -253,8 +253,24 @@ async function loadView() {
       dst.inTrash = !!data.in_trash;
       renderFolderView(main);
     } else if (dst.view === 'shared') {
+      // Drawn by the folder renderer rather than a table of its own. That is what makes the
+      // layout switch mean something here, and what gives these rows the preview, the download
+      // and the menu that every other listing has -- three separate absences that were all the
+      // same absence: this screen was not a listing, it was a report about one.
+      // 交给文件夹渲染器来画,而不是自备一张表格。正是这一点让"切换视图"在这里有了含义,
+      // 也让这些行有了别处每份列表都有的预览、下载和菜单 ——
+      // 三处各自的缺失其实是同一处缺失:这块屏幕不是一份列表,而是一份关于列表的报告。
       const data = await api('GET', '/api/drive/shared');
-      renderSharedView(main, data.shares || []);
+      dst.nodes = data.shares || [];
+      dst.folders = {};
+      dst.path = [];
+      // Someone else's nodes. Whatever this account may do inside a share it does inside it,
+      // never to the share's own root from out here.
+      // 别人的节点。本账号在共享内部能做什么就在内部做,绝不在这里对共享的根动手。
+      dst.access = 'viewer';
+      dst.shareRoot = null;
+      dst.inTrash = false;
+      renderFolderView(main);
     } else if (dst.view === 'links' || dst.view === 'agents') {
       const data = await api('GET', '/api/drive/shares');
       // One endpoint, two screens. The share list is the whole inventory of what this account
@@ -729,6 +745,11 @@ function selActionsHtml() {
   const nodes = selNodes();
   const trashCtx = dst.view === 'trash' || dst.inTrash;
   const single = nodes.length === 1 ? nodes[0] : null;
+  if (dst.view === 'shared') {
+    return nodes.some((n) => n.kind === 'file')
+      ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>`
+      : '';
+  }
   if (trashCtx) {
     return `
       <wa-button class="icon" appearance="plain" data-act="restore" title="${esc(t('drv_restore'))}">${icon('restore', 20)}</wa-button>
@@ -737,7 +758,7 @@ function selActionsHtml() {
   const canEdit = dst.access !== 'viewer';
   const own = dst.access === 'owner';
   return `
-    ${single && single.kind === 'file' ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>` : ''}
+    ${nodes.some((n) => n.kind === 'file') ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>` : ''}
     ${own ? `<wa-button class="icon" appearance="plain" data-act="share" title="${esc(t('drv_share'))}">${icon('share', 20)}</wa-button>` : ''}
     ${own ? `<wa-button class="icon" appearance="plain" data-act="star" title="${esc(t('drv_star'))}">${icon('star', 20)}</wa-button>` : ''}
     ${canEdit ? `<wa-button class="icon" appearance="plain" data-act="move" title="${esc(t('drv_move'))}">${icon('folder-move', 20)}</wa-button>` : ''}
@@ -745,7 +766,10 @@ function selActionsHtml() {
 }
 
 function nodeIconHtml(n, size = 22) {
-  if (n.kind === 'folder') return `<wa-icon class="fold" name="folder" style="font-size:${size}px"></wa-icon>`;
+  if (n.kind === 'folder') {
+    const name = dst.view === 'shared' ? 'folder-shared' : 'folder';
+    return `<wa-icon class="fold" name="${name}" style="font-size:${size}px"></wa-icon>`;
+  }
   return fileIcon(n.name, size);
 }
 
@@ -785,9 +809,14 @@ function groupHeadHtml(g) {
 
 function tableHtml(arrow, groups) {
   const trashCtx = dst.view === 'trash';
+  // Who shared it is the question this screen exists to answer, so it gets a column of its own
+  // rather than being folded into the name.
+  // "谁分享的"正是这块屏幕存在的理由,所以它独占一列,而不是被塞进名字里。
+  const shared = dst.view === 'shared';
   const row = (n, i) => `
     <tr class="drv-row ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}" draggable="true">
       <td><div class="drv-name">${nodeIconHtml(n)}<span class="nm">${esc(n.name)}</span>${badgesHtml(n)}</div></td>
+      ${shared ? `<td class="c-owner drv-dim">${esc(n.owner_name || n.owner_email || '')}</td>` : ''}
       <td class="c-time drv-dim">${fmtDate(trashCtx ? n.updated_at : n.updated_at)}</td>
       <td class="drv-dim">${fmtSize(effSize(n))}</td>
       <td><wa-button class="icon rowbtn" appearance="plain" data-menu="${esc(n.id)}" aria-label="menu">${icon('dots-v', 18)}</wa-button></td>
@@ -798,9 +827,10 @@ function tableHtml(arrow, groups) {
     : dst.shown.map(row).join('');
   return `
   <table class="drv-table">
-    <colgroup><col><col class="c-time"><col class="c-size"><col class="c-menu"></colgroup>
+    <colgroup><col>${shared ? '<col class="c-owner">' : ''}<col class="c-time"><col class="c-size"><col class="c-menu"></colgroup>
     <thead><tr>
       <th data-sort="name">${esc(t('drv_th_name'))}${arrow('name')}</th>
+      ${shared ? `<th class="c-owner">${esc(t('drv_th_owner'))}</th>` : ''}
       <th data-sort="updated_at" class="c-time">${esc(t('drv_th_modified'))}${arrow('updated_at')}</th>
       <th data-sort="size">${esc(t('drv_th_size'))}${arrow('size')}</th>
       <th></th>
@@ -827,6 +857,7 @@ function gridHtml(groups) {
       <div class="thumb">${n.kind === 'file' ? media : icon('folder', 56)}</div>
       <div class="cap">${nodeIconHtml(n, 22)}<span class="nm" title="${esc(n.name)}">${esc(n.name)}</span>${badgesHtml(n)}
         <wa-button class="icon rowbtn" appearance="plain" data-menu="${esc(n.id)}" aria-label="menu">${icon('dots-v', 16)}</wa-button></div>
+      ${dst.view === 'shared' ? `<div class="who drv-dim">${esc(n.owner_name || n.owner_email || '')}</div>` : ''}
     </div>`;
   };
   let i = 0;
@@ -994,7 +1025,7 @@ function openNode(n) {
 async function runSelAction(act) {
   const nodes = selNodes();
   if (!nodes.length) return;
-  if (act === 'download') downloadFile(nodes[0]);
+  if (act === 'download') downloadFiles(nodes);
   else if (act === 'share') shareDialog(nodes);
   else if (act === 'star') await starNodes(nodes, true);
   else if (act === 'move') moveDialog(nodes);
@@ -1082,6 +1113,27 @@ function gotoNode(itemId, folderId) {
 function menuItems(nodes) {
   if (!nodes.length) return emptyMenuItems();
   const single = nodes.length === 1 ? nodes[0] : null;
+  // Someone else's item: open it, read it, take a copy, or stop being in the share. Renaming,
+  // moving and binning are not offered because they are not yours to do from here -- the server
+  // would refuse them, and an entry that only ever produces an error is worse than no entry.
+  // 别人的东西:打开它、读它、拿一份副本,或者退出这个共享。改名、移动、扔掉都不提供,
+  // 因为从这里做它们不属于你 —— 服务端会拒绝,而一个只会产生错误的菜单项比没有这一项更糟。
+  if (dst.view === 'shared') {
+    const out = [];
+    if (single) {
+      out.push(single.kind === 'folder'
+        ? { ic: 'folder', label: t('drv_open'), fn: () => openNode(single) }
+        : { ic: 'expand', label: t('drv_preview'), fn: () => openPreview(single) });
+      if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
+    } else if (nodes.some((n) => n.kind === 'file')) {
+      out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles(nodes) });
+    }
+    if (single?.share_id) {
+      out.push('-');
+      out.push({ ic: 'close', label: t('drv_leave_share'), danger: true, fn: () => leaveShare(single) });
+    }
+    return out.filter((x, i, a) => !(x === '-' && (i === 0 || a[i - 1] === '-' || i === a.length - 1)));
+  }
   const trashCtx = dst.view === 'trash' || dst.inTrash;
   if (trashCtx) {
     return [
@@ -1108,6 +1160,16 @@ function menuItems(nodes) {
     out.push('-');
     if (canEdit && !editorOnRoot) out.push({ ic: 'pencil', label: t('drv_rename'), fn: () => renameDialog(single) });
   }
+  // Downloading several was the one action that only existed for a single file, so selecting
+  // two and asking for them was a gesture with no answer. Folders in the selection are passed
+  // over rather than refused -- the selection is the question, and the files in it are the part
+  // that has an answer.
+  // "下载多个"是唯一只为单个文件存在的动作,于是选中两个再想要它们,是一个没有回答的手势。
+  // 选中项里的目录被略过而不是被拒绝 —— 选区是问题,其中的文件是问题里有答案的那部分。
+  if (!single && nodes.some((n) => n.kind === 'file')) {
+    out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles(nodes) });
+    out.push('-');
+  }
   // Share whatever is selected: files, folders, or any mix of them
   // 选中什么就分享什么:文件、目录,或者两者混装
   if (own) out.push({ ic: 'share', label: t('drv_share'), fn: () => shareDialog(nodes) });
@@ -1129,6 +1191,22 @@ function menuItems(nodes) {
     out.push({ ic: 'trash', label: t('drv_trash_it'), danger: true, fn: () => trashNodes(nodes) });
   }
   return out.filter((x, i, a) => !(x === '-' && (i === 0 || a[i - 1] === '-' || i === a.length - 1)));
+}
+
+/** Several at once. There is no archive to hand over -- zipping a selection would mean holding
+ *  it in a worker that has neither the memory nor the CPU for it -- so this is one download per
+ *  file, spaced out. The gap is what keeps the browser from reading a burst of clicks as a popup
+ *  storm and dropping all but the first.
+ *  一次下载多个。这里没有压缩包可交 —— 把选区打包意味着让一个既没内存也没 CPU 的 worker 扛着它 ——
+ *  所以是一个文件一次下载,彼此隔开。那点间隔正是为了不让浏览器把连发的点击读成弹窗风暴,
+ *  从而只放行第一个。 */
+async function downloadFiles(nodes) {
+  const files = nodes.filter((n) => n.kind === 'file');
+  if (!files.length) return;
+  for (const [i, n] of files.entries()) {
+    downloadFile(n);
+    if (i < files.length - 1) await new Promise((r) => setTimeout(r, 400));
+  }
 }
 
 function downloadFile(n) {
@@ -1785,48 +1863,21 @@ function renderAgentsView(main, shares) {
   bindLinkActions(main);
 }
 
-// ---------- Shared-with-me view ----------
+// ---------- Shared-with-me ----------
 // ---------- 共享给我 ----------
 
-function renderSharedView(main, shares) {
-  const rows = shares.map((s) => `
-    <tr class="drv-row" data-nid="${esc(s.node_id)}" data-share="${esc(s.share_id)}">
-      <td><div class="drv-name">${icon('folder-shared', 22)}<span class="nm">${esc(s.name)}</span></div></td>
-      <td class="c-owner drv-dim">${esc(s.owner_name || s.owner_email)}</td>
-      <td class="drv-dim">${esc(t(s.role === 'editor' ? 'drv_role_editor' : 'drv_role_viewer'))}</td>
-      <td class="c-time drv-dim">${fmtDate(s.joined_at)}</td>
-      <td><wa-button class="icon rowbtn" appearance="plain" data-leave="${esc(s.share_id)}" title="${esc(t('drv_leave_share'))}">${icon('close', 16)}</wa-button></td>
-    </tr>`).join('');
-  main.innerHTML = `
-    <div class="drv-crumbbar"><div class="drv-crumbs"><span class="drv-crumb here">${esc(t('drv_shared'))}</span></div><span class="sp"></span>${barToolsHtml()}</div>
-    <div class="drv-scroll">
-      ${shares.length ? `
-      <table class="drv-table">
-        <colgroup><col><col class="c-owner"><col class="c-size"><col class="c-time"><col class="c-menu"></colgroup>
-        <thead><tr><th>${esc(t('drv_th_name'))}</th><th>${esc(t('drv_th_owner'))}</th><th>${esc(t('drv_th_role'))}</th><th class="c-time">${esc(t('drv_th_joined'))}</th><th></th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>` : emptyHtml()}
-    </div>`;
-  qs('#drv-refresh', main)?.addEventListener('click', reload);
-  qs('#drv-layout', main)?.addEventListener('click', () => {
-    dst.layout = dst.layout === 'list' ? 'grid' : 'list';
-    localStorage.setItem('cf_drive_layout', dst.layout);
-    renderDrive(currentSeg());
-  });
-  qsa('[data-leave]', main).forEach((b) => b.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!(await confirmDialog(t('drv_leave_confirm'), t('drv_leave_share')))) return;
-    try {
-      await api('DELETE', `/api/drive/shares/${b.dataset.leave}/members/${store.me.user.id}`);
-      reload();
-    } catch (err) {
-      toast(err.message, true);
-    }
-  }));
-  qsa('[data-nid]', main).forEach((r) => r.addEventListener('dblclick', () => navigate(`#/drive/folder/${r.dataset.nid}`)));
-  qsa('[data-nid]', main).forEach((r) => r.addEventListener('click', (e) => {
-    if (e.detail === 1 && !e.target.closest('[data-leave]')) navigate(`#/drive/folder/${r.dataset.nid}`);
-  }));
+/** Step out of a share. The share itself is untouched -- this only ends this account's
+ *  membership of it, which is why it reads as leaving rather than as deleting.
+ *  退出一个共享。共享本身分毫未动 —— 这里结束的只是本账号在其中的成员资格,
+ *  所以它读作"离开"而不是"删除"。 */
+async function leaveShare(n) {
+  if (!(await confirmDialog(t('drv_leave_confirm'), t('drv_leave_share')))) return;
+  try {
+    await api('DELETE', `/api/drive/shares/${n.share_id}/members/${store.me.user.id}`);
+    reload();
+  } catch (e) {
+    toast(tErr(e && e.message), true);
+  }
 }
 
 // ---------- Preview overlay ----------

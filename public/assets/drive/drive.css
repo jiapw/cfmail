@@ -293,6 +293,14 @@
    (卡片自身的圆角仍负责外轮廓)。 */
 .drv-card .thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 0 !important; }
 .drv-card .thumb > wa-icon { color: var(--text-3); }
+/* Who shared it, under the name on a card. The list view gives this a column; a card has no
+   columns, so it gets a second line rather than a crowded first one.
+   卡片上,名字下面写着谁分享的。列表视图给它一列;卡片没有列,
+   于是给它第二行,而不是把第一行挤满。 */
+.drv-card .who {
+  padding: 0 10px 8px; font-size: 11.5px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
 .drv-card .cap { display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 12px; font-size: 13px; min-height: 34px; }
 /* The 22px type icon sits ON the 45-degree line of the card's bottom-left corner: left inset
    equals bottom inset (6px each, from vertical centring in the 34px bar). The -6px pulls it
