@@ -5422,15 +5422,15 @@ Object.assign(DICTS.fr, { gm_confirm: "Importer {0} messages dans {1} et créer 
 Object.assign(DICTS.es, { gm_confirm: "¿Importar {0} mensajes a {1} y crear {2} etiqueta(s)?" });
 Object.assign(DICTS.ru, { gm_confirm: "Импортировать {0} писем в {1} и создать меток: {2}?" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_gmail: "Gmail(Google Takeout)" });
-Object.assign(DICTS['zh-TW'], { imp_src_gmail: "Gmail(Google Takeout)" });
-Object.assign(DICTS.en, { imp_src_gmail: "Gmail (Google Takeout)" });
-Object.assign(DICTS.ja, { imp_src_gmail: "Gmail(Google Takeout)" });
-Object.assign(DICTS.ko, { imp_src_gmail: "Gmail(Google Takeout)" });
-Object.assign(DICTS.de, { imp_src_gmail: "Gmail (Google Takeout)" });
-Object.assign(DICTS.fr, { imp_src_gmail: "Gmail (Google Takeout)" });
-Object.assign(DICTS.es, { imp_src_gmail: "Gmail (Google Takeout)" });
-Object.assign(DICTS.ru, { imp_src_gmail: "Gmail (Google Takeout)" });
+Object.assign(DICTS['zh-CN'], { imp_src_gmail: "从 Google Takeout 导入 (*.mbox)" });
+Object.assign(DICTS['zh-TW'], { imp_src_gmail: "從 Google Takeout 匯入 (*.mbox)" });
+Object.assign(DICTS.en, { imp_src_gmail: "Import from Google Takeout (*.mbox)" });
+Object.assign(DICTS.ja, { imp_src_gmail: "Google Takeout から取り込む (*.mbox)" });
+Object.assign(DICTS.ko, { imp_src_gmail: "Google Takeout에서 가져오기 (*.mbox)" });
+Object.assign(DICTS.de, { imp_src_gmail: "Aus Google Takeout importieren (*.mbox)" });
+Object.assign(DICTS.fr, { imp_src_gmail: "Importer depuis Google Takeout (*.mbox)" });
+Object.assign(DICTS.es, { imp_src_gmail: "Importar desde Google Takeout (*.mbox)" });
+Object.assign(DICTS.ru, { imp_src_gmail: "Импорт из Google Takeout (*.mbox)" });
 
 Object.assign(DICTS['zh-CN'], { imp_src_gmail_note: "一个 mbox 文件,带 Gmail 的标签" });
 Object.assign(DICTS['zh-TW'], { imp_src_gmail_note: "一個 mbox 檔案,帶 Gmail 的標籤" });
@@ -5442,15 +5442,15 @@ Object.assign(DICTS.fr, { imp_src_gmail_note: "Un fichier mbox, avec les libell�
 Object.assign(DICTS.es, { imp_src_gmail_note: "Un archivo mbox, con las etiquetas de Gmail" });
 Object.assign(DICTS.ru, { imp_src_gmail_note: "Один файл mbox с метками Gmail" });
 
-Object.assign(DICTS['zh-CN'], { imp_src_eml: ".eml 目录" });
-Object.assign(DICTS['zh-TW'], { imp_src_eml: ".eml 目錄" });
-Object.assign(DICTS.en, { imp_src_eml: "Folder of .eml files" });
-Object.assign(DICTS.ja, { imp_src_eml: ".eml のフォルダー" });
-Object.assign(DICTS.ko, { imp_src_eml: ".eml 폴더" });
-Object.assign(DICTS.de, { imp_src_eml: "Ordner mit .eml-Dateien" });
-Object.assign(DICTS.fr, { imp_src_eml: "Dossier de fichiers .eml" });
-Object.assign(DICTS.es, { imp_src_eml: "Carpeta de archivos .eml" });
-Object.assign(DICTS.ru, { imp_src_eml: "Папка с файлами .eml" });
+Object.assign(DICTS['zh-CN'], { imp_src_eml: "从其他旧邮箱导入 (*.eml)" });
+Object.assign(DICTS['zh-TW'], { imp_src_eml: "從其他舊信箱匯入 (*.eml)" });
+Object.assign(DICTS.en, { imp_src_eml: "Import from another old mailbox (*.eml)" });
+Object.assign(DICTS.ja, { imp_src_eml: "他の旧メールボックスから取り込む (*.eml)" });
+Object.assign(DICTS.ko, { imp_src_eml: "다른 기존 메일함에서 가져오기 (*.eml)" });
+Object.assign(DICTS.de, { imp_src_eml: "Aus einem anderen alten Postfach importieren (*.eml)" });
+Object.assign(DICTS.fr, { imp_src_eml: "Importer depuis une autre ancienne boîte (*.eml)" });
+Object.assign(DICTS.es, { imp_src_eml: "Importar desde otro buzón antiguo (*.eml)" });
+Object.assign(DICTS.ru, { imp_src_eml: "Импорт из другого старого ящика (*.eml)" });
 
 Object.assign(DICTS['zh-CN'], { imp_src_eml_note: "Zoho、Outlook 等导出的单封邮件" });
 Object.assign(DICTS['zh-TW'], { imp_src_eml_note: "Zoho、Outlook 等匯出的單封郵件" });
@@ -5471,3 +5471,23 @@ Object.assign(DICTS.de, { gm_look_hint: "Klicken, um Farbe und Symbol zu ändern
 Object.assign(DICTS.fr, { gm_look_hint: "Cliquer pour changer la couleur et l'icône" });
 Object.assign(DICTS.es, { gm_look_hint: "Haga clic para cambiar color e icono" });
 Object.assign(DICTS.ru, { gm_look_hint: "Нажмите, чтобы изменить цвет и значок" });
+
+Object.assign(DICTS['zh-CN'], { imp_src_o365: "Microsoft 365 / Outlook 邮箱搬迁指引(仅 Windows)" });
+Object.assign(DICTS['zh-TW'], { imp_src_o365: "Microsoft 365 / Outlook 信箱搬遷指引(僅 Windows)" });
+Object.assign(DICTS.en, { imp_src_o365: "Microsoft 365 / Outlook migration guide (Windows only)" });
+Object.assign(DICTS.ja, { imp_src_o365: "Microsoft 365 / Outlook 移行ガイド(Windows のみ)" });
+Object.assign(DICTS.ko, { imp_src_o365: "Microsoft 365 / Outlook 이전 안내 (Windows 전용)" });
+Object.assign(DICTS.de, { imp_src_o365: "Microsoft 365 / Outlook — Umzugsanleitung (nur Windows)" });
+Object.assign(DICTS.fr, { imp_src_o365: "Microsoft 365 / Outlook : guide de migration (Windows uniquement)" });
+Object.assign(DICTS.es, { imp_src_o365: "Microsoft 365 / Outlook: guía de migración (solo Windows)" });
+Object.assign(DICTS.ru, { imp_src_o365: "Microsoft 365 / Outlook: руководство по переезду (только Windows)" });
+
+Object.assign(DICTS['zh-CN'], { imp_src_o365_note: "先用它把邮件导成 .eml,再回到上一个磁贴导入" });
+Object.assign(DICTS['zh-TW'], { imp_src_o365_note: "先用它把郵件匯出成 .eml,再回到上一個磁貼匯入" });
+Object.assign(DICTS.en, { imp_src_o365_note: "Use this to obtain .eml files first, then come back to the tile above" });
+Object.assign(DICTS.ja, { imp_src_o365_note: "まずこれで .eml を書き出し、上のタイルに戻って取り込みます" });
+Object.assign(DICTS.ko, { imp_src_o365_note: "먼저 이것으로 .eml을 만든 뒤 위 타일로 돌아와 가져오세요" });
+Object.assign(DICTS.de, { imp_src_o365_note: "Damit zuerst .eml-Dateien beschaffen, dann zurück zur Kachel darüber" });
+Object.assign(DICTS.fr, { imp_src_o365_note: "À utiliser d'abord pour obtenir des .eml, puis revenir à la tuile ci-dessus" });
+Object.assign(DICTS.es, { imp_src_o365_note: "Úselo primero para obtener archivos .eml y vuelva a la tarjeta de arriba" });
+Object.assign(DICTS.ru, { imp_src_o365_note: "Сначала получите .eml с его помощью, затем вернитесь к плитке выше" });
