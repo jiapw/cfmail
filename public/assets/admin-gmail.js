@@ -163,7 +163,7 @@ async function scanMbox(file, onProgress) {
       const absStart = base + lineStart;
       if (SEP.test(line)) {
         close(absStart);
-        cur = { start: absStart, end: file.size, labels: [] };
+        cur = { start: absStart, end: file.size, labels: [], thrid: '', msgId: '' };
         inHeaders = true;
       } else if (cur && inHeaders) {
         if (line === '') { flushLabels(); inHeaders = false; }
@@ -171,6 +171,13 @@ async function scanMbox(file, onProgress) {
         else {
           flushLabels();
           if (/^X-Gmail-Labels:/i.test(line)) labelBuf = rawTrim(line.slice(line.indexOf(':') + 1));
+          // Two things worth remembering while the header is already under the reader's eye:
+          // which conversation Gmail put this in, and the id the server dedupes on. Both are
+          // needed before the message body is fetched, so reading them now saves a pass.
+          // 趁着信头就在眼前,顺手记两样:Gmail 把它归在哪个会话里,以及服务端拿来去重的那个 id。
+          // 两者都要在取正文之前用到,现在读掉就省一趟。
+          else if (/^X-GM-THRID:/i.test(line)) cur.thrid = rawTrim(line.slice(line.indexOf(':') + 1));
+          else if (/^Message-ID:/i.test(line)) cur.msgId = (rawTrim(line.slice(line.indexOf(':') + 1)).match(/<[^>]+>/) || [''])[0];
         }
       }
       if (last) { lineStart = text.length; break; }
@@ -401,6 +408,13 @@ export async function tabGmail(body, opts = {}) {
         </wa-select>
       </div>
       <div class="form-row">
+        <label>${esc(t('gm_parallel'))}</label>
+        <wa-select id="gm-par" value="6" style="width:110px">
+          ${[1, 2, 4, 6, 8].map((n) => `<wa-option value="${n}">${n}</wa-option>`).join('')}
+        </wa-select>
+        <span class="dim">${esc(t('gm_parallel_note'))}</span>
+      </div>
+      <div class="form-row">
         <label></label>
         <wa-button variant="brand" id="gm-go">${esc(t('gm_start'))}</wa-button>
         <span class="dim">${esc(t('gm_dedup_note'))}</span>
@@ -431,6 +445,7 @@ export async function tabGmail(body, opts = {}) {
 
   async function run() {
     const mbId = qs('#gm-mb').value;
+    const parallel = Math.max(1, Math.min(8, parseInt(qs('#gm-par')?.value || '6', 10) || 6));
     const mbAddr = mailboxes.find((m) => m.id === mbId)?.address || '';
     if (!mbId) return toast(t('imp_pick_mailbox'), true);
 
@@ -489,50 +504,126 @@ export async function tabGmail(body, opts = {}) {
     const stat = { ok: 0, dup: 0, fail: 0 };
     const fails = [];
 
-    for (let i = 0; i < index.msgs.length; i++) {
-      if (cancelled) break;
-      const m = index.msgs[i];
-      try {
-        const bytes = await readMessage(m.file, m);
-        const meta = await parseLocally(bytes);
-
-        let folder = fallback;
-        for (const [name] of SYSTEM_ORDER) {
-          if (m.labels.includes(name) && folderOf.has(name)) { folder = folderOf.get(name); break; }
-        }
-        const ids = m.labels.map((l) => idOf.get(l)).filter(Boolean);
-        // Gmail's star is our built-in label, which is the flagged bit -- so it rides as a flag
-        // rather than as one more id.
-        // Gmail 的星标就是我们的内置标签,也就是 flagged 那一位 —— 所以它作为标记位传,
-        // 而不是再多一个 id。
-        const q2 = new URLSearchParams({ mailbox: mbAddr, folder });
-        q2.set('seen', m.labels.includes('Unread') ? '0' : '1');
-        if (m.labels.includes('Starred')) q2.set('flagged', '1');
-        if (meta.messageId) q2.set('message_id', meta.messageId);
-        if (ids.length) q2.set('labels', ids.join(','));
-
-        const fd = new FormData();
-        fd.append('meta', JSON.stringify(meta));
-        fd.append('eml', new Blob([bytes]), 'message.eml');
-        const res = await fetch(`/api/admin/import?${q2}`, { method: 'POST', body: fd });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
-        if (j.skipped) stat.dup++;
-        else stat.ok++;
-      } catch (err) {
-        stat.fail++;
-        if (fails.length < 20) fails.push(`#${i + 1}: ${err.message}`);
-      }
-      const done = i + 1;
-      fill.style.width = ((done / index.msgs.length) * 100).toFixed(1) + '%';
-      prog.textContent = t('imp_progress', done, index.msgs.length, stat.ok, stat.dup, stat.fail);
-      if (done >= 3 && done < index.msgs.length) {
+    const total = index.msgs.length;
+    let done = 0;
+    const tick = () => {
+      done++;
+      fill.style.width = ((done / total) * 100).toFixed(1) + '%';
+      prog.textContent = t('imp_progress', done, total, stat.ok, stat.dup, stat.fail);
+      if (done >= 3 && done < total) {
         const per = (Date.now() - started) / done;
-        eta.textContent = t('imp_eta', fmtDuration(per * (index.msgs.length - done)));
-      } else if (done >= index.msgs.length) {
+        eta.textContent = t('imp_eta', fmtDuration(per * (total - done)));
+      } else if (done >= total) {
         eta.textContent = '';
       }
+    };
+
+    // Ask which messages are already here before sending any. On a first run this answers
+    // "none of them" for the price of one query per five hundred; on a resumed run it is the
+    // difference between re-uploading a gigabyte and skipping straight to where the last run
+    // stopped.
+    // 先问哪些已经在了,再开始发。第一次跑,这就是每五百封一次查询换来一句"一封都没有";
+    // 续跑时,它是"重传一 GB"和"直接跳到上次停下的地方"之间的差别。
+    const already = new Set();
+    for (let i = 0; i < index.msgs.length && !cancelled; i += 500) {
+      const batch = index.msgs.slice(i, i + 500).map((m) => m.msgId).filter(Boolean);
+      if (!batch.length) continue;
+      prog.textContent = t('gm_checking', Math.min(i + 500, total), total);
+      const r = await api('POST', `/api/admin/mailboxes/${mbId}/have`, { message_ids: batch }).catch(() => ({ have: [] }));
+      for (const id of r.have || []) already.add(id);
     }
+
+    /** Everything one message needs, once its turn comes / 轮到某封信时,它需要的全部东西 */
+    const send = async (m) => {
+      if (m.msgId && already.has(m.msgId)) { stat.dup++; return; }
+      const bytes = await readMessage(m.file, m);
+      const meta = await parseLocally(bytes);
+      let folder = fallback;
+      for (const [name] of SYSTEM_ORDER) {
+        if (m.labels.includes(name) && folderOf.has(name)) { folder = folderOf.get(name); break; }
+      }
+      const ids = m.labels.map((l) => idOf.get(l)).filter(Boolean);
+      // Gmail's star is our built-in label, which is the flagged bit -- so it rides as a flag
+      // rather than as one more id.
+      // Gmail 的星标就是我们的内置标签,也就是 flagged 那一位 —— 所以它作为标记位传,
+      // 而不是再多一个 id。
+      const q2 = new URLSearchParams({ mailbox: mbAddr, folder });
+      q2.set('seen', m.labels.includes('Unread') ? '0' : '1');
+      if (m.labels.includes('Starred')) q2.set('flagged', '1');
+      if (meta.messageId) q2.set('message_id', meta.messageId);
+      if (ids.length) q2.set('labels', ids.join(','));
+      const fd = new FormData();
+      fd.append('meta', JSON.stringify(meta));
+      fd.append('eml', new Blob([bytes]), 'message.eml');
+      const res = await fetch(`/api/admin/import?${q2}`, { method: 'POST', body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      if (j.skipped) stat.dup++;
+      else stat.ok++;
+    };
+
+    /**
+     * Several messages in flight at once. Almost all of the time in a run is a round trip to
+     * Cloudflare, so the machine is idle waiting; a handful of workers turns an hour and a half
+     * into something closer to twenty minutes.
+     *
+     * Messages of the same Gmail conversation are never in flight together. Which conversation a
+     * new message joins is worked out by looking for its references among the messages already
+     * stored -- so two halves of one thread arriving at the same instant would each fail to see
+     * the other and split the conversation in two. X-GM-THRID tells us which those are.
+     *
+     * 同时有若干封在途。一次导入的时间几乎全花在与 Cloudflare 的往返上,机器只是在等;
+     * 几个工作者就能把一个半小时压到二十分钟上下。
+     *
+     * 同一个 Gmail 会话的邮件绝不同时在途。新邮件归入哪个会话,是靠在已入库的邮件里找它的
+     * 引用关系算出来的 —— 同一会话的两封同时抵达,就会互相看不见,把一个会话劈成两个。
+     * X-GM-THRID 正好告诉我们哪些是同一会话。
+     */
+    const busy = new Set();
+    let next = 0;
+    const deferred = [];
+    const takeOne = () => {
+      for (let k = 0; k < deferred.length; k++) {
+        const m = deferred[k];
+        if (!m.thrid || !busy.has(m.thrid)) { deferred.splice(k, 1); return m; }
+      }
+      while (next < index.msgs.length) {
+        const m = index.msgs[next++];
+        if (!m.thrid || !busy.has(m.thrid)) return m;
+        deferred.push(m);
+      }
+      return null;
+    };
+
+    const worker = async () => {
+      for (;;) {
+        if (cancelled) return;
+        const m = takeOne();
+        if (!m) {
+          if (!busy.size) return;          // 真的没了
+          await new Promise((r) => setTimeout(r, 30));   // 等同会话的那封先走完
+          continue;
+        }
+        if (m.thrid) busy.add(m.thrid);
+        try {
+          await send(m);
+        } catch (err) {
+          // One retry: a single hiccup should not cost a message its place in a run of thousands.
+          // 重试一次:几千封里的一次抖动,不该让一封信丢掉它的位置。
+          try {
+            await new Promise((r) => setTimeout(r, 400));
+            await send(m);
+          } catch (err2) {
+            stat.fail++;
+            if (fails.length < 20) fails.push(`${m.msgId || '#' + next}: ${err2.message}`);
+          }
+        } finally {
+          if (m.thrid) busy.delete(m.thrid);
+          tick();
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: parallel }, worker));
 
     // Importing carries a whole archive of somebody's mail into the system; the run leaves a trace
     // even when it was cancelled halfway.

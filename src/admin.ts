@@ -842,6 +842,49 @@ adminApp.post('/mailboxes/:id/labels', async (c) => {
   return c.json({ id, name, icon, color });
 });
 
+/**
+ * Which of these messages are already here.
+ *
+ * An import of eight thousand messages gets interrupted -- the tab is closed, the laptop sleeps,
+ * somebody wants the faster settings. Without this the second run re-uploads every message in
+ * full and the server throws each one away on the Message-ID it already has: correct, and a
+ * gigabyte of upload to reach the point where the first run stopped. Asking first turns resuming
+ * into one indexed lookup per five hundred messages.
+ *
+ * 这些邮件里哪些已经在了。
+ *
+ * 八千封的导入总会被打断 —— 关了标签页、笔记本睡了、或者想换更快的设置。没有这个接口,
+ * 第二遍会把每一封完整重传一次,服务端再按已有的 Message-ID 一封封丢掉:结果是对的,
+ * 但为了走回上一遍停下的地方,要先传一 GB 上去。先问一句,续传就变成每五百封一次带索引的查询。
+ */
+adminApp.post('/mailboxes/:id/have', async (c) => {
+  const mb = await c.env.DB.prepare('SELECT id, domain_id FROM mailboxes WHERE id=?1')
+    .bind(c.req.param('id')).first<any>();
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
+  await checkDomainScope(c, mb.domain_id);
+  const body = await c.req.json<any>().catch(() => ({}));
+  const ids = (Array.isArray(body.message_ids) ? body.message_ids : [])
+    .map((x: any) => String(x || '').slice(0, 300)).filter(Boolean).slice(0, 500);
+  if (!ids.length) return c.json({ have: [] });
+  // D1 refuses a statement with more than a hundred bound values, so the list is asked in
+  // chunks -- sent as one batch, so a caller's five hundred ids still cost a single round trip.
+  // D1 不接受绑定值超过一百个的语句,所以分块问 —— 但作为一个 batch 发出去,
+  // 调用方的五百个 id 仍然只是一次往返。
+  const CHUNK = 90;
+  const stmts = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const part = ids.slice(i, i + CHUNK);
+    const qs = part.map((_: string, k: number) => `?${k + 2}`).join(',');
+    stmts.push(c.env.DB.prepare(
+      `SELECT message_id FROM messages WHERE mailbox_id=?1 AND message_id IN (${qs})`
+    ).bind(mb.id, ...part));
+  }
+  const res = await c.env.DB.batch<any>(stmts);
+  const have: string[] = [];
+  for (const r of res) for (const row of r.results || []) have.push(row.message_id);
+  return c.json({ have });
+});
+
 adminApp.get('/mailboxes/:id/export-list', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
   if (!mb) throw new HttpError(404, 'e_mailbox_not_found');

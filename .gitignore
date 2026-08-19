@@ -79,3 +79,6 @@ wrangler.tmp*.jsonc
 
 # 早先误建的 0 字节野文件(字体走 R2 缓存,不落仓库)
 /fonts
+
+# 本地 Rspamd 实验环境(容器、配置、压测语料),不入库
+rspamd-lab/
