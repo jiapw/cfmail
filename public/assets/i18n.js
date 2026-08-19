@@ -5151,15 +5151,6 @@ Object.assign(DICTS.es, { e_label_builtin: "La etiqueta integrada no se puede re
 Object.assign(DICTS.ru, { e_label_builtin: "Встроенную метку нельзя переименовать или удалить" });
 
 // ---------- Gmail import / Gmail 导入 ----------
-Object.assign(DICTS['zh-CN'], { a_gmail: "Gmail 导入" });
-Object.assign(DICTS['zh-TW'], { a_gmail: "Gmail 匯入" });
-Object.assign(DICTS.en, { a_gmail: "Gmail import" });
-Object.assign(DICTS.ja, { a_gmail: "Gmail 取り込み" });
-Object.assign(DICTS.ko, { a_gmail: "Gmail 가져오기" });
-Object.assign(DICTS.de, { a_gmail: "Gmail-Import" });
-Object.assign(DICTS.fr, { a_gmail: "Import Gmail" });
-Object.assign(DICTS.es, { a_gmail: "Importar de Gmail" });
-Object.assign(DICTS.ru, { a_gmail: "Импорт из Gmail" });
 
 Object.assign(DICTS['zh-CN'], { gm_title: "从 Google Takeout 导入" });
 Object.assign(DICTS['zh-TW'], { gm_title: "從 Google Takeout 匯入" });
@@ -5430,3 +5421,53 @@ Object.assign(DICTS.de, { gm_confirm: "{0} Nachrichten in {1} importieren und {2
 Object.assign(DICTS.fr, { gm_confirm: "Importer {0} messages dans {1} et créer {2} libellé(s) ?" });
 Object.assign(DICTS.es, { gm_confirm: "¿Importar {0} mensajes a {1} y crear {2} etiqueta(s)?" });
 Object.assign(DICTS.ru, { gm_confirm: "Импортировать {0} писем в {1} и создать меток: {2}?" });
+
+Object.assign(DICTS['zh-CN'], { imp_src_gmail: "Gmail(Google Takeout)" });
+Object.assign(DICTS['zh-TW'], { imp_src_gmail: "Gmail(Google Takeout)" });
+Object.assign(DICTS.en, { imp_src_gmail: "Gmail (Google Takeout)" });
+Object.assign(DICTS.ja, { imp_src_gmail: "Gmail(Google Takeout)" });
+Object.assign(DICTS.ko, { imp_src_gmail: "Gmail(Google Takeout)" });
+Object.assign(DICTS.de, { imp_src_gmail: "Gmail (Google Takeout)" });
+Object.assign(DICTS.fr, { imp_src_gmail: "Gmail (Google Takeout)" });
+Object.assign(DICTS.es, { imp_src_gmail: "Gmail (Google Takeout)" });
+Object.assign(DICTS.ru, { imp_src_gmail: "Gmail (Google Takeout)" });
+
+Object.assign(DICTS['zh-CN'], { imp_src_gmail_note: "一个 mbox 文件,带 Gmail 的标签" });
+Object.assign(DICTS['zh-TW'], { imp_src_gmail_note: "一個 mbox 檔案,帶 Gmail 的標籤" });
+Object.assign(DICTS.en, { imp_src_gmail_note: "One mbox file, carrying Gmail's labels" });
+Object.assign(DICTS.ja, { imp_src_gmail_note: "Gmail のラベル付き mbox ファイル 1 つ" });
+Object.assign(DICTS.ko, { imp_src_gmail_note: "Gmail 라벨이 담긴 mbox 파일 하나" });
+Object.assign(DICTS.de, { imp_src_gmail_note: "Eine mbox-Datei mit den Labels von Gmail" });
+Object.assign(DICTS.fr, { imp_src_gmail_note: "Un fichier mbox, avec les libellés de Gmail" });
+Object.assign(DICTS.es, { imp_src_gmail_note: "Un archivo mbox, con las etiquetas de Gmail" });
+Object.assign(DICTS.ru, { imp_src_gmail_note: "Один файл mbox с метками Gmail" });
+
+Object.assign(DICTS['zh-CN'], { imp_src_eml: ".eml 目录" });
+Object.assign(DICTS['zh-TW'], { imp_src_eml: ".eml 目錄" });
+Object.assign(DICTS.en, { imp_src_eml: "Folder of .eml files" });
+Object.assign(DICTS.ja, { imp_src_eml: ".eml のフォルダー" });
+Object.assign(DICTS.ko, { imp_src_eml: ".eml 폴더" });
+Object.assign(DICTS.de, { imp_src_eml: "Ordner mit .eml-Dateien" });
+Object.assign(DICTS.fr, { imp_src_eml: "Dossier de fichiers .eml" });
+Object.assign(DICTS.es, { imp_src_eml: "Carpeta de archivos .eml" });
+Object.assign(DICTS.ru, { imp_src_eml: "Папка с файлами .eml" });
+
+Object.assign(DICTS['zh-CN'], { imp_src_eml_note: "Zoho、Outlook 等导出的单封邮件" });
+Object.assign(DICTS['zh-TW'], { imp_src_eml_note: "Zoho、Outlook 等匯出的單封郵件" });
+Object.assign(DICTS.en, { imp_src_eml_note: "Individual messages exported from Zoho, Outlook and the like" });
+Object.assign(DICTS.ja, { imp_src_eml_note: "Zoho や Outlook などから書き出した個別のメール" });
+Object.assign(DICTS.ko, { imp_src_eml_note: "Zoho, Outlook 등에서 내보낸 개별 메일" });
+Object.assign(DICTS.de, { imp_src_eml_note: "Einzelne Nachrichten, exportiert aus Zoho, Outlook und ähnlichen" });
+Object.assign(DICTS.fr, { imp_src_eml_note: "Messages individuels exportés depuis Zoho, Outlook et consorts" });
+Object.assign(DICTS.es, { imp_src_eml_note: "Mensajes sueltos exportados de Zoho, Outlook y similares" });
+Object.assign(DICTS.ru, { imp_src_eml_note: "Отдельные письма, выгруженные из Zoho, Outlook и подобных" });
+
+Object.assign(DICTS['zh-CN'], { gm_look_hint: "点这里改颜色和图标" });
+Object.assign(DICTS['zh-TW'], { gm_look_hint: "點這裡改顏色和圖示" });
+Object.assign(DICTS.en, { gm_look_hint: "Click to change colour and icon" });
+Object.assign(DICTS.ja, { gm_look_hint: "クリックで色とアイコンを変更" });
+Object.assign(DICTS.ko, { gm_look_hint: "클릭해 색상과 아이콘 변경" });
+Object.assign(DICTS.de, { gm_look_hint: "Klicken, um Farbe und Symbol zu ändern" });
+Object.assign(DICTS.fr, { gm_look_hint: "Cliquer pour changer la couleur et l'icône" });
+Object.assign(DICTS.es, { gm_look_hint: "Haga clic para cambiar color e icono" });
+Object.assign(DICTS.ru, { gm_look_hint: "Нажмите, чтобы изменить цвет и значок" });
