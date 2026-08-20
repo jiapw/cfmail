@@ -782,17 +782,7 @@ function verInfo(n) {
   if (n.kind !== 'file' || !(n.versioned || n.ver_count)) return null;
   const count = n.ver_count || 0;
   const first = n.ver_first || 0;
-  // Two different facts wear the same mark: history is being kept, and history exists. A file
-  // switched off keeps everything it already had, so it goes on showing versions while no
-  // longer collecting them -- and a row that says nothing about the difference is what makes
-  // the menu look stuck on "turn on" over a file that visibly has five versions.
-  // 同一个标记底下是两件不同的事:历史正在被保留,和历史存在过。关掉的文件会留住已有的一切,
-  // 于是它继续显示着版本,却不再收集版本 —— 一行只字不提这个区别,
-  // 正是"一个明明有五个版本的文件,菜单却卡在'开启'上"的由来。
-  const paused = !n.versioned;
-  const title = t('drv_ver_badge', count, first ? fmtDateTime(first) : '—')
-    + (paused ? ` · ${t('drv_ver_paused')}` : '');
-  return { count, first, paused, title };
+  return { count, first, title: t('drv_ver_badge', count, first ? fmtDateTime(first) : '—') };
 }
 
 /** The corner mark on a tile. A thumbnail says what the file looks like now; this says that now
@@ -801,7 +791,7 @@ function verInfo(n) {
 function verChipHtml(n) {
   const v = verInfo(n);
   if (!v) return '';
-  return `<span class="drv-vchip${v.paused ? ' paused' : ''}" title="${esc(v.title)}">${icon('restore', 13)}${v.count > 1 ? `<b>${v.count}</b>` : ''}</span>`;
+  return `<span class="drv-vchip" title="${esc(v.title)}">${icon('restore', 13)}${v.count > 1 ? `<b>${v.count}</b>` : ''}</span>`;
 }
 
 function badgesHtml(n, withVer = true) {
@@ -814,7 +804,7 @@ function badgesHtml(n, withVer = true) {
     // could be five minutes or five years of work, and only the pair says which.
     // 个数与日期并排,因为单看哪一个都只是半个答案:五个版本可能是五分钟,也可能是五年的活儿,
     // 只有这一对放在一起才说得清是哪一种。
-    out.push(`<span class="drv-vers${v.paused ? ' paused' : ''}" title="${esc(v.title)}">${icon('restore', 14)}${v.count > 1 ? `<b>${v.count}</b>` : ''}</span>`);
+    out.push(`<span class="drv-vers" title="${esc(v.title)}">${icon('restore', 14)}${v.count > 1 ? `<b>${v.count}</b>` : ''}</span>`);
     if (v.first) out.push(`<span class="drv-vsince">${esc(t('drv_ver_since', fmtDate(v.first)))}</span>`);
   }
   return out.length ? `<span class="drv-badges">${out.join('')}</span>` : '';
@@ -1232,15 +1222,7 @@ function menuItems(nodes) {
   // 星标、分享 —— 而不是和那些此刻就动手的动词坐在一起。
   if (own && !editorOnRoot) {
     const allOn = nodes.every((x) => (x.kind === 'folder' ? x.ver_policy : x.versioned));
-    // Off is not one state but two, and calling them both "turn on" is what made this entry
-    // read as broken: over a file that still holds versions it has to say it is picking the
-    // thread back up, not that it is starting something that was never there.
-    // "关"不是一个状态而是两个,把它们都叫作"开启",正是这一项看起来坏掉的原因:
-    // 在一个仍然攥着若干版本的文件上,它得说自己是把线头接回去,
-    // 而不是说要开始一件从来不存在的事。
-    const resuming = !allOn && nodes.every((x) => x.kind === 'file' && !x.versioned && x.ver_count > 0);
-    const key = allOn ? 'drv_ver_off' : resuming ? 'drv_ver_resume' : 'drv_ver_on';
-    out.push({ ic: 'restore', label: t(key), fn: () => setVersioning(nodes, !allOn) });
+    out.push({ ic: 'restore', label: t(allOn ? 'drv_ver_off' : 'drv_ver_on'), fn: () => setVersioning(nodes, !allOn) });
   }
   if (canEdit && !editorOnRoot) {
     out.push('-');
@@ -1300,6 +1282,13 @@ async function setVersioning(nodes, on) {
   let existing = false;
   if (on && nodes.some((x) => x.kind === 'folder')) {
     existing = await confirmDialog(t('drv_ver_sweep_ask'), t('drv_ver_sweep_ok'));
+  }
+  // Off takes the past with it now, so it is asked about the way anything irreversible is. The
+  // file keeps what it is; what it used to be does not survive the answer.
+  // 现在"关掉"会把过去一并带走,所以它要像任何不可逆的事情那样先问一句。
+  // 文件保住的是它现在的样子;它从前的样子,活不过这个回答。
+  if (!on && nodes.some((x) => x.kind === 'file' && (x.versioned || x.ver_count))) {
+    if (!(await confirmDialog(t('drv_ver_off_ask'), t('drv_ver_off')))) return;
   }
   try {
     for (const x of nodes) {

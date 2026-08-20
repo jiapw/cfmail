@@ -5731,12 +5731,12 @@ Object.assign(DICTS.fr, { trust_risk_warn: "Vous avez marqué cet expéditeur co
 Object.assign(DICTS.es, { trust_risk_warn: "Ha marcado a este remitente como riesgo." });
 Object.assign(DICTS.ru, { trust_risk_warn: "Вы отметили этого отправителя как опасного." });
 
-Object.assign(DICTS['zh-CN'], { drv_ver_resume: '重新开启历史版本', drv_ver_paused: '已停止记录新版本' });
-Object.assign(DICTS['zh-TW'], { drv_ver_resume: '重新開啟歷史版本', drv_ver_paused: '已停止記錄新版本' });
-Object.assign(DICTS.en, { drv_ver_resume: 'Resume version history', drv_ver_paused: 'no longer adding new ones' });
-Object.assign(DICTS.ja, { drv_ver_resume: 'バージョン履歴を再開', drv_ver_paused: '新しい版の記録は停止中' });
-Object.assign(DICTS.ko, { drv_ver_resume: '버전 기록 다시 켜기', drv_ver_paused: '새 버전 기록은 중지됨' });
-Object.assign(DICTS.de, { drv_ver_resume: 'Versionsverlauf fortsetzen', drv_ver_paused: 'keine neuen mehr' });
-Object.assign(DICTS.fr, { drv_ver_resume: "Reprendre l'historique des versions", drv_ver_paused: 'plus aucune nouvelle version' });
-Object.assign(DICTS.es, { drv_ver_resume: 'Reanudar historial de versiones', drv_ver_paused: 'ya no se guardan nuevas' });
-Object.assign(DICTS.ru, { drv_ver_resume: 'Возобновить историю версий', drv_ver_paused: 'новые версии больше не сохраняются' });
+Object.assign(DICTS['zh-CN'], { drv_ver_off_ask: '关闭后,除最新版本外的历史会被删除,无法恢复。确定吗?' });
+Object.assign(DICTS['zh-TW'], { drv_ver_off_ask: '關閉後,除最新版本外的歷史會被刪除,無法恢復。確定嗎?' });
+Object.assign(DICTS.en, { drv_ver_off_ask: 'Turning this off deletes every version but the newest, and that cannot be undone. Continue?' });
+Object.assign(DICTS.ja, { drv_ver_off_ask: '無効にすると、最新版以外の履歴は削除され、元に戻せません。続けますか。' });
+Object.assign(DICTS.ko, { drv_ver_off_ask: '끄면 최신 버전을 제외한 기록이 삭제되며 되돌릴 수 없습니다. 계속할까요?' });
+Object.assign(DICTS.de, { drv_ver_off_ask: 'Beim Ausschalten werden alle Versionen außer der neuesten gelöscht, unwiderruflich. Fortfahren?' });
+Object.assign(DICTS.fr, { drv_ver_off_ask: 'La désactivation supprime toutes les versions sauf la plus récente, sans retour possible. Continuer ?' });
+Object.assign(DICTS.es, { drv_ver_off_ask: 'Al desactivarlo se borran todas las versiones salvo la más reciente, sin vuelta atrás. ¿Continuar?' });
+Object.assign(DICTS.ru, { drv_ver_off_ask: 'При выключении все версии, кроме последней, будут удалены безвозвратно. Продолжить?' });
