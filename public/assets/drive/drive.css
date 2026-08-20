@@ -477,6 +477,20 @@
 /* The window frame is square -- the scrollbar meets its corners cleanly; the pages INSIDE
    carry the rounding instead.
    窗口外框直角 —— 滚动条与四角干净相接;圆角改由内部的页面卡片承担。 */
+/* A picture inside a Word document. It waits as a correctly shaped grey box so the page does
+   not jump when it lands, and it is placed absolutely inside that box because a rotated picture
+   has to turn about its own centre without dragging the layout around with it.
+   Word 文档里的一张图片。它先以一个形状正确的灰框等着,好让它落地时页面不会跳;
+   而它在框内绝对定位,是因为一张旋转的图必须绕自己的中心转,不能把版面一起拖着走。 */
+.drv-docximg {
+  position: relative; width: 100%; margin: 12px auto; overflow: hidden; border-radius: 4px;
+}
+.drv-docximg.free { max-width: 100%; min-height: 90px; }
+.drv-docximg.pending { display: flex; align-items: center; justify-content: center; background: var(--panel-2); }
+.drv-docximg .drv-spin { width: 22px; height: 22px; border-width: 2px; }
+.drv-docximg img { position: absolute; inset: 0; margin: auto; display: block; }
+.drv-docximg.free img { position: static; max-width: 100%; height: auto; margin: 0 auto; }
+
 .drv-docwin {
   flex: 1; min-height: 0; overflow-y: auto; border-radius: 0;
   background: var(--panel); border: 1px solid var(--border);

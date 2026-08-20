@@ -5,7 +5,7 @@
 // 网盘预览与缩略图共用的文档解析层:类型判定、docx/pptx 解包(经 rzip.js 按 Range 读)、
 // drawio 解压与绘制、mhtml 复用已自托管的 postal-mime。所有函数都保守处理 ——
 // 解析失败等于"没有预览",绝不炸页面。
-import { openZip, zipText } from './rzip.js';
+import { openZip, zipPart, zipText } from './rzip.js';
 
 // A .docx keeps its whole text in one part, word/document.xml, and its pictures in another the
 // text parser never opens. Read by ranges, that means a 50 MB document costs its central
@@ -16,6 +16,15 @@ import { openZip, zipText } from './rzip.js';
 // 从不打开它。按 Range 读,一份 50 MB 的文档只需付出中央目录加两百来 KB 的 XML,
 // 照片根本不会被取下来。这里没有"分页"可做:页是 Word 排版时算出来的,文件里没有这个概念。
 const DOCX_CAP = 32 * 1024 * 1024;
+const DOCX_IMG_MAX = 16 * 1024 * 1024;
+const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+// OOXML measures in EMU: 914400 to the inch, so 9525 to a CSS pixel at 96dpi.
+// OOXML 用 EMU 计量:每英寸 914400,于是 96dpi 下每 CSS 像素 9525。
+const EMU_PX = 9525;
+const IMG_MIME = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', tif: 'image/tiff', tiff: 'image/tiff',
+};
 
 // ---------- Type detection ----------
 // ---------- 类型判定 ----------
@@ -121,9 +130,67 @@ const NS = (root, local) => [...root.getElementsByTagNameNS('*', local)];
 
 // ---------- docx ----------
 
+/** A prefixed attribute, read both ways. A document that declares the prefix answers to the
+ *  qualified name; one that binds the namespace differently answers to the namespace lookup.
+ *  一个带前缀的属性,两种方式都试。声明了该前缀的文档认得限定名;
+ *  以别的方式绑定命名空间的文档认得命名空间查找。 */
+const attrNS = (el, prefix, ns, name) =>
+  el.getAttribute(`${prefix}:${name}`) || el.getAttributeNS(ns, name) || '';
+
+/** Relationship id -> path inside the package. Targets are written relative to the part that
+ *  owns the .rels file, so they are resolved against word/ before anything looks them up.
+ *  关系 id → 包内路径。Target 是相对于"拥有这个 .rels 的部件"书写的,
+ *  所以在任何人拿它去查之前,先按 word/ 解析成完整路径。 */
+async function docxRels(zip) {
+  const map = new Map();
+  const xml = await zipText(zip, 'word/_rels/document.xml.rels', 1 << 20);
+  if (!xml) return map;
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  for (const el of [...doc.getElementsByTagName('*')]) {
+    if (el.localName !== 'Relationship') continue;
+    // An external target is a URL to somewhere else entirely; there is nothing in the package
+    // to read, and following it would fetch off-origin on the reader's behalf.
+    // 外部 target 是指向别处的 URL;包里没有任何东西可读,
+    // 而跟过去等于代读者去拉一个跨源资源。
+    if (el.getAttribute('TargetMode') === 'External') continue;
+    const id = el.getAttribute('Id');
+    const target = el.getAttribute('Target') || '';
+    if (!id || !target || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
+    const out = [];
+    for (const seg of (target.startsWith('/') ? target.slice(1) : `word/${target}`).split('/')) {
+      if (!seg || seg === '.') continue;
+      if (seg === '..') out.pop();
+      else out.push(seg);
+    }
+    if (out.length) map.set(id, out.join('/'));
+  }
+  return map;
+}
+
+/** The picture a run carries, if it carries one. Both spellings: the modern DrawingML blip and
+ *  the older VML imagedata that Word still emits for some pasted content.
+ *  一个 run 所携带的图片(如果它带了的话)。两种写法都认:现代 DrawingML 的 blip,
+ *  以及 Word 至今仍会为某些粘贴内容吐出的老式 VML imagedata。 */
+function docxImage(r) {
+  const blip = NS(r, 'blip')[0];
+  const vml = NS(r, 'imagedata')[0];
+  const rid = blip ? attrNS(blip, 'r', REL_NS, 'embed') : vml ? attrNS(vml, 'r', REL_NS, 'id') : '';
+  if (!rid) return null;
+  const ext = NS(r, 'extent')[0];
+  const w = Math.round(parseInt(ext?.getAttribute('cx') || '0', 10) / EMU_PX) || 0;
+  const h = Math.round(parseInt(ext?.getAttribute('cy') || '0', 10) / EMU_PX) || 0;
+  // Rotation is in sixtieths of a degree. It is not decoration: a page of photographs off a
+  // phone is mostly rotated frames, and dropping the angle shows every one of them on its side.
+  // 旋转角以 1/60 度为单位。它不是装饰:一页手机照片多半整页都是旋转过的框,
+  // 丢掉这个角度,等于把每一张都侧着放出来。
+  const xfrm = NS(r, 'xfrm')[0];
+  const deg = Math.round(parseInt(xfrm?.getAttribute('rot') || '0', 10) / 60000);
+  return { kind: 'img', rid, w, h, rot: ((deg % 360) + 360) % 360 };
+}
+
 /**
  * Paragraph model out of word/document.xml. Enough for a readable sheet: heading levels,
- * bold and italic runs, list bullets, simple tables.
+ * bold and italic runs, list bullets, simple tables, and the pictures in between.
  * 从 word/document.xml 抽段落模型。读得下去就够:标题层级、粗斜体、列表圆点、简单表格。
  * @returns {Promise<{blocks: any[], text: string}|null>}
  */
@@ -132,17 +199,41 @@ export async function docxParse(source) {
     const zip = await openZip(source);
     const docXml = await zipText(zip, 'word/document.xml', DOCX_CAP);
     if (!docXml) return null;
+    const rels = await docxRels(zip);
     const xml = new DOMParser().parseFromString(docXml, 'application/xml');
     const body = NS(xml, 'body')[0];
     if (!body) return null;
     const blocks = [];
     const texts = [];
+    // A paragraph is a sequence, not a thing: text, then a picture, then more text, in the
+    // order Word wrote them. Returning one block per paragraph was fine while only the text was
+    // being read; a picture has to land where it stands, so this yields as many blocks as the
+    // paragraph has parts.
+    // 一个段落是一串东西,而不是一个东西:文字、图片、再文字,按 Word 写下的顺序。
+    // 只读文字时"一段一块"没问题;而图片必须落在它所在的位置,
+    // 所以这里按段落的组成部分产出相应数量的块。
     const readPara = (p) => {
       const styleEl = NS(p, 'pStyle')[0];
       const style = styleEl?.getAttribute('w:val') || styleEl?.getAttributeNS('*', 'val') || '';
       const listed = NS(p, 'numPr').length > 0;
-      const runs = [];
+      const hm = /^Heading([1-6])$/i.exec(style) || /^[1-6]$/.exec(style);
+      const h = hm ? parseInt(hm[1] || hm[0], 10) : 0;
+      const out = [];
+      let runs = [];
+      const flush = () => {
+        if (!runs.length) return;
+        const text = runs.map((x) => x.t).join('');
+        if (text) texts.push(text);
+        out.push({ kind: 'p', h, listed, runs });
+        runs = [];
+      };
       for (const r of NS(p, 'r')) {
+        const img = docxImage(r);
+        if (img) {
+          flush();
+          out.push(img);
+          continue;
+        }
         const t = NS(r, 't').map((x) => x.textContent).join('');
         if (!t) continue;
         // w:sz is in half-points; carry it so the preview can restore the document's own sizes
@@ -151,15 +242,16 @@ export async function docxParse(source) {
         const sz = szEl ? parseInt(szEl.getAttribute('w:val') || '0', 10) / 2 : 0;
         runs.push({ t, b: NS(r, 'b').length > 0, i: NS(r, 'i').length > 0, sz });
       }
-      const text = runs.map((x) => x.t).join('');
-      if (text) texts.push(text);
-      const h = /^Heading([1-6])$/i.exec(style) || /^[1-6]$/.exec(style);
-      return { kind: 'p', h: h ? parseInt(h[1] || h[0], 10) : 0, listed, runs };
+      flush();
+      // An empty paragraph is a blank line the author put there on purpose
+      // 空段落是作者有意留下的一个空行
+      if (!out.length) out.push({ kind: 'p', h, listed, runs: [] });
+      return out;
     };
     for (const el of body.children) {
       const local = el.localName;
       if (local === 'p') {
-        blocks.push(readPara(el));
+        blocks.push(...readPara(el));
       } else if (local === 'tbl') {
         const rows = [];
         for (const tr of NS(el, 'tr')) {
@@ -176,7 +268,19 @@ export async function docxParse(source) {
       }
       if (blocks.length > 2000) break; // enough for any preview / 预览用途足够了
     }
-    return { blocks, text: texts.join('\n') };
+    // The zip stays open behind this: pictures are read one at a time, when something asks
+    // for one, over the same ranged source the text came from. A document of twenty photographs
+    // is twenty megabytes, and a reader who opens it to check a date should not pay for them.
+    // zip 在这之后仍开着:图片一次读一张,在有人要的时候读,走的是取正文时的同一个 Range 源。
+    // 一份二十张照片的文档有二十兆,而一个打开它只为核对日期的读者,不该为它们买单。
+    const image = async (rid) => {
+      const path = rels.get(rid);
+      if (!path) return null;
+      const bytes = await zipPart(zip, path, DOCX_IMG_MAX);
+      if (!bytes || !bytes.length) return null;
+      return { bytes, mime: IMG_MIME[ext(path)] || 'application/octet-stream' };
+    };
+    return { blocks, text: texts.join('\n'), image };
   } catch {
     return null;
   }
