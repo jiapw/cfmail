@@ -547,14 +547,29 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 .contact-main { min-width: 0; flex: 1; }
 .contact-name { font-weight: 500; }
 .contact-addr { color: var(--text-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
-.ct-safe { flex: none; }
-.ct-safe svg { width: 13px; height: 13px; }
-.ct-safe.ok::part(base) { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); }
-.ct-safe-reset {
-  border: none; background: none; color: var(--text-3); cursor: pointer;
-  display: flex; align-items: center; padding: 2px; margin-left: -6px; flex: none;
+/* 安全性三档下拉。颜色只在两端出现:可信是绿的,隐患是红的,未知不着色 ——
+   一整列彩色等于没有颜色,而未知本来就是"还没人说过",不该抢眼。
+   The colour appears only at the two ends. A whole column of colour is no colour at all, and
+   unknown means "nobody has said", which is not a thing to shout about. */
+.ct-trust { flex: none; width: 104px; }
+.ct-trust::part(combobox) { border-color: var(--border); }
+.ct-trust.t-trusted::part(combobox) {
+  color: var(--wa-color-success-on-quiet); background: var(--wa-color-success-fill-quiet);
+  border-color: color-mix(in srgb, var(--wa-color-success-fill-loud) 35%, transparent);
 }
-.ct-safe-reset:hover { color: var(--text); }
+.ct-trust.t-risk::part(combobox) {
+  color: var(--wa-color-danger-on-quiet); background: var(--wa-color-danger-fill-quiet);
+  border-color: color-mix(in srgb, var(--wa-color-danger-fill-loud) 35%, transparent);
+}
+
+/* 发件人被标为隐患时,正文上方的提示条 */
+.risk-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--wa-color-danger-fill-quiet); color: var(--wa-color-danger-on-quiet);
+  border: 1px solid color-mix(in srgb, var(--wa-color-danger-fill-loud) 35%, transparent);
+  border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; font-size: 12.5px;
+}
+.risk-bar wa-icon { flex: none; }
 
 /* 自取邮箱名:输入框 + 固定的 @域名 后缀 */
 .name-pick {

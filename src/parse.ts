@@ -417,14 +417,19 @@ export async function recordContacts(env: Env, mailboxId: string, people: Addr[]
         internal = 1;
       }
     } catch {}
+    // A colleague is written down as trusted, because the deployment already knows who they are.
+    // Everybody else starts unknown and stays there until the owner says something -- being
+    // external is not itself a reason for suspicion. Once said, what was said is never overwritten.
+    // 同事直接记为可信 —— 这套部署本来就知道他是谁。其余所有人从未知开始,
+    // 在主人开口之前一直是未知 —— 身在外部本身不构成怀疑的理由。一旦开过口,说过的话不再被覆盖。
     await env.DB.prepare(
-      `INSERT INTO contacts (id, mailbox_id, addr, name, internal, times, last_seen)
-       VALUES (?1,?2,?3,?4,?5,1,?6)
+      `INSERT INTO contacts (id, mailbox_id, addr, name, internal, times, last_seen, trust)
+       VALUES (?1,?2,?3,?4,?5,1,?6,?7)
        ON CONFLICT(mailbox_id, addr) DO UPDATE SET
          times = times + 1, last_seen = MAX(last_seen, ?6), internal = ?5,
          name = CASE WHEN ?4 != '' THEN ?4 ELSE name END`
     )
-      .bind(uid(), mailboxId, addr, (p.name || '').slice(0, 80), internal, ts)
+      .bind(uid(), mailboxId, addr, (p.name || '').slice(0, 80), internal, ts, internal ? 'trusted' : 'unknown')
       .run();
   }
 }

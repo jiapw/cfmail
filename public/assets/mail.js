@@ -4,6 +4,13 @@ import { t, tStored } from './i18n.js';
 import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName } from './app.js';
 import { openCompose } from './compose.js';
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
+
+// The three things a mailbox can say about a correspondent. Kept in step with Trust in
+// src/types.ts; anything else read off the wire is treated as unknown, never as trusted.
+// 一个邮箱对往来对象能说的三句话。与 src/types.ts 的 Trust 保持一致;
+// 从网络上读到的其它值一律当未知,绝不当可信。
+const TRUSTS = ['trusted', 'unknown', 'risk'];
+const pickTrust = (v) => (TRUSTS.includes(v) ? v : 'unknown');
 import {
   BUILTIN, allLabels, labelById, labelName, labelMark, chipHtml, rowLabelsHtml,
   openLabelMenu, lastLabel, loadLabels,
@@ -780,7 +787,7 @@ function imgBlockBar(box, mid, blocked) {
   if (trust)
     trust.onclick = async () => {
       try {
-        await api('POST', `/api/mailboxes/${store.mbId}/contacts/safe`, { addr: from, safe: true });
+        await api('POST', `/api/mailboxes/${store.mbId}/contacts/trust`, { addr: from, trust: 'trusted' });
         toast(t('img_trusted', from));
         box.dataset.loaded = '';
         loadBody(mid);
@@ -817,6 +824,15 @@ async function loadBody(mid, showImages = false) {
       iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
       if (prevH) iframe.style.height = prevH + 'px'; // 别从默认的 150px 起跳
       box.innerHTML = '';
+      // Say it where the mail is read. Marking somebody a risk and then showing their mail
+      // exactly like everybody else's would make the mark worth nothing.
+      // 在读信的地方说出来。把某人标为隐患,却把他的信显示得和别人一模一样,这个标记就等于没有。
+      if (b.sender_trust === 'risk') {
+        const warn = document.createElement('div');
+        warn.className = 'risk-bar';
+        warn.innerHTML = `${icon('warning', 15)}<span>${esc(t('trust_risk_warn'))}</span>`;
+        box.appendChild(warn);
+      }
       if (b.images_blocked > 0) box.appendChild(imgBlockBar(box, mid, b.images_blocked));
       box.appendChild(iframe);
       const bodyFont = store.me?.user?.body_font || '';
@@ -1140,20 +1156,15 @@ export async function renderContacts() {
     bindShell();
     return;
   }
-  // An empty safe means follow the default: local senders are safe, external ones are not
-  // safe 为空表示跟随默认:站内安全,外部不安全
-  const effSafe = (ct) => (ct.safe === null || ct.safe === undefined ? !!ct.internal : !!ct.safe);
-  const safeHtml = (ct) => {
-    const on = effSafe(ct);
-    const explicit = ct.safe !== null && ct.safe !== undefined;
-    return (
-      `<wa-button class="ct-safe ${on ? 'ok' : ''}" appearance="outlined" size="small"
-        data-safe="${esc(ct.addr)}" data-val="${on ? 1 : 0}"
-        title="${esc(t(explicit ? 'safe_explicit' : 'safe_by_default'))}">${icon('shield', 13)} ${esc(t(on ? 'safe_on' : 'safe_off'))}</wa-button>` +
-      (explicit
-        ? `<button class="ct-safe-reset" data-reset="${esc(ct.addr)}" title="${esc(t('safe_reset'))}">${icon('close', 12)}</button>`
-        : '')
-    );
+  // Three states, chosen from a list rather than cycled through by clicking: with more than two
+  // positions, a toggle stops telling you where you are without being pressed.
+  // 三档,用列表选而不是点着轮换:超过两个位置的开关,不按一下就说不清自己现在在哪儿。
+  const trustHtml = (ct) => {
+    const cur = pickTrust(ct.trust);
+    return `<wa-select class="ct-trust t-${cur}" size="small" value="${cur}"
+        data-trust="${esc(ct.addr)}" title="${esc(t('trust_label'))}">
+        ${TRUSTS.map((v) => `<wa-option value="${v}">${esc(t('trust_' + v))}</wa-option>`).join('')}
+      </wa-select>`;
   };
   const groupHtml = (list, titleKey) => `
     <div class="contact-group">
@@ -1168,7 +1179,7 @@ export async function renderContacts() {
             <div class="contact-addr">${esc(ct.addr)}</div>
           </div>
           <span class="dim">${ct.directory && !ct.times ? '' : esc(t('times_n', ct.times))}</span>
-          ${safeHtml(ct)}
+          ${trustHtml(ct)}
           <wa-button appearance="outlined" size="small" data-write="${esc(ct.addr)}">${icon('pencil', 14)} ${esc(t('write_to'))}</wa-button>
         </div>`
         )
@@ -1199,19 +1210,26 @@ export async function renderContacts() {
       ? groupHtml(cs.filter((x) => x.internal), 'contacts_internal') + groupHtml(cs.filter((x) => !x.internal), 'contacts_external')
       : `<div class="empty">${esc(t('no_contacts'))}</div>`;
   };
-  const setSafe = async (addr, safe) => {
+  const setTrust = async (addr, trust, el) => {
     try {
-      await api('POST', `/api/mailboxes/${store.mbId}/contacts/safe`, { addr, safe });
-      await reload();
+      await api('POST', `/api/mailboxes/${store.mbId}/contacts/trust`, { addr, trust });
+      // Recolour in place instead of redrawing the page: the list is long, and rebuilding it under
+      // the pointer takes the row you were looking at somewhere else.
+      // 就地换色,不重画整页:列表很长,在指针底下重建一遍,会把你正看着的那一行挪到别处。
+      if (el) el.className = `ct-trust t-${trust}`;
     } catch (e) {
       toast(e.message, true);
+      await reload();
     }
   };
+  pageEl.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-trust]');
+    if (sel) setTrust(sel.dataset.trust, pickTrust(sel.value), sel);
+  });
   pageEl.addEventListener('click', (e) => {
-    const rst = e.target.closest('[data-reset]');
-    if (rst) return setSafe(rst.dataset.reset, null);
-    const sf = e.target.closest('[data-safe]');
-    if (sf) return setSafe(sf.dataset.safe, sf.dataset.val !== '1');
+    // A click inside the dropdown is aimed at the dropdown, not at "write to this person"
+    // 落在下拉框里的点击是冲着下拉框去的,不是"给这个人写信"
+    if (e.target.closest('.ct-trust')) return;
     const w = e.target.closest('[data-write]');
     if (w) {
       openCompose({ mbId: store.mbId, to: w.dataset.write });

@@ -8,7 +8,11 @@ export const esc = (s) =>
 export const qs = (sel, root = document) => root.querySelector(sel);
 export const qsa = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-const ICON_ALIAS = { starFill: 'star-fill', expandLess: 'expand-less', markRead: 'mark-read' };
+// warning shares the spam glyph: the triangle with an exclamation in it is one shape doing two
+// jobs, and calling it 'spam' at a risk warning would read as a filing decision.
+// warning 与 spam 共用字形:那个带感叹号的三角本来就一形两用,
+// 而在隐患提示处写 'spam' 会被读成一次归档判断。
+const ICON_ALIAS = { starFill: 'star-fill', expandLess: 'expand-less', markRead: 'mark-read', warning: 'spam' };
 
 /** Remaining time: minutes and seconds are enough, and the hour field only appears past an hour
  *  剩余时间:分秒够用,超过一小时才带小时位 */
