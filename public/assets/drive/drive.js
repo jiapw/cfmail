@@ -1019,12 +1019,12 @@ function bindFolderView(main) {
     box.addEventListener('dragenter', (e) => {
       if (!e.dataTransfer?.types?.includes('Files')) return;
       depth++;
-      box.classList.add('droppable');
+      dropFrameOn(box);
     });
     box.addEventListener('dragleave', () => {
       if (--depth <= 0) {
         depth = 0;
-        box.classList.remove('droppable');
+        dropFrameOff();
       }
     });
     // Only claim the drag when it actually carries files. An item being moved inside the drive
@@ -1038,11 +1038,59 @@ function bindFolderView(main) {
       if (!e.dataTransfer?.types?.includes('Files')) return;
       e.preventDefault();
       depth = 0;
-      box.classList.remove('droppable');
+      dropFrameOff();
       dropUpload(e.dataTransfer);
     });
   }
 }
+
+/** The frame that says a drop will land here. It lives on the body rather than inside the list,
+ *  for two reasons that both come from the list being a scrolling box.
+ *
+ *  A box positioned inside a scroller is placed against the top of its CONTENT, so it slid off
+ *  the screen the moment anything scrolled -- exactly when it is needed, since the drags that
+ *  take a while are the ones that scroll before they land. And an outline on the scroller itself,
+ *  which does hold still, is painted underneath the tiles: it survived only in the gaps between
+ *  them, which reads as a broken frame rather than a highlighted target.
+ *
+ *  Fixed to the viewport and above the list, it can do neither. The marquee next door has been
+ *  drawn this way all along, for the same reason.
+ *
+ *  这个框告诉你"松手就落在这里"。它挂在 body 上而不是列表里面,
+ *  两个理由都来自"列表是一个会滚动的盒子"。
+ *
+ *  放在滚动容器里的盒子,是相对它的"内容"顶端摆放的,于是一滚就滑出了屏幕 ——
+ *  而那正是最需要它的时候:拖得久的那一下,总是滚过之后才落地。
+ *  而画在滚动容器自身上的 outline 虽然不动,却被画在瓦片下面:
+ *  它只在瓦片之间的缝里活下来,看上去像一个断掉的框,而不是一个被点亮的落点。
+ *
+ *  固定在视口上、压在列表之上,两样都不会发生。旁边的框选矩形一直就是这么画的,理由相同。 */
+let dropFrameEl = null;
+
+function dropFrameOn(box) {
+  const r = box.getBoundingClientRect();
+  if (!dropFrameEl) {
+    dropFrameEl = document.createElement('div');
+    dropFrameEl.className = 'drv-dropframe';
+    document.body.appendChild(dropFrameEl);
+  }
+  dropFrameEl.style.left = `${r.left + 4}px`;
+  dropFrameEl.style.top = `${r.top + 4}px`;
+  dropFrameEl.style.width = `${Math.max(0, r.width - 8)}px`;
+  dropFrameEl.style.height = `${Math.max(0, r.height - 8)}px`;
+}
+
+function dropFrameOff() {
+  dropFrameEl?.remove();
+  dropFrameEl = null;
+}
+
+// A drag that ends anywhere else never sends the list a dragleave, and a frame left standing
+// over a page nobody is dragging onto is worse than one that flickers.
+// 一次在别处结束的拖动,不会给列表发 dragleave;
+// 而一个站在"没人往上拖"的页面上的框,比一个闪一下的框更糟。
+window.addEventListener('dragend', dropFrameOff);
+window.addEventListener('drop', dropFrameOff);
 
 function openNode(n) {
   if (n.kind === 'folder') navigate(`#/drive/folder/${n.id}`);

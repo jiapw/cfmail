@@ -142,20 +142,15 @@
   background: color-mix(in srgb, var(--primary) 16%, transparent);
   border-radius: 2px;
 }
-/* Drawn on the scroller itself rather than as a box inside it. An absolutely positioned child of
-   a scrolling element is placed against the top of its CONTENT, not its viewport, so the frame
-   was pinned to the first screenful and slid away the moment you scrolled -- exactly when you
-   need it, since a long drop lands after some scrolling. An outline is painted on the element's
-   own border box and a background is painted on its padding box; neither moves with the content.
-   画在滚动容器自己身上,而不是画成它里面的一个盒子。滚动元素的绝对定位子元素,是相对它的
-   "内容"顶端摆放的,而不是相对它的视口 —— 于是那个框被钉在第一屏上,你一滚它就滑走了,
-   而那恰恰是最需要它的时刻:拖得久的那一下,总是滚过之后才落地。
-   轮廓画在元素自己的边框盒上,背景画在它的内边距盒上,两者都不随内容移动。 */
-.drv-scroll.droppable {
-  outline: 2px dashed var(--primary);
-  outline-offset: -6px;
-  border-radius: 12px;
-  background-color: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+/* Fixed to the viewport and above the list: it cannot scroll away with the content, and it
+   cannot be painted under the tiles. Positioned from the list's rectangle by the code that
+   raises it -- see dropFrameOn.
+   固定在视口上、压在列表之上:它既不会随内容滚走,也不会被画到瓦片下面。
+   位置由抬起它的那段代码按列表的矩形算出 —— 见 dropFrameOn。 */
+.drv-dropframe {
+  position: fixed; z-index: 30; pointer-events: none;
+  border: 2px dashed var(--primary); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
 }
 
 /* ---------- List view ---------- */
