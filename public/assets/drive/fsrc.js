@@ -34,9 +34,34 @@ export function usePubSource(token) {
 
 export const isPub = () => !!fsrc.token;
 
-export const dlUrl = (id, inline) =>
-  `${fsrc.base}/files/${encodeURIComponent(id)}/dl${inline ? '?inline=1' : ''}`;
-export const thumbUrl = (id) => `${fsrc.base}/files/${encodeURIComponent(id)}/thumb`;
+// A file's address used to be a fixed thing while its contents changed underneath it, which is
+// exactly the shape of a stale preview: the browser is asked for a URL it already holds an answer
+// to, and it answers without asking us. Naming the version in the address ends that -- new bytes,
+// new URL, and nothing cached under the old one is ever requested again. The server ignores `v`;
+// it is addressed to the cache, not to us. (This also repairs a browser that already holds a
+// stale copy, which no change to our response headers can reach.)
+// 文件的地址从前是个定数,而它的内容在底下悄悄换过 —— 这正是"预览是旧的"的形状:
+// 浏览器被问到一个它已有答案的 URL,于是它不来问我们就自己答了。
+// 把版本写进地址就终结了这件事:新字节,新 URL,旧地址下缓存的东西再也不会被请求。
+// 服务端忽略 v —— 这个参数是说给缓存听的,不是说给我们听的。
+// (这同时也救得回一个已经存着旧副本的浏览器,而那是任何响应头的改动都够不到的。)
+const withVer = (base, parts, ver) => {
+  const q = parts.slice();
+  if (ver) q.push('v=' + encodeURIComponent(ver));
+  return base + (q.length ? '?' + q.join('&') : '');
+};
+
+export const dlUrl = (id, inline, ver) =>
+  withVer(`${fsrc.base}/files/${encodeURIComponent(id)}/dl`, inline ? ['inline=1'] : [], ver);
+export const thumbUrl = (id, ver) =>
+  withVer(`${fsrc.base}/files/${encodeURIComponent(id)}/thumb`, [], ver);
+
+// One earlier version's bytes. The signed-in Drive alone answers here -- a public share hands out
+// what a file is now, and its history is not part of what was handed out.
+// 某个更早版本的字节。只有登录态网盘应答这里 —— 公开分享交出去的是"文件现在是什么",
+// 而它的历史不在交出去的东西之内。
+export const verUrl = (id, vid, inline) =>
+  `${fsrc.base}/nodes/${encodeURIComponent(id)}/versions/${encodeURIComponent(vid)}/dl${inline ? '?inline=1' : ''}`;
 export const metaUrl = (id) => `${fsrc.base}/nodes/${encodeURIComponent(id)}/meta`;
 
 // The two views spell folders differently: the Drive has other kinds of listing to distinguish

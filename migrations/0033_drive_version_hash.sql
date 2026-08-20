@@ -1,0 +1,33 @@
+-- The digest of what a version holds, so that saving a file nobody changed does not mint a version
+-- that says nothing.
+--
+-- The comparison is made by the client, before it uploads anything -- which is the only place it
+-- can be made in time to matter. A server can only tell that two files are identical after it has
+-- been sent the second one, by which point the bytes have already crossed the wire and the saving
+-- would be of a row, not of the upload. So the browser hashes the file it is about to send, reads
+-- the digest of the current version off the listing it already has, and where they agree it sends
+-- nothing at all.
+--
+-- The digest arrives as a claim and is not taken as one: it is handed to R2 as the expected sha256
+-- of the body, and R2 refuses the write if the bytes disagree. A client cannot poison its own
+-- history by lying here, because the lie fails before it is ever recorded.
+--
+-- NULL where nothing said: a mounted volume and a plain curl do not compute digests, and their
+-- versions carry none. Such a version simply never matches, which errs toward keeping a version
+-- that could have been skipped -- the harmless direction. The other one loses a save.
+--
+-- 一个版本所装内容的摘要,好让"谁都没改却又保存了一次"不至于生出一个什么也没说的版本。
+--
+-- 这个比较由客户端在上传任何东西之前做出 —— 那是唯一来得及做出它的地方。
+-- 服务端只有在收到第二份文件之后才可能知道两份一样,而那时字节早已过河,
+-- 省下的就只是一行记录,不是那次上传。所以浏览器先算它即将发出的那个文件的摘要,
+-- 再从它本来就握着的列表里读出当前版本的摘要,两者相同时,它什么也不发。
+--
+-- 摘要是作为"声称"抵达的,而它不被当作声称对待:它作为请求体的预期 sha256 交给 R2,
+-- 字节对不上 R2 就拒绝这次写入。客户端无法靠在这里说谎来毒害自己的历史,
+-- 因为谎言在被记下之前就失败了。
+--
+-- 没人说的地方就是 NULL:挂载的卷与朴素的 curl 不算摘要,它们的版本也就不带。
+-- 这样的版本永远匹配不上,于是偏差落在"多留一个本可以省掉的版本"这一侧 —— 无害的那一侧。
+-- 另一侧丢的是一次保存。
+ALTER TABLE drive_versions ADD COLUMN hash TEXT;
