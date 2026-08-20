@@ -28,7 +28,25 @@ import { fileURLToPath } from 'node:url';
 import { stripJsonc, withEntryRoute } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CONFIG = path.join(ROOT, 'wrangler.jsonc');
+const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
+/**
+ * Which configuration file this run belongs to. One checkout can be asked to deploy into more
+ * than one Cloudflare account, and wrangler.jsonc holds the identity of exactly one of them:
+ * its account, its database, its entry hosts. Reading somebody else's file would carry another
+ * account's database_id and APP_ORIGIN into this deployment; writing over it would destroy the
+ * only copy of a configuration that is not in git.
+ *
+ * So the default file is used when it is free or already ours, and a second account gets a file
+ * of its own, named after it. Neither can reach the other.
+ *
+ * 这一次部署属于哪个配置文件。同一份 checkout 可能被要求部署到不止一个 Cloudflare 账号,
+ * 而 wrangler.jsonc 里装的是其中某一个账号的身份:它的账号、它的库、它的入口域。
+ * 去读别人那份,会把另一个账号的 database_id 和 APP_ORIGIN 带进这次部署;
+ * 去覆盖它,则毁掉一份 git 里没有的、唯一的配置。
+ *
+ * 所以:默认文件空着、或本来就是我们的,就用它;第二个账号拿一份以自己命名的文件。两者互不相干。
+ */
+let CONFIG = MAIN_CONFIG;
 const TEMPLATE = path.join(ROOT, 'wrangler.example.jsonc');
 const API = 'https://api.cloudflare.com/client/v4';
 
@@ -210,8 +228,28 @@ if (accountId) {
 // --- 2. 账号里已有什么 ------------------------------------------------------
 
 step('检查账号现状');
-const haveConfig = fs.existsSync(CONFIG);
-const existing = haveConfig ? JSON.parse(stripJsonc(fs.readFileSync(CONFIG, 'utf8'))) : null;
+const readCfg = (file, label) => {
+  try {
+    return JSON.parse(stripJsonc(fs.readFileSync(file, 'utf8')));
+  } catch (e) {
+    die(`${label} 不是合法的 JSONC,读不下去:${e.message}
+  修好它,或者把它移开再重跑。`);
+  }
+};
+/** The account a config claims, ignoring the template's placeholder / 配置文件自称属于哪个账号,模板占位符不算 */
+const ownerOf = (c) => (typeof c?.account_id === 'string' && !c.account_id.includes('<') ? c.account_id : '');
+const mainCfg = fs.existsSync(MAIN_CONFIG) ? readCfg(MAIN_CONFIG, 'wrangler.jsonc') : null;
+const mainOwner = ownerOf(mainCfg);
+let existing = null;
+if (!mainCfg || !mainOwner || mainOwner === accountId) {
+  CONFIG = MAIN_CONFIG;
+  existing = mainCfg;
+} else {
+  CONFIG = path.join(ROOT, `wrangler.acct-${accountId}.jsonc`);
+  existing = fs.existsSync(CONFIG) ? readCfg(CONFIG, path.basename(CONFIG)) : null;
+}
+const CFG_NAME = path.basename(CONFIG);
+const haveConfig = !!existing;
 
 const svc = await cf('GET', `/accounts/${accountId}/workers/services/${WORKER}`);
 const workerExists = svc.status !== 404 && svc.ok;
@@ -227,7 +265,11 @@ const r2 = (r2list.data.result?.buckets || []).find((b) => b.name === R2_NAME) |
 log(`Worker "${WORKER}"      ${workerExists ? '已存在' : '不存在'}`);
 log(`D1 "${D1_NAME}"         ${d1 ? '已存在 ' + d1.uuid : '不存在'}`);
 log(`R2 "${R2_NAME}"     ${r2 ? '已存在' : '不存在'}`);
-log(`本地 wrangler.jsonc  ${haveConfig ? '有' : '没有'}`);
+log(`本地 ${CFG_NAME.padEnd(14)} ${haveConfig ? '有' : '没有'}`);
+if (CONFIG !== MAIN_CONFIG) {
+  log(`  wrangler.jsonc 是账号 ${mainOwner} 的,不是这一个 —— 本次用 ${CFG_NAME},那份原封不动`);
+  log('  (npm run dev / npm run deploy:worker 读的仍是 wrangler.jsonc,与本次部署无关)');
+}
 
 // The dangerous combination is exactly one: this account already carries something by these
 // names, but this checkout has no configuration proving it is the same deployment. Deploying
@@ -237,7 +279,7 @@ log(`本地 wrangler.jsonc  ${haveConfig ? '有' : '没有'}`);
 // 它们就是同一套部署。这时硬发,等于把别人的 Worker 覆盖掉、把别人的库接管过来。
 // 其余情况(都有 / 都没有)不是升级就是首装,都正常。
 if (!haveConfig && (workerExists || d1 || r2) && !args.adopt) {
-  die('这个账号里已经有同名的资源,但本地没有 wrangler.jsonc 可以证明它们属于同一套部署。\n' +
+  die(`这个账号里已经有同名的资源,但本地没有 ${CFG_NAME} 可以证明它们属于同一套部署。\n` +
       '  如果这确实是你自己之前装的 CFMail,想接着用它们(数据都保留),加上 --adopt 重跑:\n' +
       `    node scripts/deploy.mjs --token <token> --domain ${domain || '<域名>'} --entry ${entryArg || '<入口子域>'} --adopt\n` +
       '  如果不是,请先改掉这些名字或换一个账号 —— 否则会覆盖掉别人的东西。');
@@ -300,7 +342,7 @@ if (domain) {
 // --- 5. Configuration -----------------------------------------------------
 // --- 5. 配置文件 -----------------------------------------------------------
 
-step('配置文件 wrangler.jsonc');
+step(`配置文件 ${CFG_NAME}`);
 let text = haveConfig ? fs.readFileSync(CONFIG, 'utf8') : fs.readFileSync(TEMPLATE, 'utf8');
 if (!haveConfig) {
   log('从 wrangler.example.jsonc 生成');
@@ -355,7 +397,7 @@ if (host) {
   if (already) skip(`routes 里已有 ${host}`);
   else {
     const next = withEntryRoute(text, host);
-    if (!next) die('wrangler.jsonc 里找不到 routes 数组,无法写入入口域');
+    if (!next) die(`${CFG_NAME} 里找不到 routes 数组,无法写入入口域`);
     text = next;
     plan(`routes 追加 ${host}`);
   }
@@ -393,7 +435,7 @@ if (DRY) {
   } catch (e) {
     die('生成的配置不是合法 JSON:' + e.message);
   }
-  plan('写入 wrangler.jsonc(--dry-run 未写),内容会是:');
+  plan(`写入 ${CFG_NAME}(--dry-run 未写),内容会是:`);
   log(`    account_id   ${preview.account_id}`);
   log(`    database_id  ${preview.d1_databases?.[0]?.database_id}`);
   log(`    APP_ORIGIN   ${preview.vars?.APP_ORIGIN}`);
@@ -408,7 +450,7 @@ if (DRY) {
   if (parsed.account_id !== accountId) die('生成的配置里 account_id 不对,已放弃写入');
   if (parsed.d1_databases?.[0]?.database_id !== databaseId) die('生成的配置里 database_id 不对,已放弃写入');
   fs.writeFileSync(CONFIG, text);
-  log('已写入 wrangler.jsonc');
+  log(`已写入 ${CFG_NAME}`);
 }
 
 if (DRY) {
@@ -425,16 +467,16 @@ step('数据库迁移');
 // 迁移只做加法,没有任何一条会删表或改写既有数据 —— 这正是"对着线上再跑一次"安全的原因。
 // wrangler 只会执行还没执行过的那些。
 {
-  const before = wranglerOut(['d1', 'migrations', 'list', D1_NAME, '--remote']);
+  const before = wranglerOut(['d1', 'migrations', 'list', D1_NAME, '--remote', '-c', CONFIG]);
   if (/No migrations to apply/i.test(before.out)) {
     skip('没有待应用的迁移');
   } else {
-    const code = wrangler(['d1', 'migrations', 'apply', D1_NAME, '--remote'], { input: 'y\n' });
+    const code = wrangler(['d1', 'migrations', 'apply', D1_NAME, '--remote', '-c', CONFIG], { input: 'y\n' });
     if (code !== 0) die('迁移失败,已中止(此时还没有部署新代码)');
     // wrangler prints its confirmation blurb and exits 0 even when it applied nothing, so the
     // only trustworthy check is to ask again.
     // wrangler 就算一条都没执行也会打印那段说明并以 0 退出,所以唯一可信的检查是再问一次。
-    const after = wranglerOut(['d1', 'migrations', 'list', D1_NAME, '--remote']);
+    const after = wranglerOut(['d1', 'migrations', 'list', D1_NAME, '--remote', '-c', CONFIG]);
     if (!/No migrations to apply/i.test(after.out)) {
       die('迁移之后仍有未应用的项,已中止。请手动查看:\n' +
           '    npx wrangler d1 migrations list ' + D1_NAME + ' --remote');
@@ -455,7 +497,7 @@ step('部署 Worker');
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'sync-vendor.mjs')], { cwd: ROOT, stdio: 'inherit' });
   if ((r.status ?? 1) !== 0) die('同步 public/vendor/ 失败');
 }
-if (wrangler(['deploy']) !== 0) die('部署失败');
+if (wrangler(['deploy', '-c', CONFIG]) !== 0) die('部署失败');
 
 // --- 8. Mail routing ------------------------------------------------------
 // --- 8. 收信 ---------------------------------------------------------------
@@ -553,7 +595,8 @@ console.log(`
   入口地址   ${entryUrl}
   首次使用   打开上面的地址,创建第一个管理员账号
   加域名     再跑一次本命令,换 --domain(--entry 会沿用现在的 "${entry || derived}")
-  升级       git pull 之后跑同一条命令即可,数据不动
+  升级       git pull 之后跑同一条命令即可,数据不动${CONFIG === MAIN_CONFIG ? '' : `
+  本次配置   ${CFG_NAME}(wrangler.jsonc 属于另一个账号,没有被动过)`}
 
   可选:人机验证 node scripts/setup-turnstile.mjs
         (接入新域名后也要再跑一次,widget 才认得新的入口主机)

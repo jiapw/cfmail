@@ -12,6 +12,8 @@
 # 本机的部署配置:含 account_id / database_id / 你自己的域名,属于生成物。
 # 模板见 wrangler.example.jsonc,由 scripts/deploy.mjs 按输入生成。
 wrangler.jsonc
+# 同一份 checkout 部署到第二个 CF 账号时,那个账号自己的配置(wrangler.example.jsonc 不受影响)
+wrangler.acct-*.jsonc
 
 # ---------------------------------------------------------------------------
 # 本地运行状态
