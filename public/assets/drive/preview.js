@@ -76,7 +76,14 @@ function docxImgHtml(b) {
   const W = quarter ? b.h : b.w;
   const H = quarter ? b.w : b.h;
   const sized = W > 0 && H > 0;
-  const style = sized ? `max-width:${W}px;aspect-ratio:${W} / ${H}` : '';
+  // The picture sits where its paragraph puts it. A left margin of auto is what pushes it
+  // right, both of them what centres it -- the same three cases the text has.
+  // 图片落在它所在段落让它落的位置。左边距 auto 把它推到右边,两边都 auto 就是居中 ——
+  // 与文字是同样的三种情形。
+  const m = b.al === 'center' ? 'margin-left:auto;margin-right:auto'
+    : b.al === 'right' ? 'margin-left:auto;margin-right:0'
+      : 'margin-left:0;margin-right:auto';
+  const style = `${m}${sized ? `;max-width:${W}px;aspect-ratio:${W} / ${H}` : ''}`;
   return `<div class="drv-docximg pending${sized ? '' : ' free'}" style="${esc(style)}"
     data-rid="${esc(b.rid)}" data-w="${b.w}" data-h="${b.h}" data-rot="${b.rot}"
     ><div class="drv-loading"><div class="drv-spin"></div></div></div>`;
@@ -280,11 +287,19 @@ export async function renderPreview(node, box, kind, inlineUrl) {
           // percentages are what the picture was before the frame turned under it.
           // 按自身所在框的比例定尺寸,于是整体随纸面缩放:
           // 这两个百分比,是这张图在框转过来之前的样子。
+          // Centred by translation rather than by auto margins. A rotated picture is wider
+          // than the frame it will occupy once it has turned, and an auto margin that would
+          // come out negative is set to zero instead -- which pins it to the left edge and
+          // then rotates it about a centre that is no longer the frame's.
+          // 用位移来居中,而不是用 auto 边距。一张旋转过的图片,比它转完之后所占的框更宽,
+          // 而"算出来会是负数"的 auto 边距会被置零 —— 于是它被钉在左边缘,
+          // 再绕着一个已经不是框心的中心转起来。
+          const turn = `translate(-50%, -50%) rotate(${+el.dataset.rot}deg)`;
           img.style.cssText = w && h
             ? `width:${((quarter ? w / h : 1) * 100).toFixed(3)}%;`
               + `height:${((quarter ? h / w : 1) * 100).toFixed(3)}%;`
-              + `transform:rotate(${+el.dataset.rot}deg)`
-            : `transform:rotate(${+el.dataset.rot}deg)`;
+              + `transform:${turn}`
+            : `transform:${turn}`;
           el.appendChild(img);
         };
         const pager = lazyPages({ root: box.firstElementChild, items: shots, margin: 900, render: fill });
@@ -522,17 +537,18 @@ function docxHtml(blocks) {
         out.push('<ul>');
         inList = true;
       }
-      out.push(`<li>${runs || '&nbsp;'}</li>`);
+      out.push(`<li${b.al ? ` style="text-align:${b.al}"` : ''}>${runs || '&nbsp;'}</li>`);
       continue;
     }
     if (inList) {
       out.push('</ul>');
       inList = false;
     }
+    const al = b.al ? ` style="text-align:${b.al}"` : '';
     if (b.h) {
-      out.push(`<h${Math.min(b.h, 6)}>${runs}</h${Math.min(b.h, 6)}>`);
+      out.push(`<h${Math.min(b.h, 6)}${al}>${runs}</h${Math.min(b.h, 6)}>`);
     } else {
-      out.push(`<p>${runs || '&nbsp;'}</p>`);
+      out.push(`<p${al}>${runs || '&nbsp;'}</p>`);
     }
   }
   if (inList) out.push('</ul>');
