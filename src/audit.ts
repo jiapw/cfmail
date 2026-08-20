@@ -14,7 +14,7 @@ export type AuditAction =
   | 'domain.create' | 'domain.admin_add' | 'domain.admin_remove'
   | 'brand.update'
   | 'chat.settings'
-  | 'drive.settings' | 'drive.quota'
+  | 'drive.settings' | 'drive.quota' | 'drive.versioning'
   | 'mail.import' | 'mail.export'
   | 'unrouted.view' | 'unrouted.delete';
 

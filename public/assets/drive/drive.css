@@ -176,6 +176,15 @@
 .drv-name wa-icon.fold { color: var(--text-2); flex: none; }
 .drv-name .fileicon { flex: none; }
 .drv-badges { display: inline-flex; gap: 6px; margin-left: 8px; color: var(--text-3); flex: none; }
+/* How many versions, and how far back they go. Either number alone is half an answer -- five
+   versions could be five minutes or five years of work -- so they travel together, and the name
+   beside them gives up its width first because a name can be read from its beginning.
+   有几个版本,以及最早追到哪儿。单看哪个数字都只是半个答案 ——
+   五个版本可能是五分钟,也可能是五年的活儿 —— 所以它们结伴出现;
+   而旁边的名字先让出宽度,因为名字从开头就能认出来。 */
+.drv-badges .drv-vers { display: inline-flex; align-items: center; gap: 2px; }
+.drv-badges .drv-vers b { font-size: 11px; font-weight: 600; }
+.drv-badges .drv-vsince { font-size: 11px; opacity: .78; white-space: nowrap; }
 .drv-dim { color: var(--text-2); }
 .drv-row .rowbtn { visibility: hidden; }
 .drv-row:hover .rowbtn, .drv-row.sel .rowbtn { visibility: visible; }
@@ -285,7 +294,7 @@
 .drv-card.sel { background: var(--selected); border-color: var(--primary); }
 .drv-card .thumb {
   height: 160px; display: flex; align-items: center; justify-content: center;
-  background: var(--panel-2); overflow: hidden;
+  background: var(--panel-2); overflow: hidden; position: relative;
 }
 /* A global rule rounds every img by ~7.5px, which shaved the thumbnail's corners inside the
    card; the image must reach its edges square (the card's own radius still shapes the top).
@@ -293,6 +302,17 @@
    (卡片自身的圆角仍负责外轮廓)。 */
 .drv-card .thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 0 !important; }
 .drv-card .thumb > wa-icon { color: var(--text-3); }
+/* The corner mark says that what you are looking at is not all there is of this file. It rides on
+   the thumbnail rather than in the caption because the caption already has a name to fit and a
+   menu to reach, and because the thing it qualifies is the picture, not the label.
+   右上角的标记说的是:你看到的这一眼,并不是这个文件的全部。它落在缩略图上而非标题行里,
+   因为标题行已经有一个名字要装下、一个菜单要够到 —— 也因为它限定的是那张图,不是那行字。 */
+.drv-card .thumb .drv-vchip {
+  position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border-radius: 999px; font-size: 11px; line-height: 1.55;
+  background: rgba(15, 15, 18, .72); color: #fff;
+}
+.drv-card .thumb .drv-vchip b { font-weight: 600; font-variant-numeric: tabular-nums; }
 /* Who shared it, under the name on a card. The list view gives this a column; a card has no
    columns, so it gets a second line rather than a crowded first one.
    卡片上,名字下面写着谁分享的。列表视图给它一列;卡片没有列,
@@ -702,6 +722,40 @@
 }
 .drv-view-nav.prev { left: 12px; }
 .drv-view-nav.next { right: 12px; }
+/* The versions run down the left of the overlay, OUTSIDE the preview window rather than inside
+   it. What you are reading and which reading of it you chose are two different things: the window
+   is resizable and scrolls and swaps its whole contents per file type, and none of that should be
+   able to move the list of versions or take it off screen.
+   版本沿遮罩左侧排下来,在预览窗口"之外"而不是之内。
+   "你在读什么"和"你选了它的哪一遍"是两件事:那个窗口可以拖宽、会滚动、还按文件类型整体换掉内容,
+   而这些都不该有本事挪动版本列表,或者把它顶出屏幕。 */
+.drv-pvvers {
+  width: 200px; flex: none; align-self: stretch; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 8px 0;
+}
+.drv-pvvers .vhd {
+  font-size: 12px; color: #9aa0a6; padding: 6px 10px 8px;
+  position: sticky; top: 0; background: rgba(15, 15, 18, .92);
+}
+.drv-pvvers .vrow {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 7px 10px; border: 0; border-radius: 8px; cursor: pointer;
+  background: transparent; color: #d6d8db; font: inherit; font-size: 12.5px;
+}
+.drv-pvvers .vrow:hover { background: rgba(255, 255, 255, .09); }
+.drv-pvvers .vrow.on { background: rgba(255, 255, 255, .17); color: #fff; }
+.drv-pvvers .vrow .sq { flex: none; font-variant-numeric: tabular-nums; opacity: .78; }
+.drv-pvvers .vrow .vt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The chain marks a version that carried on from the one before it. A break gets no mark of its
+   own -- it is a link that is not there, and a gap in a column of links is found by the eye before
+   any badge would be read. The slot holds its width whether or not a link sits in it, so the
+   numbers stay in a line and the gap is a gap rather than a shuffle.
+   链条标出那些承接了上一版的版本。断裂没有属于自己的标记 —— 它就是一个没有出现的环,
+   而一列链环里的空缺,在任何角标被读到之前就已被眼睛找到。
+   这个位子无论有没有环都占着同样的宽度,于是号码保持成列,空缺才是空缺,而不是一次错位。 */
+.drv-pvvers .vrow .lk { flex: none; width: 14px; display: inline-flex; align-items: center; opacity: .5; }
+.drv-view-body:has(> .drv-pvvers) { padding-left: 12px; }
+.drv-view-body:has(> .drv-pvvers) .drv-view-nav.prev { left: 212px; }
 .drv-view-nav::part(base) { color: #fff; background: rgba(255,255,255,.12); border-radius: 50%; }
 
 /* ---------- Share dialog ---------- */

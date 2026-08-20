@@ -10,7 +10,7 @@ import {
   copyText, fileIcon, avatar, debounce,
 } from '../ui.js';
 import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
-import { arcSeed, dlUrl, setPreviewOpener, thumbUrl, useDriveSource } from './fsrc.js';
+import { arcSeed, dlUrl, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 
 export { arcSeed };
 
@@ -773,10 +773,40 @@ function nodeIconHtml(n, size = 22) {
   return fileIcon(n.name, size);
 }
 
-function badgesHtml(n) {
+/** What a listing already knows about a file's history -- the count and how far back it goes --
+ *  both of which rode in with the row. Null for anything that keeps none, so the ordinary file
+ *  stays as plain as it was.
+ *  一个列表本来就知道的、关于某个文件历史的事 —— 有几版,以及最早追到哪儿 ——
+ *  两者都是随行里一起来的。不保留历史的东西返回 null,于是普通文件还像从前一样素净。 */
+function verInfo(n) {
+  if (n.kind !== 'file' || !(n.versioned || n.ver_count)) return null;
+  const count = n.ver_count || 0;
+  const first = n.ver_first || 0;
+  return { count, first, title: t('drv_ver_badge', count, first ? fmtDateTime(first) : '—') };
+}
+
+/** The corner mark on a tile. A thumbnail says what the file looks like now; this says that now
+ *  is not all there is of it.
+ *  瓦片右上角的标记。缩略图说的是这个文件现在长什么样;这个标记说的是,现在并不是它的全部。 */
+function verChipHtml(n) {
+  const v = verInfo(n);
+  if (!v) return '';
+  return `<span class="drv-vchip" title="${esc(v.title)}">${icon('restore', 13)}${v.count > 1 ? `<b>${v.count}</b>` : ''}</span>`;
+}
+
+function badgesHtml(n, withVer = true) {
   const out = [];
   if (n.shared) out.push(icon('folder-shared', 15));
   if (n.starred && dst.view !== 'starred') out.push(icon('starFill', 14));
+  const v = withVer && verInfo(n);
+  if (v) {
+    // The count and the date sit together because either alone is half an answer: five versions
+    // could be five minutes or five years of work, and only the pair says which.
+    // 个数与日期并排,因为单看哪一个都只是半个答案:五个版本可能是五分钟,也可能是五年的活儿,
+    // 只有这一对放在一起才说得清是哪一种。
+    out.push(`<span class="drv-vers" title="${esc(v.title)}">${icon('restore', 14)}${v.count > 1 ? `<b>${v.count}</b>` : ''}</span>`);
+    if (v.first) out.push(`<span class="drv-vsince">${esc(t('drv_ver_since', fmtDate(v.first)))}</span>`);
+  }
   return out.length ? `<span class="drv-badges">${out.join('')}</span>` : '';
 }
 
@@ -848,14 +878,14 @@ function gridHtml(groups) {
     const oldImg = !n.thumb && n.kind === 'file' && IMG_RE.test(n.mime) && n.size < 20 * 1024 * 1024;
     const bf = oldImg && dst.access !== 'viewer' ? ` data-bf="${esc(n.id)}"` : '';
     const media = n.thumb
-      ? `<img loading="lazy" draggable="false" src="${esc(thumbUrl(n.id))}" alt="">`
+      ? `<img loading="lazy" draggable="false" src="${esc(thumbUrl(n.id, n.ver_head))}" alt="">`
       : oldImg
-        ? `<img loading="lazy" draggable="false" src="${dlUrl(n.id, true)}"${bf} alt="">`
+        ? `<img loading="lazy" draggable="false" src="${dlUrl(n.id, true, n.ver_head)}"${bf} alt="">`
         : fileIcon(n.name, 44);
     return `
     <div class="drv-card ${n.kind} ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}" draggable="true">
-      <div class="thumb">${n.kind === 'file' ? media : icon('folder', 56)}</div>
-      <div class="cap">${nodeIconHtml(n, 22)}<span class="nm" title="${esc(n.name)}">${esc(n.name)}</span>${badgesHtml(n)}
+      <div class="thumb">${n.kind === 'file' ? media : icon('folder', 56)}${verChipHtml(n)}</div>
+      <div class="cap">${nodeIconHtml(n, 22)}<span class="nm" title="${esc(n.name)}">${esc(n.name)}</span>${badgesHtml(n, false)}
         <wa-button class="icon rowbtn" appearance="plain" data-menu="${esc(n.id)}" aria-label="menu">${icon('dots-v', 16)}</wa-button></div>
       ${dst.view === 'shared' ? `<div class="who drv-dim">${esc(n.owner_name || n.owner_email || '')}</div>` : ''}
     </div>`;
@@ -1186,6 +1216,14 @@ function menuItems(nodes) {
     const allStar = nodes.every((n) => n.starred);
     out.push({ ic: allStar ? 'star' : 'starFill', label: t(allStar ? 'drv_unstar' : 'drv_star'), fn: () => starNodes(nodes, !allStar) });
   }
+  // Whether a thing keeps its own past is a property of the thing, so it sits among the other
+  // properties -- starred, shared -- and not among the verbs that act on it this second.
+  // 一样东西留不留得住自己的过去,是这样东西的属性,所以它和别的属性坐在一起 ——
+  // 星标、分享 —— 而不是和那些此刻就动手的动词坐在一起。
+  if (own && !editorOnRoot) {
+    const allOn = nodes.every((x) => (x.kind === 'folder' ? x.ver_policy : x.versioned));
+    out.push({ ic: 'restore', label: t(allOn ? 'drv_ver_off' : 'drv_ver_on'), fn: () => setVersioning(nodes, !allOn) });
+  }
   if (canEdit && !editorOnRoot) {
     out.push('-');
     out.push({ ic: 'trash', label: t('drv_trash_it'), danger: true, fn: () => trashNodes(nodes) });
@@ -1209,10 +1247,10 @@ async function downloadFiles(nodes) {
   }
 }
 
-function downloadFile(n) {
+function downloadFile(n, verId) {
   if (n.arc) return downloadArcEntry(n);
   const a = document.createElement('a');
-  a.href = dlUrl(n.id);
+  a.href = verId ? verUrl(n.id, verId) : dlUrl(n.id, false, n.ver_head);
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1231,6 +1269,33 @@ async function downloadArcEntry(n) {
   } catch (e) {
     toast(tErr(e), true);
   }
+}
+
+/** Turn history keeping on or off for a selection. A folder's policy speaks for files not yet
+ *  created; whether it should also reach the ones already sitting inside is a second question
+ *  with a different answer every time, so it is asked rather than assumed -- and the policy is
+ *  set either way, so a No here still leaves the folder switched on.
+ *  为选中项开启或关闭历史保留。目录的策略说的是"尚未创建的文件";
+ *  它是否也该够到已经坐在里面的那些,是另一个每次答案都不同的问题,所以问而不猜 ——
+ *  而无论答什么,策略都已经设上了:在这里答"否",目录依然是开着的。 */
+async function setVersioning(nodes, on) {
+  let existing = false;
+  if (on && nodes.some((x) => x.kind === 'folder')) {
+    existing = await confirmDialog(t('drv_ver_sweep_ask'), t('drv_ver_sweep_ok'));
+  }
+  try {
+    for (const x of nodes) {
+      const url = `/api/drive/nodes/${encodeURIComponent(x.id)}/versioning`;
+      // A big folder is handed over a page at a time; keep asking while it says there is more.
+      // 大目录一批一批地交;它说还有,就接着问。
+      let r = await api('POST', url, { on, existing });
+      for (let i = 0; r?.more && i < 500; i++) r = await api('POST', url, { on, existing });
+    }
+    toast(t(on ? 'drv_ver_on_done' : 'drv_ver_off_done'));
+  } catch (e) {
+    toast(tErr(e));
+  }
+  reload();
 }
 
 async function starNodes(nodes, on) {
@@ -1894,7 +1959,7 @@ function openPreview(node) {
 export function openPreviewFor(files, node) {
   const idx = Math.max(0, files.findIndex((n) => n.id === node.id));
   pv?.el?.remove();
-  pv = { list: files.length ? files : [node], idx, el: document.createElement('div') };
+  pv = { list: files.length ? files : [node], idx, el: document.createElement('div'), vers: null, verSel: null };
   pv.el.className = 'drv-view';
   document.body.appendChild(pv.el);
   paintPreview();
@@ -2002,12 +2067,13 @@ async function richPreview(n) {
   try {
     const mod = await import('./preview.js?v=' + encodeURIComponent(store.brand?.version || ''));
     if (!box.isConnected) return;
-    const kind = mod.kindOf(n.name, n.mime);
+    const vn = verView(n);
+    const kind = mod.kindOf(vn.name, vn.mime);
     if (!kind) {
       box.innerHTML = noprevHtml(n);
       return;
     }
-    pvRich = await mod.renderPreview(n, box, kind, n.arcUrl || dlUrl(n.id, true));
+    pvRich = await mod.renderPreview(vn, box, kind, n.arcUrl || pvSrc(n, true));
   } catch {
     if (box.isConnected) box.innerHTML = noprevHtml(n);
   }
@@ -2050,7 +2116,7 @@ async function renderPdfPreview(node, box) {
     // 再随每页渲染去取该页所需的对象,于是 200 MB 的扫描件不必下完 200 MB 就能显示第一页。
     // 压缩包内条目有意排除 —— 它的字节来自流式 worker,零散的小 Range 意味着
     // 同一个压缩块被反复解码。
-    const url = node.arcUrl || dlUrl(node.id, true);
+    const url = node.arcUrl || dlUrl(node.id, true, node.ver_head);
     // Only worth it above a size. Ranged loading trades one request for a dozen, and pdf.js
     // chases objects across the file to open it at all -- measured on a 2 MB PDF it still
     // pulled 88% of it, in nine round trips instead of one. The saving is the part of a big
@@ -2205,27 +2271,119 @@ function attachArcProgress(n, el) {
 function pvStep(d) {
   if (!pv || pv.list.length < 2) return;
   pv.idx = (pv.idx + d + pv.list.length) % pv.list.length;
+  // The next file's history is its own; carrying the last one's selection over would show you
+  // version four of something that has three.
+  // 下一个文件的历史是它自己的;把上一个的选择带过来,会让你看到一个只有三版的东西的第四版。
+  pv.vers = null;
+  pv.verSel = null;
   paintPreview();
+}
+
+/** The version currently on screen, or null while the file's own current bytes are.
+ *  此刻显示在屏幕上的那一版;显示的是文件自身当前字节时为 null。 */
+const pvVer = () => (pv?.verSel && pv.vers ? pv.vers.find((v) => v.id === pv.verSel) : null) || null;
+
+/** The node as that version: same name and permissions, that version's size and type. The
+ *  renderers read size to decide how much to fetch, so handing them the live one would have them
+ *  reading past the end of an older, shorter file.
+ *  以那一版的面目出现的节点:同样的名字与权限,那一版的大小与类型。
+ *  渲染器靠 size 决定取多少字节,把当前那个交给它们,会让它们读过一个更旧更短的文件的末尾。 */
+function verView(node) {
+  const v = pvVer();
+  return v ? { ...node, size: v.size, mime: v.mime || node.mime } : node;
+}
+
+const pvSrc = (node, inline) => (pv?.verSel ? verUrl(node.id, pv.verSel, inline) : dlUrl(node.id, inline, node.ver_head));
+
+function pickVersion(id) {
+  if (!pv) return;
+  // Picking the newest is picking the file itself, not a copy of it that happens to match.
+  // 选中最新的那一版,选中的就是文件本身,而不是一份恰好一模一样的副本。
+  const head = pv.vers?.find((v) => v.head);
+  pv.verSel = head && head.id === id ? null : id;
+  paintPreview();
+}
+
+/** The rail down the left of the preview: every version this file kept, newest at the top.
+ *  预览左侧的那一条:这个文件留下的每一版,最新的在上面。 */
+function pvVersionsHtml() {
+  const vs = pv?.vers;
+  if (!vs?.length) return '';
+  const cur = pv.verSel || vs.find((v) => v.head)?.id;
+  // The chain is drawn where a version carried on from the one before it. A break gets no mark of
+  // its own, because it already has the only one that matters: a link that is not there. A gap in
+  // a column of chain links is found by the eye before anybody reads a single label -- and marking
+  // breaks instead would put a warning on the ordinary way a mounted volume saves a file.
+  // 链条画在"这一版承接了上一版"的地方。断裂不需要属于自己的标记,因为它已经有了唯一要紧的那个:
+  // 一个没有出现的环。一列链环里的空缺,在任何人读到一个字之前就被眼睛找到了 ——
+  // 而反过来去标记断裂,等于给"挂载的卷保存文件"这件再寻常不过的事挂上一个警告。
+  const row = (v) => `
+    <button class="vrow ${v.id === cur ? 'on' : ''}" data-ver="${esc(v.id)}">
+      <span class="lk">${v.seq > 1 && !v.detached ? `<i title="${esc(t('drv_ver_link'))}">${icon('link', 12)}</i>` : ''}</span>
+      <span class="sq">v${v.seq}</span>
+      <span class="vt">${esc(fmtDateTime(v.created_at))}</span>
+    </button>`;
+  return `<div class="drv-pvvers"><div class="vhd">${esc(t('drv_ver_title', vs.length))}</div>${vs.map(row).join('')}</div>`;
+}
+
+/** Put the rail in without repainting the preview: the file may be a video that just started
+ *  playing, and a repaint would take it back to zero to say something it could be told quietly.
+ *  把左栏放进去,而不重绘预览:那个文件可能是一段刚开始播的视频,
+ *  为了说一件本可以悄悄说的事而重绘,会把它退回到零秒。 */
+function mountVersionRail() {
+  const body = pv?.el?.querySelector('.drv-view-body');
+  if (!body) return;
+  body.querySelector('.drv-pvvers')?.remove();
+  const html = pvVersionsHtml();
+  if (html) body.insertAdjacentHTML('afterbegin', html);
+}
+
+async function loadVersions(node) {
+  // Archive entries have no history, a public share does not serve one, and a file that keeps
+  // none has nothing to list. None of those are worth a request that can only come back empty.
+  // 压缩包条目没有历史,公开分享不供应历史,而不保留历史的文件没有什么可列。
+  // 这几种都不值得为一个只可能空手而归的请求跑一趟。
+  if (!pv || pv.vers !== null || isPub() || node.arc || !(node.versioned || node.ver_count)) return;
+  const id = node.id;
+  try {
+    const r = await api('GET', `/api/drive/nodes/${encodeURIComponent(id)}/versions`);
+    if (!pv || pv.list[pv.idx]?.id !== id) return;
+    pv.vers = r.versions || [];
+    mountVersionRail();
+  } catch {
+    // Someone reading a share they may only view cannot read its drafts; the rail never appears,
+    // and saying so out loud would be telling them about a door that is not theirs.
+    // 一个只被允许查看某份共享的人,读不到它的草稿;左栏因此不出现,
+    // 而把这件事说出口,等于告诉他有一扇不属于他的门。
+    if (pv) pv.vers = [];
+  }
 }
 
 /** Overlay chrome shared by the normal path and the extract-in-progress state
  *  预览层外壳。正常路径与"解出中"状态共用 */
 function paintPvShell(n, body) {
+  const vn = verView(n);
   pv.el.innerHTML = `
     <div class="drv-view-head">
       <wa-button class="icon" appearance="plain" data-close aria-label="${esc(t('close'))}">${icon('close', 20)}</wa-button>
       ${fileIcon(n.name, 20)}<span class="nm">${esc(n.name)}</span>
-      <span class="drv-dim" style="color:#aaa;font-size:12.5px">${fmtSize(n.size)}</span>
+      <span class="drv-dim" style="color:#aaa;font-size:12.5px">${fmtSize(vn.size)}</span>
       <wa-button class="icon" appearance="plain" data-dl aria-label="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>
     </div>
     <div class="drv-view-body">
+      ${pvVersionsHtml()}
       ${pv.list.length > 1 ? `<wa-button class="icon drv-view-nav prev" appearance="plain" data-nav="-1">${icon('back', 22)}</wa-button>` : ''}
       ${body}
       ${pv.list.length > 1 ? `<wa-button class="icon drv-view-nav next" appearance="plain" data-nav="1">${icon('next', 22)}</wa-button>` : ''}
     </div>`;
   pv.el.onclick = (e) => {
+    const vrow = e.target.closest('[data-ver]');
     if (e.target.closest('[data-close]')) closePreview();
-    else if (e.target.closest('[data-dl]')) downloadFile(n);
+    // What you are looking at is what you get -- the button downloads the selected version,
+    // not whichever one happens to be current.
+    // 你正在看的就是你会拿到的 —— 这个按钮下载的是选中的那一版,而不是碰巧最新的那一版。
+    else if (e.target.closest('[data-dl]')) downloadFile(n, pv?.verSel || '');
+    else if (vrow) pickVersion(vrow.dataset.ver);
     else if (e.target.closest('[data-nav]')) pvStep(parseInt(e.target.closest('[data-nav]').dataset.nav, 10));
     else if (e.target === pv.el.querySelector('.drv-view-body')) closePreview();
   };
@@ -2265,8 +2423,8 @@ async function paintPreview() {
       clearInterval(tick);
     }
   }
-  const mime = (n.mime || '').toLowerCase();
-  const src = n.arcUrl || dlUrl(n.id, true);
+  const mime = (verView(n).mime || '').toLowerCase();
+  const src = n.arcUrl || pvSrc(n, true);
   const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(n.name);
   const isAudio = AUD_RE.test(mime) || AUD_EXTS.has(extOf(n.name));
   let body;
@@ -2284,7 +2442,7 @@ async function paintPreview() {
     body = `
     <div class="drv-audio">
       ${n.thumb
-        ? `<img class="art" src="${esc(thumbUrl(n.id))}" alt="">`
+        ? `<img class="art" src="${esc(thumbUrl(n.id, n.ver_head))}" alt="">`
         : `<div class="art fallback">${icon('fileAudio', 72)}</div>`}
       <div class="anm">${esc(n.name)}</div>
       <audio controls autoplay src="${esc(src)}"></audio>
@@ -2293,6 +2451,7 @@ async function paintPreview() {
   } else if (isPdf) body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-pdf drv-docwin">${spinnerHtml()}</div></div></div>`;
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
+  loadVersions(n);
   // Media inside archives: sequential playback only, no seeking (compressed entries would
   // have to re-decode from the start on every jump).
   // 压缩包内媒体只允许顺序播放,禁止 seek(压缩条目每跳一次都得从头重解)。
@@ -2389,6 +2548,14 @@ window.addEventListener('beforeunload', (e) => {
     e.returnValue = '';
   }
 });
+// A file is digested by reading it whole, so the ceiling here is memory, not patience. Above it
+// an upload carries no digest: it cannot be skipped today and cannot be compared against tomorrow,
+// which is the honest cost of not holding ninety megabytes in a tab to save a round trip.
+// 算摘要要把文件整个读进来,所以这里的上限管的是内存,不是耐心。
+// 超过它的上传不带摘要:今天省不掉,明天也无从比对 ——
+// 这是"不为省一趟往返而在标签页里攥着九十兆"所要付的、诚实的代价。
+const HASH_MAX = 64 * 1024 * 1024;
+
 // Circumference of the r=8 progress ring in the upload panel
 // 上传面板进度圆环的周长。半径 8
 const RING_CIRC = 2 * Math.PI * 8;
@@ -2637,7 +2804,9 @@ function pump() {
         task.status = 'ok';
         task.sent = task.size;
         task.node = node; // where it landed: id + parent_id, for click-to-locate / 落点,供点击定位
-        queueThumb(task.file, node);
+        // Nothing was written, so nothing about the file went stale -- including its thumbnail.
+        // 什么都没写,于是这个文件没有任何东西过期 —— 包括它的缩略图。
+        if (!task.same) queueThumb(task.file, node);
       })
       .catch((e) => {
         if (task.status !== 'cancel') {
@@ -2694,7 +2863,8 @@ async function runTask(task) {
     if (task.cancelled) throw new Error('cancelled');
     try {
       const node = await uploadOne(m.file, m.parent, task, base);
-      queueThumb(m.file, node);
+      if (!task.same) queueThumb(m.file, node);
+      task.same = false;
     } catch (e) {
       if (task.cancelled) throw e;
       task.failed++;
@@ -2709,6 +2879,41 @@ async function runTask(task) {
   return null;
 }
 
+/** The file's content digest, in the form the server and R2 both speak.
+ *  文件内容的摘要,用服务端与 R2 都讲的那种写法。 */
+async function sha256Hex(file) {
+  if (file.size > HASH_MAX) return '';
+  try {
+    const d = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    // No subtle crypto (an insecure origin), or the read failed. Either way the upload goes ahead
+    // without a digest: an upload that happens is never the wrong answer here.
+    // 没有 subtle crypto(非安全上下文),或者读取失败。两种情况都照常上传、不带摘要 ——
+    // 在这里,"照样传了"永远不会是错的那个答案。
+    return '';
+  }
+}
+
+/** The file already sitting under this name, if this view is holding that folder's listing. The
+ *  comparison is only ever made against a listing already in hand: fetching one to find out
+ *  whether an upload can be skipped would spend the very round trip it is trying to save.
+ *  已经占着这个名字的那个文件 —— 前提是当前视图正握着那个目录的列表。
+ *  比对只对着手头已有的列表做:为了弄清一次上传能否省掉而去拉一次列表,
+ *  花掉的正是它想省下的那趟往返。 */
+function standingFile(f, parent) {
+  // Only where the listing IS a folder. Search, recent and starred all report 'root' as the place
+  // an upload lands, while what they are showing came from all over the drive -- so a name matched
+  // there could belong to a file in another folder entirely, and skipping the upload on its
+  // account would drop a save.
+  // 只在"列表本身就是一个目录"时才作数。搜索、最近、星标都把上传落点报作 root,
+  // 而它们展示的内容来自网盘各处 —— 在那里对上的名字很可能属于另一个目录里的文件,
+  // 凭它跳过上传,丢掉的是一次保存。
+  if (dst.view !== 'my' && dst.view !== 'folder') return null;
+  if (parent !== currentParent()) return null;
+  return dst.shown.find((x) => x.kind === 'file' && x.name === f.name) || null;
+}
+
 async function uploadOne(f, parent, task, base) {
   const st = dst.state || { single_max: 90 * 1024 * 1024, part_size: 32 * 1024 * 1024 };
   const prog = (extra) => (loaded) => {
@@ -2716,7 +2921,29 @@ async function uploadOne(f, parent, task, base) {
     paintTask(task);
   };
   if (f.size <= st.single_max) {
-    const q = `parent=${encodeURIComponent(parent)}&name=${encodeURIComponent(f.name)}&mime=${encodeURIComponent(f.type || '')}`;
+    // Saving a file nobody changed should not cost an upload, and should not mint a version that
+    // says nothing. Only the browser can decide that in time to matter: a server learns the two
+    // are identical only after the bytes have crossed, by which point the upload is already spent.
+    //
+    // The digest is taken for every upload it can be taken for, not only where it might save this
+    // one -- a comparison needs something to have been recorded to compare against, and the only
+    // moment that can happen is while the bytes are here.
+    //
+    // 谁都没改却又保存了一次,不该花掉一次上传,也不该生出一个什么都没说的版本。
+    // 只有浏览器能来得及做这个判断:服务端知道两者相同,是在字节过河之后 —— 那时上传已经花掉了。
+    //
+    // 凡是能取摘要的上传都取,而不只在"这一次可能省下"的时候取 ——
+    // 比对需要先前记下过什么才谈得上比,而能记下的时刻只有"字节正在这里"这一刻。
+    const hash = await sha256Hex(f);
+    const prev = hash ? standingFile(f, parent) : null;
+    if (prev && prev.size === f.size && prev.ver_hash === hash) {
+      task.same = true;
+      task.sent = base + f.size;
+      paintTask(task);
+      return prev;
+    }
+    const q = `parent=${encodeURIComponent(parent)}&name=${encodeURIComponent(f.name)}&mime=${encodeURIComponent(f.type || '')}`
+      + (hash ? `&hash=${hash}` : '');
     return xhrSend('POST', `/api/drive/upload?${q}`, f, prog(0), task);
   }
   const init = await api('POST', '/api/drive/upload/init', {
@@ -2827,6 +3054,12 @@ function renderUpPanel() {
     ? t('drv_up_title', live.length)
     : busy ? t('drv_up_preparing') : t('drv_up_done', up.tasks.filter((x) => x.status === 'ok').length);
   const status = (x) => {
+    // A file that went up and a file that did not need to are both successes, and they are not
+    // the same success. Saying which one happened is the difference between "already saved" and
+    // the silence that reads as "did that work?".
+    // 传上去了,和"根本不需要传",都是成功,但不是同一种成功。
+    // 说清楚是哪一种,正是"早就存好了"与那种让人怀疑"到底成没成"的沉默之间的差别。
+    if (x.status === 'ok' && x.same) return `<span class="st st-ok" title="${esc(t('drv_up_same_tip'))}">${esc(t('drv_up_same'))}</span>`;
     if (x.status === 'ok') return `<span class="st st-ok">${icon('check', 18)}</span>`;
     if (x.status === 'err') return `<span class="st st-err" title="${esc(x.err || '')}">${esc(t('drv_up_failed'))}</span>`;
     if (x.status === 'cancel') return `<span class="st st-cancel">${esc(t('drv_up_canceled'))}</span>`;

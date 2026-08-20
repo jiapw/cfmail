@@ -176,7 +176,7 @@ function cardsHtml(nodes) {
     // 小图退回原图,其余退回类型图标。
     const old = !n.thumb && n.kind === 'file' && IMG_RE.test((n.mime || '').toLowerCase()) && n.size < 20 * 1024 * 1024;
     const media = n.thumb
-      ? `<img loading="lazy" src="${esc(thumbUrl(n.id))}" alt="">`
+      ? `<img loading="lazy" src="${esc(thumbUrl(n.id, n.ver_head))}" alt="">`
       : old ? `<img loading="lazy" src="${esc(dlUrl(n.id, true))}" alt="">`
         : fileIcon(n.name, 44);
     return `
