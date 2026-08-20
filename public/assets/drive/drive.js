@@ -1279,10 +1279,6 @@ async function downloadArcEntry(n) {
  *  它是否也该够到已经坐在里面的那些,是另一个每次答案都不同的问题,所以问而不猜 ——
  *  而无论答什么,策略都已经设上了:在这里答"否",目录依然是开着的。 */
 async function setVersioning(nodes, on) {
-  let existing = false;
-  if (on && nodes.some((x) => x.kind === 'folder')) {
-    existing = await confirmDialog(t('drv_ver_sweep_ask'), t('drv_ver_sweep_ok'));
-  }
   // Off takes the past with it now, so it is asked about the way anything irreversible is. The
   // file keeps what it is; what it used to be does not survive the answer.
   // 现在"关掉"会把过去一并带走,所以它要像任何不可逆的事情那样先问一句。
@@ -1292,11 +1288,7 @@ async function setVersioning(nodes, on) {
   }
   try {
     for (const x of nodes) {
-      const url = `/api/drive/nodes/${encodeURIComponent(x.id)}/versioning`;
-      // A big folder is handed over a page at a time; keep asking while it says there is more.
-      // 大目录一批一批地交;它说还有,就接着问。
-      let r = await api('POST', url, { on, existing });
-      for (let i = 0; r?.more && i < 500; i++) r = await api('POST', url, { on, existing });
+      await api('POST', `/api/drive/nodes/${encodeURIComponent(x.id)}/versioning`, { on });
     }
     toast(t(on ? 'drv_ver_on_done' : 'drv_ver_off_done'));
   } catch (e) {

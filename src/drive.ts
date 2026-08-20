@@ -74,7 +74,6 @@ const THUMB_MAX_BYTES = 100 * 1024;
 // 版本:这是兜底,不是保留策略。没人要求历史停在一百版;它只是为了让"每三十秒存一次"的客户端
 // 不能把一个文件的历史撑到没边。超出的从最老的丢起,永远不动最新的。
 const VERSION_KEEP_MAX = 100;
-const VERSION_SWEEP_BATCH = 200;  // files handed versioning per request / 每次请求为多少个文件接上版本
 
 // Inline preview whitelist: nothing here may execute script under our origin. SVG and HTML must
 // never enter this set (same trap the /cid endpoint once fell into); text/plain is pinned to UTF-8.
@@ -459,45 +458,6 @@ async function getVersion(env: Env, nodeId: string, vid: string): Promise<Versio
     .bind(vid, nodeId).first();
   if (!row) throw new HttpError(404, 'e_drive_version_missing');
   return row as unknown as VersionRow;
-}
-
-/** Hand versioning to the files already sitting under a folder. The policy on its own speaks only
- *  for files not yet born; this is the separate, explicit answer for the ones already there.
- *  Bounded per call, and the caller loops while `more` -- a folder can hold thousands.
- *  把版本接给已经坐在某个目录下的那些文件。策略本身只对"尚未出生的文件"说话;
- *  这里是针对"已经在那儿的"另一个明确回答。每次调用有上限,调用方在 more 为真时继续 ——
- *  一个目录可能装着上千个。 */
-async function sweepVersioned(env: Env, rootId: string, actorId: string): Promise<{ swept: number; more: boolean }> {
-  const rows = await env.DB.prepare(
-    `WITH RECURSIVE sub(id, depth) AS (
-       SELECT id, 0 FROM drive_nodes WHERE id=?1
-       UNION ALL SELECT n.id, s.depth+1 FROM drive_nodes n JOIN sub s ON n.parent_id=s.id WHERE s.depth<${DEPTH_MAX}
-     ) SELECT n.* FROM sub JOIN drive_nodes n ON n.id=sub.id
-       WHERE n.kind='file' AND n.versioned=0 AND n.trashed=0 LIMIT ${VERSION_SWEEP_BATCH + 1}`
-  ).bind(rootId).all();
-  const files = (rows.results || []) as unknown as NodeRow[];
-  const batch = files.slice(0, VERSION_SWEEP_BATCH);
-  if (!batch.length) return { swept: 0, more: false };
-  const t = now();
-  const stmts: D1PreparedStatement[] = [];
-  for (const f of batch) {
-    // Whatever the file holds right now becomes its version one. Nothing is copied: the version
-    // names the key the file already points at, and the next write is the first that has to find
-    // somewhere new to land.
-    // 文件此刻装着的东西,成为它的第一版。什么都不拷贝:这一版指名的就是文件本来就指着的那个键,
-    // 而下一次写入,才是第一个必须另找地方落脚的。
-    let vid = f.ver_head;
-    if (!vid && f.r2_key) {
-      vid = uid();
-      stmts.push(versionWrite(env, f.id, null, {
-        id: vid, key: f.r2_key, size: f.size || 0, mime: f.mime || '',
-        origin: 'init', author: actorId, linked: false, at: t,
-      }));
-    }
-    stmts.push(env.DB.prepare('UPDATE drive_nodes SET versioned=1, ver_head=?1 WHERE id=?2').bind(vid, f.id));
-  }
-  await env.DB.batch(stmts);
-  return { swept: batch.length, more: files.length > batch.length };
 }
 
 /** Where a create/upload lands: the user's own root, or a folder they can edit (their own or a
@@ -1004,13 +964,19 @@ driveApp.post('/nodes/:id/versioning', async (c) => {
   const on = !!body.on;
   const t = now();
   if (a.node.kind === 'folder') {
+    // A folder's switch speaks for files not yet born and for nothing else. It used to offer to
+    // reach down and change the files already there, which made one gesture mean two things --
+    // set a rule, and act on everything under it -- and the second was invisible afterwards:
+    // nothing on a file says whether its setting came from itself or from a sweep. A file's own
+    // history is switched on the file.
+    // 一个目录的开关,只为"尚未出生的文件"说话,别的一概不管。它从前会顺手问一句要不要连
+    // 已经在那儿的文件一起改,于是同一个动作有了两层含义 —— 定一条规矩,和对其下的一切动手 ——
+    // 而后一层事后无从查考:一个文件身上并不写着它的设置是自己的,还是被某次扫过时给的。
+    // 一个文件自己的历史,在这个文件上开关。
     await c.env.DB.prepare('UPDATE drive_nodes SET ver_policy=?1, updated_at=?2 WHERE id=?3')
       .bind(on ? 1 : 0, t, a.node.id).run();
-    const swept = on && body.existing
-      ? await sweepVersioned(c.env, a.node.id, c.get('user').id)
-      : { swept: 0, more: false };
-    await audit(c.env, c.get('user'), 'drive.versioning', a.node.name, { on, folder: true, swept: swept.swept });
-    return c.json({ ok: true, ver_policy: on, ...swept });
+    await audit(c.env, c.get('user'), 'drive.versioning', a.node.name, { on, folder: true });
+    return c.json({ ok: true, ver_policy: on });
   }
   if (a.node.kind !== 'file') throw new HttpError(400, 'e_drive_not_file');
   if (on && !a.node.versioned) {
