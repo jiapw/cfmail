@@ -3025,20 +3025,29 @@ export async function driveCronHourly(env: Env): Promise<void> {
     } catch {}
     await env.DB.prepare('DELETE FROM drive_uploads WHERE id=?1').bind(u.id).run();
   }
-  // A file that is not keeping history should not be holding any. Switching off used to leave
-  // the old versions behind, so rows from before that changed are still out there -- unreachable
-  // now that the interface has no word for that state, and still occupying their objects. One
-  // file per run is enough: this is a finite backlog, not a recurring source.
-  // 一个不保留历史的文件,不该持有任何历史。从前"关掉"会把旧版本留下,
-  // 所以那个规矩改变之前的行至今还在 —— 界面已经没有词可以称呼那个状态,
-  // 它们因此无从触及,却仍占着各自的对象。每次跑二十个:
-  // 这是一笔有限的存货而不是持续的来源,既能很快排完,单次的活也有上限。
-  const orphans = await env.DB.prepare(
-    `SELECT n.* FROM drive_nodes n
-      WHERE n.kind='file' AND n.versioned=0
-        AND EXISTS (SELECT 1 FROM drive_versions v WHERE v.node_id = n.id) LIMIT 20`
-  ).all();
-  for (const n of (orphans.results || []) as unknown as NodeRow[]) await dropHistory(env, n);
+  // A file carrying versions with the switch off is damage, not a state. It could only be made
+  // one way -- switching off used to leave the history behind, and the two labels for on and off
+  // were four of the same words apart, so the click that produced it was very likely meant to be
+  // the other one. The history is intact and its head still names a real row, so the repair is to
+  // put the switch back where the file's own contents say it was, not to make the contents agree
+  // with the switch. Nobody asked for that history to go, and it is not this pass's to take.
+  //
+  // Nothing can enter this state any more: off discards now. So this drains a finite backlog.
+  //
+  // 一个戴着版本、开关却关着的文件,是损伤,不是一种状态。它只能由一条路造出 ——
+  // 从前"关掉"会把历史留下,而开与关的两个标签只差四个字,
+  // 所以造出它的那一下,很可能本来想点的是另一个。
+  // 历史完好,head 也仍指着一行真实存在的版本,于是修复的做法是把开关拨回
+  // "文件自己的内容所说的那个位置",而不是反过来让内容去迁就开关。
+  // 没有人要求过那些历史离开,这道扫描也无权带走它们。
+  //
+  // 以后再也进不了这个状态:现在"关"就是丢。所以这里排的是一笔有限的存货。
+  await env.DB.prepare(
+    `UPDATE drive_nodes SET versioned=1
+      WHERE kind='file' AND versioned=0 AND ver_head IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drive_versions v WHERE v.node_id = drive_nodes.id
+                      AND v.id = drive_nodes.ver_head)`
+  ).run();
   // Lapsed WebDAV locks stopped blocking anyone the moment they lapsed -- every check is against
   // the clock. This is only the sweeping up afterwards.
   // 失效的 WebDAV 锁在失效那一刻就不再拦人了 —— 每一次判定都对着时钟。这里只是事后打扫。
