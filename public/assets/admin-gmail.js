@@ -557,7 +557,6 @@ export async function tabGmail(body, opts = {}) {
       // Gmail 的星标就是我们的内置标签,也就是 flagged 那一位 —— 所以它作为标记位传,
       // 而不是再多一个 id。
       const q2 = new URLSearchParams({ mailbox: mbAddr, folder });
-      q2.set('seen', m.labels.includes('Unread') ? '0' : '1');
       if (m.labels.includes('Starred')) q2.set('flagged', '1');
       if (meta.messageId) q2.set('message_id', meta.messageId);
       if (ids.length) q2.set('labels', ids.join(','));

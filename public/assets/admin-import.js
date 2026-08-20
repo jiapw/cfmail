@@ -75,17 +75,17 @@ async function peekEml(file) {
   const addrs = (s) => [...String(s).matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)].map((m) => m[0].toLowerCase());
   const status = (grab('status') + ' ' + grab('x-status')).trim();
   const moz = grab('x-mozilla-status');
-  let seen = null;
+  // Only the star is read out of the old flags -- imports always arrive read, so R/Seen has
+  // nothing left to say. / 旧标记里只取星标 —— 导入一律按已读入库,R/Seen 已经无话可说。
   let flagged = null;
-  if (status) { seen = /R/.test(status); flagged = /F/.test(status); }
+  if (status) flagged = /F/.test(status);
   if (moz) {
     const n = parseInt(moz, 16);
-    if (!Number.isNaN(n)) { seen = !!(n & 0x1); flagged = !!(n & 0x4); }
+    if (!Number.isNaN(n)) flagged = !!(n & 0x4);
   }
   return {
     messageId: (grab('message-id').match(/<[^>]+>/) || [''])[0],
     rcpts: addrs(`${grab('to')} ${grab('cc')} ${grab('delivered-to')} ${grab('x-original-to')}`),
-    seen,
     flagged,
   };
 }
@@ -381,7 +381,6 @@ async function emlImport(body) {
       const q = new URLSearchParams({ mailbox, folder: roleByDir[it.dir] || 'inbox' });
       // Exported mail rarely carries read state; default to read so hundreds do not land unread
       // 导出件普遍不带已读标记,默认按已读进,免得一进来几百封未读
-      q.set('seen', it.seen === false ? '0' : '1');
       if (it.flagged) q.set('flagged', '1');
       if (it.messageId) q.set('message_id', it.messageId);
       try {

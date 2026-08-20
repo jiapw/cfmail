@@ -92,10 +92,11 @@ function peekHeaders(buf) {
   // .eml 本身不带 IMAP 标记,但有些导出会写这两个头
   const status = grab('status') + ' ' + grab('x-status');
   const moz = grab('x-mozilla-status');
-  let seen = null, flagged = null;
-  if (status.trim()) { seen = /R/.test(status); flagged = /F/.test(status); }
-  if (moz) { const n = parseInt(moz, 16); if (!Number.isNaN(n)) { seen = !!(n & 0x1); flagged = !!(n & 0x4); } }
-  return { messageId, seen, flagged };
+  // 导入一律按已读入库,所以旧标记里只取星标 / imports always arrive read; only the star is read out
+  let flagged = null;
+  if (status.trim()) flagged = /F/.test(status);
+  if (moz) { const n = parseInt(moz, 16); if (!Number.isNaN(n)) flagged = !!(n & 0x4); }
+  return { messageId, flagged };
 }
 
 async function* walk(dir) {
@@ -123,7 +124,7 @@ for await (const file of walk(DIR)) {
 
   const buf = await readFile(file);
   stats.bytes += buf.length;
-  const { messageId, seen, flagged } = peekHeaders(buf);
+  const { messageId, flagged } = peekHeaders(buf);
 
   if (DRY) {
     if (stats.total <= 20) console.log(`  ${folder.padEnd(8)} ${rel}`);
@@ -133,7 +134,6 @@ for await (const file of walk(DIR)) {
   const q = new URLSearchParams({ mailbox: MAILBOX, folder });
   // Exported mail rarely carries read state; default to read so hundreds do not land unread.
   // 导出件普遍不带已读标记,默认按已读进,免得一进来几百封未读
-  q.set('seen', seen === false ? '0' : '1');
   if (flagged) q.set('flagged', '1');
   if (messageId) q.set('message_id', messageId);
 
