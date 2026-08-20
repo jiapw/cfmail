@@ -48,6 +48,20 @@ export interface Addr {
   addr: string;
 }
 
+/**
+ * What a mailbox owner has said about a correspondent. Three named states, none of them derived:
+ * a stranger is unknown until somebody says otherwise, and risk is a judgement made on purpose.
+ * Only 'trusted' loads remote images by itself.
+ * 邮箱主人对某位往来对象的看法。三个有名字的状态,都不靠推导:
+ * 陌生人在有人开口之前就是未知,而隐患是有人特意下的判断。只有 trusted 会自动加载远程图片。
+ */
+export type Trust = 'trusted' | 'unknown' | 'risk';
+export const TRUSTS: Trust[] = ['trusted', 'unknown', 'risk'];
+/** Anything unrecognised is unknown -- an unreadable stored value must not read as trusted
+ *  认不出来的一律当未知 —— 存坏的值绝不能被读成可信 */
+export const pickTrust = (v: unknown): Trust =>
+  (TRUSTS as string[]).includes(String(v)) ? (String(v) as Trust) : 'unknown';
+
 export type FolderRole = 'inbox' | 'sent' | 'drafts' | 'spam' | 'trash' | 'archive';
 export const FOLDER_ROLES: { role: FolderRole; name: string }[] = [
   { role: 'inbox', name: 'INBOX' },

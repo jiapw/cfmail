@@ -42,7 +42,6 @@ const zhCN = {
   tt_ol: '编号列表', tt_ul: '项目符号', tt_quote: '引用', tt_code: '代码块', tt_align_left: '左对齐', tt_align_center: '居中', tt_align_right: '右对齐', tt_link: '插入链接', tt_image: '插入图片', tt_clean: '清除格式',
   sz_normal: '普通', sz_small: '小', sz_large: '大', sz_huge: '特大',
   img_blocked: '已拦截 {0} 张远程图片', img_show_once: '显示图片', img_trust_sender: '始终信任该发件人', img_trusted: '已信任 {0}',
-  safe_on: '安全', safe_off: '不安全', safe_explicit: '已手动设置', safe_by_default: '跟随默认（站内安全，外部不安全）', safe_reset: '恢复默认',
   chip_delivered: '已投递', chip_sending: '发送中…', chip_failed: '发送失败', chip_dev: 'dev 通道', sent_to_line: '发送至 {0}',
   purge_confirm: '永久删除该会话?此操作不可恢复。', action_done: '已完成', empty_reply: '回复内容为空', atts_uploading: '附件还在上传中',
   fwd_divider: '---------- 转发的邮件 ----------', fwd_from: '发件人', fwd_date: '日期', fwd_subject: '主题',
@@ -178,7 +177,6 @@ const zhTW = {
   tt_ol: '編號清單', tt_ul: '項目符號', tt_quote: '引用', tt_code: '程式碼區塊', tt_align_left: '靠左對齊', tt_align_center: '置中', tt_align_right: '靠右對齊', tt_link: '插入連結', tt_image: '插入圖片', tt_clean: '清除格式',
   sz_normal: '普通', sz_small: '小', sz_large: '大', sz_huge: '特大',
   img_blocked: '已攜截 {0} 張遠端圖片', img_show_once: '顯示圖片', img_trust_sender: '一律信任這位寄件者', img_trusted: '已信任 {0}',
-  safe_on: '安全', safe_off: '不安全', safe_explicit: '已手動設定', safe_by_default: '跟隨預設（站內安全，外部不安全）', safe_reset: '恢復預設',
   chip_delivered: '已投遞', chip_sending: '傳送中…', chip_failed: '傳送失敗', chip_dev: 'dev 通道', sent_to_line: '傳送至 {0}',
   purge_confirm: '永久刪除該對話?此操作不可復原。', action_done: '已完成', empty_reply: '回覆內容為空', atts_uploading: '附件還在上傳中',
   fwd_divider: '---------- 轉寄的郵件 ----------', fwd_from: '寄件者', fwd_date: '日期', fwd_subject: '主旨',
@@ -314,7 +312,6 @@ const en = {
   tt_ol: 'Numbered list', tt_ul: 'Bulleted list', tt_quote: 'Blockquote', tt_code: 'Code block', tt_align_left: 'Align left', tt_align_center: 'Align center', tt_align_right: 'Align right', tt_link: 'Insert link', tt_image: 'Insert image', tt_clean: 'Clear formatting',
   sz_normal: 'Normal', sz_small: 'Small', sz_large: 'Large', sz_huge: 'Huge',
   img_blocked: '{0} remote image(s) blocked', img_show_once: 'Show images', img_trust_sender: 'Always trust this sender', img_trusted: 'Trusted {0}',
-  safe_on: 'Safe', safe_off: 'Unsafe', safe_explicit: 'Set manually', safe_by_default: 'Following default (internal safe, external unsafe)', safe_reset: 'Reset to default',
   chip_delivered: 'Delivered', chip_sending: 'Sending…', chip_failed: 'Failed', chip_dev: 'dev channel', sent_to_line: 'to {0}',
   purge_confirm: 'Delete this conversation forever? This cannot be undone.', action_done: 'Done', empty_reply: 'Reply is empty', atts_uploading: 'Attachments still uploading',
   fwd_divider: '---------- Forwarded message ----------', fwd_from: 'From', fwd_date: 'Date', fwd_subject: 'Subject',
@@ -450,7 +447,6 @@ const ja = {
   tt_ol: '番号付きリスト', tt_ul: '箇条書き', tt_quote: '引用', tt_code: 'コードブロック', tt_align_left: '左揃え', tt_align_center: '中央揃え', tt_align_right: '右揃え', tt_link: 'リンクを挿入', tt_image: '画像を挿入', tt_clean: '書式をクリア',
   sz_normal: '標準', sz_small: '小', sz_large: '大', sz_huge: '最大',
   img_blocked: 'リモート画像 {0} 件をブロックしました', img_show_once: '画像を表示', img_trust_sender: 'この送信者を常に信頼', img_trusted: '{0} を信頼しました',
-  safe_on: '安全', safe_off: '安全でない', safe_explicit: '手動設定済み', safe_by_default: '既定に従う（社内は安全，社外は非安全）', safe_reset: '既定に戻す',
   chip_delivered: '配信済み', chip_sending: '送信中…', chip_failed: '送信失敗', chip_dev: 'dev チャネル', sent_to_line: '宛先 {0}',
   purge_confirm: 'このスレッドを完全に削除しますか?元に戻せません。', action_done: '完了', empty_reply: '返信が空です', atts_uploading: '添付ファイルをアップロード中です',
   fwd_divider: '---------- 転送メッセージ ----------', fwd_from: '差出人', fwd_date: '日付', fwd_subject: '件名',
@@ -586,7 +582,6 @@ const ko = {
   tt_ol: '번호 목록', tt_ul: '글머리 기호', tt_quote: '인용', tt_code: '코드 블록', tt_align_left: '왼쪽 정렬', tt_align_center: '가운데 정렬', tt_align_right: '오른쪽 정렬', tt_link: '링크 삽입', tt_image: '이미지 삽입', tt_clean: '서식 지우기',
   sz_normal: '보통', sz_small: '작게', sz_large: '크게', sz_huge: '아주 크게',
   img_blocked: '원격 이미지 {0}개를 차단했습니다', img_show_once: '이미지 표시', img_trust_sender: '이 발신자를 항상 신뢰', img_trusted: '{0} 신뢰함',
-  safe_on: '안전', safe_off: '안전하지 않음', safe_explicit: '수동 설정됨', safe_by_default: '기본값 따름(내부 안전, 외부 비안전)', safe_reset: '기본값으로 되돌리기',
   chip_delivered: '전송됨', chip_sending: '보내는 중…', chip_failed: '전송 실패', chip_dev: 'dev 채널', sent_to_line: '받는사람 {0}',
   purge_confirm: '이 대화를 완전히 삭제할까요? 되돌릴 수 없습니다.', action_done: '완료', empty_reply: '답장 내용이 비어 있습니다', atts_uploading: '첨부파일 업로드 중입니다',
   fwd_divider: '---------- 전달된 메일 ----------', fwd_from: '보낸사람', fwd_date: '날짜', fwd_subject: '제목',
@@ -722,7 +717,6 @@ const de = {
   tt_ol: 'Nummerierte Liste', tt_ul: 'Aufzählung', tt_quote: 'Zitat', tt_code: 'Codeblock', tt_align_left: 'Linksbündig', tt_align_center: 'Zentriert', tt_align_right: 'Rechtsbündig', tt_link: 'Link einfügen', tt_image: 'Bild einfügen', tt_clean: 'Formatierung entfernen',
   sz_normal: 'Normal', sz_small: 'Klein', sz_large: 'Groß', sz_huge: 'Sehr groß',
   img_blocked: '{0} externe Bilder blockiert', img_show_once: 'Bilder anzeigen', img_trust_sender: 'Diesem Absender immer vertrauen', img_trusted: '{0} als vertrauenswürdig markiert',
-  safe_on: 'Sicher', safe_off: 'Unsicher', safe_explicit: 'Manuell gesetzt', safe_by_default: 'Standard (intern sicher, extern unsicher)', safe_reset: 'Auf Standard zurücksetzen',
   chip_delivered: 'Zugestellt', chip_sending: 'Wird gesendet…', chip_failed: 'Fehlgeschlagen', chip_dev: 'dev-Kanal', sent_to_line: 'an {0}',
   purge_confirm: 'Diese Konversation endgültig löschen? Kann nicht rückgängig gemacht werden.', action_done: 'Erledigt', empty_reply: 'Antwort ist leer', atts_uploading: 'Anhänge werden noch hochgeladen',
   fwd_divider: '---------- Weitergeleitete Nachricht ----------', fwd_from: 'Von', fwd_date: 'Datum', fwd_subject: 'Betreff',
@@ -858,7 +852,6 @@ const fr = {
   tt_ol: 'Liste numérotée', tt_ul: 'Liste à puces', tt_quote: 'Citation', tt_code: 'Bloc de code', tt_align_left: 'À gauche', tt_align_center: 'Centré', tt_align_right: 'À droite', tt_link: 'Insérer un lien', tt_image: 'Insérer une image', tt_clean: 'Effacer la mise en forme',
   sz_normal: 'Normal', sz_small: 'Petit', sz_large: 'Grand', sz_huge: 'Très grand',
   img_blocked: '{0} image(s) distante(s) bloquée(s)', img_show_once: 'Afficher les images', img_trust_sender: 'Toujours faire confiance à cet expéditeur', img_trusted: '{0} approuvé',
-  safe_on: 'Sûr', safe_off: 'Non sûr', safe_explicit: 'Défini manuellement', safe_by_default: 'Valeur par défaut (interne sûr, externe non sûr)', safe_reset: 'Rétablir par défaut',
   chip_delivered: 'Distribué', chip_sending: 'Envoi…', chip_failed: 'Échec', chip_dev: 'canal dev', sent_to_line: 'à {0}',
   purge_confirm: 'Supprimer définitivement cette conversation ? Action irréversible.', action_done: 'Terminé', empty_reply: 'La réponse est vide', atts_uploading: 'Pièces jointes en cours d’envoi',
   fwd_divider: '---------- Message transféré ----------', fwd_from: 'De', fwd_date: 'Date', fwd_subject: 'Objet',
@@ -994,7 +987,6 @@ const es = {
   tt_ol: 'Lista numerada', tt_ul: 'Lista con viñetas', tt_quote: 'Cita', tt_code: 'Bloque de código', tt_align_left: 'Alinear a la izquierda', tt_align_center: 'Centrar', tt_align_right: 'Alinear a la derecha', tt_link: 'Insertar enlace', tt_image: 'Insertar imagen', tt_clean: 'Borrar formato',
   sz_normal: 'Normal', sz_small: 'Pequeño', sz_large: 'Grande', sz_huge: 'Muy grande',
   img_blocked: '{0} imagen(es) remota(s) bloqueada(s)', img_show_once: 'Mostrar imágenes', img_trust_sender: 'Confiar siempre en este remitente', img_trusted: '{0} marcado como de confianza',
-  safe_on: 'Seguro', safe_off: 'No seguro', safe_explicit: 'Definido manualmente', safe_by_default: 'Valor predeterminado (interno seguro, externo no seguro)', safe_reset: 'Restablecer',
   chip_delivered: 'Entregado', chip_sending: 'Enviando…', chip_failed: 'Falló', chip_dev: 'canal dev', sent_to_line: 'para {0}',
   purge_confirm: '¿Eliminar esta conversación definitivamente? No se puede deshacer.', action_done: 'Hecho', empty_reply: 'La respuesta está vacía', atts_uploading: 'Adjuntos subiéndose todavía',
   fwd_divider: '---------- Mensaje reenviado ----------', fwd_from: 'De', fwd_date: 'Fecha', fwd_subject: 'Asunto',
@@ -1130,7 +1122,6 @@ const ru = {
   tt_ol: 'Нумерованный список', tt_ul: 'Маркированный список', tt_quote: 'Цитата', tt_code: 'Блок кода', tt_align_left: 'По левому краю', tt_align_center: 'По центру', tt_align_right: 'По правому краю', tt_link: 'Вставить ссылку', tt_image: 'Вставить изображение', tt_clean: 'Очистить формат',
   sz_normal: 'Обычный', sz_small: 'Мелкий', sz_large: 'Крупный', sz_huge: 'Очень крупный',
   img_blocked: 'Заблокировано изображений: {0}', img_show_once: 'Показать изображения', img_trust_sender: 'Всегда доверять отправителю', img_trusted: '{0} — доверенный',
-  safe_on: 'Безопасный', safe_off: 'Небезопасный', safe_explicit: 'Задано вручную', safe_by_default: 'По умолчанию (внутренние — безопасные, внешние — нет)', safe_reset: 'Сбросить',
   chip_delivered: 'Доставлено', chip_sending: 'Отправка…', chip_failed: 'Ошибка', chip_dev: 'канал dev', sent_to_line: 'кому {0}',
   purge_confirm: 'Удалить переписку навсегда? Действие необратимо.', action_done: 'Готово', empty_reply: 'Пустой ответ', atts_uploading: 'Вложения ещё загружаются',
   fwd_divider: '---------- Пересланное сообщение ----------', fwd_from: 'От', fwd_date: 'Дата', fwd_subject: 'Тема',
@@ -5545,3 +5536,53 @@ Object.assign(DICTS.de, { e_impersonate_disabled: "Dieses Konto ist deaktiviert.
 Object.assign(DICTS.fr, { e_impersonate_disabled: "Ce compte est désactivé." });
 Object.assign(DICTS.es, { e_impersonate_disabled: "Esa cuenta está deshabilitada." });
 Object.assign(DICTS.ru, { e_impersonate_disabled: "Эта учётная запись отключена." });
+
+Object.assign(DICTS['zh-CN'], { trust_label: "安全性" });
+Object.assign(DICTS['zh-TW'], { trust_label: "安全性" });
+Object.assign(DICTS.en, { trust_label: "Trust" });
+Object.assign(DICTS.ja, { trust_label: "安全性" });
+Object.assign(DICTS.ko, { trust_label: "신뢰도" });
+Object.assign(DICTS.de, { trust_label: "Vertrauen" });
+Object.assign(DICTS.fr, { trust_label: "Confiance" });
+Object.assign(DICTS.es, { trust_label: "Confianza" });
+Object.assign(DICTS.ru, { trust_label: "Доверие" });
+
+Object.assign(DICTS['zh-CN'], { trust_trusted: "可信" });
+Object.assign(DICTS['zh-TW'], { trust_trusted: "可信" });
+Object.assign(DICTS.en, { trust_trusted: "Trusted" });
+Object.assign(DICTS.ja, { trust_trusted: "信頼済み" });
+Object.assign(DICTS.ko, { trust_trusted: "신뢰함" });
+Object.assign(DICTS.de, { trust_trusted: "Vertraut" });
+Object.assign(DICTS.fr, { trust_trusted: "De confiance" });
+Object.assign(DICTS.es, { trust_trusted: "De confianza" });
+Object.assign(DICTS.ru, { trust_trusted: "Доверенный" });
+
+Object.assign(DICTS['zh-CN'], { trust_unknown: "未知" });
+Object.assign(DICTS['zh-TW'], { trust_unknown: "未知" });
+Object.assign(DICTS.en, { trust_unknown: "Unknown" });
+Object.assign(DICTS.ja, { trust_unknown: "不明" });
+Object.assign(DICTS.ko, { trust_unknown: "미확인" });
+Object.assign(DICTS.de, { trust_unknown: "Unbekannt" });
+Object.assign(DICTS.fr, { trust_unknown: "Inconnu" });
+Object.assign(DICTS.es, { trust_unknown: "Desconocido" });
+Object.assign(DICTS.ru, { trust_unknown: "Неизвестно" });
+
+Object.assign(DICTS['zh-CN'], { trust_risk: "隐患" });
+Object.assign(DICTS['zh-TW'], { trust_risk: "隱患" });
+Object.assign(DICTS.en, { trust_risk: "Risk" });
+Object.assign(DICTS.ja, { trust_risk: "危険" });
+Object.assign(DICTS.ko, { trust_risk: "위험" });
+Object.assign(DICTS.de, { trust_risk: "Risiko" });
+Object.assign(DICTS.fr, { trust_risk: "À risque" });
+Object.assign(DICTS.es, { trust_risk: "Riesgo" });
+Object.assign(DICTS.ru, { trust_risk: "Опасный" });
+
+Object.assign(DICTS['zh-CN'], { trust_risk_warn: "你把这个发件人标记为隐患。" });
+Object.assign(DICTS['zh-TW'], { trust_risk_warn: "你把這個寄件人標記為隱患。" });
+Object.assign(DICTS.en, { trust_risk_warn: "You marked this sender as a risk." });
+Object.assign(DICTS.ja, { trust_risk_warn: "この送信者を危険として登録しています。" });
+Object.assign(DICTS.ko, { trust_risk_warn: "이 발신자를 위험으로 표시해 두었습니다." });
+Object.assign(DICTS.de, { trust_risk_warn: "Sie haben diesen Absender als Risiko markiert." });
+Object.assign(DICTS.fr, { trust_risk_warn: "Vous avez marqué cet expéditeur comme à risque." });
+Object.assign(DICTS.es, { trust_risk_warn: "Ha marcado a este remitente como riesgo." });
+Object.assign(DICTS.ru, { trust_risk_warn: "Вы отметили этого отправителя как опасного." });

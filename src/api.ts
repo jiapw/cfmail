@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import PostalMime from 'postal-mime';
-import type { Env, User, FolderRole } from './types';
+import { pickTrust, type Env, type User, type FolderRole, type Trust } from './types';
 import {
   clearLoginFailures,
   createSession,
@@ -814,13 +814,13 @@ app.get('/api/mailboxes/:mb/contacts', async (c) => {
   if (q) {
     const like = `%${q.replace(/[%_]/g, ' ')}%`;
     rows = await c.env.DB.prepare(
-      `SELECT addr, name, internal, times, last_seen, safe FROM contacts
+      `SELECT addr, name, internal, times, last_seen, trust FROM contacts
        WHERE mailbox_id=?1 AND (addr LIKE ?2 OR name LIKE ?2)
        ORDER BY times DESC, last_seen DESC LIMIT ?3`
     ).bind(mb.id, like, limit).all();
   } else {
     rows = await c.env.DB.prepare(
-      `SELECT addr, name, internal, times, last_seen, safe FROM contacts
+      `SELECT addr, name, internal, times, last_seen, trust FROM contacts
        WHERE mailbox_id=?1 ORDER BY internal DESC, times DESC, last_seen DESC LIMIT ?2`
     ).bind(mb.id, limit).all();
   }
@@ -864,7 +864,7 @@ async function directoryOf(env: Env, mb: any, q: string) {
     internal: 1,
     times: 0,
     last_seen: 0,
-    safe: 1,
+    trust: 'trusted',
     // Says this came from the company directory rather than from correspondence, so the
     // interface can avoid reporting "0 messages exchanged" as though it were a fact about a person
     // 标明它来自公司通讯录而不是往来记录,界面才不会把"往来 0 次"当成关于某个人的事实来报
@@ -1326,19 +1326,18 @@ async function loadParsed(c: any, msg: any) {
   return await new PostalMime().parse(buf);
 }
 
-/** Is this sender trusted? An explicit setting on the contact wins; otherwise local senders are safe by default and external ones are not
- *  该发件人是否可信:联系人显式设置优先,否则站内默认安全、外部默认不安全 */
-async function senderIsSafe(c: any, mailboxId: string, addr: string): Promise<boolean> {
+/** What the mailbox owner has said about this sender. Anyone not in the address book is either a
+ *  colleague or a stranger; a stranger is unknown, which is a description, not an accusation.
+ *  这个邮箱的主人对该发件人的看法。不在通讯录里的,要么是同事要么是陌生人;
+ *  陌生人算「未知」—— 那是一句描述,不是一项指控。 */
+async function senderTrust(c: any, mailboxId: string, addr: string): Promise<Trust> {
   const a = normalizeAddr(addr || '');
-  if (!a) return false;
-  const row: any = await c.env.DB.prepare('SELECT safe, internal FROM contacts WHERE mailbox_id=?1 AND addr=?2')
+  if (!a) return 'unknown';
+  const row: any = await c.env.DB.prepare('SELECT trust FROM contacts WHERE mailbox_id=?1 AND addr=?2')
     .bind(mailboxId, a).first();
-  if (row && row.safe !== null && row.safe !== undefined) return !!row.safe;
-  if (row) return !!row.internal;
-  // Not in the address book yet: decide from whether the address is local
-  // 通讯录里还没有这个人:按是否站内地址判断
+  if (row) return pickTrust(row.trust);
   const mb = await findMailboxByAddress(c.env, a).catch(() => null);
-  return !!mb;
+  return mb ? 'trusted' : 'unknown';
 }
 
 app.get('/api/messages/:id/body', async (c) => {
@@ -1349,7 +1348,10 @@ app.get('/api/messages/:id/body', async (c) => {
   // ?images=1 means the user clicked "show images" in the interface -- allow them this once
   // ?images=1 表示用户在界面上点了"显示图片",本次放行
   const force = c.req.query('images') === '1';
-  const safe = force || (await senderIsSafe(c, msg.mailbox_id, msg.from_addr));
+  const trust = await senderTrust(c, msg.mailbox_id, msg.from_addr);
+  // Only outright trust loads remote images by itself; unknown and risk both wait to be asked.
+  // 只有明确的「可信」会自动加载远程图片;未知与隐患都等人开口。
+  const safe = force || trust === 'trusted';
 
   if (html) {
     // cid: inline images are rewritten to our own API path (they ride along with the message, never phone out, so they are always allowed)
@@ -1370,28 +1372,31 @@ app.get('/api/messages/:id/body', async (c) => {
       html = html.replace(/background-image\s*:\s*url\([^)]*\)/gi, () => { blocked++; return 'background-image:none'; });
     }
   }
-  return c.json({ html, text: parsed.text || null, images_blocked: blocked, sender_safe: safe });
+  return c.json({ html, text: parsed.text || null, images_blocked: blocked, sender_safe: safe, sender_trust: trust });
 });
 
-/** Set a contact's safety switch (safe: true / false / null = back to the default)
- *  设置某个联系人的安全开关(safe: true/false/null=恢复默认) */
-app.post('/api/mailboxes/:mb/contacts/safe', async (c) => {
+/** Say what this mailbox thinks of a correspondent: trusted / unknown / risk
+ *  记下这个邮箱对某位往来对象的看法:可信 / 未知 / 隐患 */
+app.post('/api/mailboxes/:mb/contacts/trust', async (c) => {
   const { mb } = await requireGrant(c, c.req.param('mb'), true);
   const body = await c.req.json<any>();
   const addr = normalizeAddr(String(body.addr || ''));
   if (!isEmail(addr)) return c.json({ error: 'e_bad_address' }, 400);
-  const safe = body.safe === null ? null : body.safe ? 1 : 0;
+  const trust = pickTrust(body.trust);
   const exists = await c.env.DB.prepare('SELECT id FROM contacts WHERE mailbox_id=?1 AND addr=?2')
     .bind(mb.id, addr).first<any>();
   if (exists) {
-    await c.env.DB.prepare('UPDATE contacts SET safe=?1 WHERE id=?2').bind(safe, exists.id).run();
+    await c.env.DB.prepare('UPDATE contacts SET trust=?1 WHERE id=?2').bind(trust, exists.id).run();
   } else {
+    // Judging somebody you have never exchanged mail with is reason enough to write them down --
+    // a colleague picked out of the company directory, most often.
+    // 对一个还没通过信的人下判断,本身就足以让他进通讯录 —— 多半是从公司通讯录里挑出来的同事。
     const internal = (await findMailboxByAddress(c.env, addr).catch(() => null)) ? 1 : 0;
     await c.env.DB.prepare(
-      'INSERT INTO contacts (id, mailbox_id, addr, name, internal, times, last_seen, safe) VALUES (?1,?2,?3,?4,?5,0,?6,?7)'
-    ).bind(uid(), mb.id, addr, '', internal, now(), safe).run();
+      'INSERT INTO contacts (id, mailbox_id, addr, name, internal, times, last_seen, trust) VALUES (?1,?2,?3,?4,?5,0,?6,?7)'
+    ).bind(uid(), mb.id, addr, '', internal, now(), trust).run();
   }
-  return c.json({ ok: true, safe });
+  return c.json({ ok: true, trust });
 });
 
 app.get('/api/messages/:id/raw', async (c) => {
