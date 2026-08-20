@@ -607,14 +607,24 @@ const IMPORT_FOLDERS = ['inbox', 'sent', 'drafts', 'archive', 'spam', 'trash'] a
  * Import one historical message. The request body is the raw .eml; parameters ride on the query string:
  *   mailbox     target company address (must already exist)
  *   folder      inbox|sent|drafts|archive|spam|trash, default inbox
- *   seen/flagged  1/0
+ *   flagged     1/0
  *   message_id  optional, used for deduplication. The script reads it out of the .eml headers, so a re-run never produces duplicates.
- * How this differs from normal receiving: no recipient matching, no spam classification, and the timestamp always comes from the Date header.
+ * How this differs from normal receiving: no recipient matching, no spam classification, the timestamp
+ * always comes from the Date header -- and everything arrives read.
+ *
+ * Read, because history is not news. A migration that preserves the old system's unread flags hands
+ * somebody an inbox with five thousand bold lines in it, and no way to tell which of them ever
+ * mattered; the first thing anyone does is select all and mark read. Starred still comes across --
+ * that one was a decision somebody made on purpose.
  * 导入一封历史邮件。请求体就是原始 .eml,参数走 query:
  *   mailbox   目标企业邮箱地址(必须已存在)
  *   folder    inbox|sent|drafts|archive|spam|trash,默认 inbox
  *   message_id  可选,用于去重;由脚本从 .eml 头里读出来,重跑不会产生副本
- * 与正常收信的区别:不做收件人匹配、不做垃圾判定、时间一律取 Date 头。
+ * 与正常收信的区别:不做收件人匹配、不做垃圾判定、时间一律取 Date 头 —— 而且一律按已读入库。
+ *
+ * 按已读,是因为历史不是新消息。忠实保留旧系统未读标记的迁移,交付的是一个五千行加粗的收件箱,
+ * 而且没人分得清哪几行真的要紧;所有人的第一个动作都是全选、标为已读。星标照旧带过来 ——
+ * 那个是有人当初特意做的决定。
  */
 adminApp.post('/import', async (c) => {
   const addr = normalizeAddr(String(c.req.query('mailbox') || ''));
@@ -679,7 +689,7 @@ adminApp.post('/import', async (c) => {
       size: buf.byteLength,
       folderRole: folder as any,
       direction: folder === 'sent' ? 'out' : 'in',
-      seen: c.req.query('seen') !== '0',
+      seen: true,
       flagged: c.req.query('flagged') === '1',
       keepDate: true,
     });
