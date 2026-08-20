@@ -483,13 +483,30 @@
    Word 文档里的一张图片。它先以一个形状正确的灰框等着,好让它落地时页面不会跳;
    而它在框内绝对定位,是因为一张旋转的图必须绕自己的中心转,不能把版面一起拖着走。 */
 .drv-docximg {
-  position: relative; width: 100%; margin: 12px auto; overflow: hidden; border-radius: 4px;
+  position: relative; width: 100%; margin: 12px 0; overflow: hidden; border-radius: 4px;
 }
 .drv-docximg.free { max-width: 100%; min-height: 90px; }
 .drv-docximg.pending { display: flex; align-items: center; justify-content: center; background: var(--panel-2); }
 .drv-docximg .drv-spin { width: 22px; height: 22px; border-width: 2px; }
-.drv-docximg img { position: absolute; inset: 0; margin: auto; display: block; }
-.drv-docximg.free img { position: static; max-width: 100%; height: auto; margin: 0 auto; }
+.drv-docximg img {
+  position: absolute; left: 50%; top: 50%; display: block;
+  /* The overlay fits every other image to the viewport; this one is already sized to the frame
+     Word gave it, and clamping it to the frame's width is what squashed a rotated photo into a
+     square. Its own numbers stand.
+     预览层会把其他每一张图都缩进视口;而这一张已经按 Word 给的框定好了尺寸,
+     再把它压到框宽,正是把一张旋转过的照片挤成方块的原因。它自己的数字说了算。 */
+  max-width: none; max-height: none; object-fit: fill;
+  /* Word does not read EXIF orientation, so a photo that carries one is upright in the file and
+     sideways in Word -- which is why the author reached for the rotate handle. Honouring EXIF
+     here would apply that turn twice.
+     Word 不读 EXIF 方向,所以一张带方向标记的照片在文件里是正的、在 Word 里是躺着的 ——
+     作者正因如此才去拧了旋转把手。这里再认 EXIF,那一下就转了两次。 */
+  image-orientation: none;
+}
+.drv-docximg.free img {
+  position: static; left: auto; top: auto; transform: none;
+  max-width: 100%; height: auto; margin: 0 auto; object-fit: contain;
+}
 
 .drv-docwin {
   flex: 1; min-height: 0; overflow-y: auto; border-radius: 0;

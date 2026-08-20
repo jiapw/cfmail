@@ -216,6 +216,14 @@ export async function docxParse(source) {
       const styleEl = NS(p, 'pStyle')[0];
       const style = styleEl?.getAttribute('w:val') || styleEl?.getAttributeNS('*', 'val') || '';
       const listed = NS(p, 'numPr').length > 0;
+      // w:jc is the paragraph's own alignment, and in a document like a photo album it is
+      // carrying nearly all of the layout: every caption and every picture in one is centred,
+      // and read without it the whole thing lines up hard against the left margin.
+      // w:jc 是段落自身的对齐方式,而在相册这类文档里,版式几乎全靠它撑着:
+      // 每一句说明、每一张图都是居中的;不读它,整份文档会齐刷刷地贴到左边距上。
+      const jcEl = NS(p, 'jc')[0];
+      const jc = jcEl?.getAttribute('w:val') || jcEl?.getAttributeNS('*', 'val') || '';
+      const al = { center: 'center', right: 'right', end: 'right', both: 'justify' }[jc] || '';
       const hm = /^Heading([1-6])$/i.exec(style) || /^[1-6]$/.exec(style);
       const h = hm ? parseInt(hm[1] || hm[0], 10) : 0;
       const out = [];
@@ -224,14 +232,14 @@ export async function docxParse(source) {
         if (!runs.length) return;
         const text = runs.map((x) => x.t).join('');
         if (text) texts.push(text);
-        out.push({ kind: 'p', h, listed, runs });
+        out.push({ kind: 'p', h, listed, al, runs });
         runs = [];
       };
       for (const r of NS(p, 'r')) {
         const img = docxImage(r);
         if (img) {
           flush();
-          out.push(img);
+          out.push({ ...img, al });
           continue;
         }
         const t = NS(r, 't').map((x) => x.textContent).join('');
@@ -245,7 +253,7 @@ export async function docxParse(source) {
       flush();
       // An empty paragraph is a blank line the author put there on purpose
       // 空段落是作者有意留下的一个空行
-      if (!out.length) out.push({ kind: 'p', h, listed, runs: [] });
+      if (!out.length) out.push({ kind: 'p', h, listed, al, runs: [] });
       return out;
     };
     for (const el of body.children) {
