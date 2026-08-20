@@ -65,6 +65,23 @@ const noprev = (node) => `
 // 一切滚动都发生在圆角文档窗口内部,绝不挂在遮罩边上
 const win = (inner) => `<div class="drv-docwin">${inner}</div>`;
 
+/** The box a picture occupies, before the bytes for it exist. Rotation turns the frame as well
+ *  as the picture, so a quarter turn swaps the box -- that is what keeps a rotated photograph
+ *  from overlapping the lines above and below it once it arrives.
+ *  一张图片所占的位置,在它的字节存在之前就先摆好。旋转转的是框也是图,
+ *  所以四分之一圈会把框的长宽对调 —— 正是这一点,
+ *  让一张旋转过的照片在到达之后不会压住上下两行。 */
+function docxImgHtml(b) {
+  const quarter = b.rot % 180 === 90;
+  const W = quarter ? b.h : b.w;
+  const H = quarter ? b.w : b.h;
+  const sized = W > 0 && H > 0;
+  const style = sized ? `max-width:${W}px;aspect-ratio:${W} / ${H}` : '';
+  return `<div class="drv-docximg pending${sized ? '' : ' free'}" style="${esc(style)}"
+    data-rid="${esc(b.rid)}" data-w="${b.w}" data-h="${b.h}" data-rot="${b.rot}"
+    ><div class="drv-loading"><div class="drv-spin"></div></div></div>`;
+}
+
 /**
  * Render `kind` for `node` into `box`. Returns { destroy() } to release blob URLs and the like;
  * the caller invokes it when the preview closes or moves to another file.
@@ -236,6 +253,43 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         return { destroy };
       }
       box.innerHTML = win(`<div class="drv-sheet drv-docx">${docxHtml(parsed.blocks)}</div>`);
+      const shots = [...box.querySelectorAll('.drv-docximg')];
+      if (shots.length) {
+        // One picture per look, in the order the reader arrives at them. A document of
+        // photographs is mostly photographs by weight, and scrolling past the middle of it
+        // should not have paid for the end.
+        // 看到哪张取哪张,按读者抵达的顺序。一份照片文档论字节几乎全是照片,
+        // 而划过它的中段,不该已经为结尾付过账。
+        const fill = async (el) => {
+          // A picture that cannot be read still has to stop looking like one that is coming.
+          // A spinner left turning forever is a worse answer than an empty frame.
+          // 一张读不出来的图片,至少要停止装作"马上就到"。
+          // 一个永远转下去的加载动画,是比一个空框更糟的回答。
+          const got = await parsed.image?.(el.dataset.rid).catch(() => null);
+          if (dead() || !el.isConnected) return;
+          el.classList.remove('pending');
+          el.innerHTML = '';
+          if (!got) return;
+          const w = +el.dataset.w;
+          const h = +el.dataset.h;
+          const quarter = +el.dataset.rot % 180 === 90;
+          const img = document.createElement('img');
+          img.alt = '';
+          img.src = keepUrl(new Blob([got.bytes], { type: got.mime }));
+          // Sized as a share of its own box, so the whole thing scales with the sheet: the
+          // percentages are what the picture was before the frame turned under it.
+          // 按自身所在框的比例定尺寸,于是整体随纸面缩放:
+          // 这两个百分比,是这张图在框转过来之前的样子。
+          img.style.cssText = w && h
+            ? `width:${((quarter ? w / h : 1) * 100).toFixed(3)}%;`
+              + `height:${((quarter ? h / w : 1) * 100).toFixed(3)}%;`
+              + `transform:rotate(${+el.dataset.rot}deg)`
+            : `transform:rotate(${+el.dataset.rot}deg)`;
+          el.appendChild(img);
+        };
+        const pager = lazyPages({ root: box.firstElementChild, items: shots, margin: 900, render: fill });
+        urls.push({ revoke: () => pager.destroy() });
+      }
       return { destroy };
     }
 
@@ -432,6 +486,14 @@ function docxHtml(blocks) {
   const out = [];
   let inList = false;
   for (const b of blocks) {
+    if (b.kind === 'img') {
+      if (inList) {
+        out.push('</ul>');
+        inList = false;
+      }
+      out.push(docxImgHtml(b));
+      continue;
+    }
     if (b.kind === 'table') {
       if (inList) {
         out.push('</ul>');
