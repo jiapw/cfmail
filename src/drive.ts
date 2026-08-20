@@ -406,6 +406,27 @@ async function pruneVersions(env: Env, nodeId: string): Promise<void> {
   await env.DB.prepare(`DELETE FROM drive_versions WHERE id IN (${ph})`).bind(...doomed.map((r) => r.id)).run();
 }
 
+/** Forget everything but now. Every version except the one the file is currently made of goes,
+ *  row and object together; the head's row goes too, since a file with no history is a file with
+ *  no version rows at all, but its object stays -- it is the file.
+ *  忘掉除了此刻之外的一切。除了"文件目前正由它构成"的那一版,
+ *  每个版本都连行带对象一起离开;head 那一行也走 ——
+ *  因为"没有历史的文件"就是"一行版本记录都没有的文件" —— 但它的对象留下:那就是这个文件。 */
+async function dropHistory(env: Env, node: NodeRow): Promise<void> {
+  const rows = await env.DB.prepare('SELECT id, r2_key FROM drive_versions WHERE node_id=?1')
+    .bind(node.id).all();
+  const live = node.r2_key || '';
+  const keys = ((rows.results || []) as any[])
+    .map((r) => String(r.r2_key))
+    .filter((k) => k && k !== live)
+    .flatMap((k) => [k, k + THUMB_SUFFIX]);
+  if (keys.length) await env.RAW.delete(keys).catch(() => {});
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM drive_versions WHERE node_id=?1').bind(node.id),
+    env.DB.prepare('UPDATE drive_nodes SET versioned=0, ver_head=NULL WHERE id=?1').bind(node.id),
+  ]);
+}
+
 /** Does anything in this subtree keep history? Asked before every permanent delete: history leaves
  *  only by expiry, so a subtree holding any is not the caller's to destroy.
  *  这棵子树里有没有东西在保留历史?每次彻底删除之前都问一遍:历史只因过期而离场,
@@ -1008,14 +1029,24 @@ driveApp.post('/nodes/:id/versioning', async (c) => {
     // 从此它的指针可以移动了,于是任何记住的行都不该活过这一刻。
     accessCache.delete(c.get('user').id + ':' + a.node.id);
   } else if (!on && a.node.versioned) {
-    // Switching off stops the next write from being remembered. It does not forget what is already
-    // remembered -- that would be a way to destroy history with a checkbox, and history is meant
-    // to have exactly one exit. What it does hand back is the ordinary right to delete the file,
-    // which is the point of asking for it.
-    // 关掉,是让下一次写入不再被记住。它不会忘掉已经记住的东西 ——
-    // 那等于用一个复选框销毁历史,而历史只应有一个出口。
-    // 它交还的是"像普通文件一样删掉它"这项寻常权利,而这正是有人要关掉它的原因。
-    await c.env.DB.prepare('UPDATE drive_nodes SET versioned=0 WHERE id=?1').bind(a.node.id).run();
+    // Off puts the file back where it was before anyone asked for history: no past, only what it
+    // is now. Keeping the old versions around while collecting no more left the file in a third
+    // state that nothing else in the drive has -- a file wearing a version mark that no longer
+    // meant anything was being kept -- and every way of saying that in the interface came out
+    // sounding like a bug. One switch, two states.
+    //
+    // The bytes still under the file are exactly the ones the head version names, so the head's
+    // object is the one thing here that must survive; every other version owns its own key
+    // outright, and those leave with their rows.
+    //
+    // 关掉,是把文件放回没人要过历史之前的样子:没有过去,只有它现在是什么。
+    // 留着旧版本却不再收集新的,会把文件困在一个网盘里别处都没有的第三种状态 ——
+    // 一个戴着版本标记、而那个标记已不再意味着任何东西正被保留的文件 ——
+    // 而界面上无论怎么描述它,听起来都像一个 bug。一个开关,两种状态。
+    //
+    // 文件下面那份字节,正是 head 版本所指的那份,所以 head 的对象是这里唯一必须活下来的;
+    // 其余每个版本都独占自己的键,它们随各自的行一同离场。
+    await dropHistory(c.env, a.node);
   }
   await audit(c.env, c.get('user'), 'drive.versioning', a.node.name, { on });
   return c.json({ ok: true, versioned: on });

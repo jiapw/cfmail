@@ -482,12 +482,6 @@
    has to turn about its own centre without dragging the layout around with it.
    Word 文档里的一张图片。它先以一个形状正确的灰框等着,好让它落地时页面不会跳;
    而它在框内绝对定位,是因为一张旋转的图必须绕自己的中心转,不能把版面一起拖着走。 */
-/* A file that was switched off keeps what it already had. The mark stays, because the versions
-   are still there and still restorable, but it fades: it is a record now, not a running one.
-   关掉的文件会留住它已有的东西。标记继续在,因为那些版本还在、也还能还原,但它淡下去:
-   它现在是一份记录,而不是一份还在往下记的记录。 */
-.drv-vers.paused, .drv-vchip.paused { opacity: .45; }
-
 .drv-docximg {
   position: relative; width: 100%; margin: 12px 0; overflow: hidden; border-radius: 4px;
 }
