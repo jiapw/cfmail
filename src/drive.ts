@@ -3025,6 +3025,20 @@ export async function driveCronHourly(env: Env): Promise<void> {
     } catch {}
     await env.DB.prepare('DELETE FROM drive_uploads WHERE id=?1').bind(u.id).run();
   }
+  // A file that is not keeping history should not be holding any. Switching off used to leave
+  // the old versions behind, so rows from before that changed are still out there -- unreachable
+  // now that the interface has no word for that state, and still occupying their objects. One
+  // file per run is enough: this is a finite backlog, not a recurring source.
+  // 一个不保留历史的文件,不该持有任何历史。从前"关掉"会把旧版本留下,
+  // 所以那个规矩改变之前的行至今还在 —— 界面已经没有词可以称呼那个状态,
+  // 它们因此无从触及,却仍占着各自的对象。每次跑二十个:
+  // 这是一笔有限的存货而不是持续的来源,既能很快排完,单次的活也有上限。
+  const orphans = await env.DB.prepare(
+    `SELECT n.* FROM drive_nodes n
+      WHERE n.kind='file' AND n.versioned=0
+        AND EXISTS (SELECT 1 FROM drive_versions v WHERE v.node_id = n.id) LIMIT 20`
+  ).all();
+  for (const n of (orphans.results || []) as unknown as NodeRow[]) await dropHistory(env, n);
   // Lapsed WebDAV locks stopped blocking anyone the moment they lapsed -- every check is against
   // the clock. This is only the sweeping up afterwards.
   // 失效的 WebDAV 锁在失效那一刻就不再拦人了 —— 每一次判定都对着时钟。这里只是事后打扫。

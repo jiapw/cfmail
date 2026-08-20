@@ -779,7 +779,13 @@ function nodeIconHtml(n, size = 22) {
  *  一个列表本来就知道的、关于某个文件历史的事 —— 有几版,以及最早追到哪儿 ——
  *  两者都是随行里一起来的。不保留历史的东西返回 null,于是普通文件还像从前一样素净。 */
 function verInfo(n) {
-  if (n.kind !== 'file' || !(n.versioned || n.ver_count)) return null;
+  // Keeping history is the whole of it: a file that is not keeping any has none to show. It
+  // could still be carrying rows from before switching off meant discarding them, and counting
+  // those is what puts a version mark on a file whose menu offers to turn version history on.
+  // "在不在保留"就是全部:一个不保留历史的文件,没有历史可展示。
+  // 它身上可能还掋着一些行 —— 来自"关掉还不意味着丢掉"的那个年代 ——
+  // 而把那些也算进来,正是"一个戴着版本标记、菜单却请你开启历史版本的文件"的由来。
+  if (n.kind !== 'file' || !n.versioned) return null;
   const count = n.ver_count || 0;
   const first = n.ver_first || 0;
   return { count, first, title: t('drv_ver_badge', count, first ? fmtDateTime(first) : '—') };
@@ -1283,7 +1289,7 @@ async function setVersioning(nodes, on) {
   // file keeps what it is; what it used to be does not survive the answer.
   // 现在"关掉"会把过去一并带走,所以它要像任何不可逆的事情那样先问一句。
   // 文件保住的是它现在的样子;它从前的样子,活不过这个回答。
-  if (!on && nodes.some((x) => x.kind === 'file' && (x.versioned || x.ver_count))) {
+  if (!on && nodes.some((x) => x.kind === 'file' && x.versioned)) {
     if (!(await confirmDialog(t('drv_ver_off_ask'), t('drv_ver_off')))) return;
   }
   try {
@@ -2342,7 +2348,7 @@ async function loadVersions(node) {
   // none has nothing to list. None of those are worth a request that can only come back empty.
   // 压缩包条目没有历史,公开分享不供应历史,而不保留历史的文件没有什么可列。
   // 这几种都不值得为一个只可能空手而归的请求跑一趟。
-  if (!pv || pv.vers !== null || isPub() || node.arc || !(node.versioned || node.ver_count)) return;
+  if (!pv || pv.vers !== null || isPub() || node.arc || !node.versioned) return;
   const id = node.id;
   try {
     const r = await api('GET', `/api/drive/nodes/${encodeURIComponent(id)}/versions`);
