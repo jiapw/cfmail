@@ -558,11 +558,19 @@ if (zone) {
       log('⚠ 这个域名在 Email Sending 里已存在,但 DNS 里缺少 bounce/DKIM 记录,发信仍会失败。');
       log(`  看一眼它要求哪些记录:npx wrangler email sending dns get ${domain}`);
     } else {
+      // "Unauthorized" here is usually about money, not about the token. A free account gets a
+      // permission-shaped refusal for a billing-shaped reason, and a token with every box ticked
+      // will keep getting it -- so the plan is named first, and the error text is not to be
+      // trusted about which of the two it is.
+      // 这里的 "Unauthorized" 通常是钱的事,不是 token 的事。免费账号会为一个计费原因
+      // 收到一个长得像权限问题的拒绝,而勾满了权限的 token 照样被拒 —— 所以先说套餐,
+      // 并且不要相信报错文本能分辨这两者。
       log('⚠ 没能自动开通 Email Sending —— 这个域名现在只能收信,不能对外发信。');
-      log('  最常见的两个原因:');
+      log('  两个原因,按遇到的次数排:');
+      log('    · 账号还不是 Workers 付费版 —— 对外发信要求付费版。');
+      log('      注意这种情况下 API 报的是 "Unauthorized",看起来像权限问题,其实不是。');
       log('    · token 缺少 Email Sending · Edit 权限。注意它在 Account 作用域下,');
       log('      不在 Zone(All Domains)那一栏里 —— Zone 那栏只有 Email Routing Rules,管的是收信。');
-      log('    · 账号不是 Workers 付费版 —— 对外发信要求付费版');
       log('  也可以在 Dashboard → Compute → Email Service → Email Sending → Onboard Domain 点一次,');
       log(`  或单独执行:npx wrangler email sending enable ${domain}`);
     }
