@@ -1325,13 +1325,15 @@ async function downloadArcEntry(n) {
   }
 }
 
-/** Turn history keeping on or off for a selection. A folder's policy speaks for files not yet
- *  created; whether it should also reach the ones already sitting inside is a second question
- *  with a different answer every time, so it is asked rather than assumed -- and the policy is
- *  set either way, so a No here still leaves the folder switched on.
- *  为选中项开启或关闭历史保留。目录的策略说的是"尚未创建的文件";
- *  它是否也该够到已经坐在里面的那些,是另一个每次答案都不同的问题,所以问而不猜 ——
- *  而无论答什么,策略都已经设上了:在这里答"否",目录依然是开着的。 */
+/** Turn history on or off for a selection. A folder's switch speaks for files not yet born and
+ *  reaches nothing already inside it: a file's own history is switched on that file, where the
+ *  setting sits on the thing it describes. Off does not merely stop collecting more -- it takes
+ *  the past with it -- which is why that is the half that has to ask first, and why it asks only
+ *  when there is a file with something to lose.
+ *  为选中项开启或关闭历史。目录的开关只为"尚未出生的文件"说话,够不到已经在里面的任何东西:
+ *  一个文件自己的历史,在这个文件上开关 —— 设置就落在它所描述的那样东西身上。
+ *  "关"不只是不再收集,它会把过去一并带走 —— 所以先问一句的是这一半,
+ *  而且只在选中项里确有东西可失去时才问。 */
 async function setVersioning(nodes, on) {
   // Off takes the past with it now, so it is asked about the way anything irreversible is. The
   // file keeps what it is; what it used to be does not survive the answer.
