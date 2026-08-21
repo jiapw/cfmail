@@ -497,6 +497,9 @@ export async function tabGmail(body, opts = {}) {
     // 跑到一半返回,会留下半次导入,而且再也看不到它跑到哪儿了。
     running = true;
     qs('#gm-back').disabled = true;
+    // A second run in the same session finds the button still saying "back" from the first one
+    // 同一次进来跑第二遍时,那颗按钮还留着上一遍结束时的「返回」字样
+    qs('#gm-cancel').innerHTML = esc(t('cancel'));
     const prog = qs('#gm-progress');
     const eta = qs('#gm-eta');
     const fill = qs('#gm-fill');
@@ -648,6 +651,12 @@ export async function tabGmail(body, opts = {}) {
     running = false;
     const back = qs('#gm-back');
     if (back) back.disabled = false;
+    // The run is over, so "cancel" has nothing left to stop. That button becomes the way out,
+    // because it is where the eye already is: the other way back sits up in the mapping card,
+    // behind a screenful of progress nobody wants to read a second time.
+    // 跑完了,「取消」已经没有东西可停。那颗按钮就地变成出口 —— 视线本来就在这儿;
+    // 另一条退路在上面的映射卡片里,隔着一屏没人想再读第二遍的进度。
+    qs('#gm-cancel').innerHTML = `${icon('back', 16)} ${esc(t('back'))}`;
     prog.textContent = cancelled
       ? t('imp_cancelled', stat.ok, stat.dup, stat.fail)
       : t('imp_done', stat.ok, stat.dup, stat.fail);
@@ -656,5 +665,8 @@ export async function tabGmail(body, opts = {}) {
       : '';
   }
 
-  qs('#gm-cancel').addEventListener('click', () => { cancelled = true; });
+  qs('#gm-cancel').addEventListener('click', () => {
+    if (running) { cancelled = true; return; }
+    opts.onBack?.();
+  });
 }
