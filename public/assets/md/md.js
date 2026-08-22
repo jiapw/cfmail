@@ -17,15 +17,13 @@ import { api } from '../api.js';
 import { t, tErr } from '../i18n.js';
 import { esc, icon, qs, toast, confirmDialog, fmtDateTime } from '../ui.js';
 import { store } from '../app.js';
-import { announceChange } from '../drive/fsrc.js';
+import { openDoc, saveDoc, mergeDoc, draft, refreshThumb } from '../edit/session.js';
 
 const V = () => encodeURIComponent(store.brand?.version || '');
-const DRAFT_KEY = (id) => 'cf_md_draft_' + id;
 const MODE_KEY = 'cf_md_mode';
 const SPLIT_KEY = 'cf_md_split';
 const OUTLINE_KEY = 'cf_md_outline';
 const WRAP_KEY = 'cf_md_wrap';
-const MAX_BYTES = 2 * 1024 * 1024;
 const MD_RE = /\.(md|markdown|mdown|mkd)$/i;
 // Token types that occupy source lines and render nothing where they stand. See scanBlocks.
 // 占着源码行、却不在它们所站的位置渲染任何东西的 token 类型。见 scanBlocks。
@@ -61,11 +59,6 @@ async function loadLibs() {
   libs = { marked: m.marked, purify: d.default || d };
   return libs;
 }
-
-const sha256Hex = async (bytes) => {
-  const d = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
-};
 
 // ---------- Rendering ----------
 // ---------- 渲染 ----------
@@ -559,11 +552,7 @@ function markDirty(on) {
  *  一旦它的文本与服务端所存一致就丢弃 —— 与文件一致的草稿不是草稿,
  *  只是一堆将来会提出"要不要恢复"却什么也恢复不了的杂物。 */
 function saveDraft() {
-  if (!md) return;
-  try {
-    if (md.ta.value === md.saved) localStorage.removeItem(DRAFT_KEY(md.id));
-    else localStorage.setItem(DRAFT_KEY(md.id), JSON.stringify({ text: md.ta.value, at: Date.now() }));
-  } catch { /* a full quota is not worth an error message here / 配额满了,不值得在这里报错 */ }
+  if (md?.doc) draft.write(md.doc, md.ta.value);
 }
 
 // ---------- Saving ----------
@@ -571,64 +560,28 @@ function saveDraft() {
 
 async function doSave() {
   if (!md || md.saving) return;
-  const text = md.ta.value;
-  const bytes = new TextEncoder().encode(text);
-  if (bytes.byteLength > MAX_BYTES) return toast(t('md_too_big'), true);
-  const hash = await sha256Hex(bytes);
-  // The same comparison the uploader makes, for the same reason: a save that changes nothing
-  // should not cost an upload and should not leave a version that says nothing.
-  // 与上传器做的是同一个比较,理由也相同:什么都没改的一次保存,
-  // 不该花掉一次上传,也不该留下一个什么都没说的版本。
-  if (hash === md.hash) {
-    markDirty(false);
-    saveDraft();
-    return toast(t('md_unchanged'));
-  }
   md.saving = true;
   try {
-    const q = `node=${encodeURIComponent(md.id)}&mime=${encodeURIComponent('text/markdown')}&hash=${hash}`;
-    const headers = { 'Content-Type': 'text/markdown' };
-    // The version this text was written on top of. Without it the save is a blind overwrite; with
-    // it, a save that would bury somebody else's is refused instead of performed.
-    // 这段文本是写在哪一版之上的。不带它,这次保存就是一次盲写;
-    // 带上它,一次会埋掉别人成果的保存,会被拒绝而不是被执行。
-    if (md.etag) headers['If-Match'] = `"${md.etag}"`;
-    const res = await fetch(`/api/drive/upload?${q}`, { method: 'POST', headers, body: bytes });
-    if (res.status === 412) return conflict();
-    const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error || 'e_request_failed');
-    md.saved = text;
-    md.hash = hash;
-    md.etag = data?.ver_head || `${md.id}-${data?.updated_at || Date.now()}`;
+    const text = md.ta.value;
+    const r = await saveDoc(md.doc, text, 'text/markdown');
+    if (r.status === 'too-big') return toast(t('md_too_big'), true);
+    if (r.status === 'unchanged') {
+      markDirty(false);
+      saveDraft();
+      return toast(t('md_unchanged'));
+    }
+    if (r.status === 'conflict') return conflict();
     markDirty(false);
     saveDraft();
     toast(t('md_saved'));
-    // Any file list open in another tab is still stamping this file's address with the moment it
-    // last knew about. Told now, it can go and find out; left alone, it goes on serving the copy
-    // behind the old stamp until somebody thinks to reload it.
-    // 别的标签页里开着的文件列表,仍在用"它最后一次知道的那一刻"给这个文件的地址盖戳。
-    // 现在告诉它,它就能去问个明白;不告诉,它会继续供出旧戳背后的那份副本,
-    // 直到有人想起来刷新一下。
-    // Everything a file list needs in order to be right about this file again, taken from the
-    // answer the save just gave. A version bumps the count it shows; a file that keeps none has
-    // none to bump.
-    // 一份文件列表要想重新对这个文件说得没错,所需要的一切 —— 全部取自这次保存刚给出的答复。
-    // 一个新版本会让它显示的计数加一;不保留历史的文件没有计数可加。
-    announceChange(md.id, {
-      updated_at: data?.updated_at || Date.now(),
-      ver_head: data?.ver_head || null,
-      size: bytes.byteLength,
-      thumb: false,
-      bumpVersions: !!data?.ver_head,
-    });
     // The drive's picture of this file was drawn from the bytes that have just been replaced, and
-    // the save wiped the flag that says one exists. Nothing else will come back to this file to
-    // make another, so it is made here -- after the toast, because a thumbnail is not worth
-    // keeping anybody waiting for.
-    // 网盘里这个文件的那张图,是从刚刚被替换掉的字节画出来的,而这次保存又抹掉了"存在缩略图"
-    // 的标记。此后不会再有别人回到这个文件来重画一张,所以就在这里画 ——
+    // the save wiped the flag that says one exists. Nothing else will come back here to draw
+    // another, so it is drawn now -- after the toast, because a thumbnail is not worth keeping
+    // anybody waiting for.
+    // 网盘里这个文件的那张图,是从刚刚被替换掉的字节画出来的,而这次保存又抹掉了"有缩略图"这个
+    // 标记。此后不会再有别人回到这个文件来重画一张,所以就在这里画 ——
     // 放在提示之后,因为一张缩略图不值得让谁多等。
-    void refreshThumb(text);
+    void refreshThumb(md.doc, text, 'text/markdown', V());
   } catch (e) {
     toast(tErr(e), true);
   } finally {
@@ -636,102 +589,90 @@ async function doSave() {
   }
 }
 
-/** Redraw the little picture of this document. It is generated the same way the uploader
- *  generates one -- the same module, from the same bytes -- so a document that was edited here
- *  looks in the file list exactly as it would have if it had been uploaded.
- *  重画这份文档的那张小图。它的生成方式与上传器完全相同 —— 同一个模块,同一份字节 ——
- *  于是一份在这里编辑过的文档,在文件列表里的样子,与它被上传上来时应有的样子一模一样。 */
-async function refreshThumb(text) {
-  try {
-    const mod = await import(`/assets/drive/thumb.js?v=${V()}`);
-    const blob = await mod.makeThumb(new File([text], md.name || 'doc.md', { type: 'text/markdown' }));
-    if (!blob || !md) return;
-    await fetch(`/api/drive/files/${encodeURIComponent(md.id)}/thumb`, { method: 'POST', body: blob });
-    announceChange(md.id, { thumb: true });
-  } catch {
-    // A missing thumbnail is a missing thumbnail. It is not worth a message, and it is certainly
-    // not worth casting doubt on a save that succeeded.
-    // 少一张缩略图就是少一张缩略图。不值得为它弹一句话,更不值得让一次已经成功的保存显得可疑。
-  }
-}
-
 /** Somebody else wrote to this file while it was open here. Nothing has been lost yet -- the
- *  refusal is what makes that true -- so the choice is offered before anything is decided.
+ *  refusal is what makes that true -- so the two sets of edits are put back together rather than
+ *  one being chosen over the other.
+ *
+ *  Where the two of us worked on different parts of the document -- which is nearly always -- the
+ *  result is simply both, and all that is left to do is look at it and press save. Where we wrote
+ *  over each other, nothing is chosen: the disagreement is written into the text between markers
+ *  and the caret is put in the first one.
+ *
+ *  The merge is not saved automatically. A document that changed under somebody without being
+ *  asked is exactly the surprise this whole path exists to prevent.
+ *
  *  在这里开着的这段时间里,有别人写过这个文件。目前还什么都没丢 —— 那次拒绝正是这一点的保证 ——
- *  所以在任何事被决定之前,先把选择交出去。 */
+ *  所以两边的改动被重新合到一起,而不是二选一。
+ *
+ *  当我们俩改的是文档的不同部分时 —— 几乎总是如此 —— 结果就是两份都在,
+ *  剩下要做的只是看一眼、按保存。而当我们写在了彼此身上时,什么都不选:
+ *  分歧被夹在标记之间写进正文,光标停在第一处。
+ *
+ *  合并结果不会自动保存。一份没被问过就在人手底下变了的文档,
+ *  正是这整条路径存在所要防的那种意外。 */
 async function conflict() {
-  if (await confirmDialog(t('md_conflict'), t('md_conflict_reload'))) {
-    md.dirty = false;             // the draft still holds this text / 草稿里仍然存着这段文本
-    return load(md.id);
+  let merged;
+  try {
+    merged = await mergeDoc(md.doc, md.ta.value, {
+      mine: t('md_merge_mine'),
+      theirs: t('md_merge_theirs'),
+    });
+  } catch {
+    // The other side could not be read, so there is nothing to merge with. The old question is
+    // still a true one: keep what is here, or go and get what is there.
+    // 读不到对方那一份,也就无从合起。旧的那个问题依然成立:留住这里的,还是去取那边的。
+    if (await confirmDialog(t('md_conflict'), t('md_conflict_reload'))) {
+      md.dirty = false;
+      return load(md.id);
+    }
+    return toast(t('md_conflict_stay'));
   }
-  // Staying is not overwriting: the text is still here, the file is still theirs, and the next
-  // save will be refused again until the base is refreshed on purpose.
-  // 留下不等于覆盖:文本还在这儿,文件还是他们的,
-  // 而在基准被特意刷新之前,下一次保存仍会被拒绝。
-  toast(t('md_conflict_stay'));
+
+  md.ta.value = merged.text;
+  markDirty(true);
+  saveDraft();
+  schedulePaint();
+  if (merged.conflicts) {
+    // Put the caret where the disagreement is. A merge that says "3 conflicts" and leaves somebody
+    // to hunt for them has done the arithmetic and none of the work.
+    // 把光标放到分歧所在处。一次只报"3 处冲突"、却把人扔下去自己找的合并,
+    // 算完了账,活一点没干。
+    md.ta.focus();
+    md.ta.setSelectionRange(merged.first, merged.first);
+    md.ta.scrollTop = srcYForLine(md.ta.value.slice(0, merged.first).split('\n').length - 1);
+    toast(t('md_merged_conflicts', merged.conflicts), true);
+  } else {
+    toast(t('md_merged'));
+  }
 }
 
 // ---------- Loading ----------
 // ---------- 加载 ----------
 
 async function load(id) {
-  const meta = await api('GET', `/api/drive/nodes/${encodeURIComponent(id)}/meta`);
-  const node = meta.node;
-  if (node.kind !== 'file') throw new Error('e_drive_not_file');
-  if ((node.size || 0) > MAX_BYTES) throw new Error('e_md_too_big');
-  // A file that keeps history names its version, and a new version is a new address. A file that
-  // keeps none has no version to name -- but it still changes, and without something moving in
-  // the address the browser answers the next request out of the copy it already has. An hour of
-  // that is a save that took, followed by an editor that reopens showing what was replaced, which
-  // is indistinguishable from a save that did not take.
-  //
-  // Its modification time is the token in that case: it moves every time the bytes do, which is
-  // the whole of what a cache needs to be told.
-  //
-  // 保留历史的文件用版本指名自己,而新版本就是新地址。不保留历史的文件没有版本可指名 ——
-  // 但它照样会变,而地址里若没有任何东西随之移动,浏览器下一次就用它手上那份副本作答。
-  // 这样过一个小时,就是"保存明明成功了,编辑器再打开却显示着被替换掉的东西" ——
-  // 而这与"保存根本没成功"从外面看毫无分别。
-  //
-  // 这种情况下,它的修改时间就是那个令牌:字节每变一次它就移动一次,
-  // 而这正是一个缓存需要被告知的全部。
-  const stamp = node.ver_head || node.updated_at || '';
-  const url = `/api/drive/files/${encodeURIComponent(id)}/dl?inline=1`
-    + (stamp ? `&v=${encodeURIComponent(stamp)}` : '');
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('e_drive_not_found');
-  const buf = await r.arrayBuffer();
-  const text = new TextDecoder('utf-8').decode(buf);
-
+  md.doc = await openDoc(id);
   md.id = id;
-  md.name = node.name;
   // Where the document lives, which is what a relative picture is relative to.
   // 文档住在哪儿 —— 一张相对路径的图片,相对的正是这个。
-  md.parent = node.parent_id || 'root';
-  md.saved = text;
-  md.hash = await sha256Hex(new Uint8Array(buf));
-  md.etag = node.ver_head || `${node.id}-${node.updated_at}`;
-  md.ta.value = text;
-  qs('#md-name').textContent = node.name;
-  document.title = node.name;
+  md.parent = md.doc.parent;
+  md.ta.value = md.doc.base;
+  qs('#md-name').textContent = md.doc.name;
+  document.title = md.doc.name;
   markDirty(false);
 
   // A draft outliving its tab means the tab did not close on purpose. Offering it is only worth
   // doing when it still says something the file does not.
   // 一份活过了它那个标签页的草稿,意味着那个标签页不是被特意关掉的。
   // 只有当它仍然说着文件所没有的东西时,提出它才有意义。
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY(id));
-    const d = raw ? JSON.parse(raw) : null;
-    if (d && typeof d.text === 'string' && d.text !== text) {
-      if (await confirmDialog(t('md_draft_ask', fmtDateTime(d.at)), t('md_draft_use'))) {
-        md.ta.value = d.text;
-        markDirty(true);
-      } else {
-        localStorage.removeItem(DRAFT_KEY(id));
-      }
+  const d = draft.read(id);
+  if (d && d.text !== md.doc.base) {
+    if (await confirmDialog(t('md_draft_ask', fmtDateTime(d.at)), t('md_draft_use'))) {
+      md.ta.value = d.text;
+      markDirty(true);
+    } else {
+      draft.clear(id);
     }
-  } catch { /* an unreadable draft is no draft / 读不出来的草稿就等于没有草稿 */ }
+  }
   paint();
 }
 
@@ -753,12 +694,12 @@ export async function renderMdEditor(id) {
   app.innerHTML = shell();
   md = {
     id, gen: 0, dirty: false, saving: false, ta: qs('#md-ta'),
-    saved: '', hash: '', etag: '', name: '', parent: 'root',
+    doc: null, parent: 'root',
     marks: [], outline: [], lineH: 0, lineTops: null, wrap: false,
   };
 
   md.ta.addEventListener('input', () => {
-    markDirty(md.ta.value !== md.saved);
+    markDirty(md.ta.value !== (md.doc?.base ?? ''));
     schedulePaint();
     saveDraft();
   });

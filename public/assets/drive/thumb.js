@@ -5,7 +5,8 @@
 //   videos     -> sample frames at several positions, keep the one with mid-range brightness
 //                 (not blown out, not black) and the strongest mean |Laplacian| (most detail)
 //   PDFs       -> render page 1 with self-hosted pdf.js, crop from the top
-//   text/code  -> typeset the first lines onto a white sheet
+//   markdown   -> typeset the first lines onto a white sheet
+//   text/code  -> a small picture of the code editor showing it, in the theme in force
 // Output is always WebP at 480x360, capped at 100 KB (the server re-checks both).
 //
 // 缩略图在上传端生成(Workers 解不了码,本项目也一贯把烧 CPU 的活放浏览器 —— 与邮件导入解析同理)。
@@ -40,8 +41,12 @@ export async function makeThumb(file) {
     if (mime === 'application/pdf' || ext(file.name) === 'pdf') return await withTimeout(fromPdf(file), 12000);
     switch (kindOf(file.name, mime)) {
       case 'audio': return await withTimeout(fromAudio(file), 15000);
-      case 'txt': case 'md': return await fromText(file, false);
-      case 'code': return await fromText(file, true);
+      // Markdown is prose and has a prose editor, so its thumbnail stays a sheet of paper.
+      // Everything else that is text opens in the code editor, and its thumbnail is that editor.
+      // Markdown 是散文,也有一个散文编辑器,所以它的缩略图仍是一张纸。
+      // 其余是文本的东西都在代码编辑器里打开,而它们的缩略图就是那个编辑器。
+      case 'md': return await fromText(file);
+      case 'txt': case 'code': return await withTimeout(fromSourceFile(file), 10000);
       case 'docx': return await withTimeout(fromDocx(file), 10000);
       case 'pptx': return await withTimeout(fromPptx(file), 12000);
       case 'html': return await fromHtml(file);
@@ -306,9 +311,11 @@ async function fromPdf(file) {
 // ---------- Text and code: typeset the first lines ----------
 // ---------- 文本/代码:排版前若干行 ----------
 
-/** Typeset plain text onto the white sheet: monospace for code, the system UI face otherwise.
- *  把文本排到白纸上。代码用等宽,其余用系统界面字体。 */
-function typesetText(raw, mono) {
+/** Typeset prose onto the white sheet. What arrives here is a document -- Markdown, a docx, a page
+ *  of HTML -- and a document is a white sheet with dark text in every theme.
+ *  把散文排到白纸上。到这里来的是文档 —— Markdown、docx、一页 HTML ——
+ *  而文档在任何主题下都是白纸黑字。 */
+function typesetText(raw) {
   if (!raw || !raw.trim()) return null;
   const c = document.createElement('canvas');
   c.width = TW;
@@ -319,21 +326,123 @@ function typesetText(raw, mono) {
   // A document is a white sheet with dark text in every theme, like a paper preview
   // 文档就是白纸黑字,与主题无关。纸就该长这样
   g.fillStyle = '#3c4043';
-  g.font = mono
-    ? '15px ui-monospace, SFMono-Regular, Consolas, monospace'
-    : '16px system-ui, "Segoe UI", sans-serif';
+  g.font = '16px system-ui, "Segoe UI", sans-serif';
   g.textBaseline = 'top';
   const lines = raw.replace(/\r/g, '').split('\n').filter((_, i) => i < 16);
-  lines.forEach((ln, i) => g.fillText(ln.replace(/\t/g, '    ').slice(0, mono ? 58 : 64), 24, 26 + i * 20));
+  lines.forEach((ln, i) => g.fillText(ln.replace(/\t/g, '    ').slice(0, 64), 24, 26 + i * 20));
   return encode(c);
 }
 
-async function fromText(file, mono) {
+/**
+ * A small picture of the code editor showing this file.
+ *
+ * Drawn rather than screenshotted: the grammar is a parser and needs no view to run, so the text
+ * is cut into coloured runs and the runs are painted onto a canvas in the editor's own colours,
+ * read from the page at the moment the picture is made. What comes out is what the editor would
+ * have shown -- the same keywords in the same purple, the same comments in the same grey, the same
+ * gutter down the left -- at the size of a tile.
+ *
+ * The colours are the ones in force when the thumbnail is made, because a stored image has one set
+ * of colours and the theme has two. A file saved in the dark theme keeps a dark thumbnail until it
+ * is saved again; that is a property of storing a picture rather than a decision made here.
+ *
+ * 一张"代码编辑器正显示着这个文件"的小图。
+ *
+ * 是画出来的而不是截出来的:文法就是一个解析器,不需要视图就能跑,
+ * 于是文本被切成一段段带颜色的片段,再用编辑器自己的颜色画到画布上 ——
+ * 那些颜色在画这张图的那一刻从页面上读取。出来的东西就是编辑器本会显示的样子:
+ * 同样的关键字、同样的紫色,同样的注释、同样的灰,左边同样的一道行号槽 —— 只是缩到了一格的大小。
+ *
+ * 颜色取的是生成缩略图当时生效的那一套,因为一张存起来的图只有一套颜色,而主题有两套。
+ * 一个在深色主题下保存的文件,会一直带着深色缩略图直到它再次被保存;
+ * 这是"把图存起来"这件事本身的性质,不是这里做的决定。
+ */
+async function fromSource(raw, name) {
+  if (!raw || !raw.trim()) return null;
+  const mod = await import('../code/view.js?v=' + encodeURIComponent(store.brand?.version || ''));
+  const pal = await mod.palette();
+
+  const SIZE = 15;
+  const LH = 24;
+  const TOP = 12;
+  const ROWS = Math.floor((TH - TOP) / LH);
+  // Only the lines that will be drawn are parsed. A grammar handed eight kilobytes to find the
+  // colours of sixteen lines is doing most of its work for a part of the file nobody will see.
+  // 只解析将要被画出来的那些行。让一个文法读进八千字节、只为求出十六行的颜色,
+  // 是在为文件中没人会看见的那一部分做掉大半的工。
+  const lines = raw.replace(/\r/g, '').split('\n').slice(0, ROWS);
+  // A grammar that throws costs the colours, not the picture. Everything else about this drawing
+  // -- the lines, the gutter, the ink -- is true whether or not anything managed to parse.
+  // 一个抛错的文法赔掉的是颜色,不是这张图。这张图的其余部分 —— 行、行号槽、墨色 ——
+  // 无论有没有谁解析成功,都照样为真。
+  const src = lines.join('\n');
+  const runs = await mod.runsOf(src, name).catch(() => [{ text: src, cls: null }]);
+
+  const c = document.createElement('canvas');
+  c.width = TW;
+  c.height = TH;
+  const g = c.getContext('2d');
+  g.fillStyle = pal.bg;
+  g.fillRect(0, 0, TW, TH);
+  g.font = `${SIZE}px ${pal.font}`;
+  g.textBaseline = 'top';
+
+  // The gutter is sized to the widest number it will hold, the way the editor sizes its own.
+  // 行号槽的宽度由它将要容纳的最大数字决定 —— 与编辑器给自己定宽的方式相同。
+  const digits = String(lines.length).length;
+  const GUT = 16 + g.measureText('0'.repeat(digits)).width + 10;
+  g.fillStyle = pal.gutterBg;
+  g.fillRect(0, 0, GUT, TH);
+  g.fillStyle = pal.border;
+  g.fillRect(GUT, 0, 1, TH);
+
+  g.fillStyle = pal.gutter;
+  g.textAlign = 'right';
+  for (let i = 0; i < lines.length; i++) g.fillText(String(i + 1), GUT - 10, TOP + i * LH);
+  g.textAlign = 'left';
+
+  // The runs are walked once, and the pen moves with them: a run that spans a line break ends one
+  // line and starts the next, so the newline is where the pen returns rather than something to
+  // strip out first. Tabs become four spaces, as they do in the typeset renderer next door.
+  // 片段只走一遍,笔随之移动:一个跨越换行的片段,是上一行的结束与下一行的开始 ——
+  // 于是换行是笔回车的地方,而不是要先剔掉的东西。制表符变成四个空格,与隔壁那个排版渲染器一致。
+  let x = GUT + 10;
+  let row = 0;
+  for (const r of runs) {
+    g.fillStyle = pal.ink[r.cls] || pal.ink.null;
+    for (const [i, piece] of r.text.split('\n').entries()) {
+      if (i) { row++; x = GUT + 10; }
+      if (row >= ROWS) break;
+      if (!piece) continue;
+      const s = piece.replace(/\t/g, '    ');
+      g.fillText(s, x, TOP + row * LH);
+      x += g.measureText(s).width;
+    }
+    if (row >= ROWS) break;
+  }
+  return encode(c);
+}
+
+/** Read the head of a text file, refusing what only claims to be one.
+ *  读取一个文本文件的开头,并拒收那些只是自称文本的东西。 */
+async function textHead(file) {
   const raw = await file.slice(0, 8192).text();
   // Too many replacement characters = binary in disguise; a thumbnail of mojibake helps nobody
   // 替换字符过多说明是伪装成文本的二进制。乱码缩略图毫无意义
-  if ((raw.match(/�/g) || []).length > 20) return null;
-  return typesetText(raw, mono);
+  if ((raw.match(/\ufffd/g) || []).length > 20) return null;
+  return raw;
+}
+
+/** Prose: a white sheet. / 散文:一张白纸。 */
+async function fromText(file) {
+  const raw = await textHead(file);
+  return raw ? typesetText(raw) : null;
+}
+
+/** Source and plain text: the editor they open in. / 源码与纯文本:它们会在其中打开的那个编辑器。 */
+async function fromSourceFile(file) {
+  const raw = await textHead(file);
+  return raw ? fromSource(raw, file.name) : null;
 }
 
 // ---------- docx / pptx / html / mhtml / svg / drawio ----------

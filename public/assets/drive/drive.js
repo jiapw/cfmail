@@ -11,6 +11,7 @@ import {
 } from '../ui.js';
 import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
+import { editorFor, editorHash } from '../edit/kinds.js';
 
 export { arcSeed };
 
@@ -24,12 +25,6 @@ const AUD_RE = /^audio\//;
 // 浏览器对 .aac 等音频常常不报 MIME,按扩展名兜底识别
 const AUD_EXTS = new Set(['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'oga', 'opus', 'weba', 'wma', 'mka', 'aiff', 'aif']);
 const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
-// What the Markdown editor will open. Nothing else is offered it, because everything else it
-// would open as plain text and save back as Markdown, which is a way to quietly change what a
-// file is.
-// Markdown 编辑器愿意打开的东西。别的一概不提供 ——
-// 因为别的它都会当纯文本打开、再当 Markdown 存回去,那是一种悄悄改变"一个文件是什么"的做法。
-const MD_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd']);
 // What to put in an address so that it changes when the file does. A versioned file has a version
 // to name; one that keeps no history has only the moment it last changed, which serves the same
 // purpose here -- a cache is being told the bytes moved, not which bytes they are.
@@ -193,6 +188,7 @@ function frame() {
           <wa-button slot="trigger" class="compose-btn drv-new">${icon('plus', 20)}<span>${esc(t('drv_new'))}</span></wa-button>
           <wa-dropdown-item value="folder">${icon('folder-plus', 18)} ${esc(t('drv_new_folder'))}</wa-dropdown-item>
           <wa-dropdown-item value="md">${icon('fileText', 18)} ${esc(t('drv_new_md'))}</wa-dropdown-item>
+          <wa-dropdown-item value="txt">${icon('fileText', 18)} ${esc(t('drv_new_txt'))}</wa-dropdown-item>
           <wa-dropdown-item value="files">${icon('upload', 18)} ${esc(t('drv_upload_files'))}</wa-dropdown-item>
           <wa-dropdown-item value="dir">${icon('upload', 18)} ${esc(t('drv_upload_folder'))}</wa-dropdown-item>
         </wa-dropdown>
@@ -222,6 +218,7 @@ function bindFrame() {
     const v = e.detail?.item?.value;
     if (v === 'folder') newFolderDialog();
     else if (v === 'md') newMarkdownDialog();
+    else if (v === 'txt') newTextDialog();
     else if (v === 'files') qs('#drv-file-input')?.click();
     else if (v === 'dir') qs('#drv-dir-input')?.click();
   });
@@ -1226,6 +1223,7 @@ function emptyMenuItems() {
   return [
     { ic: 'folder-plus', label: t('drv_new_folder'), fn: () => newFolderDialog() },
     { ic: 'fileText', label: t('drv_new_md'), fn: () => newMarkdownDialog() },
+    { ic: 'fileText', label: t('drv_new_txt'), fn: () => newTextDialog() },
     { ic: 'upload', label: t('drv_upload_files'), fn: () => qs('#drv-file-input')?.click() },
     { ic: 'upload', label: t('drv_upload_folder'), fn: () => qs('#drv-dir-input')?.click() },
   ];
@@ -1288,11 +1286,12 @@ function menuItems(nodes) {
     // do on top of something else.
     // 编辑在别处打开,在它自己的窗口里。列表留在原地:回到它不该意味着再加载一次,
     // 而"正在写一份文档"也不是一件该压在别的东西上面做的事。
-    if (single.kind === 'file' && canEdit && MD_EXTS.has(extOf(single.name))) {
+    const editor = single.kind === 'file' && canEdit ? editorFor(single.name) : null;
+    if (editor) {
       out.push({
         ic: 'pencil',
         label: t('md_edit'),
-        fn: () => window.open(`${location.pathname}#/md/${encodeURIComponent(single.id)}`, '_blank', 'noopener'),
+        fn: () => window.open(`${location.pathname}${editorHash(editor, single.id)}`, '_blank', 'noopener'),
       });
     }
     if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
@@ -1543,22 +1542,39 @@ function promptDialog(title, initial, okLabel) {
  *  造一份空文档,然后直接去写它。文件在这里创建而不是在编辑器里创建,
  *  好让它在标签页打开之前就已经存在:一个要自己造出自己主题的标签页,
  *  会在创建失败时变成一扇除了错误什么都没有的窗。 */
-async function newMarkdownDialog() {
-  const raw = await promptDialog(t('drv_new_md'), t('drv_untitled_md'), t('confirm'));
+const newMarkdownDialog = () => newTextish(t('drv_new_md'), t('drv_untitled_md'), '.md', 'text/markdown');
+const newTextDialog = () => newTextish(t('drv_new_txt'), t('drv_untitled_txt'), '.txt', 'text/plain');
+
+/** Make an empty file and go straight to writing it. The file is created here rather than in the
+ *  editor so that it exists before the tab opens: a tab that has to create its own subject is a
+ *  tab that shows an error when the creation fails, in a window with nothing else in it.
+ *
+ *  A suffix is only added when the name does not already carry one this editor would answer to --
+ *  somebody typing `notes.conf` means `notes.conf`, and appending .txt to it would be correcting
+ *  a person who was not wrong.
+ *
+ *  造一个空文件,然后直接去写它。文件在这里创建而不是在编辑器里创建,好让它在标签页打开之前
+ *  就已经存在:一个要自己造出自己主题的标签页,会在创建失败时变成一扇除了错误什么都没有的窗。
+ *
+ *  只有当名字还没带上"这个编辑器认得的后缀"时才补一个 ——
+ *  一个键入 `notes.conf` 的人,要的就是 `notes.conf`;给它加上 .txt,是在纠正一个没有错的人。 */
+async function newTextish(title, placeholder, suffix, mime) {
+  const raw = await promptDialog(title, placeholder, t('confirm'));
   if (!raw) return;
-  const name = MD_EXTS.has(extOf(raw)) ? raw : raw + '.md';
+  const kind = editorFor(raw);
+  const name = kind ? raw : raw + suffix;
   try {
     const q = `parent=${encodeURIComponent(currentParent())}&name=${encodeURIComponent(name)}`
-      + `&mime=${encodeURIComponent('text/markdown')}`;
+      + `&mime=${encodeURIComponent(mime)}`;
     const res = await fetch(`/api/drive/upload?${q}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/markdown' },
+      headers: { 'Content-Type': mime },
       body: new Uint8Array(0),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new Error(data?.error || 'e_request_failed');
     reload();
-    window.open(`${location.pathname}#/md/${encodeURIComponent(data.id)}`, '_blank', 'noopener');
+    window.open(`${location.pathname}${editorHash(editorFor(name) || 'code', data.id)}`, '_blank', 'noopener');
   } catch (e) {
     toast(tErr(e), true);
   }

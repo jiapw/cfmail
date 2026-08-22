@@ -448,6 +448,12 @@ export function renderSettings() {
             <span class="fb-label" style="font-family:${me.user.body_font ? `'${esc(me.user.body_font)}',` : ''}var(--font-body)">${esc(me.user.body_font || t('font_default'))}</span>
           </wa-button>
         </div>
+        <div class="form-row">
+          <label>${esc(t('code_font'))}</label>
+          <wa-button class="font-btn" appearance="outlined" id="btn-code-font">
+            <span class="fb-label" style="font-family:${me.user.code_font ? `'${esc(me.user.code_font)}',` : ''}var(--font-code)">${esc(me.user.code_font || t('font_default_mono'))}</span>
+          </wa-button>
+        </div>
         <p class="dim" style="margin:10px 0 0">${esc(t('font_note'))}</p>
       </section>
       <section class="card">
@@ -487,18 +493,35 @@ export function renderSettings() {
     toast(t('t_mode_saved'));
   });
 
+  /** Change one of the three fonts and leave the other two exactly as they are.
+   *
+   *  The endpoint takes all three every time, so the two that are not being changed have to be sent
+   *  back unchanged -- a field left out is a field set to the system default, which would clear a
+   *  setting the person never touched.
+   *
+   *  改三种字体中的一种,另外两种原封不动。
+   *
+   *  这个端点每次都要三个,所以没在改的那两个必须原样送回 ——
+   *  漏掉一个字段就等于把它设成系统默认,那会清掉一个当事人根本没碰过的设置。 */
+  const FONTS = {
+    ui: { field: 'ui_font', label: 'ui_font', only: '' },
+    body: { field: 'body_font', label: 'body_font', only: '' },
+    // Fixed-width only. Source code in a proportional face stops lining up, which is the one thing
+    // the columns in a source file are for.
+    // 只给等宽。比例字体下的源码不再对齐,而对齐正是源码文件里那些列存在的意义。
+    code: { field: 'code_font', label: 'code_font', only: 'mono' },
+  };
+
   const setFont = async (which) => {
-    const cur = which === 'ui' ? me.user.ui_font : me.user.body_font;
-    const picked = await pickFont(cur || '', which === 'ui' ? t('ui_font') : t('body_font'));
+    const spec = FONTS[which];
+    const picked = await pickFont(me.user[spec.field] || '', t(spec.label), spec.only);
     if (picked === null) return; // 取消
-    const payload = {
-      ui_font: which === 'ui' ? picked : me.user.ui_font || '',
-      body_font: which === 'body' ? picked : me.user.body_font || '',
-    };
+    const payload = {};
+    for (const s of Object.values(FONTS)) payload[s.field] = me.user[s.field] || '';
+    payload[spec.field] = picked;
     try {
       await api('POST', '/api/me/fonts', payload);
-      me.user.ui_font = payload.ui_font || null;
-      me.user.body_font = payload.body_font || null;
+      for (const s of Object.values(FONTS)) me.user[s.field] = payload[s.field] || null;
       applyFonts();
       toast(t('t_font_saved'));
       renderSettings();
@@ -508,6 +531,7 @@ export function renderSettings() {
   };
   qs('#btn-ui-font').addEventListener('click', () => setFont('ui'));
   qs('#btn-body-font').addEventListener('click', () => setFont('body'));
+  qs('#btn-code-font').addEventListener('click', () => setFont('code'));
   qs('#f-pw').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);

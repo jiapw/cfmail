@@ -203,6 +203,14 @@ export const FONT_CATALOG: FontDef[] = [
 const BY_NAME = new Map(FONT_CATALOG.map((f) => [f.name, f]));
 export const isKnownFont = (name: string) => BY_NAME.has(name);
 
+/** Whether a font is one of the fixed-width ones.
+ *  Asked before a font is accepted as the code font: a proportional face in a source file does
+ *  not merely look wrong, it breaks the one thing source code uses columns for.
+ *  某个字体是不是等宽的那一类。
+ *  在一个字体被接受为代码字体之前问这一句:源码文件里的比例字体不只是不好看,
+ *  它破坏的是源码使用列对齐所要的那唯一一件事。 */
+export const isMonoFont = (name: string) => BY_NAME.get(name)?.cat === 'mono';
+
 const UA_MODERN =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 

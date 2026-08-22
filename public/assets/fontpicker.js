@@ -30,15 +30,33 @@ export async function fontCatalog() {
 
 const SAMPLE_LATIN = 'The quick brown fox 0123';
 const SAMPLE_CJK = '中文字体预览 ABC 0123';
+// What somebody choosing a code font is actually looking for. Not a pangram -- the characters
+// that fonts confuse with one another: the letter l, the digit 1, the capital I; the digit 0
+// against the capital O. A face that cannot tell them apart is a face that will one day cost
+// somebody an hour, and this is the one moment where that is visible before it happens.
+// 一个正在挑代码字体的人真正要看的东西。不是全字母句 —— 而是那些字体会彼此弄混的字符:
+// 小写 l、数字 1、大写 I;数字 0 与大写 O。分不清它们的字体,
+// 早晚会让某个人赔进去一个小时,而此刻是这件事发生之前唯一看得见它的时候。
+const SAMPLE_MONO = 'lI1 O0 {}[]() =>!= 0x1F';
 
 /**
  * Open the font picker.
+ *
+ * @param only  one category (e.g. 'mono'), or '' for the whole catalogue. Restricting it hides the
+ *              category chips as well: a row of filters that all lead to the same list is a row of
+ *              controls that do nothing, and offering a face that cannot be chosen is worse than
+ *              not offering it.
  * @returns Promise<string|null> the chosen font name; '' means the system default; null means cancelled
  * 打开字体选择器。
+ *
+ * @param only  限定为某一类(如 'mono'),空字符串表示整个目录。限定时连分类按钮一并隐藏:
+ *              一排通向同一个列表的筛选按钮,是一排什么都不做的控件;
+ *              而摆出一个选不了的字体,比不摆更糟。
  * @returns Promise<string|null> 选中的字体名;'' 表示系统默认;null 表示取消
  */
-export async function pickFont(current = '', title = '') {
-  const fonts = await fontCatalog();
+export async function pickFont(current = '', title = '', only = '') {
+  const all = await fontCatalog();
+  const fonts = only ? all.filter((f) => (only === 'cjk' ? f.cjk : f.cat === only)) : all;
   const CATS = [
     ['', t('font_all')],
     ['sans', t('font_sans')],
@@ -59,9 +77,9 @@ export async function pickFont(current = '', title = '') {
           <div class="fp-head">
             <input id="fp-q" type="text" placeholder="${esc(t('font_search'))}" autocomplete="off">
             <input id="fp-sample" type="text" placeholder="${esc(t('font_preview_ph'))}" autocomplete="off">
-            <div class="fp-cats">${CATS.map(
+            ${only ? '' : `<div class="fp-cats">${CATS.map(
               ([k, label], i) => `<button class="fp-cat ${i === 0 ? 'active' : ''}" data-cat="${k}">${esc(label)}</button>`
-            ).join('')}</div>
+            ).join('')}</div>`}
           </div>
           <div class="fp-list" id="fp-list"></div>
         </div>
@@ -90,7 +108,8 @@ export async function pickFont(current = '', title = '') {
     } catch {}
     const saveShort = () => localStorage.setItem('cfmail_font_shortlist', JSON.stringify(shortlist));
 
-    const sampleFor = (f) => sample || (f && f.cjk ? SAMPLE_CJK : SAMPLE_LATIN);
+    const sampleFor = (f) =>
+      sample || (f && f.cjk ? SAMPLE_CJK : only === 'mono' ? SAMPLE_MONO : SAMPLE_LATIN);
     const defOf = (name) => fonts.find((f) => f.name === name);
 
     /** Load only the fonts currently scrolled into view in one list
@@ -247,7 +266,14 @@ export async function pickFont(current = '', title = '') {
 export function fontStack(family, kind = 'ui') {
   const fallback =
     kind === 'mono'
-      ? "ui-monospace, Consolas, monospace"
+      // The generic `monospace` keyword stays out of this stack on purpose. Its CJK fallback is a
+      // Song-style serif, so a source file with Chinese in it comes out looking like two typefaces
+      // side by side -- Latin in one, Chinese in another. Naming the faces outright, and ending on
+      // sans-serif rather than monospace, keeps that from happening.
+      // generic 的 monospace 关键字是被刻意挡在这个栈外面的。它的中文回退是宋体系衬线,
+      // 于是一个带中文的源码文件看起来像是两种字体并排 —— 西文一种、中文另一种。
+      // 把字体逐一点名、并以 sans-serif 而不是 monospace 收尾,可以避免这件事。
+      ? "ui-monospace, 'Cascadia Mono', Consolas, Menlo, 'Segoe UI', 'Microsoft YaHei', sans-serif"
       : "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif";
   return family ? `'${family}', ${fallback}` : fallback;
 }
