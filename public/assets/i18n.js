@@ -6022,4 +6022,16 @@ Object.assign(DICTS.de, { code_font: 'Codeschrift', font_default_mono: 'System d
 Object.assign(DICTS.fr, { code_font: 'Police de code', font_default_mono: 'Chasse fixe système', e_font_not_mono: 'La police de code doit être à chasse fixe' });
 Object.assign(DICTS.es, { code_font: 'Fuente de código', font_default_mono: 'Monoespaciada del sistema', e_font_not_mono: 'La fuente de código debe ser monoespaciada' });
 Object.assign(DICTS.ru, { code_font: 'Шрифт кода', font_default_mono: 'Системный моноширинный', e_font_not_mono: 'Шрифт кода должен быть моноширинным' });
-
+// A folder inside an archive that the reader cannot list. The view falls back to the archive's
+// root, so the message says what was not opened rather than announcing a failure with no sequel.
+// 压缩包里某个读取器列不出来的目录。视图会退回压缩包根目录,
+// 所以这句话说的是"什么没能打开",而不是宣布一个没有下文的失败。
+Object.assign(DICTS['zh-CN'], { drv_arc_bad: '这个目录打不开,已回到压缩包根目录' });
+Object.assign(DICTS['zh-TW'], { drv_arc_bad: '這個目錄打不開,已回到壓縮檔根目錄' });
+Object.assign(DICTS.en, { drv_arc_bad: 'That folder could not be opened; back at the archive root' });
+Object.assign(DICTS.ja, { drv_arc_bad: 'このフォルダーを開けませんでした。アーカイブの最上位に戻りました' });
+Object.assign(DICTS.ko, { drv_arc_bad: '이 폴더를 열 수 없어 압축 파일 최상위로 돌아왔습니다' });
+Object.assign(DICTS.de, { drv_arc_bad: 'Dieser Ordner ließ sich nicht öffnen; zurück im Archivstamm' });
+Object.assign(DICTS.fr, { drv_arc_bad: 'Ce dossier n’a pas pu être ouvert ; retour à la racine de l’archive' });
+Object.assign(DICTS.es, { drv_arc_bad: 'No se pudo abrir esa carpeta; de vuelta en la raíz del archivo' });
+Object.assign(DICTS.ru, { drv_arc_bad: 'Не удалось открыть эту папку; возврат в корень архива' });
