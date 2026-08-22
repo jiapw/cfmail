@@ -445,6 +445,16 @@ async function route() {
     const mod = await import('./chat/chat.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderChat(seg[1] || null);
   }
+  // The Markdown editor is its own address rather than a state of the Drive, which is what lets
+  // it be opened as a tab: a tab is a thing with a URL, and a document being edited is a thing you
+  // want to be able to leave open, reload, and come back to.
+  // Markdown 编辑器有自己的地址,而不是网盘的某个状态 —— 正是这一点让它能作为标签页打开:
+  // 标签页是"有 URL 的东西",而一份正在编辑的文档,恰恰是你希望能一直开着、能刷新、能回来的东西。
+  if (seg[0] === 'md' && seg[1]) {
+    if (!store.me.drive_enabled) return navigate('#/');
+    const mod = await import('./md/md.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderMdEditor(seg[1]);
+  }
   if (seg[0] === 'drive') {
     // Drive loads on demand too, gated by the per-domain switch resolved in /api/me
     // 网盘同样按需加载。开关在 /api/me 里按域名解析

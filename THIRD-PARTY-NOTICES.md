@@ -71,6 +71,40 @@ From the npm package `pdfjs-dist` v6.2.108: `build/pdf.min.mjs`, `build/pdf.work
 
 自 npm 包 `pdfjs-dist` v6.2.108:`build/pdf.min.mjs`、`build/pdf.worker.min.mjs`,及 `cmaps/`、`standard_fonts/` 资源(中日韩与未内嵌字体的 PDF 需要)。网盘功能用它在浏览器渲染 PDF 缩略图与预览。完整许可文本随包分发于 `public/vendor/pdfjs/LICENSE`;该包无 NOTICE 文件,本项目未修改其源码。
 
+### marked → `public/vendor/marked/`
+
+```
+MIT License
+Copyright (c) 2018+, MarkedJS
+Copyright (c) 2011-2018, Christopher Jeffrey
+```
+
+`lib/marked.esm.js` from the npm package `marked` v18.0.10. The Markdown editor (`assets/md/`) promises GitHub's dialect rather than an approximation of it, and that dialect is a specification with a test suite whose interesting parts are its edge cases. Loaded on demand: a person who never edits a document never fetches it. This project does not modify its code.
+
+自 npm 包 `marked` v18.0.10 的 `lib/marked.esm.js`。Markdown 编辑器(`assets/md/`)承诺的是 GitHub 的方言本身而不是它的近似,而那份方言是一份带测试套件的规范,其中有意思的部分正是它的边角。按需加载:从不编辑文档的人不会取到它。本项目未修改其源码。
+
+### marked-footnote → `public/vendor/marked-footnote/`
+
+```
+MIT License
+A project by Stilearning (Beni Arisandi) © 2023-2024
+```
+
+`dist/index.js` from the npm package `marked-footnote` v1.4.0. Footnotes are part of GitHub's dialect and are not part of marked's core; without this, a document that uses them shows its machinery instead of its notes. The package ships no licence file of its own — the licence above is the one it declares in `package.json` and its readme. This project does not modify its code.
+
+自 npm 包 `marked-footnote` v1.4.0 的 `dist/index.js`。脚注属于 GitHub 的方言,而不属于 marked 的核心;没有它,用脚注的文档展示的是自己的机械而不是自己的注释。该包不随附许可文件 —— 上面的许可取自它在 `package.json` 与自述文件中的声明。本项目未修改其源码。
+
+### DOMPurify → `public/vendor/dompurify/`
+
+```
+DOMPurify 3.4.14 | (c) Cure53 and other contributors
+Released under the Apache License 2.0 and Mozilla Public License 2.0 (dual-licensed)
+```
+
+`dist/purify.es.mjs` from the npm package `dompurify` v3.4.14. GitHub's dialect passes inline HTML through, so something must decide what may pass — a decision that is a security boundary, since a document is written by whoever hands you one. Both licence texts ship alongside at `public/vendor/dompurify/LICENSE` and `LICENSE-MPL`. This project does not modify its code.
+
+自 npm 包 `dompurify` v3.4.14 的 `dist/purify.es.mjs`。GitHub 的方言允许内联 HTML 通过,于是总得有谁来决定什么可以通过 —— 而这个决定是一道安全边界,因为文档的作者就是把文档递给你的那个人。两份许可文本随包分发于 `public/vendor/dompurify/LICENSE` 与 `LICENSE-MPL`。本项目未修改其源码。
+
 ---
 
 ## 2. Build and runtime dependencies / 构建与运行期依赖
