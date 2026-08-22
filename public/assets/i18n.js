@@ -3643,6 +3643,12 @@ Object.assign(DICTS['zh-CN'], {
   md_outline: "大纲",
   md_outline_none: "这份文档还没有标题",
   md_wrap: "自动换行",
+  md_merge_mine: "你的改动",
+  md_merge_theirs: "别处的改动",
+  md_merged: "已并入别处的改动,检查后保存",
+  md_merged_conflicts: "有 {0} 处两边都改了,已用标记标出,请自行定夺",
+  drv_new_txt: "文本文件",
+  drv_untitled_txt: "未命名.txt",
   e_drive_disabled: "网盘功能未开启",
   e_drive_not_found: "文件或文件夹不存在",
   e_drive_forbidden: "没有权限执行此操作",
@@ -3800,6 +3806,12 @@ Object.assign(DICTS['zh-TW'], {
   md_outline: "大綱",
   md_outline_none: "這份文件還沒有標題",
   md_wrap: "自動換行",
+  md_merge_mine: "你的改動",
+  md_merge_theirs: "別處的改動",
+  md_merged: "已併入別處的改動,檢查後儲存",
+  md_merged_conflicts: "有 {0} 處兩邊都改了,已用標記標出,請自行定奪",
+  drv_new_txt: "文字檔",
+  drv_untitled_txt: "未命名.txt",
   e_drive_disabled: "雲端硬碟功能未開啟",
   e_drive_not_found: "檔案或資料夾不存在",
   e_drive_forbidden: "沒有權限執行此操作",
@@ -3957,6 +3969,12 @@ Object.assign(DICTS.en, {
   md_outline: "Outline",
   md_outline_none: "This document has no headings yet",
   md_wrap: "Soft wrap",
+  md_merge_mine: "yours",
+  md_merge_theirs: "theirs",
+  md_merged: "Merged with the other edits — check it, then save",
+  md_merged_conflicts: "{0} places were changed on both sides — they are marked for you to settle",
+  drv_new_txt: "Text file",
+  drv_untitled_txt: "Untitled.txt",
   e_drive_disabled: "Drive is not enabled",
   e_drive_not_found: "File or folder not found",
   e_drive_forbidden: "You do not have permission to do this",
@@ -4114,6 +4132,12 @@ Object.assign(DICTS.ja, {
   md_outline: "アウトライン",
   md_outline_none: "このドキュメントにはまだ見出しがありません",
   md_wrap: "折り返し",
+  md_merge_mine: "あなたの変更",
+  md_merge_theirs: "別の場所の変更",
+  md_merged: "別の場所の変更を取り込みました。確認して保存してください",
+  md_merged_conflicts: "{0} 箇所が両方で変更されています。印を付けたので判断してください",
+  drv_new_txt: "テキストファイル",
+  drv_untitled_txt: "無題.txt",
   e_drive_disabled: "ドライブ機能が有効になっていません",
   e_drive_not_found: "ファイルまたはフォルダが見つかりません",
   e_drive_forbidden: "この操作を行う権限がありません",
@@ -4271,6 +4295,12 @@ Object.assign(DICTS.ko, {
   md_outline: "개요",
   md_outline_none: "이 문서에는 아직 제목이 없습니다",
   md_wrap: "자동 줄바꿈",
+  md_merge_mine: "내 변경",
+  md_merge_theirs: "다른 곳의 변경",
+  md_merged: "다른 곳의 변경을 병합했습니다. 확인 후 저장하세요",
+  md_merged_conflicts: "{0}곳을 양쪽에서 모두 변경했습니다. 표시해 두었으니 직접 정하세요",
+  drv_new_txt: "텍스트 파일",
+  drv_untitled_txt: "제목 없음.txt",
   e_drive_disabled: "드라이브 기능이 활성화되어 있지 않습니다",
   e_drive_not_found: "파일 또는 폴더를 찾을 수 없습니다",
   e_drive_forbidden: "이 작업을 수행할 권한이 없습니다",
@@ -4428,6 +4458,12 @@ Object.assign(DICTS.de, {
   md_outline: "Gliederung",
   md_outline_none: "Dieses Dokument hat noch keine Überschriften",
   md_wrap: "Zeilenumbruch",
+  md_merge_mine: "deine Änderung",
+  md_merge_theirs: "fremde Änderung",
+  md_merged: "Mit den anderen Änderungen zusammengeführt – prüfen, dann speichern",
+  md_merged_conflicts: "An {0} Stellen wurde beidseitig geändert – sie sind markiert und warten auf dich",
+  drv_new_txt: "Textdatei",
+  drv_untitled_txt: "Unbenannt.txt",
   e_drive_disabled: "Drive ist nicht aktiviert",
   e_drive_not_found: "Datei oder Ordner nicht gefunden",
   e_drive_forbidden: "Keine Berechtigung für diese Aktion",
@@ -4585,6 +4621,12 @@ Object.assign(DICTS.fr, {
   md_outline: "Plan",
   md_outline_none: "Ce document n’a pas encore de titres",
   md_wrap: "Retour à la ligne",
+  md_merge_mine: "vos modifications",
+  md_merge_theirs: "modifications distantes",
+  md_merged: "Fusionné avec les autres modifications — vérifiez, puis enregistrez",
+  md_merged_conflicts: "{0} endroits ont été modifiés des deux côtés — ils sont marqués, à vous de trancher",
+  drv_new_txt: "Fichier texte",
+  drv_untitled_txt: "Sans titre.txt",
   e_drive_disabled: "Drive n'est pas activé",
   e_drive_not_found: "Fichier ou dossier introuvable",
   e_drive_forbidden: "Vous n'avez pas la permission de faire cela",
@@ -4742,6 +4784,12 @@ Object.assign(DICTS.es, {
   md_outline: "Esquema",
   md_outline_none: "Este documento aún no tiene títulos",
   md_wrap: "Ajuste de línea",
+  md_merge_mine: "tus cambios",
+  md_merge_theirs: "cambios ajenos",
+  md_merged: "Combinado con los otros cambios: revísalo y guarda",
+  md_merged_conflicts: "En {0} lugares se cambió en ambos lados: quedan marcados para que decidas",
+  drv_new_txt: "Archivo de texto",
+  drv_untitled_txt: "Sin título.txt",
   e_drive_disabled: "Drive no está activado",
   e_drive_not_found: "Archivo o carpeta no encontrado",
   e_drive_forbidden: "No tienes permiso para hacer esto",
@@ -4899,6 +4947,12 @@ Object.assign(DICTS.ru, {
   md_outline: "Структура",
   md_outline_none: "В этом документе пока нет заголовков",
   md_wrap: "Перенос строк",
+  md_merge_mine: "ваши правки",
+  md_merge_theirs: "чужие правки",
+  md_merged: "Объединено с чужими правками — проверьте и сохраните",
+  md_merged_conflicts: "В {0} местах правки с обеих сторон — они помечены, решать вам",
+  drv_new_txt: "Текстовый файл",
+  drv_untitled_txt: "Без имени.txt",
   e_drive_disabled: "Функция Диска не включена",
   e_drive_not_found: "Файл или папка не найдены",
   e_drive_forbidden: "Нет прав на это действие",
@@ -5956,3 +6010,16 @@ Object.assign(DICTS.de, { drv_ver_off_ask: 'Beim Ausschalten werden alle Version
 Object.assign(DICTS.fr, { drv_ver_off_ask: 'La désactivation supprime toutes les versions sauf la plus récente, sans retour possible. Continuer ?' });
 Object.assign(DICTS.es, { drv_ver_off_ask: 'Al desactivarlo se borran todas las versiones salvo la más reciente, sin vuelta atrás. ¿Continuar?' });
 Object.assign(DICTS.ru, { drv_ver_off_ask: 'При выключении все версии, кроме последней, будут удалены безвозвратно. Продолжить?' });
+
+// The code font: a third choice, offered only among the fixed-width faces.
+// 代码字体:第三项选择,只在等宽字体里提供。
+Object.assign(DICTS['zh-CN'], { code_font: '代码字体', font_default_mono: '系统等宽', e_font_not_mono: '代码字体必须是等宽字体' });
+Object.assign(DICTS['zh-TW'], { code_font: '程式碼字型', font_default_mono: '系統等寬', e_font_not_mono: '程式碼字型必須是等寬字型' });
+Object.assign(DICTS.en, { code_font: 'Code font', font_default_mono: 'System monospace', e_font_not_mono: 'The code font must be a monospaced font' });
+Object.assign(DICTS.ja, { code_font: 'コードフォント', font_default_mono: 'システム等幅', e_font_not_mono: 'コードフォントは等幅フォントである必要があります' });
+Object.assign(DICTS.ko, { code_font: '코드 글꼴', font_default_mono: '시스템 고정폭', e_font_not_mono: '코드 글꼴은 고정폭 글꼴이어야 합니다' });
+Object.assign(DICTS.de, { code_font: 'Codeschrift', font_default_mono: 'System dicktengleich', e_font_not_mono: 'Die Codeschrift muss dicktengleich sein' });
+Object.assign(DICTS.fr, { code_font: 'Police de code', font_default_mono: 'Chasse fixe système', e_font_not_mono: 'La police de code doit être à chasse fixe' });
+Object.assign(DICTS.es, { code_font: 'Fuente de código', font_default_mono: 'Monoespaciada del sistema', e_font_not_mono: 'La fuente de código debe ser monoespaciada' });
+Object.assign(DICTS.ru, { code_font: 'Шрифт кода', font_default_mono: 'Системный моноширинный', e_font_not_mono: 'Шрифт кода должен быть моноширинным' });
+

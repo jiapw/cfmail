@@ -520,6 +520,22 @@
   padding: 24px 28px 32px; text-align: center;
 }
 .drv-docwin:has(> .drv-loading) { display: flex; }
+/* The window a source file is previewed in. Unlike every other preview, this one does not scroll:
+   the view inside it scrolls itself, and it has to, because it draws only the lines that are on
+   screen -- which is what lets a ten-thousand-line file open at once. Two scrollers would give it
+   a second bar that moves nothing.
+   No padding either. The line numbers are the left edge here, and a margin outside them would put
+   the file's own gutter in the middle of the panel.
+   预览一个源码文件的那扇窗。与其它每一种预览不同,这一扇自己不滚动:
+   里面的视图自己滚,而且必须自己滚,因为它只画屏幕上的那些行 ——
+   正是这一点让一份一万行的文件能一次打开。两层滚动条只会多出一条滚不动任何东西的条。
+   也不留内边距。行号在这里就是左边缘,而在它外面再加一圈留白,
+   等于把文件自己的槽放到面板中间去。 */
+.drv-docwin.drv-codewin {
+  padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left;
+}
+.drv-docwin.drv-codewin .code-body { flex: 1; min-height: 0; }
+
 /* The window follows the site theme, so the app's themed scrollbars apply inside it as-is;
    only the dark mask around it stays fixed.
    窗口跟随站点主题,应用的主题滚动条在窗口里原样生效;只有四周的深色遮罩保持不变。 */
@@ -639,7 +655,6 @@
   white-space: pre-wrap; word-break: break-word; text-align: left;
 }
 .drv-txt.uif { font-family: var(--font-ui); font-size: 14.5px; }
-.drv-txt.mono { font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace; }
 /* A white "paper" sheet for rendered documents (md, docx) -- paper stays paper in any theme
    渲染类文档(md、docx)的白纸卡片 —— 纸在任何主题下都是纸 */
 .drv-sheet {

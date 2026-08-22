@@ -21,7 +21,7 @@ import { HttpError, E } from './errors';
 import { audit } from './audit';
 import { adminApp, LOCAL_PART_RE } from './admin';
 import { verifyMail, resetMail } from './mailtpl';
-import { fontsApp, isKnownFont } from './fonts';
+import { fontsApp, isKnownFont, isMonoFont } from './fonts';
 import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
 import { driveAgentApp, driveApp, drivePubApp } from './drive';
@@ -684,7 +684,7 @@ app.get('/api/me', async (c) => {
     });
   }
   const da = await c.env.DB.prepare('SELECT domain_id FROM domain_admins WHERE user_id=?1').bind(user.id).all<any>();
-  const langRow = await c.env.DB.prepare('SELECT lang, appearance, ui_font, body_font FROM users WHERE id=?1')
+  const langRow = await c.env.DB.prepare('SELECT lang, appearance, ui_font, body_font, code_font FROM users WHERE id=?1')
     .bind(user.id).first<any>();
   // The AI assistant switch is per entry host
   // AI 助手开关按访问域名生效(intl-mail.<域名>)
@@ -707,6 +707,7 @@ app.get('/api/me', async (c) => {
       id: user.id, email: user.email, name: user.name, is_admin: !!user.is_admin,
       lang: langRow?.lang || null, appearance: langRow?.appearance || null,
       ui_font: langRow?.ui_font || null, body_font: langRow?.body_font || null,
+      code_font: langRow?.code_font || null,
     },
     domain_admin_of: (da.results || []).map((r: any) => r.domain_id),
     mailboxes,
@@ -734,9 +735,15 @@ app.post('/api/me/fonts', async (c) => {
   };
   const ui = pick(body.ui_font);
   const bodyFont = pick(body.body_font);
-  if (ui === undefined || bodyFont === undefined) return c.json({ error: 'e_unknown_font' }, 400);
-  await c.env.DB.prepare('UPDATE users SET ui_font=?1, body_font=?2 WHERE id=?3')
-    .bind(ui, bodyFont, c.get('user').id).run();
+  const code = pick(body.code_font);
+  if (ui === undefined || bodyFont === undefined || code === undefined) return c.json({ error: 'e_unknown_font' }, 400);
+  // A known font is not enough for this one. The picker only offers fixed-width faces, but the
+  // picker is not what decides -- whatever arrives here does, and it can arrive from anywhere.
+  // 对这一个来说,"是个认得的字体"还不够。选择器只提供等宽字体,但作数的不是选择器 ——
+  // 作数的是到达这里的东西,而它可以从任何地方到达。
+  if (code && !isMonoFont(code)) return c.json({ error: 'e_font_not_mono' }, 400);
+  await c.env.DB.prepare('UPDATE users SET ui_font=?1, body_font=?2, code_font=?3 WHERE id=?4')
+    .bind(ui, bodyFont, code, c.get('user').id).run();
   return c.json({ ok: true });
 });
 

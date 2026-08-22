@@ -1,0 +1,150 @@
+/* The code editor. Same window and same head as the Markdown one -- a person moving between them
+   should be moving between two views of one idea, not between two applications.
+   代码编辑器。与 Markdown 那个同一扇窗、同一个头部 ——
+   在两者之间来回的人,应该是在一个想法的两种视图之间走动,而不是在两个应用之间。 */
+body.code-open { overflow: hidden; }
+
+.code-app {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text-1);
+}
+.code-head {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.code-head .code-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-head .code-sp { flex: 1; }
+.code-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: transparent; }
+.code-dot.on { background: var(--warning, #e8a33d); }
+#code-wrap.on::part(base) { color: var(--primary); }
+
+.code-body { flex: 1; min-height: 0; overflow: hidden; }
+.code-err { color: var(--danger, #d33); padding: 24px 28px; }
+
+/* ---------- The colours ----------
+   Named here and referred to from the highlight style, so one set of rules serves both themes and
+   the editor never carries a palette of its own that the rest of the application does not share.
+   The dark values are the same hues at the lightness a dark surface needs, rather than a different
+   scheme: a keyword should be recognisably the same keyword after somebody switches themes.
+   ---------- 颜色 ----------
+   在这里命名,由高亮样式去引用,于是一套规则同时服务两种主题,
+   编辑器也就不会自带一套应用其余部分并不知道的调色板。
+   深色的取值是同样的色相在深色表面所需要的明度,而不是另一套配色:
+   一个关键字在有人切换主题之后,应该还认得出是同一个关键字。 */
+:root {
+  --cm-keyword: #a626a4;
+  --cm-name:    #383a42;
+  --cm-fn:      #4078f2;
+  --cm-const:   #986801;
+  --cm-type:    #c18401;
+  --cm-op:      #0184bc;
+  --cm-string:  #50a14f;
+  --cm-comment: #a0a1a7;
+  --cm-text:    var(--text-1);
+  --cm-invalid: #e45649;
+  --cm-gutter:  var(--text-3);
+}
+html.wa-dark, .wa-dark {
+  --cm-keyword: #c678dd;
+  --cm-name:    #e06c75;
+  --cm-fn:      #61afef;
+  --cm-const:   #d19a66;
+  --cm-type:    #e5c07b;
+  --cm-op:      #56b6c2;
+  --cm-string:  #98c379;
+  --cm-comment: #7f848e;
+  --cm-invalid: #e06c75;
+}
+
+/* ---------- CodeMirror, dressed as part of this application ----------
+   The library ships unstyled on purpose. What it needs from here is two typefaces, not one: the
+   code font for the code, and the interface font for the line numbers beside it. Line numbers are
+   not part of the file -- they are the application talking about the file -- and they read better
+   in the face everything else in the application is set in.
+   Both come from the user's settings; the fallback stacks live in fontpicker.js, including the
+   rule that keeps the generic `monospace` keyword out of the code stack.
+   ---------- CodeMirror,穿上这个应用的衣服 ----------
+   这个库刻意不带样式。它需要从这里拿到的是两种字体而不是一种:代码用代码字体,
+   旁边的行号用界面字体。行号不属于这个文件 —— 它是应用在谈论这个文件 ——
+   用应用其余部分所用的那种字体来排,读起来更顺。
+   两者都来自用户设置;回退栈住在 fontpicker.js 里,
+   包括"把 generic 的 monospace 关键字挡在代码栈之外"那一条。 */
+.code-body .cm-editor {
+  height: 100%;
+  font-size: 13.5px;
+}
+.code-body .cm-editor.cm-focused { outline: none; }
+/* The code font goes here and not on .cm-editor, which is where it belongs and where it does not
+   work. CodeMirror's own base theme sets `font-family: monospace` directly on .cm-scroller, and a
+   declaration applied to an element always beats a value inherited from its ancestor -- no amount
+   of specificity on .cm-editor changes that. The editor therefore spent its whole life rendering
+   in the generic `monospace` keyword, which is the one thing the note above says it must not do:
+   on a Chinese Windows that keyword resolves to a Song-style serif, so the comments came out in a
+   different typeface from the code.
+   代码字体放在这里而不是 .cm-editor 上 —— 那儿才是它该在的地方,可惜在那儿不起作用。
+   CodeMirror 自己的基础主题把 `font-family: monospace` 直接写在 .cm-scroller 上,
+   而"应用在某元素上的声明"永远压过"从祖先继承来的值",在 .cm-editor 上堆多少特异性都没用。
+   于是这个编辑器一直用的都是 generic 的 monospace 关键字 —— 正是上面那段注释说了不能用的东西:
+   在中文 Windows 上它解析成宋体系衬线,于是注释和代码看起来是两种字体。 */
+.code-body .cm-scroller {
+  line-height: 1.6;
+  font-family: var(--font-code);
+}
+.code-body .cm-content { caret-color: var(--text-1); }
+.code-body .cm-gutters {
+  background: var(--panel); color: var(--cm-gutter); border-right: 1px solid var(--border);
+}
+/* The line numbers, in the interface font. Asked for figures of equal width, because an interface
+   font is under no obligation to have them by default -- and a column of numbers whose digits are
+   different widths is a column that looks ragged at every scroll position.
+   The left padding is CodeMirror's own 5px plus 14 more: the numbers sat against the edge of the
+   panel with nothing between them and it. The whole shorthand is written out rather than just the
+   one side, so that what the padding is can be read here instead of worked out from two files.
+   行号,用界面字体。要求等宽数字,因为界面字体没有义务默认就是等宽数字 ——
+   而一列数字若各位宽度不一,那这一列在每一个滚动位置上看起来都是参差的。
+   左内边距是 CodeMirror 自己的 5px 再加 14:此前数字紧贴着面板边缘,中间什么也没有。
+   写出整条简写而不只是那一边,好让"内边距是多少"能在这里读到,
+   而不必从两个文件里推算出来。 */
+.code-body .cm-lineNumbers .cm-gutterElement {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  padding: 0 3px 0 19px;
+}
+.code-body .cm-activeLineGutter { background: var(--hover); color: var(--text-2); }
+.code-body .cm-activeLine { background: color-mix(in srgb, var(--hover) 55%, transparent); }
+.code-body .cm-selectionBackground,
+.code-body .cm-content ::selection { background: var(--selected) !important; }
+.code-body .cm-cursor { border-left-color: var(--text-1); }
+.code-body .cm-matchingBracket { background: var(--selected); outline: 1px solid var(--border); }
+.code-body .cm-selectionMatch { background: color-mix(in srgb, var(--primary) 18%, transparent); }
+
+/* The fold arrows. Given room and a hit area, because a control that is hard to hit is a feature
+   people conclude is missing.
+   折叠箭头。给它位置,也给它一块可点的面积 ——
+   一个难以点中的控件,会被人当作一个不存在的功能。 */
+.code-body .cm-foldGutter .cm-gutterElement { padding: 0 4px; cursor: pointer; color: var(--text-3); }
+.code-body .cm-foldGutter .cm-gutterElement:hover { color: var(--text-1); }
+.code-body .cm-foldPlaceholder {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-2); padding: 0 6px; margin: 0 2px;
+}
+
+/* Search, which the library gives a panel of its own. It is docked at the top and dressed the same
+   way, so it reads as part of the window rather than as something that landed on it.
+   搜索,库自带一块面板。把它停在顶部、穿上同一身衣服,
+   于是它读起来是这扇窗的一部分,而不是落在窗上的什么东西。 */
+.code-body .cm-panels { background: var(--panel); color: var(--text-1); border-color: var(--border); }
+.code-body .cm-panels.cm-panels-top { border-bottom: 1px solid var(--border); }
+.code-body .cm-panel input, .code-body .cm-panel button, .code-body .cm-panel label {
+  font: inherit; font-size: 12.5px; color: var(--text-1);
+}
+.code-body .cm-panel input[type="text"] {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px;
+}
+.code-body .cm-panel button {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 10px; cursor: pointer;
+}
+.code-body .cm-panel button:hover { background: var(--hover); }
+.code-body .cm-searchMatch { background: color-mix(in srgb, var(--primary) 25%, transparent); }
+.code-body .cm-searchMatch-selected { background: color-mix(in srgb, var(--primary) 45%, transparent); }

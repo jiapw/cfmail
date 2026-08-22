@@ -70,17 +70,27 @@ darkMedia.addEventListener('change', () => {
   if (currentMode() === 'auto') applyMode('auto');
 });
 
-/** Apply all three fonts: the brand name (per domain), the interface and the body (per user)
- *  应用三种字体:品牌名(按域名)、界面与正文(按用户) */
+/** Apply every font: the brand name (per domain), and the interface, body and code fonts
+ *  (per user).
+ *
+ *  The code font asks for the mono stack rather than the usual one, and it asks for it even when
+ *  the user picked nothing -- "system default" for code means the system fixed-width face, not
+ *  the system interface face.
+ *  应用全部字体:品牌名(按域名),以及界面、正文与代码(按用户)。
+ *
+ *  代码字体取的是等宽那一套回退栈而不是通常那一套,并且即便用户什么都没选也照样取 ——
+ *  对代码而言,"系统默认"指的是系统的等宽字体,不是系统的界面字体。 */
 export function applyFonts() {
   const h = document.documentElement;
   const brand = store.brand?.font || '';
   const ui = store.me?.user?.ui_font || '';
   const body = store.me?.user?.body_font || '';
-  [brand, ui, body].forEach((f) => f && ensureFont(f));
+  const code = store.me?.user?.code_font || '';
+  [brand, ui, body, code].forEach((f) => f && ensureFont(f));
   h.style.setProperty('--font-brand', fontStack(brand));
   h.style.setProperty('--font-ui', fontStack(ui));
   h.style.setProperty('--font-body', fontStack(body));
+  h.style.setProperty('--font-code', fontStack(code, 'mono'));
   // Web Awesome components follow the interface font too
   // Web Awesome 组件内部也跟随界面字体
   h.style.setProperty('--wa-font-family-body', fontStack(ui));
@@ -454,6 +464,13 @@ async function route() {
     if (!store.me.drive_enabled) return navigate('#/');
     const mod = await import('./md/md.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderMdEditor(seg[1]);
+  }
+  // Source, configuration, data and plain text -- everything that is text and is not prose.
+  // 源码、配置、数据与纯文本 —— 一切"是文本、却不是散文"的东西。
+  if (seg[0] === 'code' && seg[1]) {
+    if (!store.me.drive_enabled) return navigate('#/');
+    const mod = await import('./code/code.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderCodeEditor(seg[1]);
   }
   if (seg[0] === 'drive') {
     // Drive loads on demand too, gated by the per-domain switch resolved in /api/me

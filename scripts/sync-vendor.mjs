@@ -131,6 +131,156 @@ const SPECS = [
   },
 ];
 
+/**
+ * The one library that cannot be copied, only built.
+ *
+ * Everything else in SPECS ships as a finished ES module. CodeMirror is several dozen packages
+ * importing one another by bare name, so a browser handed those files resolves nothing. Bundling
+ * is therefore not an optimisation here -- it is what turns the package into something that can
+ * be loaded at all.
+ *
+ * Split rather than bundled flat, because the entry reaches its languages through dynamic import:
+ * esbuild gives each of them a chunk, and opening a shell script fetches the shell grammar and
+ * not the other thirty.
+ *
+ * 唯一一个拷不过去、只能构建的库。
+ *
+ * SPECS 里其余每一项都是发布好的 ES 模块。CodeMirror 是几十个彼此用裸名互相引用的包,
+ * 把那些文件直接交给浏览器,它一个也解析不出来。所以在这里,打包不是优化 ——
+ * 它是把这个包变成根本能被加载的东西的那一步。
+ *
+ * 用拆分而不是打成一坨,因为入口是用动态 import 去够它的那些语言的:
+ * esbuild 会给每种语言一块自己的 chunk,于是打开一个 shell 脚本时取回的是 shell 文法,
+ * 而不是另外三十种。
+ */
+async function buildCodeMirror() {
+  const entry = path.join(ROOT, 'scripts', 'codemirror.entry.js');
+  const out = path.join(VENDOR, 'codemirror');
+  if (CHECK_ONLY) {
+    if (!fs.existsSync(path.join(out, 'codemirror.entry.js'))) {
+      missing++;
+      console.error('  缺失:vendor/codemirror/(跑 npm run vendor 生成)');
+    }
+    return;
+  }
+  const esbuild = await import('esbuild');
+  fs.rmSync(out, { recursive: true, force: true });
+  const r = await esbuild.build({
+    entryPoints: [entry],
+    outdir: out,
+    bundle: true,
+    format: 'esm',
+    splitting: true,
+    minify: true,
+    sourcemap: false,
+    target: ['es2022'],
+    legalComments: 'none',
+    metafile: true,
+    logLevel: 'silent',
+  });
+  if (r.errors?.length) {
+    console.error('✗ CodeMirror 打包失败');
+    for (const e of r.errors) console.error('  ' + e.text);
+    process.exit(1);
+  }
+  writeBundleLicense(out, r.metafile);
+  const files = collect(out, '', null);
+  assertNothingLeftBare(out, files);
+  const bytes = files.reduce((n2, rel) => n2 + fs.statSync(path.join(out, rel)).size, 0);
+  console.log(`  CodeMirror  ${String(files.length).padStart(3)} 文件  (已打包 ${Math.round(bytes / 1024)} KB)`);
+}
+
+/**
+ * The bundle must not still be asking for anything by npm name.
+ *
+ * A bundler resolves the imports it can read. Handed a computed one -- `import(base + name)` -- it
+ * cannot read it, so it writes the expression out untouched and reports success. The result loads
+ * fine and then fails the first time somebody opens a file of that kind, with an error about a
+ * bare specifier, weeks later, in a browser.
+ *
+ * So the output is read back. Nothing in this directory should name a package, because naming one
+ * is precisely what the browser cannot do -- and that is a property of finished files, which is
+ * something a build can check about itself.
+ *
+ * 打出来的包里,不该还有任何东西在用 npm 包名要东西。
+ *
+ * 打包器解析的是它读得懂的 import。给它一个拼出来的 —— `import(base + name)` ——
+ * 它读不懂,于是原样把表达式写出去,并报成功。产物能正常加载,
+ * 然后在某人第一次打开那类文件时失败,报一个关于裸模块名的错 —— 几周之后,在浏览器里。
+ *
+ * 所以把产物读回来看。这个目录下不该有任何东西点名一个包,因为点名恰恰是浏览器做不到的事 ——
+ * 而这是成品文件的一条性质,是一次构建可以拿来检查自己的东西。
+ */
+function assertNothingLeftBare(out, files) {
+  const bare = [];
+  for (const rel of files) {
+    if (!rel.endsWith('.js')) continue;
+    const s = fs.readFileSync(path.join(out, rel), 'utf8');
+    for (const m of s.matchAll(/["'`](@[a-z0-9-]+\/[a-z0-9.-]+|crelt|style-mod|w3c-keyname)[^"'`]*["'`]/g)) {
+      bare.push(`${rel}: ${m[0]}`);
+    }
+    if (/import\(\s*[^)'"`]/.test(s)) bare.push(`${rel}: 计算出来的 import(),打包器跟不进去`);
+  }
+  if (bare.length) {
+    console.error('✗ CodeMirror 产物里仍有解析不了的模块引用:');
+    for (const b of [...new Set(bare)].slice(0, 10)) console.error('  ' + b);
+    process.exit(1);
+  }
+}
+
+/**
+ * The notice the bundle would otherwise not carry.
+ *
+ * Every package that goes into it is MIT, and MIT asks that its notice travel with the copy. A
+ * copied file brings its own; a bundle brings none, because minification is the act of throwing
+ * away everything that is not code. So the notices are gathered back and written beside the
+ * chunks.
+ *
+ * The list comes from the metafile rather than from package.json, because package.json says what
+ * may be reached and the metafile says what was actually reached. A grammar dropped from the entry
+ * would otherwise go on being credited here forever, and one added would never be.
+ *
+ * 这个包本来不会带上的那份声明。
+ *
+ * 打进去的每一个包都是 MIT,而 MIT 要求它的声明随副本一起走。拷过去的文件自己带着声明;
+ * 打出来的包一份也不带,因为压缩这件事本身,就是把一切不是代码的东西丢掉。
+ * 于是把那些声明重新收集起来,写在 chunk 旁边。
+ *
+ * 名单取自 metafile 而不是 package.json,因为 package.json 说的是"可以够到什么",
+ * 而 metafile 说的是"实际够到了什么"。否则,一种从入口里删掉的文法会在这儿被永远地继续鸣谢,
+ * 而一种新加的则永远不会。
+ */
+function writeBundleLicense(out, metafile) {
+  const pkgs = new Set();
+  for (const input of Object.keys(metafile?.inputs || {})) {
+    const m = /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
+    if (m) pkgs.add(m[1]);
+  }
+  const parts = [
+    'CodeMirror 6 与 Lezer,自源码打包 / bundled from source',
+    '',
+    'The bundle in this directory is built from the packages listed below. Each is reproduced',
+    'with its own notice, as its licence requires.',
+    '本目录下的包由下列各包构建而成。每一份声明按其许可要求原样附上。',
+    '',
+  ];
+  for (const name of [...pkgs].sort()) {
+    const dir = path.join(ROOT, 'node_modules', ...name.split('/'));
+    let version = '';
+    try { version = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version; } catch { /* 无版本可报 */ }
+    let text = '';
+    for (const f of ['LICENSE', 'LICENSE.md', 'LICENCE', 'license']) {
+      try { text = fs.readFileSync(path.join(dir, f), 'utf8').trim(); break; } catch { /* 换下一个名字 */ }
+    }
+    if (!text) {
+      console.error(`✗ ${name} 没有可随包分发的许可文本`);
+      process.exit(1);
+    }
+    parts.push('='.repeat(76), `${name}${version ? ' ' + version : ''}`, '', text, '');
+  }
+  fs.writeFileSync(path.join(out, 'LICENSE'), parts.join('\n') + '\n');
+}
+
 let copied = 0;
 let missing = 0;
 let removed = 0;
@@ -203,6 +353,8 @@ function readVersion(from) {
     return JSON.parse(fs.readFileSync(path.join(NM, pkg, 'package.json'), 'utf8')).version;
   } catch { return null; }
 }
+
+await buildCodeMirror();
 
 if (CHECK_ONLY) {
   if (missing) {

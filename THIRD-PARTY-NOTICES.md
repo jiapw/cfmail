@@ -105,6 +105,17 @@ Released under the Apache License 2.0 and Mozilla Public License 2.0 (dual-licen
 
 自 npm 包 `dompurify` v3.4.14 的 `dist/purify.es.mjs`。GitHub 的方言允许内联 HTML 通过,于是总得有谁来决定什么可以通过 —— 而这个决定是一道安全边界,因为文档的作者就是把文档递给你的那个人。两份许可文本随包分发于 `public/vendor/dompurify/LICENSE` 与 `LICENSE-MPL`。本项目未修改其源码。
 
+### CodeMirror 6 → `public/vendor/codemirror/`
+
+```
+MIT License
+Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+```
+
+Built from source rather than copied. CodeMirror 6 is published as several dozen npm packages that import one another by bare name, which no browser can resolve, so `npm run vendor` bundles them with esbuild into this directory — 37 packages in all, every one of them MIT, including the grammars (`@lezer/*`) and three small dependencies of the view (`crelt`, `style-mod`, `w3c-keyname`). Because minification discards everything that is not code, the notices are gathered back and written to `public/vendor/codemirror/LICENSE`, generated from the list of packages the bundler actually reached rather than from a list kept by hand. Split by language: opening a shell script fetches the shell grammar and not the other thirty-four. Loaded on demand, and only by the source editor (`assets/code/`). This project does not modify its code.
+
+自源码构建,而非拷贝。CodeMirror 6 以几十个 npm 包发布,彼此用裸名互相引用,而浏览器解析不了裸名,于是 `npm run vendor` 用 esbuild 把它们打进本目录 —— 共 37 个包,每一个都是 MIT,其中包括各种文法(`@lezer/*`)与视图的三个小依赖(`crelt`、`style-mod`、`w3c-keyname`)。由于压缩会丢掉一切不是代码的东西,那些声明被重新收集,写入 `public/vendor/codemirror/LICENSE` —— 名单取自打包器实际够到的那些包,而不是一份手工维护的清单。按语言分块:打开一个 shell 脚本取回的是 shell 文法,而不是另外三十四种。按需加载,且只由源码编辑器(`assets/code/`)加载。本项目未修改其源码。
+
 ---
 
 ## 2. Build and runtime dependencies / 构建与运行期依赖

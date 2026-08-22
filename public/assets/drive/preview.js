@@ -124,7 +124,47 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       return { destroy };
     }
 
-    if (kind === 'txt' || kind === 'code') {
+    if (kind === 'code') {
+      // Source is shown by the same view the editor uses, with everything that could change it
+      // left out. The point is that the two agree: a file previewed here and then opened for
+      // editing is the same file, laid out the same way, coloured the same way, folded at the same
+      // places. A preview drawn by a second renderer is a preview that is right until the day the
+      // two disagree, and then it is a preview that lies.
+      //
+      // Read whole rather than in windows, because the view holds the whole document and cannot be
+      // appended to as the reader scrolls. Capped for the same reason -- past a couple of
+      // megabytes a source file is a download, not something anybody reads in a panel.
+      //
+      // 源码由编辑器所用的同一个视图来显示,只是把一切可能改动它的东西略去。
+      // 要点在于两者一致:在这里预览过、随后打开来编辑的,是同一个文件 ——
+      // 一样的排布、一样的着色、一样的折叠位置。由第二个渲染器画出来的预览,
+      // 在两者分歧的那天之前都是对的,而在那之后,它是一份会撒谎的预览。
+      //
+      // 整取而不是分窗读,因为这个视图持有的是整份文档,没法随着读者下滚往里追加。
+      // 上限也出于同一个理由 —— 超过两兆的源码文件属于下载,不是谁会在一块面板里读完的东西。
+      const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${TXT_CAP - 1}` } });
+      if (!r.ok && r.status !== 206) throw new Error('fetch');
+      const raw = new TextDecoder().decode(await r.arrayBuffer());
+      if (dead()) return { destroy };
+      const note = node.size > TXT_CAP
+        ? `<div class="drv-trunc">${esc(t('drv_truncated', '2 MB'))}</div>` : '';
+      box.innerHTML = `<div class="drv-docwin drv-codewin">${note}<div class="code-body"></div></div>`;
+      const mod = await import('../code/view.js?v=' + encodeURIComponent(store.brand?.version || ''));
+      if (dead()) return { destroy };
+      const view = await mod.renderOnly({
+        parent: box.querySelector('.code-body'),
+        text: raw,
+        name: node.name,
+      });
+      // The view holds a document, a parse worker's worth of state and a handful of DOM
+      // observers. Closing the panel has to let go of all of it, and this is the list that does.
+      // 这个视图持有一份文档、一个解析器那么多的状态,以及若干 DOM 观察器。
+      // 关掉面板必须把这些全部放手,而这就是负责放手的那份清单。
+      urls.push({ revoke: () => view.destroy() });
+      return { destroy };
+    }
+
+    if (kind === 'txt') {
       // A log or a dump is a sequence of lines, and the interesting one is rarely in the first
       // two megabytes. So it is read in windows: a megabyte at a time, the next one fetched
       // when the reader scrolls to the bottom of what is already there. Nothing is discarded --
@@ -133,7 +173,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 因此改成分窗读：一次一兆，读者滚到已有内容的底部时再取下一段。
       // 什么都不丢 —— 往回滚不花一分钱 —— 且任何大小的文件都能走到尽头。
       const CHUNK = 1 << 20;
-      box.innerHTML = win(`<pre class="drv-txt ${kind === 'txt' ? 'uif' : 'mono'}"></pre>
+      box.innerHTML = win(`<pre class="drv-txt uif"></pre>
         <div class="drv-textmore drv-dim"></div>`);
       const pre = box.querySelector('pre');
       const foot = box.querySelector('.drv-textmore');
