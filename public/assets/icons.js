@@ -53,6 +53,24 @@ const P = {
     'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM17.99 9l-1.41-1.42-6.59 6.59-2.58-2.57-1.42 1.41 4 3.99z',
   textFormat:
     'M5 17v2h14v-2H5zm4.5-4.2h5l.9 2.2h2.1L12.75 4h-1.5L6.5 15h2.1l.9-2.2zM12 5.98L13.87 11h-3.74L12 5.98z',
+  // A document outline: four rules at three depths, so the glyph shows nesting rather than merely
+  // showing indentation. Every rule starts at the same left edge, the way every entry in the
+  // outline it opens does, and depth is said by length instead: going 1-2-3 and back to 2 is what
+  // a table of contents actually does, and it is the returning line that says these are levels
+  // and not a slope.
+  // 文档大纲:四条横线,三个深度 —— 于是这个字形展示的是嵌套,而不只是缩进。
+  // 每条线都从同一条左边缘起步,一如它所打开的那个大纲里的每一个条目;深度改由长度说出:
+  // 1-2-3 再回到 2,才是一份目录真正在做的事,而说明这是层级而不是一道斜坡的,正是那条折回来的线。
+  outline: 'M3 5h18v2H3zM3 9h14v2H3zM3 13h10v2H3zM3 17h14v2H3z',
+  // Soft wrap, drawn on the same grid as menu: three rules two units thick, the middle one
+  // running on past the others and turning back under itself. The turn reaches the right edge
+  // the rules do, so the glyph reads as one block rather than as a bar with something stuck to
+  // it, and the arrowhead is the only part that leaves the three rows -- it is the only part
+  // that is saying anything the rules are not.
+  // 软折行。与 menu 同一套网格:三条两单位粗的横线,中间那条越过其余两条,再折回自己下方。
+  // 那个折返抵达横线所抵达的同一条右边缘,于是整个字形读起来是一整块,
+  // 而不是一根杠上粘了个东西;箭头是唯一越出三行的部分 —— 它也是唯一在说横线没在说的事的部分。
+  wrapText: 'M3 5h18v2H3zM3 10h14.5a3.5 3.5 0 0 1 0 7H14.5v-2h3a1.5 1.5 0 0 0 0-3H3zM3 15h5.5v2H3zM11 16 15 13v6z',
   image:
     'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
   // Image scale steps: a hollow outer frame plus a proportionally smaller solid block (the frame is drawn in reverse to cut the hole)

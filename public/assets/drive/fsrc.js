@@ -34,6 +34,55 @@ export function usePubSource(token) {
 
 export const isPub = () => !!fsrc.token;
 
+/** The name of the channel the tabs of this drive talk on.
+ *
+ *  The editor opens in a tab of its own, which is what makes it an editor rather than a panel --
+ *  and which means the file list it came from carries on believing whatever it believed when it
+ *  was last fetched. Its idea of when each file changed is what every address it builds is stamped
+ *  with, so a file saved in the other tab keeps its old stamp here, and the old bytes behind it.
+ *
+ *  A message is the cheap half of the fix: the tab that did the writing is the one tab that knows
+ *  it happened, and telling the others costs nothing.
+ *
+ *  这个网盘的各个标签页彼此说话所用的频道名。
+ *
+ *  编辑器开在自己的标签页里 —— 正是这一点让它是编辑器而不是一块面板 ——
+ *  而这也意味着它出发时的那个文件列表,会一直相信自己上次取回来时所相信的东西。
+ *  它对"每个文件何时改动过"的认识,盖在它构造的每一个地址上;
+ *  于是在另一个标签页里被保存过的文件,在这里仍带着旧的戳记,和戳记背后那份旧字节。
+ *
+ *  一条消息是这个修复中便宜的那一半:动手写的那个标签页,是唯一知道这件事发生过的标签页,
+ *  而告诉其余几个,不花什么。 */
+export const DRIVE_CHANNEL = 'cfmail-drive';
+
+/** Say that one node has changed, and say what it changed to.
+ *
+ *  Sending only the news would leave the other tab knowing that something happened and having to
+ *  go and ask the server what -- which is a request over the network to learn a handful of facts
+ *  the sender was holding all along. The write already returned them; passing them on costs one
+ *  more property on a message that was being sent anyway, and the tab that receives it needs to
+ *  talk to nobody.
+ *
+ *  Silent where the browser has no channel: the listing still refreshes on its next visit, which
+ *  is where this stood before any of it.
+ *
+ *  宣告某个节点变了,并且说清它变成了什么。
+ *
+ *  只发通知,会让另一个标签页知道"出事了",然后不得不去问服务器"出了什么事" ——
+ *  那是一次网络请求,只为得到几件发送方一直攥在手里的事实。写入操作本来就把它们返回了;
+ *  把它们捎上,不过是在一条反正都要发的消息上多挂几个字段,
+ *  而收到它的那个标签页,不必再跟任何人说话。
+ *
+ *  浏览器没有可用频道时静默略过:列表下次进入时照样会自己刷新 ——
+ *  那正是这一切开始之前的状态。 */
+export function announceChange(id, patch = {}) {
+  try {
+    const ch = new BroadcastChannel(DRIVE_CHANNEL);
+    ch.postMessage({ type: 'node-changed', id, patch });
+    ch.close();
+  } catch { /* no channel, no announcement / 没有频道就不宣告 */ }
+}
+
 // A file's address used to be a fixed thing while its contents changed underneath it, which is
 // exactly the shape of a stale preview: the browser is asked for a URL it already holds an answer
 // to, and it answers without asking us. Naming the version in the address ends that -- new bytes,

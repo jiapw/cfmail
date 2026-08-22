@@ -84,6 +84,51 @@ const SPECS = [
     roots: ['build/pdf.min.mjs', 'build/pdf.worker.min.mjs', 'cmaps', 'standard_fonts', 'LICENSE'],
     exts: null,
   },
+  {
+    // Markdown for the editor (assets/md/), which promises GitHub's semantics rather than a
+    // reasonable approximation of them. GitHub's dialect is a specification with a test suite,
+    // and the interesting parts of it are the edge cases -- how far a nested list may be
+    // indented before it stops being nested, where a table's alignment row is allowed to be
+    // ragged, when an underscore inside a word is emphasis and when it is a word. Guessing at
+    // those is how a renderer comes to disagree with the site it claims to match.
+    // 编辑器(assets/md/)的 Markdown。它承诺的是 GitHub 的语义,而不是对它的合理近似。
+    // GitHub 的方言是一份带测试套件的规范,而其中有意思的部分恰恰是边角 ——
+    // 嵌套列表缩进到第几格就不再算嵌套、表格的对齐行可以参差到什么程度、
+    // 词中间的下划线什么时候是强调什么时候只是个词。靠猜这些,正是一个渲染器
+    // 与它声称要对齐的那个站点渐行渐远的方式。
+    name: 'marked',
+    from: 'marked/lib',
+    to: 'marked',
+    roots: ['marked.esm.js'],
+    exts: null,
+  },
+  {
+    // Footnotes, which marked leaves out of its core and GitHub does not. Without this a document
+    // that uses them shows its machinery -- a literal [^1] where a number belongs, and the notes
+    // themselves stranded at the bottom as an ordinary paragraph.
+    // 脚注。marked 的核心里没有它,而 GitHub 有。缺了这个,用脚注的文档会把自己的机械外露 ——
+    // 该出现数字的地方是一个字面的 [^1],而那些注释本身孤零零地留在末尾,成了普通段落。
+    name: 'marked-footnote',
+    from: 'marked-footnote/dist',
+    to: 'marked-footnote',
+    roots: ['index.js'],
+    exts: null,
+  },
+  {
+    // GitHub's dialect passes inline HTML through, so something has to decide what may pass.
+    // That decision is a security boundary -- a document is written by whoever hands you one --
+    // and it is the kind of boundary where a hand-written blocklist is wrong on the day it
+    // matters. Only the ESM build ships; the UMD and CJS copies would be dead weight.
+    // GitHub 的方言允许内联 HTML 通过,于是总得有谁来决定什么可以通过。
+    // 这个决定是一道安全边界 —— 文档的作者,就是把文档递给你的那个人 ——
+    // 而这类边界上,手写的黑名单会在最要紧的那天出错。
+    // 只发 ESM 构建;UMD 与 CJS 那两份是纯粹的负重。
+    name: 'DOMPurify',
+    from: 'dompurify',
+    to: 'dompurify',
+    roots: ['dist/purify.es.mjs', 'LICENSE', 'LICENSE-MPL'],
+    exts: null,
+  },
 ];
 
 let copied = 0;

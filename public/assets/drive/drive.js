@@ -10,7 +10,7 @@ import {
   copyText, fileIcon, avatar, debounce,
 } from '../ui.js';
 import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
-import { arcSeed, dlUrl, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
+import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 
 export { arcSeed };
 
@@ -24,6 +24,19 @@ const AUD_RE = /^audio\//;
 // 浏览器对 .aac 等音频常常不报 MIME,按扩展名兜底识别
 const AUD_EXTS = new Set(['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'oga', 'opus', 'weba', 'wma', 'mka', 'aiff', 'aif']);
 const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
+// What the Markdown editor will open. Nothing else is offered it, because everything else it
+// would open as plain text and save back as Markdown, which is a way to quietly change what a
+// file is.
+// Markdown 编辑器愿意打开的东西。别的一概不提供 ——
+// 因为别的它都会当纯文本打开、再当 Markdown 存回去,那是一种悄悄改变"一个文件是什么"的做法。
+const MD_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd']);
+// What to put in an address so that it changes when the file does. A versioned file has a version
+// to name; one that keeps no history has only the moment it last changed, which serves the same
+// purpose here -- a cache is being told the bytes moved, not which bytes they are.
+// 往地址里放什么,才能让它随文件一起改变。有版本的文件有版本可指名;
+// 不保留历史的只有"它上次改动的那一刻",而在这里两者作用相同 ——
+// 我们是在告诉缓存"字节动过了",不是在告诉它那是哪一份字节。
+const verTag = (n) => n.ver_head || n.updated_at || '';
 
 // Archives browsable as read-only folders (arc.js, lazy). Extensions map to ranged readers:
 // the zip family shares one, 7z has its own.
@@ -179,6 +192,7 @@ function frame() {
         <wa-dropdown id="drv-new-dd">
           <wa-button slot="trigger" class="compose-btn drv-new">${icon('plus', 20)}<span>${esc(t('drv_new'))}</span></wa-button>
           <wa-dropdown-item value="folder">${icon('folder-plus', 18)} ${esc(t('drv_new_folder'))}</wa-dropdown-item>
+          <wa-dropdown-item value="md">${icon('fileText', 18)} ${esc(t('drv_new_md'))}</wa-dropdown-item>
           <wa-dropdown-item value="files">${icon('upload', 18)} ${esc(t('drv_upload_files'))}</wa-dropdown-item>
           <wa-dropdown-item value="dir">${icon('upload', 18)} ${esc(t('drv_upload_folder'))}</wa-dropdown-item>
         </wa-dropdown>
@@ -207,6 +221,7 @@ function bindFrame() {
   qs('#drv-new-dd')?.addEventListener('wa-select', (e) => {
     const v = e.detail?.item?.value;
     if (v === 'folder') newFolderDialog();
+    else if (v === 'md') newMarkdownDialog();
     else if (v === 'files') qs('#drv-file-input')?.click();
     else if (v === 'dir') qs('#drv-dir-input')?.click();
   });
@@ -884,9 +899,9 @@ function gridHtml(groups) {
     const oldImg = !n.thumb && n.kind === 'file' && IMG_RE.test(n.mime) && n.size < 20 * 1024 * 1024;
     const bf = oldImg && dst.access !== 'viewer' ? ` data-bf="${esc(n.id)}"` : '';
     const media = n.thumb
-      ? `<img loading="lazy" draggable="false" src="${esc(thumbUrl(n.id, n.ver_head))}" alt="">`
+      ? `<img loading="lazy" draggable="false" src="${esc(thumbUrl(n.id, verTag(n)))}" alt="">`
       : oldImg
-        ? `<img loading="lazy" draggable="false" src="${dlUrl(n.id, true, n.ver_head)}"${bf} alt="">`
+        ? `<img loading="lazy" draggable="false" src="${dlUrl(n.id, true, verTag(n))}"${bf} alt="">`
         : fileIcon(n.name, 44);
     return `
     <div class="drv-card ${n.kind} ${dst.sel.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}" data-i="${i}" draggable="true">
@@ -1092,6 +1107,40 @@ function dropFrameOff() {
 window.addEventListener('dragend', dropFrameOff);
 window.addEventListener('drop', dropFrameOff);
 
+// A tab that wrote to a file says so, and it says what the file became. The row is corrected from
+// the message itself: nothing here is fetched, because nothing here is unknown -- the tab that did
+// the writing was told all of it by the write, and has just passed it along.
+//
+// Only a row already on screen. A file in some other folder has nothing here to correct, and a
+// message arriving while the mail is showing has no listing to correct at all.
+//
+// 某个标签页写了一个文件,于是它说了一声,并且说清了这个文件变成了什么。
+// 那一行是直接用这条消息改正的:这里什么都不去取,因为这里没有什么是未知的 ——
+// 动手写的那个标签页,是被那次写入告知了全部,而它刚刚把这些一并传了过来。
+//
+// 只改屏幕上已有的行。别的目录里的文件在这里没有什么可改正,
+// 而一条在看邮件时到达的消息,压根没有列表可改正。
+try {
+  const ch = new BroadcastChannel(DRIVE_CHANNEL);
+  ch.addEventListener('message', (e) => {
+    if (e.data?.type !== 'node-changed' || !qs('#drv-main')) return;
+    const node = (dst.nodes || []).find((x) => x.id === e.data.id);
+    if (!node) return;
+    const p = e.data.patch || {};
+    if (p.updated_at) node.updated_at = p.updated_at;
+    if (p.size !== undefined) node.size = p.size;
+    if ('ver_head' in p) node.ver_head = p.ver_head;
+    if (p.thumb !== undefined) node.thumb = !!p.thumb;
+    // The count is the one fact the writer could not read off its own answer, only reason about:
+    // a save either made a version or was turned away before it could, and only the first sort
+    // gets announced.
+    // 计数是写入方唯一无法从自己那份答复里读出、只能推断出来的事实:
+    // 一次保存要么造出了一个版本,要么在造出之前就被挡了回去,而只有前一种会被宣告。
+    if (p.bumpVersions) node.ver_count = (node.ver_count || 0) + 1;
+    renderFolderView(qs('#drv-main'));
+  });
+} catch { /* no channel here; the listing still refreshes on its next visit / 没有频道,列表下次进入时照样刷新 */ }
+
 function openNode(n) {
   if (n.kind === 'folder') navigate(`#/drive/folder/${n.id}`);
   else if (!n.arc && ARC_EXTS.has(extOf(n.name)) && !(dst.view === 'trash' || dst.inTrash)) {
@@ -1176,6 +1225,7 @@ function emptyMenuItems() {
   if (dst.access === 'viewer') return [];
   return [
     { ic: 'folder-plus', label: t('drv_new_folder'), fn: () => newFolderDialog() },
+    { ic: 'fileText', label: t('drv_new_md'), fn: () => newMarkdownDialog() },
     { ic: 'upload', label: t('drv_upload_files'), fn: () => qs('#drv-file-input')?.click() },
     { ic: 'upload', label: t('drv_upload_folder'), fn: () => qs('#drv-dir-input')?.click() },
   ];
@@ -1233,6 +1283,18 @@ function menuItems(nodes) {
     out.push(single.kind === 'folder'
       ? { ic: 'folder', label: t('drv_open'), fn: () => openNode(single) }
       : { ic: 'expand', label: t('drv_preview'), fn: () => openPreview(single) });
+    // Editing opens away from here, in a window of its own. The list stays where it is: coming
+    // back to it should not mean loading it again, and a document being written is not a thing to
+    // do on top of something else.
+    // 编辑在别处打开,在它自己的窗口里。列表留在原地:回到它不该意味着再加载一次,
+    // 而"正在写一份文档"也不是一件该压在别的东西上面做的事。
+    if (single.kind === 'file' && canEdit && MD_EXTS.has(extOf(single.name))) {
+      out.push({
+        ic: 'pencil',
+        label: t('md_edit'),
+        fn: () => window.open(`${location.pathname}#/md/${encodeURIComponent(single.id)}`, '_blank', 'noopener'),
+      });
+    }
     if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
     // The views that answer from everywhere at once owe you the address. In a folder you are
     // already standing in it, so the offer would be to go where you are.
@@ -1304,7 +1366,7 @@ async function downloadFiles(nodes) {
 function downloadFile(n, verId) {
   if (n.arc) return downloadArcEntry(n);
   const a = document.createElement('a');
-  a.href = verId ? verUrl(n.id, verId) : dlUrl(n.id, false, n.ver_head);
+  a.href = verId ? verUrl(n.id, verId) : dlUrl(n.id, false, verTag(n));
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1473,6 +1535,33 @@ function promptDialog(title, initial, okLabel) {
       }, 60);
     });
   });
+}
+
+/** Make an empty document and go straight to writing it. The file is created here rather than
+ *  in the editor so that it exists before the tab opens: a tab that has to create its own subject
+ *  is a tab that shows an error when the creation fails, in a window that has nothing else in it.
+ *  造一份空文档,然后直接去写它。文件在这里创建而不是在编辑器里创建,
+ *  好让它在标签页打开之前就已经存在:一个要自己造出自己主题的标签页,
+ *  会在创建失败时变成一扇除了错误什么都没有的窗。 */
+async function newMarkdownDialog() {
+  const raw = await promptDialog(t('drv_new_md'), t('drv_untitled_md'), t('confirm'));
+  if (!raw) return;
+  const name = MD_EXTS.has(extOf(raw)) ? raw : raw + '.md';
+  try {
+    const q = `parent=${encodeURIComponent(currentParent())}&name=${encodeURIComponent(name)}`
+      + `&mime=${encodeURIComponent('text/markdown')}`;
+    const res = await fetch(`/api/drive/upload?${q}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/markdown' },
+      body: new Uint8Array(0),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || 'e_request_failed');
+    reload();
+    window.open(`${location.pathname}#/md/${encodeURIComponent(data.id)}`, '_blank', 'noopener');
+  } catch (e) {
+    toast(tErr(e), true);
+  }
 }
 
 async function newFolderDialog() {
@@ -2171,7 +2260,7 @@ async function renderPdfPreview(node, box) {
     // 再随每页渲染去取该页所需的对象,于是 200 MB 的扫描件不必下完 200 MB 就能显示第一页。
     // 压缩包内条目有意排除 —— 它的字节来自流式 worker,零散的小 Range 意味着
     // 同一个压缩块被反复解码。
-    const url = node.arcUrl || dlUrl(node.id, true, node.ver_head);
+    const url = node.arcUrl || dlUrl(node.id, true, verTag(node));
     // Only worth it above a size. Ranged loading trades one request for a dozen, and pdf.js
     // chases objects across the file to open it at all -- measured on a 2 MB PDF it still
     // pulled 88% of it, in nine round trips instead of one. The saving is the part of a big
@@ -2348,7 +2437,7 @@ function verView(node) {
   return v ? { ...node, size: v.size, mime: v.mime || node.mime } : node;
 }
 
-const pvSrc = (node, inline) => (pv?.verSel ? verUrl(node.id, pv.verSel, inline) : dlUrl(node.id, inline, node.ver_head));
+const pvSrc = (node, inline) => (pv?.verSel ? verUrl(node.id, pv.verSel, inline) : dlUrl(node.id, inline, verTag(node)));
 
 function pickVersion(id) {
   if (!pv) return;
@@ -2497,7 +2586,7 @@ async function paintPreview() {
     body = `
     <div class="drv-audio">
       ${n.thumb
-        ? `<img class="art" src="${esc(thumbUrl(n.id, n.ver_head))}" alt="">`
+        ? `<img class="art" src="${esc(thumbUrl(n.id, verTag(n)))}" alt="">`
         : `<div class="art fallback">${icon('fileAudio', 72)}</div>`}
       <div class="anm">${esc(n.name)}</div>
       <audio controls autoplay src="${esc(src)}"></audio>

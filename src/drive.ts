@@ -52,6 +52,7 @@ import { requireAuth } from './auth';
 import { audit } from './audit';
 import { now, randomToken, uid } from './util';
 import { adminScope, checkDomainScope } from './admin';
+import { mdImage } from './mdimg';
 
 const MB = 1024 * 1024;
 export const DRIVE_HARD_CAP_MB = 10 * 1024 * 1024; // absolute per-user ceiling / 每用户绝对上限(10TB)
@@ -652,6 +653,10 @@ async function accessFileCached(c: any, nodeId: string): Promise<NodeRow> {
   return a.node;
 }
 
+// One remote picture, fetched from here rather than by the reader. See mdimg.ts.
+// 一张远端图片,由这里去取而不是让读者去取。见 mdimg.ts。
+driveApp.get('/img', mdImage);
+
 driveApp.get('/state', (c) => {
   const q = c.get('dq');
   return c.json({ used: q.used, quota: q.quota, single_max: SINGLE_MAX, part_size: PART_SIZE, trash_days: 30 });
@@ -1090,7 +1095,13 @@ driveApp.post('/upload', async (c) => {
   const mime = cleanMime(c.req.query('mime'));
   const hash = cleanHash(c.req.query('hash'));
   const len = parseInt(c.req.header('Content-Length') || '', 10);
-  if (!c.req.raw.body || !Number.isFinite(len) || len < 0) throw new HttpError(400, 'e_drive_body_required');
+  // An empty file is a thing somebody may want to make -- a document they are about to write into
+  // -- and a body of zero bytes is how you would say so. Requiring a body said it could not be
+  // said at all.
+  // 空文件是有人可能想造出来的东西 —— 一份他正要往里写的文档 —— 而零字节的请求体正是这么说的方式。
+  // 硬性要求有 body,等于说这件事根本说不出口。
+  if (!Number.isFinite(len) || len < 0) throw new HttpError(400, 'e_drive_body_required');
+  if (len > 0 && !c.req.raw.body) throw new HttpError(400, 'e_drive_body_required');
   if (len > SINGLE_MAX) throw new HttpError(413, 'e_drive_part_too_big');
   const oldSize = clash?.size || 0;
   const q0 = await driveQuota(c.env, target.ownerId);
@@ -1121,7 +1132,7 @@ driveApp.post('/upload', async (c) => {
   // 于是最终落进那一行的值,是字节已经为之作过答的 —— 下一次上传才敢凭它什么都不发。
   let obj: R2Object | null;
   try {
-    obj = await c.env.RAW.put(key, c.req.raw.body, {
+    obj = await c.env.RAW.put(key, len ? c.req.raw.body : new Uint8Array(0), {
       httpMetadata: { contentType: mime },
       ...(hash ? { sha256: hash } : {}),
     });
@@ -1367,6 +1378,63 @@ function parseRange(h: string | undefined): any {
 
 driveApp.get('/files/:id/dl', async (c) => serveFile(c, await accessFileCached(c, c.req.param('id'))));
 
+/** A picture named the way a document names one: by where it sits relative to the document. In a
+ *  repository `![](img/logo.png)` means the file at that path beside this one, and a document
+ *  written that way should keep working when it is put in a drive instead.
+ *
+ *  It may look beside itself and below itself, and nowhere else. Not because climbing out would
+ *  reach something forbidden -- every step is checked against the same permissions as any other
+ *  read, so it could not -- but because a document that reaches above its own folder is a document
+ *  that stops working the moment somebody moves it, and the person who moved it will have no way
+ *  to know they broke it.
+ *
+ *  一张按"文档如何指名图片"的方式被指名的图片:按它相对于文档所在的位置。
+ *  在一个代码仓库里,`![](img/logo.png)` 指的是与这份文档并排的那条路径上的文件;
+ *  而一份这样写出来的文档,被放进网盘之后也该照样能用。
+ *
+ *  它可以看向自己身旁,和自己之下,别处不行。不是因为往上爬会够到禁地 ——
+ *  每一步都按与任何其它读取相同的权限核过,它够不到 ——
+ *  而是因为一份伸到自己目录之上的文档,会在有人搬动它的那一刻失效,
+ *  而搬动它的那个人,没有任何办法知道自己弄坏了它。 */
+driveApp.get('/rel', async (c) => {
+  const base = String(c.req.query('base') || 'root');
+  const rel = String(c.req.query('p') || '');
+  if (rel.length > 1024) throw new HttpError(400, 'e_bad_request');
+  const segs = rel.split('/').filter((s) => s !== '' && s !== '.');
+  if (!segs.length || segs.length > DEPTH_MAX) throw new HttpError(400, 'e_bad_request');
+  if (segs.some((s) => s === '..')) throw new HttpError(403, 'e_md_rel_escape');
+
+  let ownerId: string;
+  let parentId: string | null;
+  if (base === 'root') {
+    ownerId = (c.get('user') as User).id;
+    parentId = null;
+  } else {
+    const a = await accessNode(c, base, 'view');
+    if (a.node.kind !== 'folder') throw new HttpError(400, 'e_drive_not_folder');
+    ownerId = a.node.owner_id;
+    parentId = a.node.id;
+  }
+  // Walking down from a folder the caller may already read keeps the whole walk inside what they
+  // may already read; there is no step here that widens anything.
+  // 从一个调用者本就可读的目录往下走,整条路径都留在他本就可读的范围内;
+  // 这里没有哪一步会把范围放宽。
+  let node: NodeRow | null = null;
+  for (let i = 0; i < segs.length; i++) {
+    const last = i === segs.length - 1;
+    node = await findClash(c.env, ownerId, parentId, segs[i], last ? 'file' : 'folder');
+    if (!node) throw new HttpError(404, 'e_drive_not_found');
+    parentId = node.id;
+  }
+  // A link is followed rather than displayed, so its target has to be identified before it can be
+  // opened the right way -- another document belongs in the editor, anything else in a tab of its
+  // own. One walk answers both questions; only the last step differs.
+  // 链接是被跟随而不是被显示的,所以在能以正确的方式打开它之前,得先弄清它指向什么 ——
+  // 另一份文档该进编辑器,别的该进一个自己的标签页。同一次行走回答两个问题,只有最后一步不同。
+  if (c.req.query('meta') === '1') return c.json({ node: nodeJson(node!, false) });
+  return serveFile(c, node!);
+});
+
 /** Stream a file node out of R2, honouring Range. Shared by the signed-in endpoint and the
  *  public share endpoint -- the two differ only in how they decided the caller may see it.
  *  从 R2 流出一个文件节点,支持 Range。登录端点与公开共享端点共用 ——
@@ -1374,6 +1442,45 @@ driveApp.get('/files/:id/dl', async (c) => serveFile(c, await accessFileCached(c
 async function serveFile(c: any, node: NodeRow): Promise<Response> {
   if (node.kind !== 'file' || !node.r2_key) throw new HttpError(400, 'e_drive_not_file');
   const range = parseRange(c.req.header('Range'));
+  const tag = `"${etagOf(node)}"`;
+
+  // Every reader must ask, and asking is nearly free.
+  //
+  // The address of a file does not change when its contents do. Within one browser we can put a
+  // token in it and move the token when we know -- but knowing is the part that does not travel:
+  // a colleague reading a shared folder from another machine has no way to be told, so their
+  // token stays where it was and an hour of freshness becomes an hour of the wrong file. The
+  // token is an optimisation; it cannot be the thing correctness rests on.
+  //
+  // So nothing here is served without being revalidated, and revalidation is made cheap the way
+  // HTTP has always made it cheap: a reader sends back the tag it holds, and when it still
+  // matches, the answer is a header and no bytes at all. Which is also the answer to "check when
+  // it is opened" -- this is that check, at the one layer where every opener gets it.
+  //
+  // 每个读者都必须问一句,而问这一句几乎不花什么。
+  //
+  // 文件的地址不随内容改变。在同一个浏览器内,我们可以往地址里放一个令牌,并在我们知情时移动它 ——
+  // 但"知情"恰恰是传不出去的那一半:一位同事在另一台机器上读一个共享目录,没有任何途径被告知,
+  // 于是他的令牌停在原处,而"一小时新鲜"就成了一小时的错文件。
+  // 令牌是优化;它不能是正确性所倚仗的东西。
+  //
+  // 所以这里没有什么是不经回源验证就供出的,而验证之所以便宜,用的是 HTTP 一直以来让它便宜的办法:
+  // 读者把手上那个标签送回来,若它仍然吻合,答复就是一个头部,一个字节的正文都没有。
+  // 这同时也是"打开的时候检查一下"的答案 —— 这就是那次检查,做在唯一一个让每个打开者都受益的层上。
+  const inm = c.req.header('If-None-Match');
+  if (!range && inm && inm.split(',').some((v: string) => {
+    const x = v.trim().replace(/^W\//, '');
+    return x === '*' || x === tag;
+  })) {
+    // A 304 carries no body, so it carries the headers that decide what happens to the copy the
+    // reader already has -- and nothing else.
+    // 304 不带正文,所以它带的是那些决定"读者手上那份副本会怎样"的头部 —— 别的一概不带。
+    return new Response(null, {
+      status: 304,
+      headers: { ETag: tag, 'Cache-Control': 'private, no-cache' },
+    });
+  }
+
   const obj: any = await c.env.RAW.get(node.r2_key, range ? { range } : undefined);
   if (!obj) throw new HttpError(404, 'e_drive_not_found');
   const mime = (node.mime || '').toLowerCase();
@@ -1381,15 +1488,8 @@ async function serveFile(c: any, node: NodeRow): Promise<Response> {
   const h = new Headers();
   h.set('X-Content-Type-Options', 'nosniff');
   h.set('Accept-Ranges', 'bytes');
-  // Same trap one layer out. The URL of a file does not change when its contents do, so an hour
-  // of freshness means an hour in which a reader can be shown what they already replaced. A file
-  // that keeps history must therefore be revalidated -- it may still be stored, and the ETag is
-  // the version id, so asking costs a round trip and answers exactly the right question.
-  // 同一个陷阱,在外面一层。文件的 URL 不随内容改变,于是"一小时新鲜"意味着有一小时之久,
-  // 读者可能被展示他自己已经替换掉的东西。保留历史的文件因此必须回源验证 ——
-  // 它仍然可以被存下来,而 ETag 就是版本 id,于是问这一句只花一趟往返,答的正是该问的那个问题。
-  h.set('Cache-Control', node.versioned ? 'private, no-cache' : 'private, max-age=3600');
-  h.set('ETag', `"${etagOf(node)}"`);
+  h.set('Cache-Control', 'private, no-cache');
+  h.set('ETag', tag);
   h.set('Content-Type', inline ? (mime === 'text/plain' ? 'text/plain; charset=utf-8' : mime) : mime || 'application/octet-stream');
   h.set('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(node.name)}`);
   if (range) {
