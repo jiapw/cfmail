@@ -476,8 +476,34 @@ step('数据库迁移');
     // wrangler prints its confirmation blurb and exits 0 even when it applied nothing, so the
     // only trustworthy check is to ask again.
     // wrangler 就算一条都没执行也会打印那段说明并以 0 退出,所以唯一可信的检查是再问一次。
-    const after = wranglerOut(['d1', 'migrations', 'list', D1_NAME, '--remote', '-c', CONFIG]);
-    if (!/No migrations to apply/i.test(after.out)) {
+    // Ask again, and be willing to ask more than once.
+    //
+    // The apply reported success for every migration in the list, but the list read back straight
+    // afterwards can still show them pending: what was written and what this next query reads are
+    // not guaranteed to be the same moment. Dying on the first disagreement turns that into an
+    // aborted deployment against a database that is, in fact, fully migrated -- which is what
+    // happened once, and cost a deploy.
+    //
+    // Each attempt is a network round trip, so the retries are spaced by their own cost. If it
+    // still disagrees after three, the disagreement is real and stopping is right: the one thing
+    // worse than not deploying is deploying code against a schema that cannot hold it.
+    //
+    // 再问一次,并且允许多问几次。
+    //
+    // apply 对列表里的每一条都报了成功,但紧接着读回来的列表仍可能显示它们待应用:
+    // 写下的那一刻与这次查询读到的那一刻,并不保证是同一刻。
+    // 一有分歧就退出,会把这件事变成"对着一个其实已经迁移完毕的库中止部署" ——
+    // 这正是发生过一次、赔掉一次部署的事。
+    //
+    // 每次尝试都是一趟网络往返,所以重试之间自带间隔。若三次之后仍然不一致,
+    // 那这个不一致就是真的,停下来是对的:比不部署更糟的,是把代码部署到一个装不下它的表结构上。
+    let settled = false;
+    for (let i = 0; i < 3 && !settled; i++) {
+      const after = wranglerOut(['d1', 'migrations', 'list', D1_NAME, '--remote', '-c', CONFIG]);
+      settled = /No migrations to apply/i.test(after.out);
+      if (!settled && i < 2) log('迁移状态尚未一致,再查一次');
+    }
+    if (!settled) {
       die('迁移之后仍有未应用的项,已中止。请手动查看:\n' +
           '    npx wrangler d1 migrations list ' + D1_NAME + ' --remote');
     }
