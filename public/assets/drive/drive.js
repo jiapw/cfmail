@@ -3074,6 +3074,50 @@ function standingFile(f, parent) {
   return dst.shown.find((x) => x.kind === 'file' && x.name === f.name) || null;
 }
 
+/** How many goes one part gets before it takes the whole file down with it.
+ *  一片在把整个文件一起拖垮之前,有几次机会。 */
+const PART_TRIES = 3;
+
+const naptime = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One part of a multipart upload, with another go or two if the wire drops it.
+ *
+ * Retrying is worth more here than anywhere else in this file, because of what it costs not to. A
+ * file only goes out in parts when it is too big to go in one, and without a retry a single
+ * dropped connection anywhere in it throws away every part that already landed. The parts are
+ * independent and each carries its own number, so the one that failed is the only one that has to
+ * be sent again -- R2 is perfectly willing to be handed part five twice.
+ *
+ * The progress is put back to where the part started before each new attempt. Those bytes did not
+ * land; a bar that keeps them is a bar that reaches the end before the file does.
+ *
+ * 分片上传中的一片,如果线路把它丢了,再给它一两次机会。
+ *
+ * 重试在这里比在这个文件的任何别处都值钱,因为不重试的代价在这里最大。
+ * 一个文件只有在大到装不进一次请求时才会被分片发出,而没有重试的话,
+ * 其中任何一次掉线都会把已经落地的每一片一起扔掉。各片是独立的、各自带着编号,
+ * 所以失败的那一片是唯一需要重发的一片 —— 把第五片交给 R2 两次,它完全不介意。
+ *
+ * 每次新的尝试之前,进度会被放回这一片开始时的位置。那些字节没有落地;
+ * 一个把它们留着的进度条,会在文件到达之前就走到头。
+ */
+async function sendPart(id, n, chunk, task, onProgress) {
+  for (let attempt = 1; ; attempt++) {
+    if (task.cancelled) throw new Error('cancelled');
+    try {
+      return await xhrSend('PUT', `/api/drive/upload/${id}/part?n=${n}`, chunk, onProgress, task);
+    } catch (e) {
+      // A cancel is not a failure to retry through; it is the answer.
+      // 取消不是一个"重试穿过去"的失败,它就是答案本身。
+      if (task.cancelled || e?.message === 'cancelled') throw e;
+      if (attempt >= PART_TRIES) throw e;
+      onProgress?.(0);
+      await naptime(300 * attempt);
+    }
+  }
+}
+
 async function uploadOne(f, parent, task, base) {
   const st = dst.state || { single_max: 90 * 1024 * 1024, part_size: 32 * 1024 * 1024 };
   const prog = (extra) => (loaded) => {
@@ -3116,7 +3160,7 @@ async function uploadOne(f, parent, task, base) {
   for (let n = 1, off = 0; off < f.size; n++, off += partSize) {
     if (task.cancelled) throw new Error('cancelled');
     const chunk = f.slice(off, Math.min(off + partSize, f.size));
-    const r = await xhrSend('PUT', `/api/drive/upload/${init.id}/part?n=${n}`, chunk, prog(sent), task);
+    const r = await sendPart(init.id, n, chunk, task, prog(sent));
     parts.push({ n: r.n, etag: r.etag });
     sent += chunk.size;
     task.sent = base + sent;
