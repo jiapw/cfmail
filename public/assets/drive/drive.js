@@ -2691,10 +2691,13 @@ async function convertAndPlay(n, src) {
     const blob = await res.blob();
     if (!box()) return;
     const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
-    const mp4 = await mod.toMp4(blob);
+    const { blob: mp4, silent } = await mod.toMp4(blob);
     const el = box();
     if (!el) return;
     pvBlob = URL.createObjectURL(mp4);
+    // The film plays; the sound does not exist in a form anything here can read.
+    // 片子会放;而那路声音,不存在于这里任何东西读得懂的形式里。
+    if (silent) toast(t('drv_vid_silent', silent.toUpperCase()));
     const v = el.querySelector('.drv-view-body video');
     if (v) {
       v.src = pvBlob;
