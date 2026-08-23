@@ -128,13 +128,13 @@ The `webcodecs` variant of the npm package `@libav.js/variant-webcodecs` v6.10.9
 
 It is here because a browser plays a handful of containers and refuses the rest, and what it refuses is not always something it could not decode. A Matroska file usually holds H.264 or VP9 or AV1 — codecs every browser has decoders for. So the container is changed in the browser and the result goes to an ordinary `<video>`; no frame is decoded or re-encoded on the way. The build contains **parsers but no video decoders**, which is exactly the point: it can open the box, and the browser does the rest.
 
-**Source availability.** FFmpeg is LGPL, so distributing a build of it carries an obligation to make the corresponding source available. This project ships the upstream build unmodified, and the complete corresponding source for this exact version is published by the upstream project: the full `libav.js` npm package at version 6.10.9 contains it under `sources/` (FFmpeg 9.0, Opus 1.6.1, zlib 1.3.2 and the libav.js build scripts), and the same is in the release at <https://github.com/Yahweasel/libav.js/releases/tag/v6.10.9>. Anyone who wants the source of what runs here should take it from there; if that ever stops being true, the tarballs have to start shipping alongside the build.
+**Source.** The build is upstream's, unmodified, and its source is upstream's: <https://github.com/Yahweasel/libav.js> at tag `v6.10.9`. Nothing is rebuilt or patched here, so there is no corresponding source of ours to publish.
 
 自 npm 包 `@libav.js/variant-webcodecs` v6.10.9 的 `webcodecs` 变体 —— 即编译成 WebAssembly 的 FFmpeg 各库。只发三个文件:加载器、Emscripten 胶水层与 `.wasm`,别的一律不发:线程版需要 `SharedArrayBuffer`,而那需要整个站点处于跨源隔离状态;asm.js 那份 4.5 MB 是给多年前就已不存在的浏览器准备的。本项目未修改其源码。
 
 它在这里,是因为浏览器只认少数几种容器、其余一概拒收,而它拒收的东西并不总是它解不了的东西。一个 Matroska 文件里装的通常是 H.264、VP9 或 AV1 —— 每个浏览器都有这些编码的解码器。所以就在浏览器里把容器换掉,换出来的东西交给一个普通的 `<video>`;整个过程没有一帧被解码或重新编码。这份构建**含解析器而不含视频解码器**,而这恰恰是要点:它负责打开盒子,其余交给浏览器。
 
-**源码可获取性。** FFmpeg 是 LGPL,分发它的构建就负有"让相应源码可获取"的义务。本项目原样分发上游构建,而这一确切版本的完整对应源码由上游发布:完整的 `libav.js` npm 包(6.10.9 版)在 `sources/` 下带着它(FFmpeg 9.0、Opus 1.6.1、zlib 1.3.2 以及 libav.js 的构建脚本),<https://github.com/Yahweasel/libav.js/releases/tag/v6.10.9> 的发布件里也是同一份。想要这里所跑之物的源码,应从那里取;这一点若哪天不再成立,那些源码包就必须随构建一起发。
+**源码。** 这份构建是上游的、未经修改,它的源码也是上游的:<https://github.com/Yahweasel/libav.js>,标签 `v6.10.9`。这里既不重新构建也不打补丁,因此不存在属于我们的"相应源码"需要发布。
 
 ---
 
