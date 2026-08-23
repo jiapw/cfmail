@@ -61,12 +61,51 @@ FRAGMENTS='[
   "encoder-aac","audio-filters"
 ]'
 
-command -v docker >/dev/null || { echo "需要 docker,没找到 / docker is required and was not found" >&2; exit 1; }
+# Docker may be next door rather than here.
+#
+# On Windows the shell that runs this has no `docker`, but the Linux beside it very well may: a
+# WSL distribution is where Docker Engine lives when nobody wanted Docker Desktop. So if there is
+# no docker here and there is one there, this goes there and runs again -- once, and only when the
+# hop would actually help.
+#
+# The work directory moves too, and that is not a detail. A clone plus an FFmpeg build on /mnt is
+# every file crossing the boundary between two filesystems, which turns a long build into a much
+# longer one. Inside the distribution's own filesystem it is an ordinary build; the only thing that
+# has to cross is the handful of files at the end.
+#
+# Docker 可能在隔壁,而不在这里。
+#
+# 在 Windows 上,跑这个脚本的 shell 没有 `docker`,但它旁边那个 Linux 很可能有:
+# 当没人想要 Docker Desktop 时,Docker Engine 就住在某个 WSL 发行版里。
+# 所以这里没有、那里有的话,就到那边去、再跑一遍 —— 只跳一次,而且只在这一跳真有帮助时跳。
+#
+# 工作目录也跟着搬,而这不是细节。在 /mnt 上做一次克隆加一次 FFmpeg 编译,
+# 意味着每一个文件都要穿过两个文件系统之间的那道界,把一次长编译变成一次长得多的编译。
+# 放进那个发行版自己的文件系统里,它就是一次普通的编译;需要穿界的只有最后那几个文件。
+if ! command -v docker >/dev/null 2>&1; then
+  if command -v wsl.exe >/dev/null 2>&1 && wsl.exe -e sh -c 'command -v docker' >/dev/null 2>&1; then
+    # wsl.exe writes its own notices to stderr in UTF-16, so that stream is dropped and what is
+    # left is stripped of nulls and carriage returns: the answer, not the commentary around it.
+    # wsl.exe 会把它自己的提示以 UTF-16 写进 stderr,所以那个流被丢掉,
+    # 剩下的再去掉空字节与回车:留下答案,不留它周围的旁白。
+    there="$(wsl.exe -e wslpath -a "$(cd "$HERE" && pwd -W 2>/dev/null || echo "$HERE")" 2>/dev/null \
+      | tr -d '\000\r' | grep -a . | tail -n 1)"
+    [ -n "$there" ] || { echo "算不出 WSL 里的路径 / could not map this path into WSL" >&2; exit 1; }
+    echo "▸ 本机没有 docker,改到 WSL 里跑 / no docker here, running in WSL"
+    exec wsl.exe -e bash -c "LIBAV_WORK=\"\$HOME/.cfmail-libav\" bash '$there/scripts/build-libav.sh'"
+  fi
+  echo "需要 docker,没找到 / docker is required and was not found" >&2
+  exit 1
+fi
 
 echo "▸ 取源码 / fetching sources (libav.js v$VERSION)"
 mkdir -p "$WORK"
 if [ ! -d "$WORK/libav.js" ]; then
-  git clone --depth 1 --branch "v$VERSION" https://github.com/Yahweasel/libav.js "$WORK/libav.js"
+  # The tag carries a build number the npm version does not: 6.10.9 on npm is v6.10.9.0 here,
+  # and it is the same number that ends up in the built filenames.
+  # 标签上多带一个 npm 版本号里没有的构建号:npm 上的 6.10.9 在这里是 v6.10.9.0,
+  # 而那也正是最终出现在产物文件名里的那个号。
+  git clone --depth 1 --branch "v$VERSION.0" https://github.com/Yahweasel/libav.js "$WORK/libav.js"
 fi
 cd "$WORK/libav.js"
 git submodule update --init --recursive
