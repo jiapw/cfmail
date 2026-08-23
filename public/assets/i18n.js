@@ -6039,15 +6039,15 @@ Object.assign(DICTS.ru, { drv_arc_bad: 'Не удалось открыть эт�
 // A film in a box the browser will not open: being changed, too big to change, or holding a codec
 // nothing here can decode.
 // 一部装在浏览器打不开的盒子里的片子:正在换盒子、大到换不动、或者装着这里解不了的编码。
-Object.assign(DICTS['zh-CN'], { drv_vid_converting: '正在转换容器,不重新编码…', drv_vid_no_codec: '浏览器放不了这个视频的编码,下载后用本地播放器打开' });
-Object.assign(DICTS['zh-TW'], { drv_vid_converting: '正在轉換容器,不重新編碼…', drv_vid_no_codec: '瀏覽器放不了這個影片的編碼,下載後用本機播放器開啟' });
-Object.assign(DICTS.en, { drv_vid_converting: 'Changing the container, not re-encoding…', drv_vid_no_codec: 'This video uses a codec the browser cannot play. Download it and open it in a media player.' });
-Object.assign(DICTS.ja, { drv_vid_converting: 'コンテナを変換中(再エンコードはしません)…', drv_vid_no_codec: 'この動画のコーデックはブラウザーで再生できません。ダウンロードしてプレーヤーで開いてください。' });
-Object.assign(DICTS.ko, { drv_vid_converting: '컨테이너 변환 중 (재인코딩 없음)…', drv_vid_no_codec: '이 동영상의 코덱은 브라우저에서 재생할 수 없습니다. 내려받아 재생기로 여세요.' });
-Object.assign(DICTS.de, { drv_vid_converting: 'Container wird umgepackt, kein Neukodieren …', drv_vid_no_codec: 'Der Codec dieses Videos lässt sich im Browser nicht abspielen. Laden Sie es herunter und öffnen Sie es in einem Player.' });
-Object.assign(DICTS.fr, { drv_vid_converting: 'Changement de conteneur, sans réencodage…', drv_vid_no_codec: 'Le codec de cette vidéo n’est pas lisible dans le navigateur. Téléchargez-la et ouvrez-la dans un lecteur.' });
-Object.assign(DICTS.es, { drv_vid_converting: 'Cambiando el contenedor, sin recodificar…', drv_vid_no_codec: 'El navegador no puede reproducir el códec de este vídeo. Descárgalo y ábrelo en un reproductor.' });
-Object.assign(DICTS.ru, { drv_vid_converting: 'Меняем контейнер, без перекодирования…', drv_vid_no_codec: 'Браузер не может воспроизвести кодек этого видео. Скачайте его и откройте в плеере.' });
+Object.assign(DICTS['zh-CN'], { drv_vid_converting: '正在转换容器…', drv_vid_no_codec: '浏览器放不了这个视频的编码,下载后用本地播放器打开' });
+Object.assign(DICTS['zh-TW'], { drv_vid_converting: '正在轉換容器…', drv_vid_no_codec: '瀏覽器放不了這個影片的編碼,下載後用本機播放器開啟' });
+Object.assign(DICTS.en, { drv_vid_converting: 'Changing the container…', drv_vid_no_codec: 'This video uses a codec the browser cannot play. Download it and open it in a media player.' });
+Object.assign(DICTS.ja, { drv_vid_converting: 'コンテナを変換中…', drv_vid_no_codec: 'この動画のコーデックはブラウザーで再生できません。ダウンロードしてプレーヤーで開いてください。' });
+Object.assign(DICTS.ko, { drv_vid_converting: '컨테이너 변환 중…', drv_vid_no_codec: '이 동영상의 코덱은 브라우저에서 재생할 수 없습니다. 내려받아 재생기로 여세요.' });
+Object.assign(DICTS.de, { drv_vid_converting: 'Container wird umgepackt …', drv_vid_no_codec: 'Der Codec dieses Videos lässt sich im Browser nicht abspielen. Laden Sie es herunter und öffnen Sie es in einem Player.' });
+Object.assign(DICTS.fr, { drv_vid_converting: 'Changement de conteneur…', drv_vid_no_codec: 'Le codec de cette vidéo n’est pas lisible dans le navigateur. Téléchargez-la et ouvrez-la dans un lecteur.' });
+Object.assign(DICTS.es, { drv_vid_converting: 'Cambiando el contenedor…', drv_vid_no_codec: 'El navegador no puede reproducir el códec de este vídeo. Descárgalo y ábrelo en un reproductor.' });
+Object.assign(DICTS.ru, { drv_vid_converting: 'Меняем контейнер…', drv_vid_no_codec: 'Браузер не может воспроизвести кодек этого видео. Скачайте его и откройте в плеере.' });
 
 // Everything the drive knows about one thing, in one place.
 // 网盘关于一样东西所知道的一切,放在一处。
@@ -6072,3 +6072,12 @@ Object.assign(DICTS.de, { drv_vid_silent: 'Die {0}-Tonspur dieses Videos lässt 
 Object.assign(DICTS.fr, { drv_vid_silent: 'La piste audio {0} de cette vidéo n’est pas lisible dans le navigateur ; elle est lue sans son', e_drive_no_streams: 'Rien de lisible dans ce fichier', e_drive_remux_failed: 'Impossible de changer le conteneur', e_drive_video_codec: 'Le navigateur ne peut pas décoder le codec de cette vidéo' });
 Object.assign(DICTS.es, { drv_vid_silent: 'El navegador no puede reproducir el audio {0} de este vídeo; se reproduce sin sonido', e_drive_no_streams: 'No hay nada reproducible en este archivo', e_drive_remux_failed: 'No se pudo cambiar el contenedor', e_drive_video_codec: 'El navegador no puede decodificar el códec de este vídeo' });
 Object.assign(DICTS.ru, { drv_vid_silent: 'Браузер не может воспроизвести звук {0} этого видео — видео идёт без звука', e_drive_no_streams: 'В этом файле нечего воспроизводить', e_drive_remux_failed: 'Не удалось сменить контейнер', e_drive_video_codec: 'Браузер не может декодировать кодек этого видео' });
+Object.assign(DICTS['zh-CN'], { drv_dl_title: '正在下载 {0} 项', drv_dl_done: '已完成 {0} 项下载', drv_dl_preparing: '正在整理要下载的文件', drv_tx_title: '正在传输 {0} 项', drv_tx_done: '已完成 {0} 项', drv_dl_nodir: '这个浏览器不能把内容存进指定文件夹,目录没有下载。换 Chrome 或 Edge 再试。' });
+Object.assign(DICTS['zh-TW'], { drv_dl_title: '正在下載 {0} 項', drv_dl_done: '已完成 {0} 項下載', drv_dl_preparing: '正在整理要下載的檔案', drv_tx_title: '正在傳輸 {0} 項', drv_tx_done: '已完成 {0} 項', drv_dl_nodir: '這個瀏覽器不能把內容存進指定資料夾,目錄沒有下載。換 Chrome 或 Edge 再試。' });
+Object.assign(DICTS.en, { drv_dl_title: 'Downloading {0} item(s)', drv_dl_done: '{0} download(s) complete', drv_dl_preparing: 'Preparing download', drv_tx_title: 'Transferring {0} item(s)', drv_tx_done: '{0} item(s) complete', drv_dl_nodir: 'This browser cannot save into a folder you choose, so the folders were left out. Try Chrome or Edge.' });
+Object.assign(DICTS.ja, { drv_dl_title: '{0} 件のアイテムをダウンロード中', drv_dl_done: '{0} 件のダウンロードが完了', drv_dl_preparing: 'ダウンロードの準備中', drv_tx_title: '{0} 件のアイテムを転送中', drv_tx_done: '{0} 件が完了', drv_dl_nodir: 'このブラウザーは指定フォルダーへの保存ができないため、フォルダーは対象外になりました。Chrome か Edge をお使いください。' });
+Object.assign(DICTS.ko, { drv_dl_title: '{0}개 항목 내려받는 중', drv_dl_done: '내려받기 {0}건 완료', drv_dl_preparing: '내려받기 준비 중', drv_tx_title: '{0}개 항목 전송 중', drv_tx_done: '{0}건 완료', drv_dl_nodir: '이 브라우저는 지정한 폴더에 저장할 수 없어 폴더는 제외했습니다. Chrome이나 Edge를 사용하세요.' });
+Object.assign(DICTS.de, { drv_dl_title: '{0} Element(e) werden heruntergeladen', drv_dl_done: '{0} Download(s) abgeschlossen', drv_dl_preparing: 'Download wird vorbereitet', drv_tx_title: '{0} Element(e) werden übertragen', drv_tx_done: '{0} Element(e) abgeschlossen', drv_dl_nodir: 'Dieser Browser kann nicht in einen gewählten Ordner speichern; Ordner wurden ausgelassen. Nutzen Sie Chrome oder Edge.' });
+Object.assign(DICTS.fr, { drv_dl_title: 'Téléchargement de {0} élément(s)', drv_dl_done: '{0} téléchargement(s) terminé(s)', drv_dl_preparing: 'Préparation du téléchargement', drv_tx_title: 'Transfert de {0} élément(s)', drv_tx_done: '{0} élément(s) terminé(s)', drv_dl_nodir: 'Ce navigateur ne peut pas enregistrer dans un dossier choisi ; les dossiers ont été ignorés. Utilisez Chrome ou Edge.' });
+Object.assign(DICTS.es, { drv_dl_title: 'Descargando {0} elemento(s)', drv_dl_done: '{0} descarga(s) completada(s)', drv_dl_preparing: 'Preparando la descarga', drv_tx_title: 'Transfiriendo {0} elemento(s)', drv_tx_done: '{0} elemento(s) completado(s)', drv_dl_nodir: 'Este navegador no puede guardar en una carpeta elegida, así que se omitieron las carpetas. Usa Chrome o Edge.' });
+Object.assign(DICTS.ru, { drv_dl_title: 'Скачивание объектов: {0}', drv_dl_done: 'Скачиваний завершено: {0}', drv_dl_preparing: 'Подготовка скачивания', drv_tx_title: 'Передача объектов: {0}', drv_tx_done: 'Завершено объектов: {0}', drv_dl_nodir: 'Этот браузер не умеет сохранять в выбранную папку, поэтому папки пропущены. Откройте в Chrome или Edge.' });

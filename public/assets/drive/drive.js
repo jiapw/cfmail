@@ -759,7 +759,7 @@ function selActionsHtml() {
   const trashCtx = dst.view === 'trash' || dst.inTrash;
   const single = nodes.length === 1 ? nodes[0] : null;
   if (dst.view === 'shared') {
-    return nodes.some((n) => n.kind === 'file')
+    return nodes.length
       ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>`
       : '';
   }
@@ -771,7 +771,7 @@ function selActionsHtml() {
   const canEdit = dst.access !== 'viewer';
   const own = dst.access === 'owner';
   return `
-    ${nodes.some((n) => n.kind === 'file') ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>` : ''}
+    ${nodes.length ? `<wa-button class="icon" appearance="plain" data-act="download" title="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>` : ''}
     ${own ? `<wa-button class="icon" appearance="plain" data-act="share" title="${esc(t('drv_share'))}">${icon('share', 20)}</wa-button>` : ''}
     ${own ? `<wa-button class="icon" appearance="plain" data-act="star" title="${esc(t('drv_star'))}">${icon('star', 20)}</wa-button>` : ''}
     ${canEdit ? `<wa-button class="icon" appearance="plain" data-act="move" title="${esc(t('drv_move'))}">${icon('folder-move', 20)}</wa-button>` : ''}
@@ -1257,8 +1257,8 @@ function menuItems(nodes) {
       out.push(single.kind === 'folder'
         ? { ic: 'folder', label: t('drv_open'), fn: () => openNode(single) }
         : { ic: 'expand', label: t('drv_preview'), fn: () => openPreview(single) });
-      if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
-    } else if (nodes.some((n) => n.kind === 'file')) {
+      out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles([single]) });
+    } else if (nodes.length) {
       out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles(nodes) });
     }
     if (single?.share_id) {
@@ -1295,7 +1295,7 @@ function menuItems(nodes) {
         fn: () => window.open(`${location.pathname}${editorHash(editor, single.id)}`, '_blank', 'noopener'),
       });
     }
-    if (single.kind === 'file') out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFile(single) });
+    out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles([single]) });
     // The views that answer from everywhere at once owe you the address. In a folder you are
     // already standing in it, so the offer would be to go where you are.
     // 那些一次从四面八方作答的视图,欠你一个地址。在文件夹里你本来就站在那儿,
@@ -1309,13 +1309,14 @@ function menuItems(nodes) {
     out.push('-');
     if (canEdit && !editorOnRoot) out.push({ ic: 'pencil', label: t('drv_rename'), fn: () => renameDialog(single) });
   }
-  // Downloading several was the one action that only existed for a single file, so selecting
-  // two and asking for them was a gesture with no answer. Folders in the selection are passed
-  // over rather than refused -- the selection is the question, and the files in it are the part
-  // that has an answer.
-  // "下载多个"是唯一只为单个文件存在的动作,于是选中两个再想要它们,是一个没有回答的手势。
-  // 选中项里的目录被略过而不是被拒绝 —— 选区是问题,其中的文件是问题里有答案的那部分。
-  if (!single && nodes.some((n) => n.kind === 'file')) {
+  // Whatever is selected can be taken away, folders included. Passing folders over used to be the
+  // rule here, on the grounds that the files were the part of the question that had an answer --
+  // but a folder somebody selected and asked for is a question with an answer too, and the answer
+  // is the folder.
+  // 选中什么就能带走什么,目录也算。这里过去的规矩是把目录略过,理由是"文件才是这个问题里
+  // 有答案的那部分" —— 但一个被人选中、被人要走的目录,同样是一个有答案的问题,
+  // 而那个答案就是这个目录。
+  if (!single && nodes.length) {
     out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles(nodes) });
     out.push('-');
   }
@@ -1350,19 +1351,54 @@ function menuItems(nodes) {
   return out.filter((x, i, a) => !(x === '-' && (i === 0 || a[i - 1] === '-' || i === a.length - 1)));
 }
 
-/** Several at once. There is no archive to hand over -- zipping a selection would mean holding
- *  it in a worker that has neither the memory nor the CPU for it -- so this is one download per
- *  file, spaced out. The gap is what keeps the browser from reading a burst of clicks as a popup
- *  storm and dropping all but the first.
- *  一次下载多个。这里没有压缩包可交 —— 把选区打包意味着让一个既没内存也没 CPU 的 worker 扛着它 ——
- *  所以是一个文件一次下载,彼此隔开。那点间隔正是为了不让浏览器把连发的点击读成弹窗风暴,
- *  从而只放行第一个。 */
+/**
+ * Whatever is selected, onto the machine.
+ *
+ * One file is one download, the way it has always been: the browser already knows where downloads
+ * go, and asking permission for a folder to put a single file in is a question nobody wanted.
+ *
+ * Anything else -- a folder, or several things -- goes somewhere chosen instead. There is no
+ * archive to hand over: zipping a selection would mean holding it in a worker that has neither the
+ * memory nor the CPU for it. So the selection is written into a folder on the machine, keeping the
+ * shape it had here, which is the thing an archive would have been for.
+ *
+ * Where that cannot be asked for -- Firefox and Safari have no way to hand over a folder -- files
+ * fall back to one download each, spaced out. The gap is what keeps the browser from reading a
+ * burst of clicks as a popup storm and dropping all but the first. Folders have no fallback, and
+ * saying so is better than quietly leaving them out of what was asked for.
+ *
+ * 选中什么,就把什么放到本机上。
+ *
+ * 一个文件就是一次下载,一如既往:浏览器早就知道下载该去哪儿,
+ * 而为了放一个文件去要一个目录的权限,是没人想要的一问。
+ *
+ * 其余情形 —— 一个目录,或者好几样东西 —— 则放进一个由人指定的地方。这里没有压缩包可交:
+ * 把选区打包意味着让一个既没内存也没 CPU 的 worker 扛着它。
+ * 所以选区被写进本机的一个目录里,保持它在这里的形状 —— 而那正是压缩包本来要用来做的事。
+ *
+ * 在要不到那个目录的地方 —— Firefox 和 Safari 没有交出目录的办法 —— 文件退回到"一个一次下载",
+ * 彼此隔开。那点间隔正是为了不让浏览器把连发的点击读成弹窗风暴,从而只放行第一个。
+ * 目录没有退路,而把这件事说出来,好过悄悄把它们从"被要求的东西"里漏掉。
+ */
 async function downloadFiles(nodes) {
-  const files = nodes.filter((n) => n.kind === 'file');
-  if (!files.length) return;
-  for (const [i, n] of files.entries()) {
-    downloadFile(n);
-    if (i < files.length - 1) await new Promise((r) => setTimeout(r, 400));
+  if (!nodes.length) return;
+  // An entry inside an archive is not a node the server knows about -- its bytes exist only where
+  // they were extracted -- so it keeps its own way out.
+  // 压缩包里的条目不是服务端认得的节点 —— 它的字节只存在于它被解出来的地方 ——
+  // 所以它保留它自己的那条出路。
+  const arcs = nodes.filter((n) => n.arc);
+  const real = nodes.filter((n) => !n.arc);
+  const one = !arcs.length && real.length === 1 && real[0].kind === 'file';
+  if (!one && real.length && canSaveInto()) {
+    await downloadInto(real);
+  } else {
+    const folders = real.filter((n) => n.kind === 'folder');
+    if (folders.length && !canSaveInto()) toast(t('drv_dl_nodir'), true);
+    const files = [...arcs, ...real.filter((n) => n.kind === 'file')];
+    for (const [i, n] of files.entries()) {
+      downloadFile(n);
+      if (i < files.length - 1) await new Promise((r) => setTimeout(r, 400));
+    }
   }
 }
 
@@ -1387,6 +1423,203 @@ async function downloadArcEntry(n) {
     a.remove();
   } catch (e) {
     toast(tErr(e), true);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Downloading a selection into a folder on the machine
+// ---------------------------------------------------------------------------------------------
+
+/** What a file system will not take in a name, plus the trailing dot or space Windows rejects.
+ *  Everything else is left alone: it is the name somebody gave the file, and a download that
+ *  quietly renames things is a download somebody has to go and undo.
+ *  文件系统不接受的字符,外加 Windows 不收的尾部句点和空格。其余一律不动:
+ *  那是有人给这个文件起的名字,而一次悄悄改名的下载,是一次事后要有人去还原的下载。 */
+const BAD_LOCAL = /[<>:"/\\|?*]/g;
+const localName = (s) => {
+  const clean = String(s || '').replace(BAD_LOCAL, '_').replace(/[. ]+$/, '');
+  if (clean.length <= 150) return clean || 'unnamed';
+  // Too long for some paths, so it is shortened -- from the middle. Cutting the end takes the
+  // extension with it, and a file that arrives without one is a file the machine no longer knows
+  // what to do with.
+  // 对某些路径来说太长了,于是把它截短 —— 从中间截。从末尾截会连扩展名一起截掉,
+  // 而一个到达时没有扩展名的文件,是一个这台机器不再知道该拿它怎么办的文件。
+  const dot = clean.lastIndexOf('.');
+  const ext = dot > 0 && clean.length - dot <= 12 ? clean.slice(dot) : '';
+  return clean.slice(0, 150 - ext.length) + ext;
+};
+
+/** Whether this browser will hand over a folder to write into. Chrome and Edge will; Firefox and
+ *  Safari have no such thing, and there is no polyfill for asking somebody for a directory.
+ *  这个浏览器会不会交出一个可写的目录。Chrome 和 Edge 会;Firefox 和 Safari 没有这样东西,
+ *  而"向人要一个目录"这件事没有垫片可打。 */
+const canSaveInto = () => typeof window.showDirectoryPicker === 'function';
+
+/**
+ * Everything under one node, flattened, with paths relative to the selection.
+ *
+ * A folder costs one request per folder -- there is no endpoint that hands over a whole tree, and
+ * inventing one would mean a walk of unknown depth inside a request that has a deadline.
+ * Directories are collected alongside files, so a folder that happens to be empty still arrives on
+ * the disk rather than silently not existing.
+ *
+ * 一个节点底下的一切,摊平,路径相对于选中的那个东西。
+ *
+ * 一个目录的代价是"每层一个请求" —— 没有哪个端点会一次交出整棵树,
+ * 而造一个出来意味着在一个有时限的请求里做一次深度不定的遍历。
+ * 目录与文件一同被收集,于是一个恰好是空的目录仍然会落到盘上,而不是悄无声息地不存在。
+ */
+async function walkNode(node, rel, out, prep) {
+  const here = rel ? `${rel}/${localName(node.name)}` : localName(node.name);
+  if (node.kind !== 'folder') {
+    out.files.push({ node, rel: here });
+    out.size += node.size || 0;
+    if (prep) { prep.found = (prep.found || 0) + 1; paintPrep(prep); }
+    return;
+  }
+  out.dirs.push(here);
+  const data = await api('GET', `/api/drive/list?parent=${encodeURIComponent(node.id)}`);
+  for (const child of data.nodes || []) await walkNode(child, here, out, prep);
+}
+
+/**
+ * Ask for a folder, then put the selection in it.
+ *
+ * The permission is asked for first, before anything is counted, because a picker that appears
+ * after a wait is a picker somebody has stopped looking at. What follows goes into the same panel
+ * uploads use: a folder becomes one row with a counter, a file becomes one row with a ring, and
+ * either can be cancelled where it stands.
+ *
+ * 先要一个目录,再把选中的东西放进去。
+ *
+ * 权限先要,而且在清点任何东西之前 —— 因为一个等了一会儿才冒出来的选择框,
+ * 是一个人已经不再看着的选择框。此后的一切进入上传所用的同一个面板:
+ * 一个目录成为带计数的一行,一个文件成为带进度环的一行,而两者都能就地取消。
+ */
+async function downloadInto(nodes) {
+  let root;
+  try {
+    root = await window.showDirectoryPicker({ mode: 'readwrite', id: 'cfmail-drive', startIn: 'downloads' });
+  } catch {
+    return; // the picker was dismissed, which is an answer / 选择框被关掉了,那也是一个答复
+  }
+  const prep = beginPrep(true);
+  const made = [];
+  try {
+    for (const n of nodes) {
+      const out = { files: [], dirs: [], size: 0 };
+      await walkNode(n, '', out, prep);
+      made.push({
+        id: ++up.seq,
+        down: true,
+        root,
+        group: n.kind === 'folder',
+        name: n.name,
+        files: out.files,
+        dirs: out.dirs,
+        size: out.size,
+        sent: 0,
+        done: 0,
+        total: out.files.length,
+        failed: 0,
+        status: 'wait',
+        abort: null,
+        cancelled: false,
+      });
+    }
+  } catch (e) {
+    toast(tErr(e), true);
+  } finally {
+    up.tasks = up.tasks.filter((x) => x !== prep);
+  }
+  up.tasks.push(...made);
+  renderUpPanel();
+  pump();
+}
+
+/** One task: its folders first, so that an empty one exists, then its files in order.
+ *  一个任务:先是它的目录,好让空目录也存在,然后是它的文件,按顺序。 */
+async function runDownload(task) {
+  const dirs = new Map();
+  const dirFor = async (rel) => {
+    if (!rel) return task.root;
+    if (dirs.has(rel)) return dirs.get(rel);
+    const cut = rel.lastIndexOf('/');
+    const parent = await dirFor(cut >= 0 ? rel.slice(0, cut) : '');
+    const h = await parent.getDirectoryHandle(cut >= 0 ? rel.slice(cut + 1) : rel, { create: true });
+    dirs.set(rel, h);
+    return h;
+  };
+  for (const rel of task.dirs) {
+    if (task.cancelled) throw new Error('cancelled');
+    await dirFor(rel);
+  }
+  let base = 0;
+  for (const f of task.files) {
+    if (task.cancelled) throw new Error('cancelled');
+    try {
+      await saveOne(f, dirFor, task, base);
+    } catch (e) {
+      if (task.cancelled) throw e;
+      // One file that would not come down does not end the folder it is in. What it cost is
+      // recorded and the rest carries on, the way a folder upload does.
+      // 一个下不来的文件,不该终结它所在的那个目录。代价被记下来,其余的继续 ——
+      // 和一次目录上传的做法一样。
+      task.failed++;
+      task.err = e?.message || String(e);
+    }
+    base += f.node.size || 0;
+    task.sent = base;
+    task.done++;
+    paintTask(task);
+  }
+  if (task.failed) throw new Error(task.err || 'failed');
+  return null;
+}
+
+/** The bytes of one file, straight from the network into the file it is going to be.
+ *
+ *  Nothing is held: the answer is read as it arrives and written as it is read, so a four-gigabyte
+ *  file costs a buffer rather than four gigabytes. Which is also why the progress is real -- it
+ *  counts what has actually landed.
+ *
+ *  一个文件的字节,从网络直接进入它将要成为的那个文件。
+ *
+ *  什么都不攥着:答复边到达边被读、边被读边被写,于是一个四吉字节的文件花掉的是一个缓冲区,
+ *  而不是四吉字节。这也正是那个进度是真的的原因 —— 它数的是真正落了盘的东西。 */
+async function saveOne(f, dirFor, task, base) {
+  const cut = f.rel.lastIndexOf('/');
+  const dir = await dirFor(cut >= 0 ? f.rel.slice(0, cut) : '');
+  const name = cut >= 0 ? f.rel.slice(cut + 1) : f.rel;
+  task.abort = new AbortController();
+  let w = null;
+  try {
+    const res = await fetch(dlUrl(f.node.id, false, verTag(f.node)), { signal: task.abort.signal });
+    if (!res.ok) throw new Error(tErr('e_request_failed', [res.status]));
+    const fh = await dir.getFileHandle(name, { create: true });
+    w = await fh.createWritable();
+    if (res.body) {
+      const reader = res.body.getReader();
+      let got = 0;
+      let painted = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await w.write(value);
+        got += value.length;
+        task.sent = base + got;
+        // Ten times a second is already past what anybody reads, and this panel is redrawn by
+        // hand rather than whenever the browser feels like it.
+        // 一秒十次已经超过任何人读得过来的速度,而这个面板是手工重绘的,
+        // 不是浏览器什么时候高兴什么时候重绘的。
+        if (performance.now() - painted > 100) { paintTask(task); painted = performance.now(); }
+      }
+    }
+    await w.close();
+    w = null;
+  } finally {
+    if (w) await w.abort().catch(() => {});
+    task.abort = null;
   }
 }
 
@@ -3312,8 +3545,15 @@ async function buildUploads(items) {
  *  这里没有任何东西可以度量:文件系统告诉你它找到了什么,从不告诉你还剩多少,
  *  所以这一行是转圈而不是填充。那个不断上涨的数字不是进度 —— 它没有分母 ——
  *  它只是"在动"与"卡死"之间的差别,而对一个要读十秒的目录来说,那就是全部的问题。 */
-function beginPrep() {
-  const task = { id: ++up.seq, prep: true, name: t('drv_up_preparing'), found: 0, status: 'prep' };
+function beginPrep(down) {
+  const task = {
+    id: ++up.seq,
+    prep: true,
+    down: !!down,
+    name: t(down ? 'drv_dl_preparing' : 'drv_up_preparing'),
+    found: 0,
+    status: 'prep',
+  };
   up.tasks.unshift(task);
   renderUpPanel();
   return task;
@@ -3341,6 +3581,10 @@ function pump() {
       .then((node) => {
         task.status = 'ok';
         task.sent = task.size;
+        // A download landed on the machine, where this application cannot point at it and has
+        // nothing to make a thumbnail of.
+        // 一次下载落在了本机上 —— 这个应用没法指着那儿说"在这里",也没有什么可以拿来做缩略图。
+        if (task.down) return;
         task.node = node; // where it landed: id + parent_id, for click-to-locate / 落点,供点击定位
         // Nothing was written, so nothing about the file went stale -- including its thumbnail.
         // 什么都没写,于是这个文件没有任何东西过期 —— 包括它的缩略图。
@@ -3355,7 +3599,9 @@ function pump() {
       .finally(() => {
         up.active--;
         renderUpPanel();
-        refreshState();
+        // Nothing here changed because something was read, so there is nothing to go and ask about.
+        // 这里没有任何东西因为"有人读了它"而改变,所以没有什么可去打听的。
+        if (!task.down) refreshState();
         if (task.status === 'ok' && task.parent === (dst.view === 'folder' ? dst.folderId : 'root')
           && (dst.view === 'my' || dst.view === 'folder')) reloadSoon();
         pump();
@@ -3391,6 +3637,7 @@ function xhrSend(method, url, blob, onProgress, task) {
 }
 
 async function runTask(task) {
+  if (task.down) return runDownload(task);
   if (!task.group) return uploadOne(task.file, task.parent, task, 0);
   // Group: members go up sequentially; sent aggregates across them, done feeds the x/n badge.
   // Thumbnails queue per member here (pump only handles the single-file case).
@@ -3609,6 +3856,7 @@ function cancelTask(task) {
     task.cancelled = true;
     task.status = 'cancel';
     task.xhr?.abort();
+    task.abort?.abort();
     if (task.srvId) api('POST', `/api/drive/upload/${task.srvId}/abort`).catch(() => {});
   }
   renderUpPanel();
@@ -3632,9 +3880,20 @@ function renderUpPanel() {
     document.body.appendChild(up.panel);
   }
   up.panel.classList.toggle('min', up.min);
+  // The panel carries both directions, so it says which one is happening -- and when both are, it
+  // says the thing that is true of both rather than picking a side.
+  // 这个面板同时承载两个方向,所以它说明正在发生的是哪一个 ——
+  // 而当两个都在发生时,它说那句对两者都成立的话,而不是挑一边站。
+  const done = up.tasks.filter((x) => x.status === 'ok');
+  const word = (list, up1, down1, both) => {
+    const u = list.some((x) => !x.down);
+    const d = list.some((x) => x.down);
+    return t(u && d ? both : d ? down1 : up1, list.length);
+  };
   const head = live.length
-    ? t('drv_up_title', live.length)
-    : busy ? t('drv_up_preparing') : t('drv_up_done', up.tasks.filter((x) => x.status === 'ok').length);
+    ? word(live, 'drv_up_title', 'drv_dl_title', 'drv_tx_title')
+    : busy ? (up.tasks.find((x) => x.status === 'prep')?.name || t('drv_up_preparing'))
+      : word(done, 'drv_up_done', 'drv_dl_done', 'drv_tx_done');
   const status = (x) => {
     // A file that went up and a file that did not need to are both successes, and they are not
     // the same success. Saying which one happened is the difference between "already saved" and
@@ -3663,7 +3922,7 @@ function renderUpPanel() {
     <div class="drv-up-list">
       ${up.tasks.map((x) => `
       <div class="drv-up-item${x.status === 'ok' && (x.node || x.topId) ? ' goto' : ''}" data-tid="${x.id}"${x.status === 'ok' && (x.node || x.topId) ? ` data-goto="${x.id}" title="${esc(t('drv_up_locate'))}"` : ''}>
-        ${x.prep ? `<span class="gfold">${icon('upload', 22)}</span>` : x.group ? `<span class="gfold">${icon('folder', 22)}</span>` : fileIcon(x.name, 24)}
+        ${x.prep ? `<span class="gfold">${icon(x.down ? 'download' : 'upload', 22)}</span>` : x.group ? `<span class="gfold">${icon('folder', 22)}</span>` : fileIcon(x.name, 24)}
         <span class="nm" title="${esc(x.name)}">${esc(x.name)}</span>
         ${x.prep ? `<span class="gcnt">${x.found || ''}</span>` : x.group ? `<span class="gcnt">${x.done}/${x.total}</span>` : ''}
         ${status(x)}
