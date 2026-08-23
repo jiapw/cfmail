@@ -1303,6 +1303,9 @@ function menuItems(nodes) {
     if (LOCATABLE.has(dst.view)) {
       out.push({ ic: 'folder', label: t('drv_up_locate'), fn: () => gotoNode(single.id, single.parent_id) });
     }
+    // Everything known about one thing, for the moment before doing something to it.
+    // 关于一样东西所知道的一切 —— 给动手之前的那一刻。
+    out.push({ ic: 'info', label: t('drv_props'), fn: () => propsDialog(single) });
     out.push('-');
     if (canEdit && !editorOnRoot) out.push({ ic: 'pencil', label: t('drv_rename'), fn: () => renameDialog(single) });
   }
@@ -1593,6 +1596,108 @@ async function newFolderDialog() {
     reload();
   } catch (e) {
     toast(e.message, true);
+  }
+}
+
+/** Everything the drive knows about one thing, in one place.
+ *
+ *  Scattered through the interface already: the size is in the list, the date is in a column, the
+ *  version count is a little chip on the tile, and where the thing actually lives is only knowable
+ *  by looking at the breadcrumbs you happen to be standing in. None of that is wrong; it is just
+ *  that there was nowhere to go and read the whole of it -- which is what somebody wants at the
+ *  moment they are about to do something they cannot undo.
+ *
+ *  The path comes from the server rather than from the breadcrumbs, because the two are not always
+ *  the same thing: a search result is shown from a folder you are not in, and its address is the
+ *  one fact the row cannot tell you.
+ *
+ *  网盘关于一样东西所知道的一切,放在一处。
+ *
+ *  这些东西本来就散落在界面各处:大小在列表里,日期在某一列,版本数是磁贴上的一个小角标,
+ *  而这样东西究竟住在哪儿 —— 只能靠看你恰好站着的那条面包屑推出来。这些都没有错,
+ *  只是没有一个地方可以去把它们一次读完 —— 而那恰恰是一个人正要做某件无法撤销的事时想要的。
+ *
+ *  路径取自服务端而不是面包屑,因为两者并不总是同一回事:
+ *  一条搜索结果是从一个你并不身处其中的目录里被展示出来的,而它的地址正是那一行说不出的那个事实。 */
+async function propsDialog(n) {
+  const d = showModal(`
+    <div class="modal-body drv-props">
+      <div class="hd">
+        ${n.kind === 'folder' ? icon('folder', 40) : fileIcon(n.name, 40)}
+        <div class="who">
+          <div class="nm" title="${esc(n.name)}">${esc(n.name)}</div>
+          <div class="pth dim" id="drv-pp-path">${esc(t('loading'))}</div>
+        </div>
+      </div>
+      <dl id="drv-pp-rows"></dl>
+    </div>
+    <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+      <wa-button variant="brand" data-x="ok">${esc(t('close'))}</wa-button>
+    </div>`);
+  d.addEventListener('click', (e) => { if (e.target.closest('[data-x="ok"]')) closeModal(); });
+
+  // Copying is offered for the two values nobody retypes: the address and the identifier. The
+  // identifier is what the agent API is addressed by, so it is the one most likely to be wanted.
+  // 只为那两个没人会照着重打的值提供复制:地址,和标识符。
+  // 标识符是 agent API 用来寻址的东西,所以最可能被需要的就是它。
+  const copyable = (text, label) => `<span class="cp" data-cp="${esc(text)}" title="${esc(label)}">`
+    + `${esc(text)}${icon('copy', 13)}</span>`;
+  d.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-cp]');
+    if (c) { copyText(c.dataset.cp); toast(t('t_copied')); }
+  });
+
+  // What is known without asking anyone is painted at once; the address needs a round trip and
+  // arrives into the line that is holding its place.
+  // 不问任何人就已经知道的东西立刻画出来;地址需要一次往返,到达后填进那行替它占着位的位置。
+  const rows = [];
+  const add = (k, v) => { if (v !== null && v !== undefined && v !== '') rows.push([k, v]); };
+  const yes = (b) => t(b ? 'drv_prop_yes' : 'drv_prop_no');
+
+  add(t('drv_prop_kind'), n.kind === 'folder' ? t('drv_prop_folder') : (n.mime || t('drv_prop_file')));
+  if (n.kind === 'file') {
+    add(t('drv_prop_size'), `${fmtSize(n.size || 0)} · ${(n.size || 0).toLocaleString(lang())} ${t('drv_prop_bytes')}`);
+  } else {
+    // A folder's own size is nothing; what is worth knowing is what it is carrying.
+    // 一个目录自身的大小什么都不是;值得知道的是它装着多少。
+    add(t('drv_prop_contents'), `${fmtSize(n.tree_bytes || 0)}`);
+  }
+  add(t('drv_prop_created'), fmtDateTime(n.created_at));
+  add(t('drv_prop_modified'), fmtDateTime(n.updated_at));
+
+  const keeping = n.kind === 'folder' ? n.ver_policy : n.versioned;
+  if (keeping && n.kind === 'file' && n.ver_count) {
+    add(t('drv_prop_versions'), t('drv_prop_versions_since', n.ver_count, fmtDateTime(n.ver_first)));
+  } else if (keeping) {
+    add(t('drv_prop_versions'), t('drv_prop_versions_on'));
+  }
+  // The digest of what is in the file right now. Only files that keep their history have one --
+  // it is recorded when a version is written, and a file that writes no versions records nothing.
+  // 这个文件此刻内容的摘要。只有保留历史的文件才有 ——
+  // 它是在写下一个版本时记的,而一个不写版本的文件什么也没记。
+  if (n.ver_hash) add(t('drv_prop_hash'), `<code class="hs">${esc(n.ver_hash)}</code>`);
+  if (n.shared) add(t('drv_prop_shared'), yes(true));
+  if (n.starred) add(t('drv_prop_starred'), yes(true));
+  add(t('drv_prop_id'), copyable(n.id, t('drv_prop_copy')));
+
+  const paint = () => {
+    const dl = qs('#drv-pp-rows', d);
+    if (dl) dl.innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('');
+  };
+  paint();
+
+  try {
+    const meta = await api('GET', `/api/drive/nodes/${encodeURIComponent(n.id)}/meta`);
+    const where = '/' + (meta.path || []).map((p) => p.name).join('/');
+    const el = qs('#drv-pp-path', d);
+    if (el) el.innerHTML = copyable(where || '/', t('drv_prop_copy'));
+  } catch {
+    // The address is the one thing here that has to be asked for. Without it the rest is still
+    // worth showing, so the line says so and the dialog stays.
+    // 这里唯一需要开口去问的就是地址。没有它,其余部分照样值得展示,
+    // 所以那一行如实说明,而这个对话框留着。
+    const el = qs('#drv-pp-path', d);
+    if (el) el.textContent = t('drv_prop_path_unknown');
   }
 }
 
