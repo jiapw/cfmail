@@ -432,6 +432,117 @@ function reorder(from) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Display order, for a container that does not carry it
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Whether other pictures are allowed to refer to this one.
+ *
+ * Two bits at the front of the first slice say so, and for a film of this kind they say exactly
+ * what is needed: a picture nobody may refer to is a B frame -- one that exists to be shown once
+ * and forgotten -- and a picture that may be referred to is one the decoder has to keep. Reading
+ * the slice header proper would mean an exp-Golomb parser and a copy of the specification; reading
+ * this means reading a byte.
+ *
+ * It is looked for after the first start code that introduces a picture, because a packet opens
+ * with whatever the encoder put in front of it, which is often several hundred bytes of nothing to
+ * do with pictures.
+ *
+ * 别的画面是否可以引用这一帧。
+ *
+ * 第一个切片开头的两个比特就说明了这件事,而对这一类片子来说,它说的恰好是这里需要的:
+ * 一帧谁都不许引用的画面,就是一个 B 帧 —— 一个只为被显示一次、然后就被忘掉而存在的东西;
+ * 而一帧可以被引用的画面,是解码器必须留着的。要正经读切片头,意味着一个 exp-Golomb 解析器
+ * 外加一本规范;而读这个,意味着读一个字节。
+ *
+ * 它是在"引出一帧画面的那个起始码"之后才去找的 —— 因为一个包的开头是编码器放在前面的任何东西,
+ * 那常常是几百个与画面毫无关系的字节。
+ */
+function referred(data) {
+  const n = data.length;
+  for (let i = 0; i + 4 < n; i++) {
+    if (data[i] !== 0 || data[i + 1] !== 0) continue;
+    let at = -1;
+    if (data[i + 2] === 1) at = i + 3;
+    else if (data[i + 2] === 0 && data[i + 3] === 1) at = i + 4;
+    if (at < 0 || at >= n) continue;
+    const b = data[at];
+    const kind = b & 31;
+    // 1 is an ordinary picture and 5 is one that starts afresh; everything else in front of them
+    // is description rather than picture. 1 是一帧普通画面,5 是一帧从头开始的画面;
+    // 排在它们前面的其余东西是说明,不是画面。
+    if (kind === 1 || kind === 5) return ((b >> 5) & 3) !== 0;
+    i = at;
+  }
+  // Nothing recognisable. Treating it as referred-to costs nothing: it makes the reconstruction
+  // below hand back the times it was given.
+  // 没认出什么。当成"可被引用"不花任何代价:那会让下面的重建把收到的时间原样交回。
+  return true;
+}
+
+/**
+ * When each picture is shown, for a film that only says when each is decoded.
+ *
+ * AVI stores decode times and nothing else -- no presentation times and no reordering information
+ * at all. Handed straight to an MP4 that says the two are the same thing, which is what ffmpeg's
+ * own stream copy writes, and it is wrong for any film with B frames in it: about one picture in
+ * five ends up stamped with an instant that has already gone by, and what somebody sees is a film
+ * whose every frame is right and whose motion shakes.
+ *
+ * Nothing has to be decoded to fix it. A B frame is shown at the moment it is decoded; a picture
+ * others refer to has to be decoded before the B frames that refer to it and shown after them. So
+ * the decode times are dealt out as display times in that order: hold each referred-to picture
+ * until the next one arrives, give the B frames that came in between the times in front of it, and
+ * give it the one after them. The hold is a frame or three, never more than a run of B frames.
+ *
+ * What comes back is a presentation time per packet. The decode times are then thrown away and
+ * worked out again from these, by the same delay line a Matroska file goes through -- so from here
+ * on an AVI is not a special case at all.
+ *
+ * 每一帧在什么时候显示 —— 对于一部只说了"每一帧什么时候解码"的片子。
+ *
+ * AVI 只存解码时间,别的什么都没有 —— 没有呈现时间,也完全没有重排信息。
+ * 直接交给一个"认为两者是同一回事"的 MP4(而 ffmpeg 自己的流拷贝写的正是这个),
+ * 对任何带 B 帧的片子来说都是错的:大约每五帧就有一帧被盖上一个已经过去了的时刻,
+ * 而人看到的,是一部每一帧都对、动起来却在抖的片子。
+ *
+ * 要修好它,不必解码任何东西。一个 B 帧在它被解码的那一刻就显示;
+ * 而一帧被别人引用的画面,必须在引用它的那些 B 帧之前被解码、在它们之后才显示。
+ * 于是就按这个顺序把解码时间当作显示时间发下去:扣住每一帧被引用的画面,
+ * 等下一帧这样的画面到来,把夹在中间的那些 B 帧安排在它前面的那些时刻上,再把之后的那一个给它。
+ * 扣住的是一到三帧,绝不会超过一段连续 B 帧的长度。
+ *
+ * 交回来的是每个包的呈现时间。随后解码时间被扔掉、从这些呈现时间重新推出来 ——
+ * 走的是 Matroska 文件所走的同一条延迟线。所以从这里往后,AVI 根本不是什么特例。
+ */
+function showtime() {
+  const slots = [];
+  const queue = [];
+  let held = null;
+  const deal = () => {
+    const out = [{ p: held, at: slots[queue.length] }];
+    queue.forEach((b, i) => out.push({ p: b, at: slots[i] }));
+    slots.splice(0, queue.length + 1);
+    queue.length = 0;
+    held = null;
+    return out;
+  };
+  return {
+    push(p, at) {
+      slots.push(at);
+      if (!referred(p.data)) { queue.push(p); return []; }
+      const out = held ? deal() : [];
+      held = p;
+      return out;
+    },
+    /** The last one, which nothing after it will come to collect. 最后那一个,后面没有东西会来取它了。 */
+    rest() {
+      return held ? deal() : [];
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // The sound
 // ---------------------------------------------------------------------------------------------
 
@@ -815,7 +926,15 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     const kept = await choose(av, streams);
     let silent = kept.silent;
 
-    const vid = kept.take.find((k) => k.s.codec_type === AV_VIDEO).s;
+    const seen = kept.take.find((k) => k.s.codec_type === AV_VIDEO);
+    const vid = seen.s;
+    // Only H.264 has its display order read out of the pictures further down. The two bits that
+    // say so sit somewhere else in every other encoding, and "a container carrying no presentation
+    // times with something other than H.264 inside it" is a combination this has never been handed.
+    // 只有 H.264 会走下面那条"从画面里把显示顺序读出来"的路。那两个比特在其余每一种编码里
+    // 都在别的位置上;而"不带呈现时间的容器,里面装的又不是 H.264",
+    // 是这里从未遇到过的组合。
+    const readable = seen.name === 'h264';
     const tb = vid.time_base_den / (vid.time_base_num || 1);
     const renumber = new Map(kept.take.map((k, i) => [k.s.index, i]));
     const madeAt = kept.convert ? kept.take.length : -1;
@@ -857,6 +976,7 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     // 总得有人告诉它这件事;而重新开始,既是说这句话最便宜的方式,也是唯一不会微妙地出错的方式。
     let snd = null;
     let order = null;
+    let shown = null;
     let reached = 0;
     let began = 0;
     let busy = null;
@@ -932,10 +1052,31 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
         const [lo, hi] = av.f64toi64(v);
         list.push({ ...q, dts: lo, dtshi: hi });
       };
+      /** A picture, with a presentation time, on its way to having a decode time worked out.
+       *  一帧画面,带着呈现时间,正要去把解码时间算出来。 */
+      const picture = (p, at) => {
+        for (const r of order.push(p, at)) add(r.p, r.dts);
+      };
       for (const p of raw) {
         if (!renumber.has(p.stream_index)) continue;
-        if (p.stream_index !== vid.index || !told(p.ptshi)) { add(p); continue; }
-        for (const r of order.push(p, av.i64tof64(p.pts, p.ptshi))) add(r.p, r.dts);
+        if (p.stream_index !== vid.index) { add(p); continue; }
+        if (told(p.ptshi)) { picture(p, av.i64tof64(p.pts, p.ptshi)); continue; }
+        // No presentation time. Where one can be worked out from the pictures themselves it is,
+        // and from there this is an ordinary film; where it cannot, the decode time stands in for
+        // it, which is what the muxer would have done anyway.
+        // 没有呈现时间。凡是能从画面本身推出来的就推出来,从那以后这就是一部普通的片子;
+        // 推不出来的,就用解码时间顶上 —— 而那本来也是 muxer 会做的事。
+        if (!shown) { add(p); continue; }
+        for (const r of shown.push(p, av.i64tof64(p.dts, p.dtshi))) {
+          const [lo, hi] = av.f64toi64(r.at);
+          picture({ ...r.p, pts: lo, ptshi: hi }, r.at);
+        }
+      }
+      if (last && shown) {
+        for (const r of shown.rest()) {
+          const [lo, hi] = av.f64toi64(r.at);
+          picture({ ...r.p, pts: lo, ptshi: hi }, r.at);
+        }
       }
       for (const p of extra || []) list.push({ ...p, stream_index: madeAt });
       // Interleaved, so the muxer orders the picture and the sound against each other. A fragment
@@ -964,6 +1105,22 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     // 一帧越过了所要的那个点,对这里的一切来说,片子就到此为止。只是把它们滤掉的话,
     // 读取会一路跑到一个两小时文件的结尾,只为产出它的十二秒。
     const when = (p) => (told(p.ptshi) ? av.i64tof64(p.pts, p.ptshi) : av.i64tof64(p.dts, p.dtshi));
+
+    /** The display times a run of packets would be given, in the order the packets are in. Used to
+     *  measure before anything is written; the run that produces the ones actually written is a
+     *  separate one, started fresh.
+     *  一串包会被赋予的显示时间,按这些包本来的顺序排。用于"在写出任何东西之前"先量一量;
+     *  真正产出被写下去的那些时间的,是另一次、从头开始的推算。 */
+    const preview = (list) => {
+      if (!readable || !list.length) return [];
+      const s = showtime();
+      const at = new Map();
+      const take = (rs) => { for (const r of rs) at.set(r.p, r.at); };
+      for (const p of list) take(s.push(p, av.i64tof64(p.dts, p.dtshi)));
+      take(s.rest());
+      const out = list.map((p) => at.get(p));
+      return out.every((v) => v !== undefined) ? out : [];
+    };
     const trim = (raw) => {
       if (!stop) return raw;
       const cut = raw.filter((p) => p.stream_index !== vid.index || when(p) <= stop);
@@ -1028,10 +1185,22 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
       // 包已经递出去了,答案也就没了。
       began = early.length ? Math.min(...early.map((p) => when(p))) / tb : 0;
 
+      shown = readable ? showtime() : null;
       order = reorder(reached);
-      if (early.length && early.every((p) => told(p.ptshi))) {
-        order.measure(early.map((p) => av.i64tof64(p.pts, p.ptshi)));
-      }
+      // How far the reordering reaches, from the opening, whether the presentation times came with
+      // the film or were worked out from its pictures. The second case needs a throwaway run over
+      // the same packets -- a few dozen of them -- because the one that does it for real has to
+      // start from the beginning when the writing does. Measuring matters more here than anywhere:
+      // a window that starts too short and has to grow leaves its first packets holding times that
+      // were worked out before it knew how deep the film went.
+      // 重排够到多远,从开头量出来 —— 无论呈现时间是随片子一起来的,还是从它的画面里推出来的。
+      // 后一种要在同样这些包上空跑一遍(几十个而已),因为真正干活的那一个必须在"开始写"的时候
+      // 从头开始。量准这件事在这里比在别处更要紧:一个起步太短、之后才长起来的窗口,
+      // 会让它最初那几个包带着"在它还不知道这部片子有多深时算出来的"时间。
+      const times = early.length && told(early[0].ptshi)
+        ? early.map((p) => av.i64tof64(p.pts, p.ptshi))
+        : preview(early);
+      if (times.length === early.length && early.length) order.measure(times);
       reached = order.reach;
 
       [oc, , pb] = await av.ff_init_muxer(
