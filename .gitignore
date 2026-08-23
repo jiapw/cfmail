@@ -25,7 +25,25 @@ node_modules/
 # 浏览器直接加载的第三方库,由 npm install / npm run vendor 从 node_modules 同步。
 # 不入库:600 个文件全是拷贝,而且手工维护挡不住它和 node_modules 版本漂移
 # (postal-mime 两端版本必须一致,否则附件 part_index 会错位)。
-public/vendor/
+# Excluding the contents rather than the directory: git does not descend into an excluded
+# directory, so a rule that re-includes something inside one never gets the chance to fire.
+# 排除的是内容而不是那个目录:git 不会走进一个被排除的目录,
+# 于是一条把里面某样东西重新纳入的规则,永远等不到生效的机会。
+public/vendor/*
+
+# One exception, and the reason it is one. Everything else under vendor/ can be thrown away and
+# remade from node_modules; this build cannot, because upstream does not publish it — the codecs
+# it turns on are the ones whose patent situation makes a maintainer decline to ship binaries. So
+# the configuration lives in scripts/build-libav.sh and the result has to live here, in the
+# repository, or it exists on exactly one machine.
+# 一个例外,以及它成为例外的理由。vendor/ 下的其余一切都可以扔掉、再从 node_modules 造出来;
+# 这份构建不行,因为上游不发布它 —— 它开启的那些编码,其专利状况让维护者不愿分发二进制。
+# 所以配置住在 scripts/build-libav.sh 里,而产物必须住在这里、住在仓库里,
+# 否则它只存在于唯一一台机器上。
+!public/vendor/libav-full/
+
+# where build-libav.sh does its work / build-libav.sh 干活的地方
+.libav-build/
 dist/
 .cache/
 *.log
