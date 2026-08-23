@@ -45,7 +45,7 @@ export async function makeThumb(file) {
       // Everything else that is text opens in the code editor, and its thumbnail is that editor.
       // Markdown 是散文,也有一个散文编辑器,所以它的缩略图仍是一张纸。
       // 其余是文本的东西都在代码编辑器里打开,而它们的缩略图就是那个编辑器。
-      case 'md': return await fromText(file);
+      case 'md': return await fromText(file, themeColours());
       case 'txt': case 'code': return await withTimeout(fromSourceFile(file), 10000);
       case 'docx': return await withTimeout(fromDocx(file), 10000);
       case 'pptx': return await withTimeout(fromPptx(file), 12000);
@@ -311,21 +311,37 @@ async function fromPdf(file) {
 // ---------- Text and code: typeset the first lines ----------
 // ---------- 文本/代码:排版前若干行 ----------
 
-/** Typeset prose onto the white sheet. What arrives here is a document -- Markdown, a docx, a page
- *  of HTML -- and a document is a white sheet with dark text in every theme.
- *  把散文排到白纸上。到这里来的是文档 —— Markdown、docx、一页 HTML ——
- *  而文档在任何主题下都是白纸黑字。 */
-function typesetText(raw) {
+/** A page somebody saved: white, with dark text, in every theme. A docx is a page and so is an
+ *  HTML file, and that is what those look like whatever the application is wearing.
+ *  某人存下来的一页纸:白底深字,任何主题下都如此。docx 是一页纸,HTML 文件也是,
+ *  无论应用穿着什么,它们看起来就是那样。 */
+const PAPER = { bg: '#ffffff', ink: '#3c4043' };
+
+/** The colours the application is wearing right now.
+ *  Read rather than restated, and read at the moment the picture is made -- which is the only
+ *  moment a stored image gets to know anything about the theme.
+ *  应用此刻穿着的那套颜色。
+ *  是读出来的而不是重述的,并且是在画这张图的那一刻读 ——
+ *  那是一张存起来的图唯一有机会知道主题是什么的时刻。 */
+function themeColours() {
+  const st = getComputedStyle(document.documentElement);
+  const v = (k, fb) => (st.getPropertyValue(k) || '').trim() || fb;
+  return { bg: v('--bg', '#ffffff'), ink: v('--text', '#3c4043') };
+}
+
+/** Typeset prose onto a sheet. Which sheet is the caller's to say: a document is paper, and a
+ *  Markdown file is a note written in this application and wears what the application wears.
+ *  把散文排到一张纸上。是哪一张由调用方决定:文档是纸,
+ *  而一个 Markdown 文件是写在这个应用里的一则笔记,应用穿什么它就穿什么。 */
+function typesetText(raw, colours = PAPER) {
   if (!raw || !raw.trim()) return null;
   const c = document.createElement('canvas');
   c.width = TW;
   c.height = TH;
   const g = c.getContext('2d');
-  g.fillStyle = '#ffffff';
+  g.fillStyle = colours.bg;
   g.fillRect(0, 0, TW, TH);
-  // A document is a white sheet with dark text in every theme, like a paper preview
-  // 文档就是白纸黑字,与主题无关。纸就该长这样
-  g.fillStyle = '#3c4043';
+  g.fillStyle = colours.ink;
   g.font = '16px system-ui, "Segoe UI", sans-serif';
   g.textBaseline = 'top';
   const lines = raw.replace(/\r/g, '').split('\n').filter((_, i) => i < 16);
@@ -433,10 +449,11 @@ async function textHead(file) {
   return raw;
 }
 
-/** Prose: a white sheet. / 散文:一张白纸。 */
-async function fromText(file) {
+/** Prose: a white sheet, or the theme's own, depending on what it is prose for.
+ *  散文:一张白纸,或者应用自己的那一套 —— 取决于这是给什么写的散文。 */
+async function fromText(file, colours) {
   const raw = await textHead(file);
-  return raw ? typesetText(raw) : null;
+  return raw ? typesetText(raw, colours) : null;
 }
 
 /** Source and plain text: the editor they open in. / 源码与纯文本:它们会在其中打开的那个编辑器。 */

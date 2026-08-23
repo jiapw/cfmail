@@ -698,6 +698,26 @@
 .drv-md h4 { font-size: 19.5px; }
 .drv-md h5 { font-size: 16.5px; }
 .drv-md h6 { font-size: 15px; }
+/* Markdown follows the theme; the other things on this sheet do not.
+   A docx is a page, an HTML file is a page, an MHTML capture is a page somebody saved -- white
+   with dark text is what those are, in any theme. A Markdown file is not a page: it is written in
+   this application, edited in this application's editor, and read here. So it is read in the same
+   colours it is written in, which are the editor's -- the same variables, so the two cannot drift.
+   Markdown 跟随主题,这张纸上的其它东西不跟。
+   docx 是一页纸,HTML 文件是一页纸,MHTML 存档是某人存下来的一页纸 ——
+   白底深字就是它们本来的样子,与主题无关。而一个 Markdown 文件不是一页纸:
+   它在这个应用里写、在这个应用的编辑器里改、也在这里读。
+   所以它被读的时候用的是它被写时的那套颜色,也就是编辑器的那套 —— 同一批变量,于是两边走不岔。 */
+.drv-sheet.drv-md {
+  background: var(--bg); color: var(--text); box-shadow: none;
+}
+.drv-sheet.drv-md blockquote { border-left-color: var(--border); color: var(--text-2); }
+.drv-sheet.drv-md td, .drv-sheet.drv-md th { border-color: var(--border); }
+.drv-sheet.drv-md th { background: var(--panel-2); }
+.drv-sheet.drv-md a { color: var(--primary); }
+.drv-sheet.drv-md code { background: var(--panel-2); }
+.drv-sheet.drv-md hr { background: var(--border); border: 0; height: .25em; }
+
 .drv-md blockquote { font-size: 14.5px; color: #444; }
 .drv-md .md-code { background: #f6f7f9; border: 1px solid #e3e5e8; border-radius: 8px; margin: .8em 0; overflow: auto; }
 .drv-md .md-code code { display: block; background: none; padding: 12px 14px; white-space: pre; font-size: 13px; }
@@ -881,7 +901,7 @@
 .drv-link-card .hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .drv-link-card .badge {
   font-size: 12px; padding: 2px 9px; border-radius: 999px;
-  background: var(--accent-soft); color: var(--accent);
+  background: var(--accent-soft); color: var(--accent-text);
 }
 .drv-link-card .badge.public { background: #f5a62333; color: #f5a623; }
 /* An agent link reads and writes with nothing but the URL, so it does not wear the same colour
