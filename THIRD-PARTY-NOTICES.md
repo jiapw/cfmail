@@ -4,17 +4,17 @@ CFMail itself is MIT licensed (see [LICENSE](LICENSE)). This file lists the thir
 
 CFMail 本体以 MIT 授权(见 [LICENSE](LICENSE))。本文件列出随本项目分发或在构建时引入的第三方组件及其许可要求。
 
-All components are permissively licensed (MIT / MIT-0 / BSD-3-Clause / Apache-2.0). **No copyleft, no commercially licensed components.**
+Most components are permissively licensed (MIT / MIT-0 / BSD-3-Clause / Apache-2.0). **No component carries a strong copyleft licence and none is commercially licensed.** One is weak copyleft: FFmpeg, under **LGPL-2.1**, which reaches this project as libav.js. What that asks for is that its source stay available and that it stay replaceable — both hold here, and each libav.js entry below says how.
 
-全部组件均为宽松许可,不含 copyleft,不含商业授权组件。
+多数组件为宽松许可(MIT / MIT-0 / BSD-3-Clause / Apache-2.0)。**没有任何组件带强 copyleft 许可,也没有任何商业授权组件。** 有一个是弱 copyleft:FFmpeg,**LGPL-2.1**,经由 libav.js 进入本项目。它所要求的是"源码保持可获取"与"它保持可被替换" —— 这两条在这里都成立,下文每一个 libav.js 条目都说明了是怎么成立的。
 
 ---
 
 ## 1. Components loaded directly by the browser / 浏览器直接加载的组件
 
-These live under `public/vendor/` at runtime and are served to end users, so **their copyright notices must be preserved**. They are **not** committed to this repository — `scripts/sync-vendor.mjs` copies them from `node_modules` (see [README](README.md#local-development--本地开发)).
+These live under `public/vendor/` at runtime and are served to end users, so **their copyright notices must be preserved**. All but one are **not** committed to this repository — `scripts/sync-vendor.mjs` copies them from `node_modules` (see [README](README.md#local-development--本地开发)). The exception is `libav-full/`, which no npm package contains and which therefore has to be built and committed; its entry below says why.
 
-这些组件在运行时位于 `public/vendor/`,会随部署发给终端用户,**它们的版权声明必须保留**。它们**不在本仓库里** —— 由 `scripts/sync-vendor.mjs` 从 `node_modules` 拷贝。
+这些组件在运行时位于 `public/vendor/`,会随部署发给终端用户,**它们的版权声明必须保留**。除一个之外,它们都**不在本仓库里** —— 由 `scripts/sync-vendor.mjs` 从 `node_modules` 拷贝。那个例外是 `libav-full/`:没有任何 npm 包含有它,因此只能构建出来并提交入库;下文它的条目说明了原因。
 
 ### Web Awesome → `public/vendor/wa/`
 
@@ -135,6 +135,26 @@ It is here because a browser plays a handful of containers and refuses the rest,
 它在这里,是因为浏览器只认少数几种容器、其余一概拒收,而它拒收的东西并不总是它解不了的东西。一个 Matroska 文件里装的通常是 H.264、VP9 或 AV1 —— 每个浏览器都有这些编码的解码器。所以就在浏览器里把容器换掉,换出来的东西交给一个普通的 `<video>`;整个过程没有一帧被解码或重新编码。这份构建**含解析器而不含视频解码器**,而这恰恰是要点:它负责打开盒子,其余交给浏览器。
 
 **源码。** 这份构建是上游的、未经修改,它的源码也是上游的:<https://github.com/Yahweasel/libav.js>,标签 `v6.10.9.0`。这里既不重新构建也不打补丁,因此不存在属于我们的"相应源码"需要发布。
+
+### libav.js, built here → `public/vendor/libav-full/`
+
+```
+LGPL-2.1-or-later
+FFmpeg: Copyright (c) 2000-2025 the FFmpeg developers
+libav.js: Copyright (c) 2019-2025 Yahweasel and contributors
+```
+
+**This one is our build, not upstream's**, and that is the only reason it exists. Upstream publishes every variant except those enabling codecs whose patent situation makes a maintainer decline to ship binaries — which is exactly the set needed here: the AVI demuxer, and decoders for the AC-3 and DTS that disc rips carry and no browser plays. The configuration is upstream's to begin with; the binary is not, so it is built by `scripts/build-libav.sh` and committed. It is the one thing under `public/vendor/` that `npm run vendor` cannot produce, which is why the ignore rule has an exception for it.
+
+**Corresponding source.** Nothing here is patched. The build is FFmpeg and libav.js at upstream tag `v6.10.9.0` (<https://github.com/Yahweasel/libav.js>) with the feature selection in `scripts/build-libav.sh` — the fragment list in that file, recorded again in `public/vendor/libav-full/build.json` with a fingerprint the vendor step checks. Those two published things reproduce this exact binary; that is what LGPL asks for and all of it is in this repository.
+
+It contains **no video decoders**. It opens boxes and decodes sound; the pictures are still the browser's to decode, in hardware. So an AVI holding H.264 plays and one holding Xvid does not, and that is deliberate rather than an oversight — decoding video in WebAssembly is a different and far more expensive thing than this project is doing.
+
+**这一份是我们自己的构建,不是上游的**,而这也是它存在的唯一理由。上游发布了每一个变体,唯独不发那些启用了"专利状况让维护者不愿分发二进制"的编码的 —— 而那恰恰就是这里需要的那一组:AVI 解复用器,以及碟版片源所带、没有浏览器放得了的 AC-3 与 DTS 的解码器。配置本来就是上游的;二进制不是,所以由 `scripts/build-libav.sh` 构建并提交入库。它是 `public/vendor/` 下唯一一样 `npm run vendor` 造不出来的东西,忽略规则为它开例外正是这个原因。
+
+**相应源码。** 这里没有任何补丁。这份构建是上游标签 `v6.10.9.0`(<https://github.com/Yahweasel/libav.js>)的 FFmpeg 与 libav.js,加上 `scripts/build-libav.sh` 里的特性选择 —— 那个文件里的片段清单,在 `public/vendor/libav-full/build.json` 里又记了一遍,带一个由 vendor 步骤核对的指纹。这两样已公开的东西就能复现出这个确切的二进制;LGPL 要的就是这个,而它们全部在这个仓库里。
+
+它**不含任何视频解码器**。它负责打开盒子、解出声音;画面仍旧交给浏览器去解,而且是硬件解。所以一个装着 H.264 的 AVI 能放,装着 Xvid 的不能 —— 这是有意为之而不是疏漏:在 WebAssembly 里解视频,是另一件事,而且比这个项目正在做的事昂贵得多。
 
 ---
 
