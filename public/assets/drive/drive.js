@@ -3087,13 +3087,27 @@ async function convertAndPlay(n, src) {
       if (jumped !== null) {
         const to = jumped;
         jumped = null;
-        // The film moves; the buffer is left alone. Emptying it first leaves the player holding
+        // What was half-said is unsaid, and nothing else is touched. The last thing handed over
+        // before a jump is very often part of a piece -- a header whose contents have not arrived
+        // -- and the reader is still waiting for the rest of it. A new stretch begins with a
+        // header of its own, and handing one to a reader that is mid-sentence is not a new
+        // sentence: it is a broken one, and the answer is that the film cannot be decoded.
+        //
+        // Only the parsing is reset. Emptying the buffer as well would leave the player holding
         // nothing at all for as long as the new stretch takes to arrive, and a player holding
         // nothing does not wait politely -- it decides playback is over and jumps to the end.
         // What is no longer wanted is thrown away below, once there is something to replace it.
-        // 片子挪过去,缓冲不动。先把它清空,会让播放器在新的一段到来之前完全空着手 ——
+        //
+        // 说了一半的话收回,别的都不动。跳转之前最后交出去的东西,往往是某一块的一部分 ——
+        // 一个内容还没到的头 —— 而读的一方仍在等它的下半截。新的一段以它自己的头开场,
+        // 而把一个头递给一个话说到一半的读者,并不是一句新话:那是一句破碎的话,
+        // 而它的回应是"这部片子解不了"。
+        //
+        // 被重置的只有解析。连缓冲一起清空,会让播放器在新的一段到来之前完全空着手 ——
         // 而一个空着手的播放器不会客气地等,它会认定播放结束、直接跳到片尾。
         // 不再需要的东西在下面扔掉 —— 等到有东西可以顶替它的时候。
+        await sbIdle(sb);
+        try { sb.abort(); } catch { /* it was not mid-sentence / 它本来就没有把话说到一半 */ }
         await film.seek(to);
         if (pvFilm !== film) return;
         place = true;
