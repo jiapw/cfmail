@@ -107,6 +107,65 @@ async function libav() {
   return lib;
 }
 
+const AV_VIDEO = 0;
+const AV_AUDIO = 1;
+
+/** What a browser can decode once the box is open. Names as libav spells them.
+ *
+ *  This is the second half of the same idea the container list is the first half of. Opening the
+ *  box gets you nothing if what is inside is a codec nobody here can read, and a film is two of
+ *  those questions rather than one: a picture the browser knows and a sound it does not is very
+ *  common, because the sound on a disc rip is usually DTS or AC-3 and no browser decodes either.
+ *
+ *  盒子打开之后浏览器解得了什么。名字按 libav 的拼法。
+ *
+ *  这是同一个想法的后半段,容器名单是它的前半段。若盒子里装的是这里没人读得懂的编码,
+ *  那把盒子打开也一无所获;而一部片子要问的是两个这样的问题而不是一个:
+ *  "画面浏览器认得、声音它不认得"极其常见 —— 因为碟版片源的声音通常是 DTS 或 AC-3,
+ *  而这两样没有浏览器解得了。 */
+const PLAYS_VIDEO = new Set(['h264', 'hevc', 'vp8', 'vp9', 'av1']);
+const PLAYS_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac', 'alac']);
+
+/**
+ * Which streams go into the new box, and what is left behind.
+ *
+ * One picture and one sound. Everything else is dropped, and dropping it is not a simplification --
+ * it is the difference between a file and no file. MP4 cannot hold ASS subtitles at all, and handed
+ * one it does not warn: it fails, and the whole conversion fails with it. A disc rip carries four
+ * of them.
+ *
+ * Sound the browser cannot decode is left behind too, rather than carried along to be ignored. What
+ * is carried is what will play; anything else is a track that exists to disappoint.
+ *
+ * 哪些流进入新盒子,以及什么被留下。
+ *
+ * 一路画面,一路声音。其余一律丢弃 —— 而丢弃它们不是一种简化,
+ * 它是"有文件"与"没有文件"之间的差别。MP4 根本装不下 ASS 字幕,而交给它一条时它不会警告:
+ * 它会失败,整次转换随之失败。一个碟版片源带着四条这样的字幕。
+ *
+ * 浏览器解不了的声音也被留下,而不是带上去让人无视。带走的都是会响的;
+ * 其余的只是一条为了让人失望而存在的轨。
+ */
+async function choose(av, streams) {
+  const named = [];
+  for (const s of streams) named.push({ s, name: await av.avcodec_get_name(s.codec_id) });
+  const first = (type, ok) => named.find((x) => x.s.codec_type === type && ok.has(x.name));
+  const v = first(AV_VIDEO, PLAYS_VIDEO);
+  const a = first(AV_AUDIO, PLAYS_AUDIO);
+  if (!v) {
+    // Nothing to show. Which codec it was is worth carrying out, because "this needs another
+    // program" is a different sentence from "something went wrong".
+    // 没有可展示的东西。是哪种编码值得带出去,因为"这个需要另一个程序"
+    // 与"出了点问题"不是同一句话。
+    const any = named.find((x) => x.s.codec_type === AV_VIDEO);
+    const err = new Error('e_drive_video_codec');
+    err.codec = any?.name || '';
+    throw err;
+  }
+  const heard = named.find((x) => x.s.codec_type === AV_AUDIO);
+  return { take: a ? [v, a] : [v], silent: !a && heard ? heard.name : '' };
+}
+
 /**
  * Read a file's packets and write them into an MP4.
  *
@@ -124,17 +183,23 @@ export async function toMp4(file, { seconds = 0, limit = 0 } = {}) {
   const inName = 'in-' + Math.floor(performance.now()) + '.dat';
   const outName = inName + '.mp4';
   let out = new Uint8Array(0);
+  let silent = '';
 
   await av.mkreadaheadfile(inName, file);
   try {
     const [ctx, streams] = await av.ff_init_demuxer_file(inName);
     if (!streams.length) throw new Error('e_drive_no_streams');
-    // Codec type 0 is video. Which streams are video decides where the timestamps get rewritten
-    // below, so it is worked out once, from what the demuxer said, rather than guessed from the
-    // stream order.
-    // 编码类型 0 是视频。哪些流是视频,决定了下面在哪里重写时间戳,
-    // 所以只算一次、依据解复用器的说法,而不是从流的顺序去猜。
-    const video = new Set(streams.filter((s) => s.codec_type === 0).map((s) => s.index));
+    const kept = await choose(av, streams);
+    silent = kept.silent;
+    // Which of the kept streams is video decides where the timestamps get rewritten below, so it
+    // is worked out from what the demuxer said rather than guessed from the stream order.
+    // 留下来的流里哪一条是视频,决定了下面在哪里重写时间戳 ——
+    // 所以这一点依据解复用器的说法得出,而不是从流的顺序去猜。
+    const video = new Set(kept.take.filter((k) => k.s.codec_type === AV_VIDEO).map((k) => k.s.index));
+    // Input stream numbers are not output stream numbers once anything has been left behind, and a
+    // packet carries the number it had on the way in.
+    // 一旦有东西被留下不带走,输入的流号就不再是输出的流号,而一个包带着的是它进来时的那个号。
+    const renumber = new Map(kept.take.map((k, i) => [k.s.index, i]));
 
     const pkt = await av.av_packet_alloc();
     // Read as one list in file order. Read stream by stream, a whole video track arrives before
@@ -159,28 +224,63 @@ export async function toMp4(file, { seconds = 0, limit = 0 } = {}) {
 
     // ---- the one thing that is not a straight copy ----
     //
-    // Matroska stores presentation times and no decode times. MP4 requires decode times. So the
-    // demuxer hands over a decode time it reconstructed, and for video -- which is reordered,
-    // because that is what B-frames are -- that reconstruction does not always advance. The MP4
-    // muxer drops every packet whose decode time does not advance, and it does so as a warning
-    // while still producing a file that plays: the first version of this lost sixteen of
-    // seventy-five pictures and looked perfectly fine.
+    // Matroska stores presentation times and no decode times. MP4 requires decode times. The
+    // demuxer hands back AV_NOPTS for the first video packets and a reconstruction afterwards that
+    // does not always advance -- and the MP4 muxer silently drops every packet whose decode time
+    // went backwards. Sixteen of seventy-five pictures went that way the first time, and the file
+    // still played.
     //
-    // Handing over no decode time at all lets the muxer work the order out for itself, which it
-    // can, because it has the presentation times and knows the codec. Only video: sound is not
-    // reordered, its decode time is already right, and taking it away loses a packet.
+    // Handing over nothing is not the fix either. The muxer then writes zero for every picture,
+    // which looks right for as long as some other stream is carrying the duration and collapses
+    // the moment the film is video only: a two-minute clip four hundredths of a second long.
+    //
+    // So they are worked out here. Decode order is display order delayed by however far the
+    // reordering reaches -- that is what a B-frame is -- so the depth of the reordering is measured
+    // and each picture is given the presentation time of the one that far behind it. That sequence
+    // never goes backwards, by construction, and no picture is ever decoded after it is shown.
     //
     // ---- 唯一一处不是直接照搬的地方 ----
     //
-    // Matroska 存的是呈现时间,不存解码时间。MP4 要求解码时间。于是解复用器交出来的是它重建的
-    // 解码时间 —— 而对视频来说(视频是重排过的,B 帧就是这么回事),那份重建并不总是递增。
-    // MP4 muxer 会丢掉每一个解码时间没有前进的包,而且它是以警告的方式丢、同时照样产出一个能播的
-    // 文件:这段代码的第一版丢掉了七十五帧里的十六帧,看起来毫无问题。
+    // Matroska 存的是呈现时间,不存解码时间。MP4 要求解码时间。解复用器对最初几个视频包交回
+    // AV_NOPTS,之后交回的重建值又不总是递增 —— 而 MP4 muxer 会**静默地**丢掉每一个解码时间
+    // 倒退的包。第一次就这样走掉了七十五帧里的十六帧,而那个文件照样能播。
     //
-    // 干脆一个解码时间都不给,muxer 就会自己把顺序推出来 —— 它推得出来,
-    // 因为它有呈现时间、也知道编码。只对视频这么做:声音没有重排,它的解码时间本来就是对的,
-    // 拿掉反而会少一个包。
-    packets = packets.map((p) => (video.has(p.stream_index) ? { ...p, dts: null, dtshi: null } : p));
+    // 什么都不给也不是解法。muxer 会给每一帧写零,只要还有别的流扛着时长,它就看起来是对的;
+    // 而一旦这部片子只剩视频,它立刻塌掉:两分钟的片段只剩四百分之一秒。
+    //
+    // 所以在这里把它们算出来。解码顺序就是显示顺序按"重排能够到多远"往后延 ——
+    // B 帧就是这么回事 —— 于是量出重排的深度,再把"落后它那么多的那一帧的呈现时间"发给每一帧。
+    // 这个序列按构造就不会倒退,而且没有任何一帧会在它被显示之后才被解码。
+    const shown = new Map();
+    for (const p of packets) {
+      if (!video.has(p.stream_index)) continue;
+      if (!shown.has(p.stream_index)) shown.set(p.stream_index, []);
+      shown.get(p.stream_index).push(av.i64tof64(p.pts, p.ptshi));
+    }
+    const decodeAt = new Map();
+    for (const [id, seq] of shown) {
+      const sorted = [...seq].sort((x, y) => x - y);
+      const place = new Map(sorted.map((v, i) => [v, i]));
+      let depth = 0;
+      seq.forEach((v, i) => { depth = Math.max(depth, place.get(v) - i); });
+      // Before the first picture there is nothing to borrow a time from, so the gap between
+      // pictures is extended backwards to reach the ones that are decoded ahead of anything shown.
+      // 第一帧之前没有时间可借,于是把帧间距往回延,去够到那些"先于任何显示而被解码"的帧。
+      const gap = sorted.length > 1 ? (sorted[sorted.length - 1] - sorted[0]) / (sorted.length - 1) : 1;
+      decodeAt.set(id, seq.map((_, i) => (i >= depth ? sorted[i - depth] : sorted[0] - (depth - i) * gap)));
+    }
+    const nth = new Map([...decodeAt.keys()].map((k) => [k, 0]));
+
+    packets = packets
+      .filter((p) => renumber.has(p.stream_index))
+      .map((p) => {
+        const q = { ...p, stream_index: renumber.get(p.stream_index) };
+        if (!video.has(p.stream_index)) return q;
+        const i = nth.get(p.stream_index);
+        nth.set(p.stream_index, i + 1);
+        const [dts, dtshi] = av.f64toi64(Math.round(decodeAt.get(p.stream_index)[i]));
+        return { ...q, dts, dtshi };
+      });
 
     await av.mkwriterdev(outName);
     const chunks = [];
@@ -197,7 +297,7 @@ export async function toMp4(file, { seconds = 0, limit = 0 } = {}) {
 
     const [oc, , pb] = await av.ff_init_muxer(
       { filename: outName, format_name: 'mp4', open: true, codecpars: true },
-      streams.map((s) => [s.codecpar, s.time_base_num, s.time_base_den]));
+      kept.take.map((k) => [k.s.codecpar, k.s.time_base_num, k.s.time_base_den]));
     await av.avformat_write_header(oc, 0);
     const wpkt = await av.av_packet_alloc();
     await av.ff_write_multi(oc, wpkt, packets, false);
@@ -215,5 +315,9 @@ export async function toMp4(file, { seconds = 0, limit = 0 } = {}) {
     await av.unlinkreadaheadfile(inName).catch(() => {});
   }
   if (!out.byteLength) throw new Error('e_drive_remux_failed');
-  return new Blob([out], { type: 'video/mp4' });
+  // The sound that was left behind comes out with the film, because the person watching is
+  // about to notice its absence and should be told why rather than left to wonder.
+  // 被留下的那路声音随片子一起交出去,因为正在看的人马上就会察觉它不在,
+  // 而他应该被告知原因,而不是被留在那儿猜。
+  return { blob: new Blob([out], { type: 'video/mp4' }), silent };
 }

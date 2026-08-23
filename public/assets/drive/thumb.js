@@ -209,7 +209,7 @@ async function fromFilm(file) {
   const what = verdict(file.name, file.type);
   if (what === 'no') return null;
   if (what !== 'remux') return fromVideo(file);
-  const head = await toMp4(file, { limit: FILM_HEAD_BYTES, seconds: FILM_HEAD_SECONDS });
+  const { blob: head } = await toMp4(file, { limit: FILM_HEAD_BYTES, seconds: FILM_HEAD_SECONDS });
   return fromVideo(head);
 }
 
