@@ -6,7 +6,7 @@ body.code-open { overflow: hidden; }
 
 .code-app {
   position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
-  background: var(--bg); color: var(--text-1);
+  background: var(--bg); color: var(--text);
 }
 .code-head {
   display: flex; align-items: center; gap: 10px; flex: none;
@@ -40,7 +40,7 @@ body.code-open { overflow: hidden; }
   --cm-op:      #0184bc;
   --cm-string:  #50a14f;
   --cm-comment: #a0a1a7;
-  --cm-text:    var(--text-1);
+  --cm-text:    var(--text);
   --cm-invalid: #e45649;
   --cm-gutter:  var(--text-3);
 }
@@ -90,7 +90,7 @@ html.wa-dark, .wa-dark {
   line-height: 1.6;
   font-family: var(--font-code);
 }
-.code-body .cm-content { caret-color: var(--text-1); }
+.code-body .cm-content { caret-color: var(--text); }
 .code-body .cm-gutters {
   background: var(--panel); color: var(--cm-gutter); border-right: 1px solid var(--border);
 }
@@ -114,7 +114,7 @@ html.wa-dark, .wa-dark {
 .code-body .cm-activeLine { background: color-mix(in srgb, var(--hover) 55%, transparent); }
 .code-body .cm-selectionBackground,
 .code-body .cm-content ::selection { background: var(--selected) !important; }
-.code-body .cm-cursor { border-left-color: var(--text-1); }
+.code-body .cm-cursor { border-left-color: var(--text); }
 .code-body .cm-matchingBracket { background: var(--selected); outline: 1px solid var(--border); }
 .code-body .cm-selectionMatch { background: color-mix(in srgb, var(--primary) 18%, transparent); }
 
@@ -123,7 +123,7 @@ html.wa-dark, .wa-dark {
    折叠箭头。给它位置,也给它一块可点的面积 ——
    一个难以点中的控件,会被人当作一个不存在的功能。 */
 .code-body .cm-foldGutter .cm-gutterElement { padding: 0 4px; cursor: pointer; color: var(--text-3); }
-.code-body .cm-foldGutter .cm-gutterElement:hover { color: var(--text-1); }
+.code-body .cm-foldGutter .cm-gutterElement:hover { color: var(--text); }
 .code-body .cm-foldPlaceholder {
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
   color: var(--text-2); padding: 0 6px; margin: 0 2px;
@@ -133,10 +133,10 @@ html.wa-dark, .wa-dark {
    way, so it reads as part of the window rather than as something that landed on it.
    搜索,库自带一块面板。把它停在顶部、穿上同一身衣服,
    于是它读起来是这扇窗的一部分,而不是落在窗上的什么东西。 */
-.code-body .cm-panels { background: var(--panel); color: var(--text-1); border-color: var(--border); }
+.code-body .cm-panels { background: var(--panel); color: var(--text); border-color: var(--border); }
 .code-body .cm-panels.cm-panels-top { border-bottom: 1px solid var(--border); }
 .code-body .cm-panel input, .code-body .cm-panel button, .code-body .cm-panel label {
-  font: inherit; font-size: 12.5px; color: var(--text-1);
+  font: inherit; font-size: 12.5px; color: var(--text);
 }
 .code-body .cm-panel input[type="text"] {
   background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px;

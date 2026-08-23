@@ -8,7 +8,7 @@ body.md-open { overflow: hidden; }
 
 .md-app {
   position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
-  background: var(--bg); color: var(--text-1);
+  background: var(--bg); color: var(--text);
 }
 
 .md-head {
@@ -33,7 +33,7 @@ body.md-open { overflow: hidden; }
 .md-seg button:hover { background: var(--hover); }
 .md-app.mode-src .md-seg [data-mode="src"],
 .md-app.mode-split .md-seg [data-mode="split"],
-.md-app.mode-view .md-seg [data-mode="view"] { background: var(--selected); color: var(--text-1); }
+.md-app.mode-view .md-seg [data-mode="view"] { background: var(--selected); color: var(--text); }
 
 /* Two panes over one line. The split is a custom property so that dragging it is one style write
    rather than two, and so the gutter cannot drift out of step with the panes it divides.
@@ -76,10 +76,10 @@ body.md-open { overflow: hidden; }
   text-align: left; border-radius: 6px; cursor: pointer;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.md-oitem:hover { background: var(--hover); color: var(--text-1); }
+.md-oitem:hover { background: var(--hover); color: var(--text); }
 /* Where the reader is, not where they last clicked -- it follows the scroll of either pane.
    读者此刻在哪里,而不是他上次点了哪里 —— 它跟着任一面板的滚动走。 */
-.md-oitem.on { background: var(--selected); color: var(--text-1); }
+.md-oitem.on { background: var(--selected); color: var(--text); }
 /* Depth, said three ways at once: how far in the line starts, how large it is set, and how much
    air it is given. --d carries it, and all three fall off together -- which is what lets a long
    outline be read at a glance instead of counting indents. A deeper heading is a smaller thing
@@ -131,7 +131,7 @@ body.md-open { overflow: hidden; }
 }
 .md-srcpane textarea {
   flex: 1; min-width: 0; border: 0; outline: 0; resize: none;
-  background: var(--bg); color: var(--text-1);
+  background: var(--bg); color: var(--text);
   white-space: pre; overflow: auto;
 }
 /* Soft wrap is a way of looking at the source, so it is a class on the editor rather than anything
