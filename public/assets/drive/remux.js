@@ -289,6 +289,93 @@ function bytesOf(source) {
   };
 }
 
+/**
+ * What the muxer has written, and how much of it can be let go of.
+ *
+ * A muxer writes a piece's header with the sizes left blank and comes back to fill them in once it
+ * knows them. Nearly always the bytes are still sitting in the buffer it writes through, and the
+ * trip back costs nothing; once in a while they have already been flushed, and then it is a real
+ * seek backwards. A device that cannot seek loses those four bytes -- without an error, and the
+ * piece is unreadable from there to the end of the film. Flushing after every turn of the handle,
+ * which is what makes this stream at all, is what makes those four bytes likely.
+ *
+ * So the writing goes to a device that can seek, and what is handed over is only the part the pen
+ * has left behind: everything before the box currently being written into. One box is held back,
+ * which is a fraction of a second of film and the difference between a stream that can be trusted
+ * and one that is right nearly always.
+ *
+ * muxer 会把一块分片的头先写下来、长度留空,等知道了再回头填上。绝大多数时候那些字节
+ * 还待在它写入所经的缓冲区里,回去一趟不花什么;偶尔它们已经被冲出去了,那就得真的往回定位一次。
+ * 一个不能回退的设备会丢掉那四个字节 —— 不报错,而那一块从此到片尾都读不了。
+ * 而"每摇一圈把手就冲一次",正是让这件事变得频繁的原因 —— 也正是这东西之所以能流起来的原因。
+ *
+ * 所以写入交给一个能回退的设备,而交出去的只是笔尖已经离开的那部分:
+ * 当前正在写的那个盒子之前的一切。被扣住的是一个盒子,那是零点几秒的片子,
+ * 也是"一条可以信任的流"与"一条几乎总是对的流"之间的差别。
+ */
+function sink() {
+  let buf = new Uint8Array(1 << 20);
+  let base = 0;   // where buf[0] sits in the whole stream / buf[0] 在整条流里的位置
+  let high = 0;   // one past the furthest byte written / 已写到的最远处再加一
+  const room = (need) => {
+    if (need <= buf.length) return;
+    let n = buf.length;
+    while (n < need) n *= 2;
+    const bigger = new Uint8Array(n);
+    bigger.set(buf.subarray(0, high - base));
+    buf = bigger;
+  };
+  const at32 = (i) => (buf[i] << 24 | buf[i + 1] << 16 | buf[i + 2] << 8 | buf[i + 3]) >>> 0;
+  /** Where the box now under the pen begins. Everything before it is finished with.
+   *  当前正在写的那个盒子从哪里开始。它之前的一切都已经完事了。 */
+  const edge = () => {
+    let at = 0;
+    let start = 0;
+    const end = high - base;
+    while (at + 8 <= end) {
+      let len = at32(at);
+      if (len === 1) {
+        if (at + 16 > end) break;
+        // A size that does not fit in four bytes is stated in eight, and the high half is zero for
+        // anything this ever writes. 装不进四个字节的长度用八个字节说;
+        // 而这里写出来的任何东西,那高一半都是零。
+        len = at32(at + 8) * 4294967296 + at32(at + 12);
+      }
+      if (len < 8) break;
+      start = at;
+      if (at + len > end) break;
+      at += len;
+    }
+    return start;
+  };
+  return {
+    put(pos, data) {
+      room(pos - base + data.length);
+      buf.set(data, pos - base);
+      high = Math.max(high, pos + data.length);
+    },
+    /** The part nothing will come back to. 不会再有人回来动的那一部分。 */
+    take() {
+      const cut = edge();
+      if (cut <= 0) return null;
+      const out = buf.slice(0, cut);
+      buf.copyWithin(0, cut, high - base);
+      base += cut;
+      return out;
+    },
+    /** All of it, for when the writing is over. 全部 —— 用在写完了的时候。 */
+    rest() {
+      if (high <= base) return null;
+      const out = buf.slice(0, high - base);
+      base = high;
+      return out;
+    },
+    /** Start again, keeping nothing: what a jump throws away.
+     *  从头开始,什么都不留 —— 一次跳转所丢弃的东西。 */
+    reset() { base = 0; high = 0; },
+  };
+}
+
 /** One handler for every device, routed by name. libav has a single callback for the whole
  *  instance, and the instance is shared -- a thumbnail is very often being made for one file while
  *  another is playing.
@@ -318,7 +405,7 @@ function route(av) {
   };
   av.onwrite = (name, pos, data) => {
     const out = sinks.get(name);
-    if (out) out.push(data.slice(0));
+    if (out) out.put(pos, data);
   };
 }
 
@@ -569,28 +656,64 @@ function showtime() {
  * 这里不碰画面。这里只有声音,而它是整次转换中唯一不是拷贝的部分:
  * 这个文件里其余的一切,只是把字节从一个盒子搬到另一个盒子。
  */
+/** How far the sound may fall behind the film before it is put back where the film says it goes.
+ *  Half a second is far past anything the decoder and the filter hold between them, and far short
+ *  of anything anybody would sit through.
+ *  声音在被放回"片子说它该在的地方"之前,允许落后多远。半秒钟远远超过解码器和滤镜加起来
+ *  攥着的量,又远远不到任何人愿意坐着听完的程度。 */
+const SLIP = AAC_RATE / 2;
+
 function sound(av, track) {
   let dc = 0; let dpkt = 0; let dframe = 0;
   let ec = 0; let eframe = 0; let epkt = 0;
   let graph = 0; let src = 0; let sink = 0;
   let par = 0;
   let at = null;
+
+  /** Where a packet sits, counted in the samples it is about to become. Taken from the packet
+   *  rather than from a decoded frame, because a packet's time is stated in the file and a frame's
+   *  is whatever the decoder made of it.
+   *  一个包坐在哪里,按它即将变成的那些采样来计。取自包而不是取自解出来的帧 ——
+   *  因为包的时间是文件里写着的,而帧的时间是解码器自己弄出来的东西。 */
+  const seat = (p) => {
+    const tick = told(p.ptshi) ? av.i64tof64(p.pts, p.ptshi) : av.i64tof64(p.dts, p.dtshi);
+    const secs = (tick * (track.s.time_base_num || 1)) / (track.s.time_base_den || 1);
+    return Math.max(0, Math.round(secs * AAC_RATE));
+  };
+
+  /** Skip a packet the decoder will not take, rather than losing the batch it arrived in.
+   *
+   *  After a jump the first packet very often is one: a container that stores sound in byte-sized
+   *  chunks hands over whatever the seek landed in the middle of, and half a frame is not
+   *  decodable by anything. Without this, that one refusal costs everything read with it -- four
+   *  seconds of sound, and no sign that it happened.
+   *
+   *  跳过一个解码器不肯收的包,而不是连它所在的那一批一起丢掉。
+   *
+   *  一次跳转之后,第一个包非常经常就是那样一个:一个按字节分块存放声音的容器,
+   *  交出来的是定位所落在的那半个东西,而半个帧,什么都解不了。
+   *  没有这一条,那一次拒收的代价是与它一同读进来的一切 —— 四秒钟的声音,而且毫无迹象。 */
+  const forgiving = (last) => ({ fin: !!last, ignoreErrors: true });
+
   return {
     get par() { return par; },
     async take(packets, last) {
       if (!dc) [, dc, dpkt, dframe] = await av.ff_init_decoder(track.s.codec_id, track.s.codecpar);
-      // Where this track begins, counted in the samples it is about to become. Taken from the
-      // packet rather than from a decoded frame, because a packet's time is stated in the file and
-      // a frame's is whatever the decoder made of it.
-      // 这条轨从哪里开始,按它即将变成的那些采样来计。取自包而不是取自解出来的帧 ——
-      // 因为包的时间是文件里写着的,而帧的时间是解码器自己弄出来的东西。
-      if (at === null && packets.length) {
-        const p = packets[0];
-        const tick = told(p.ptshi) ? av.i64tof64(p.pts, p.ptshi) : av.i64tof64(p.dts, p.dtshi);
-        const secs = (tick * (track.s.time_base_num || 1)) / (track.s.time_base_den || 1);
-        at = Math.max(0, Math.round(secs * AAC_RATE));
+      // Where the sound has got to, against where the film says this batch belongs. The two part
+      // company only when something did not come out -- a frame the file cut in half, a packet the
+      // decoder would not take -- and when they do, the sound is put back rather than allowed to
+      // run early for the rest of the film. A count of samples is a smooth timeline and a
+      // forgetful one: it has no way of knowing that four seconds went missing, so without this
+      // everything after them plays four seconds ahead of the picture, for ever.
+      // 声音走到了哪里,对上"片子说这一批属于哪里"。两者只有在"有东西没出来"时才会分开 ——
+      // 一个被文件切成两半的帧,一个解码器不肯收的包 —— 而一旦分开,声音会被放回去,
+      // 而不是任它在此后的整部片子里都跑在前面。数采样得到的是一条平滑的时间线,也是一条健忘的:
+      // 它无从知道有四秒钟不见了,于是没有这一步的话,那之后的一切都会永远比画面早四秒。
+      if (packets.length) {
+        const want = seat(packets[0]);
+        if (at === null || want - at > SLIP) at = want;
       }
-      const raw = await av.ff_decode_multi(dc, dpkt, dframe, packets, !!last);
+      const raw = await av.ff_decode_multi(dc, dpkt, dframe, packets, forgiving(last));
       if (!raw.length && !ec) return [];
       if (!ec) {
         const first = raw[0];
@@ -985,7 +1108,7 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     let lastDts = null;
     let done = false;
 
-    const out = [];
+    const out = sink();
     sinks.set(outName, out);
     // Made once and reopened, not made again: a device that already exists cannot be created a
     // second time, and a seek would otherwise try to. Nothing about it needs resetting, because
@@ -993,16 +1116,11 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     // 造一次、之后重开,而不是再造一次:一个已经存在的设备没法被创建第二次,
     // 而定位若不这样就会去创建它。它身上也没有什么需要重置的,因为"一次写落在哪里"从来没人看 ——
     // 各块是按产出的顺序出去的。
-    await av.mkstreamwriterdev(outName);
+    await av.mkwriterdev(outName);
 
     /** Whatever the muxer produced since the last look, as one piece.
      *  自上次查看以来 muxer 产出的东西,合成一块。 */
-    const taken = () => {
-      if (!out.length) return null;
-      const piece = join(out);
-      out.length = 0;
-      return piece;
-    };
+    const taken = () => out.take();
 
     const disarm = async () => {
       // Whatever it ended up reaching, including anything it worked out for itself after the
@@ -1012,7 +1130,7 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
       if (oc) await av.ff_free_muxer(oc, pb).catch(() => {});
       if (snd) await snd.close().catch(() => {});
       oc = 0; pb = 0; snd = null;
-      out.length = 0;
+      out.reset();
       lastDts = null;
       done = false;
     };
@@ -1259,6 +1377,8 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
         await write([], null, true);
         await av.av_write_trailer(oc).catch(() => {});
         await av.avio_flush(pb).catch(() => {});
+        const tail = out.rest();
+        if (tail) queue.push(tail);
         head = join(queue);
       }
       const named = codecsOf(head);
@@ -1305,7 +1425,9 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
             await write([], null, true);
             await av.av_write_trailer(oc).catch(() => {});
             await av.avio_flush(pb).catch(() => {});
-            const piece = taken();
+            // Everything, now: the box that was being held back is the last one there is.
+            // 现在把全部交出去:一直被扣着的那个盒子,就是最后一个了。
+            const piece = out.rest();
             if (piece) queue.push(piece);
             continue;
           }
