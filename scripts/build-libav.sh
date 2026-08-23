@@ -90,6 +90,27 @@ for f in "libav-$VERSION.0-$VARIANT.mjs" \
   printf '  %8s KB  %s\n' "$(( $(stat -c%s "$OUT/$f") / 1024 ))" "$f"
 done
 
+# What this build is, written down beside it. Without it the only way to know whether the binary
+# matches the fragment list above is to read the binary, and the failure it would otherwise hide is
+# the quiet one: somebody adds a codec here, forgets to rebuild, and finds out months later that a
+# file will not play for a reason that is nowhere in the code.
+# 这份构建是什么,写在它旁边。没有它,想知道这个二进制与上面那份片段清单是否相符,
+# 只能去读那个二进制;而它本会掩盖的那种失败恰恰是无声的那种:
+# 有人在这里加了一个编码、忘了重建,几个月后才发现某个文件放不了,
+# 而原因在代码里任何地方都找不到。
+node -e '
+  const fs = require("fs"), crypto = require("crypto");
+  const frags = JSON.parse(process.argv[1]);
+  fs.writeFileSync(process.argv[2] + "/build.json", JSON.stringify({
+    version: process.argv[3],
+    variant: process.argv[4],
+    fragments: frags,
+    fingerprint: crypto.createHash("sha256")
+      .update(process.argv[3] + "\n" + [...frags].sort().join(",")).digest("hex").slice(0, 16),
+    built_at: new Date().toISOString(),
+  }, null, 2) + "\n");
+' "$(echo "$FRAGMENTS" | tr -d '\n ')" "$OUT" "$VERSION" "$VARIANT"
+printf '  %8s     %s\n' "-" "build.json"
 echo
 echo "✓ 建好了 / built into public/vendor/libav-full/"
 echo "  这些文件要提交进仓库:npm 上没有它们,sync-vendor 也生不出来。"

@@ -157,6 +157,7 @@ that nobody reads, and to do the heavy work in the browser that is already looki
 | **Cloudflare account** | Domains must use **Cloudflare DNS** (full zone). Email Routing does not work on partial/CNAME setups | 域名必须用 **Cloudflare DNS**(完整 zone)。Email Routing 不支持 partial/CNAME 接入 |
 | **Workers plan** | The free plan runs everything except sending to outside recipients — see below | 免费版能跑起全部功能,唯独对外发信不行 —— 见下表 |
 | **Node.js** | 18 or newer, to run `wrangler` and the setup scripts | 18 以上,用来跑 `wrangler` 和配置脚本 |
+| **Docker** | Only to rebuild the media codecs (`npm run libav`). A clone already has the built file, so installing and deploying need nothing here | 只有重建媒体编解码器(`npm run libav`)时才要。克隆下来就已经带着建好的文件,安装和部署都用不到 |
 
 ### Free plan vs paid / 免费版够不够
 
