@@ -129,6 +129,35 @@ const SPECS = [
     roots: ['dist/purify.es.mjs', 'LICENSE', 'LICENSE-MPL'],
     exts: null,
   },
+  {
+    // A browser plays a handful of containers and refuses the rest, and "the rest" includes
+    // Matroska -- which is where a great many files holding a codec the browser can decode
+    // perfectly well happen to live. What is missing in those cases is not the ability to decode
+    // the picture; it is the ability to open the box. So the box is changed, in the browser,
+    // without touching a frame, and the result is handed to the same <video> element as always.
+    //
+    // Only the plain WebAssembly build ships. The threaded one needs SharedArrayBuffer, which
+    // needs cross-origin isolation, which is a decision about the whole site rather than about
+    // this feature. The asm.js fallback is 4.5 MB for browsers that have not existed for years.
+    //
+    // 浏览器只认少数几种容器,其余一概拒收,而"其余"里包括 Matroska ——
+    // 偏偏有大量文件装的是浏览器完全解得动的编码,只是住在那个盒子里。
+    // 这些情况缺的不是解出画面的能力,而是打开盒子的能力。
+    // 所以就在浏览器里换掉那个盒子,一帧都不碰,再把结果交给一如既往的那个 <video>。
+    //
+    // 只发普通 WebAssembly 构建。线程版要 SharedArrayBuffer,而那要跨源隔离 ——
+    // 那是一个关于整个站点的决定,不是关于这个功能的。
+    // asm.js 那份 4.5 MB 是给多年前就已不存在的浏览器准备的。
+    name: 'libav.js',
+    from: '@libav.js/variant-webcodecs/dist',
+    to: 'libav',
+    roots: [
+      'libav-6.10.9.0-webcodecs.mjs',
+      'libav-6.10.9.0-webcodecs.wasm.mjs',
+      'libav-6.10.9.0-webcodecs.wasm.wasm',
+    ],
+    exts: null,
+  },
 ];
 
 /**
