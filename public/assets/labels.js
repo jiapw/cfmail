@@ -19,7 +19,7 @@
 // 它的名字不存在任何地方 —— 在这里按语言翻译,和错误码一个路子。
 
 import { api } from './api.js';
-import { esc, icon, qs, toast, showModal, closeModal, confirmDialog } from './ui.js';
+import { esc, icon, toast, showModal, closeModal, confirmDialog } from './ui.js';
 import { t } from './i18n.js';
 import { store } from './app.js';
 

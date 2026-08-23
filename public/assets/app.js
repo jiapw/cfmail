@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, avatar } from './ui.js';
+import { esc, icon, qs, avatar } from './ui.js';
 import { t, setLang, lang } from './i18n.js';
 import { renderList, renderThread, renderContacts } from './mail.js';
 import { openCompose } from './compose.js';
