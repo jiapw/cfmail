@@ -12,6 +12,7 @@ import {
 import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
+import { REMUX_MAX, verdict } from './remux.js';
 
 export { arcSeed };
 
@@ -2149,6 +2150,7 @@ function killMedia(rootEl) {
 }
 
 function closePreview() {
+  dropPvBlob();
   destroyPdfPreview();
   pvRich?.destroy?.();
   pvRich = null;
@@ -2214,8 +2216,8 @@ function bindPreviewResize(doc) {
   }
 }
 
-function noprevHtml(n) {
-  return `<div class="noprev" style="margin:auto">${fileIcon(n.name, 72)}<div>${esc(t('drv_no_preview'))}</div></div>`;
+function noprevHtml(n, why) {
+  return `<div class="noprev" style="margin:auto">${fileIcon(n.name, 72)}<div>${esc(why || t('drv_no_preview'))}</div></div>`;
 }
 
 async function richPreview(n) {
@@ -2549,6 +2551,61 @@ function paintPvShell(n, body) {
   };
 }
 
+/** The converted film, which is memory until it is let go of. One at a time: the preview shows
+ *  one file, and holding the previous one costs the size of a film for nothing.
+ *  转换出来的那部片子 —— 在被放手之前,它就是内存。一次只留一份:
+ *  预览只展示一个文件,留着上一个要白白花掉一部片子那么大的地方。 */
+let pvBlob = null;
+function dropPvBlob() {
+  if (pvBlob) URL.revokeObjectURL(pvBlob);
+  pvBlob = null;
+}
+
+/** A film in a box the browser will not open, put into one it will.
+ *
+ *  The whole file is fetched before anything can be done with it: the index of a Matroska file is
+ *  wherever the writer put it, and the packets have to be read in order regardless. So this is a
+ *  download and then a conversion, and both are shown as one wait -- because from the outside they
+ *  are one wait.
+ *
+ *  The result is a blob, which is memory. That is what the ceiling is for: past it, converting is
+ *  no longer a preview, and saying so beats spending a minute to run the tab out of memory.
+ *
+ *  一部装在浏览器打不开的盒子里的片子,被放进一个它打得开的盒子。
+ *
+ *  动手之前必须先取回整个文件:Matroska 的索引在写它的人放它的地方,而各个包无论如何都要按序读完。
+ *  所以这是一次下载加一次转换,两者作为同一次等待展示 —— 因为从外面看,它们就是同一次等待。
+ *
+ *  结果是一个 blob,也就是内存。上限就是为这个设的:超过它,转换就不再是预览了,
+ *  而说明这一点,好过花一分钟把这个标签页的内存耗光。 */
+async function convertAndPlay(n, src) {
+  const box = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
+  try {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error('e_drive_not_found');
+    const blob = await res.blob();
+    if (!box()) return;
+    const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    const mp4 = await mod.toMp4(blob);
+    const el = box();
+    if (!el) return;
+    pvBlob = URL.createObjectURL(mp4);
+    const v = el.querySelector('.drv-view-body video');
+    if (v) {
+      v.src = pvBlob;
+      v.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
+    }
+  } catch (e) {
+    const el = box();
+    const body = el?.querySelector('.drv-view-body');
+    // The conversion is the only thing that failed. What is left to say is the same thing that is
+    // said about a format nothing here can open, because from here on that is what it is.
+    // 失败的只有转换这一件事。剩下能说的,与"这里打不开的格式"要说的是同一句话 ——
+    // 因为从此刻起,它就是那种东西。
+    if (body) body.innerHTML = noprevHtml(n, t('drv_vid_no_codec'));
+  }
+}
+
 async function paintPreview() {
   const n = pv.list[pv.idx];
   destroyPdfPreview();
@@ -2594,8 +2651,24 @@ async function paintPreview() {
   // frame, which reads as "it failed" rather than "it is still coming".
   // 图片解出来之前一直盖着加载遮罩。src 交出去时字节往往还不存在 —— worker 可能正在解一整个
   // 固实块 —— 直接把加载图换成 <img> 会留下无从解释的空白,看起来像"失败了"而不是"还在来"。
+  // The previous film goes before the next one arrives, or two of them are held at once.
+  // 上一部片子在下一部到来之前先放掉,否则会同时攥着两部。
+  dropPvBlob();
+  const film = verdict(n.name, mime);
   if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
-  else if (VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
+  else if (film === 'native' || VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
+  // A box that can be changed, and a film small enough that changing it is still a preview.
+  // 一个可以换掉的盒子,以及一部小到"换掉它仍算预览"的片子。
+  else if (film === 'remux' && (n.size || 0) <= REMUX_MAX) {
+    body = `<video controls></video><div class="drv-pvwait">${spinnerHtml()}<div class="drv-conv">${esc(t('drv_vid_converting'))}</div></div>`;
+  }
+  // Nothing here will open it, and saying so is the whole improvement: a file icon and silence
+  // reads as "this application is broken" rather than "this format needs another program".
+  // 这里没有东西打得开它,而把这句话说出来就是全部的改进:
+  // 一个文件图标加沉默,读起来是"这个应用坏了",而不是"这个格式需要另一个程序"。
+  else if (film === 'remux' || film === 'no') {
+    body = noprevHtml(n, t(film === 'remux' ? 'drv_vid_too_big' : 'drv_vid_no_codec'));
+  }
   else if (isAudio) {
     // Cover-art card: the stored thumbnail doubles as the artwork
     // 封面卡片。存好的缩略图直接当专辑封面用
@@ -2612,6 +2685,7 @@ async function paintPreview() {
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
   loadVersions(n);
+  if (film === 'remux' && (n.size || 0) <= REMUX_MAX) void convertAndPlay(n, src);
   // Media inside archives: sequential playback only, no seeking (compressed entries would
   // have to re-decode from the start on every jump).
   // 压缩包内媒体只允许顺序播放,禁止 seek(压缩条目每跳一次都得从头重解)。

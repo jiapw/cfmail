@@ -15,6 +15,7 @@
     "deploy:worker": "node scripts/sync-vendor.mjs && wrangler deploy"
   },
   "dependencies": {
+    "@libav.js/variant-webcodecs": "^6.10.9",
     "agents": "^0.20.1",
     "ai": "^7.0.60",
     "aws4fetch": "^1.0.20",

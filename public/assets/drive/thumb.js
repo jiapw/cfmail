@@ -7,6 +7,7 @@
 //   PDFs       -> render page 1 with self-hosted pdf.js, crop from the top
 //   markdown   -> typeset the first lines onto a white sheet
 //   text/code  -> a small picture of the code editor showing it, in the theme in force
+//   films      -> a frame, after putting the opening into a box the browser opens if need be
 // Output is always WebP at 480x360, capped at 100 KB (the server re-checks both).
 //
 // 缩略图在上传端生成(Workers 解不了码,本项目也一贯把烧 CPU 的活放浏览器 —— 与邮件导入解析同理)。
@@ -19,6 +20,7 @@
 import { store } from '../app.js';
 import { docxParse, drawioDraw, drawioPages, ext, htmlText, kindOf, mhtmlParse } from './doc.js';
 import { fileSource } from './rzip.js';
+import { toMp4, verdict } from './remux.js';
 
 // The pptx engine loads only when a pptx thumbnail is actually being made
 // pptx 引擎只在真的要做 pptx 缩略图时才加载
@@ -37,7 +39,11 @@ export async function makeThumb(file) {
   try {
     const mime = (file.type || '').toLowerCase();
     if (IMG_RE.test(mime)) return await fromImage(file);
-    if (mime.startsWith('video/')) return await withTimeout(fromVideo(file), 10000);
+    // Longer than the others on purpose: a film in the wrong box has to have its opening put into
+    // the right one first, and that is a read plus a write before a single frame is looked at.
+    // 比其它几种给的时间长,是有意的:一部装错盒子的片子,得先把开头放进对的盒子里 ——
+    // 那是在看第一帧之前的一读一写。
+    if (verdict(file.name, mime)) return await withTimeout(fromFilm(file), 25000);
     if (mime === 'application/pdf' || ext(file.name) === 'pdf') return await withTimeout(fromPdf(file), 12000);
     switch (kindOf(file.name, mime)) {
       case 'audio': return await withTimeout(fromAudio(file), 15000);
@@ -174,6 +180,37 @@ const lumaOk = (s) => s.luma >= 25 && s.luma <= 230;
 function better(a, b) {
   if (lumaOk(a) !== lumaOk(b)) return lumaOk(a);
   return a.lap > b.lap;
+}
+
+/** How much of a film to read before drawing its picture. A thumbnail wants the opening and
+ *  nothing else; reading a two-gigabyte file to the end to get one frame is the kind of thing that
+ *  reads as the upload having hung.
+ *  为了画出一部片子的图,要读它多少。缩略图要的是开头、别的都不要;
+ *  为了拿一帧而把一个两吉字节的文件读到尾,正是那种会被读成"上传卡死了"的事。 */
+const FILM_HEAD_BYTES = 12 * 1024 * 1024;
+const FILM_HEAD_SECONDS = 12;
+
+/**
+ * A picture of a film, whatever box it came in.
+ *
+ * A file the browser can open goes straight to the frame picker. One it cannot open but whose
+ * codec it can decode has its opening put into a box it can open, and then goes to the same frame
+ * picker -- so a Matroska file gets the thumbnail it would have got as an MP4, chosen the same way,
+ * rather than none at all. One whose codec it cannot decode gets nothing, which is the truth.
+ *
+ * 一部片子的图,不管它装在什么盒子里。
+ *
+ * 浏览器打得开的文件直接交给选帧那一步。打不开、但编码它解得了的文件,
+ * 会把开头放进一个它打得开的盒子里,然后交给同一个选帧那一步 ——
+ * 于是一个 Matroska 文件拿到的缩略图,与它作为 MP4 时会拿到的那张一样,挑法也一样,
+ * 而不是根本没有。编码解不了的,什么都拿不到,而那就是实情。
+ */
+async function fromFilm(file) {
+  const what = verdict(file.name, file.type);
+  if (what === 'no') return null;
+  if (what !== 'remux') return fromVideo(file);
+  const head = await toMp4(file, { limit: FILM_HEAD_BYTES, seconds: FILM_HEAD_SECONDS });
+  return fromVideo(head);
 }
 
 async function fromVideo(file) {
