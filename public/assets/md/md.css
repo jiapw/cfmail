@@ -115,18 +115,23 @@ body.md-open { overflow: hidden; }
 .md-app.mode-src .md-srcpane { width: 100%; }
 .md-app.mode-view .md-gutter, .md-app.mode-view .md-srcpane { display: none; }
 
-/* Named monospace faces with a CJK sans tail, and no generic `monospace` keyword anywhere in the
-   stack -- its CJK fallback is a Song-style serif, so Chinese in the source pane came out looking
-   like a different typeface from the Latin beside it. The size is a fixed pixel value for the
-   same reason it is elsewhere in this project: user agents scale monospace text by a factor of
-   their own. (drive.css found both of these first; this is the same lesson, in a second place.)
-   具名等宽字体加中文无衬线兜底,栈里任何位置都不出现 generic 的 `monospace` 关键字 ——
-   它的中文回退是宋体系衬线,于是源码框里的中文看起来与它旁边的西文像是两种字体。
-   字号写死像素,理由与本项目别处相同:UA 会按自己的系数缩放等宽文本。
-   (这两条都是 drive.css 先发现的;这里是同一课,在第二个地方。) */
+/* The source pane is source, so it is set in the font chosen for source. Both selectors take it
+   together and must: the mirror exists only to be measured, and a mirror set in a different face
+   from the box it mirrors measures the wrong thing -- every line position the two panes agree on
+   would be off by whatever the two fonts differ by.
+   The fallback stack lives in fontpicker.js, including the rule that keeps the generic
+   `monospace` keyword out of it: its CJK fallback is a Song-style serif, which made Chinese in
+   this pane look like a different typeface from the Latin beside it. The size stays a fixed pixel
+   value because user agents scale monospace text by a factor of their own.
+   源码框里是源码,所以它用的是"为源码选的那个字体"。两个选择器一起取,而且必须一起 ——
+   镜像的存在只是为了被量,而一个与它所映照的框用了不同字体的镜像,量出来的是错的东西:
+   两个面板所商定的每一个行位置,都会差上这两种字体之间的那个差。
+   回退栈住在 fontpicker.js 里,包括"把 generic 的 `monospace` 关键字挡在外面"那一条:
+   它的中文回退是宋体系衬线,曾让这个框里的中文看起来与旁边的西文像是两种字体。
+   字号仍写死像素,因为 UA 会按自己的系数缩放等宽文本。 */
 .md-srcpane textarea, .md-mirror {
   padding: 16px 18px; line-height: 1.7; font-size: 13.5px;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-code);
   tab-size: 2; box-sizing: border-box;
 }
 .md-srcpane textarea {
