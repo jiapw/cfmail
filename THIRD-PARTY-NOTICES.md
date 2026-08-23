@@ -128,13 +128,13 @@ The `webcodecs` variant of the npm package `@libav.js/variant-webcodecs` v6.10.9
 
 It is here because a browser plays a handful of containers and refuses the rest, and what it refuses is not always something it could not decode. A Matroska file usually holds H.264 or VP9 or AV1 — codecs every browser has decoders for. So the container is changed in the browser and the result goes to an ordinary `<video>`; no frame is decoded or re-encoded on the way. The build contains **parsers but no video decoders**, which is exactly the point: it can open the box, and the browser does the rest.
 
-**Source.** The build is upstream's, unmodified, and its source is upstream's: <https://github.com/Yahweasel/libav.js> at tag `v6.10.9`. Nothing is rebuilt or patched here, so there is no corresponding source of ours to publish.
+**Source.** The build is upstream's, unmodified, and its source is upstream's: <https://github.com/Yahweasel/libav.js> at tag `v6.10.9.0`. Nothing is rebuilt or patched here, so there is no corresponding source of ours to publish.
 
 自 npm 包 `@libav.js/variant-webcodecs` v6.10.9 的 `webcodecs` 变体 —— 即编译成 WebAssembly 的 FFmpeg 各库。只发三个文件:加载器、Emscripten 胶水层与 `.wasm`,别的一律不发:线程版需要 `SharedArrayBuffer`,而那需要整个站点处于跨源隔离状态;asm.js 那份 4.5 MB 是给多年前就已不存在的浏览器准备的。本项目未修改其源码。
 
 它在这里,是因为浏览器只认少数几种容器、其余一概拒收,而它拒收的东西并不总是它解不了的东西。一个 Matroska 文件里装的通常是 H.264、VP9 或 AV1 —— 每个浏览器都有这些编码的解码器。所以就在浏览器里把容器换掉,换出来的东西交给一个普通的 `<video>`;整个过程没有一帧被解码或重新编码。这份构建**含解析器而不含视频解码器**,而这恰恰是要点:它负责打开盒子,其余交给浏览器。
 
-**源码。** 这份构建是上游的、未经修改,它的源码也是上游的:<https://github.com/Yahweasel/libav.js>,标签 `v6.10.9`。这里既不重新构建也不打补丁,因此不存在属于我们的"相应源码"需要发布。
+**源码。** 这份构建是上游的、未经修改,它的源码也是上游的:<https://github.com/Yahweasel/libav.js>,标签 `v6.10.9.0`。这里既不重新构建也不打补丁,因此不存在属于我们的"相应源码"需要发布。
 
 ---
 
