@@ -6039,15 +6039,15 @@ Object.assign(DICTS.ru, { drv_arc_bad: 'Не удалось открыть эт�
 // A film in a box the browser will not open: being changed, too big to change, or holding a codec
 // nothing here can decode.
 // 一部装在浏览器打不开的盒子里的片子:正在换盒子、大到换不动、或者装着这里解不了的编码。
-Object.assign(DICTS['zh-CN'], { drv_vid_converting: '正在转换容器,不重新编码…', drv_vid_no_codec: '浏览器放不了这个视频的编码,下载后用本地播放器打开', drv_vid_too_big: '这个视频太大,无法在浏览器里转换,请下载后播放' });
-Object.assign(DICTS['zh-TW'], { drv_vid_converting: '正在轉換容器,不重新編碼…', drv_vid_no_codec: '瀏覽器放不了這個影片的編碼,下載後用本機播放器開啟', drv_vid_too_big: '這個影片太大,無法在瀏覽器裡轉換,請下載後播放' });
-Object.assign(DICTS.en, { drv_vid_converting: 'Changing the container, not re-encoding…', drv_vid_no_codec: 'This video uses a codec the browser cannot play. Download it and open it in a media player.', drv_vid_too_big: 'This video is too large to convert in the browser. Download it to play it.' });
-Object.assign(DICTS.ja, { drv_vid_converting: 'コンテナを変換中(再エンコードはしません)…', drv_vid_no_codec: 'この動画のコーデックはブラウザーで再生できません。ダウンロードしてプレーヤーで開いてください。', drv_vid_too_big: 'この動画は大きすぎてブラウザーで変換できません。ダウンロードして再生してください。' });
-Object.assign(DICTS.ko, { drv_vid_converting: '컨테이너 변환 중 (재인코딩 없음)…', drv_vid_no_codec: '이 동영상의 코덱은 브라우저에서 재생할 수 없습니다. 내려받아 재생기로 여세요.', drv_vid_too_big: '이 동영상은 너무 커서 브라우저에서 변환할 수 없습니다. 내려받아 재생하세요.' });
-Object.assign(DICTS.de, { drv_vid_converting: 'Container wird umgepackt, kein Neukodieren …', drv_vid_no_codec: 'Der Codec dieses Videos lässt sich im Browser nicht abspielen. Laden Sie es herunter und öffnen Sie es in einem Player.', drv_vid_too_big: 'Dieses Video ist zu groß, um es im Browser umzupacken. Zum Abspielen bitte herunterladen.' });
-Object.assign(DICTS.fr, { drv_vid_converting: 'Changement de conteneur, sans réencodage…', drv_vid_no_codec: 'Le codec de cette vidéo n’est pas lisible dans le navigateur. Téléchargez-la et ouvrez-la dans un lecteur.', drv_vid_too_big: 'Cette vidéo est trop volumineuse pour être convertie dans le navigateur. Téléchargez-la pour la lire.' });
-Object.assign(DICTS.es, { drv_vid_converting: 'Cambiando el contenedor, sin recodificar…', drv_vid_no_codec: 'El navegador no puede reproducir el códec de este vídeo. Descárgalo y ábrelo en un reproductor.', drv_vid_too_big: 'Este vídeo es demasiado grande para convertirlo en el navegador. Descárgalo para reproducirlo.' });
-Object.assign(DICTS.ru, { drv_vid_converting: 'Меняем контейнер, без перекодирования…', drv_vid_no_codec: 'Браузер не может воспроизвести кодек этого видео. Скачайте его и откройте в плеере.', drv_vid_too_big: 'Это видео слишком велико для преобразования в браузере. Скачайте его для воспроизведения.' });
+Object.assign(DICTS['zh-CN'], { drv_vid_converting: '正在转换容器,不重新编码…', drv_vid_no_codec: '浏览器放不了这个视频的编码,下载后用本地播放器打开' });
+Object.assign(DICTS['zh-TW'], { drv_vid_converting: '正在轉換容器,不重新編碼…', drv_vid_no_codec: '瀏覽器放不了這個影片的編碼,下載後用本機播放器開啟' });
+Object.assign(DICTS.en, { drv_vid_converting: 'Changing the container, not re-encoding…', drv_vid_no_codec: 'This video uses a codec the browser cannot play. Download it and open it in a media player.' });
+Object.assign(DICTS.ja, { drv_vid_converting: 'コンテナを変換中(再エンコードはしません)…', drv_vid_no_codec: 'この動画のコーデックはブラウザーで再生できません。ダウンロードしてプレーヤーで開いてください。' });
+Object.assign(DICTS.ko, { drv_vid_converting: '컨테이너 변환 중 (재인코딩 없음)…', drv_vid_no_codec: '이 동영상의 코덱은 브라우저에서 재생할 수 없습니다. 내려받아 재생기로 여세요.' });
+Object.assign(DICTS.de, { drv_vid_converting: 'Container wird umgepackt, kein Neukodieren …', drv_vid_no_codec: 'Der Codec dieses Videos lässt sich im Browser nicht abspielen. Laden Sie es herunter und öffnen Sie es in einem Player.' });
+Object.assign(DICTS.fr, { drv_vid_converting: 'Changement de conteneur, sans réencodage…', drv_vid_no_codec: 'Le codec de cette vidéo n’est pas lisible dans le navigateur. Téléchargez-la et ouvrez-la dans un lecteur.' });
+Object.assign(DICTS.es, { drv_vid_converting: 'Cambiando el contenedor, sin recodificar…', drv_vid_no_codec: 'El navegador no puede reproducir el códec de este vídeo. Descárgalo y ábrelo en un reproductor.' });
+Object.assign(DICTS.ru, { drv_vid_converting: 'Меняем контейнер, без перекодирования…', drv_vid_no_codec: 'Браузер не может воспроизвести кодек этого видео. Скачайте его и откройте в плеере.' });
 
 // Everything the drive knows about one thing, in one place.
 // 网盘关于一样东西所知道的一切,放在一处。

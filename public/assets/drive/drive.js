@@ -12,7 +12,7 @@ import {
 import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
-import { REMUX_MAX, verdict } from './remux.js';
+import { verdict } from './remux.js';
 
 export { arcSeed };
 
@@ -2656,55 +2656,249 @@ function paintPvShell(n, body) {
   };
 }
 
-/** The converted film, which is memory until it is let go of. One at a time: the preview shows
- *  one file, and holding the previous one costs the size of a film for nothing.
- *  转换出来的那部片子 —— 在被放手之前,它就是内存。一次只留一份:
- *  预览只展示一个文件,留着上一个要白白花掉一部片子那么大的地方。 */
+/** The film being watched, and the handle the browser watches it through.
+ *
+ *  One at a time. The film owns a demuxer, a muxer and a WebAssembly instance, and it goes on
+ *  converting for as long as anybody is pulling from it -- so moving to the next preview has to let
+ *  go of it, or two conversions run at once over one library and neither is watching the screen.
+ *
+ *  正在被看的那部片子,以及浏览器透过它去看的那个把手。
+ *
+ *  一次一部。片子持有一个解复用器、一个 muxer 和一个 WebAssembly 实例,而只要还有人向它取,
+ *  它就一直在转 —— 所以换到下一个预览时必须把它放掉,
+ *  否则两次转换会同时压在同一个库上,而其中没有一个在看着屏幕。 */
 let pvBlob = null;
+let pvFilm = null;
 function dropPvBlob() {
   if (pvBlob) URL.revokeObjectURL(pvBlob);
   pvBlob = null;
+  const film = pvFilm;
+  pvFilm = null;
+  if (film) void film.close().catch(() => {});
 }
 
-/** A film in a box the browser will not open, put into one it will.
+/** How far ahead of what is being watched the conversion is allowed to get, and how much of what
+ *  has already been watched is kept behind it.
  *
- *  The whole file is fetched before anything can be done with it: the index of a Matroska file is
- *  wherever the writer put it, and the packets have to be read in order regardless. So this is a
- *  download and then a conversion, and both are shown as one wait -- because from the outside they
- *  are one wait.
+ *  Both are there for the same reason: a four-gigabyte film converted as fast as it can be is four
+ *  gigabytes in a tab. Ahead is what stops it running away; behind is what stops what it has done
+ *  from piling up. Thirty seconds of each is enough to ride out a slow stretch of network and small
+ *  enough that neither is ever more than a few tens of megabytes.
  *
- *  The result is a blob, which is memory. That is what the ceiling is for: past it, converting is
- *  no longer a preview, and saying so beats spending a minute to run the tab out of memory.
+ *  转换最多可以跑在"正在看的地方"前面多远,以及已经看过的东西在它后面留多少。
  *
- *  一部装在浏览器打不开的盒子里的片子,被放进一个它打得开的盒子。
+ *  两者是为同一件事而设的:一部四吉字节的片子若以它能达到的最快速度转换,就是标签页里的四吉字节。
+ *  "前面"是不让它跑掉的东西,"后面"是不让它做过的东西堆起来的东西。
+ *  各三十秒,足以熬过一段慢网络,又小到两者都不会超过几十兆字节。 */
+const AHEAD = 30;
+const BEHIND = 30;
+
+/** Wait for the buffer to finish whatever it is doing. Every operation on it is asynchronous and
+ *  only one can be in flight, so this comes before each of them.
+ *  等缓冲区把手上的事做完。它上面的每一个操作都是异步的,而且同时只能有一个在进行,
+ *  所以每一个之前都要先来这一下。 */
+const sbIdle = (sb) => (sb.updating
+  ? new Promise((go) => sb.addEventListener('updateend', go, { once: true }))
+  : Promise.resolve());
+
+const sbHas = (sb, at) => {
+  const b = sb.buffered;
+  for (let i = 0; i < b.length; i++) if (at >= b.start(i) - 0.2 && at < b.end(i)) return true;
+  return false;
+};
+
+/** How much film is ready after the point being watched. 正在看的那一点之后,还有多少片子备好了。 */
+const sbAhead = (sb, v) => {
+  const b = sb.buffered;
+  for (let i = 0; i < b.length; i++) {
+    if (v.currentTime >= b.start(i) - 0.2 && v.currentTime <= b.end(i)) return b.end(i) - v.currentTime;
+  }
+  return 0;
+};
+
+const sbDrop = async (sb, from, to) => {
+  await sbIdle(sb);
+  if (!(to > from)) return;
+  try { sb.remove(from, to); } catch { return; }
+  await sbIdle(sb);
+};
+
+/** Hand a piece over, making room for it if there is none.
  *
- *  动手之前必须先取回整个文件:Matroska 的索引在写它的人放它的地方,而各个包无论如何都要按序读完。
- *  所以这是一次下载加一次转换,两者作为同一次等待展示 —— 因为从外面看,它们就是同一次等待。
+ *  A buffer that is full does not warn: it throws, on the append, and what has to happen then is
+ *  that something already watched is thrown away and the piece offered again.
  *
- *  结果是一个 blob,也就是内存。上限就是为这个设的:超过它,转换就不再是预览了,
- *  而说明这一点,好过花一分钟把这个标签页的内存耗光。 */
+ *  把一块交过去;若没地方了,就腾出地方来。
+ *
+ *  一个满了的缓冲区不会预警:它在 append 上抛出来 —— 而此时该做的事,
+ *  是把已经看过的某些东西扔掉,再把这一块递一次。 */
+async function sbPut(sb, piece, v) {
+  for (let go = 0; go < 3; go++) {
+    await sbIdle(sb);
+    try {
+      sb.appendBuffer(piece);
+      await sbIdle(sb);
+      return true;
+    } catch (e) {
+      if (e?.name !== 'QuotaExceededError') return false;
+      await sbDrop(sb, 0, Math.max(0, v.currentTime - 5));
+    }
+  }
+  return false;
+}
+
+/** Wait until something worth waking up for happens, or half a second, whichever comes first.
+ *  等到有值得醒来的事发生,或者半秒钟,以先到者为准。 */
+const sbRest = (v) => new Promise((go) => {
+  let timer = 0;
+  const done = () => {
+    clearTimeout(timer);
+    v.removeEventListener('timeupdate', done);
+    v.removeEventListener('seeking', done);
+    go();
+  };
+  timer = setTimeout(done, 500);
+  v.addEventListener('timeupdate', done);
+  v.addEventListener('seeking', done);
+});
+
+/**
+ * A film in a box the browser will not open, put into one it will -- while it plays.
+ *
+ * Nothing is downloaded first and nothing is converted in advance. The film is read out of range
+ * requests a couple of megabytes at a time, changed a piece at a time, and handed to a MediaSource
+ * a piece at a time, so what decides how long the wait is at the start is the size of one piece and
+ * not the size of the file. A four-gigabyte film starts in about as long as a four-megabyte one.
+ *
+ * Which is also why there is no ceiling any more. There used to be one, at half a gigabyte, and it
+ * was there because the old way built the whole new file in memory before anything could be shown:
+ * past that the honest answer was "not here". Nothing is held now, so there is nothing to be past.
+ *
+ * The conversion follows the person watching rather than the file. It stops when it is far enough
+ * ahead, starts again when they catch up, and when they jump somewhere it has not reached it throws
+ * away what it has and starts again from there -- which is a new header and a new muxer, because a
+ * muxer that has been jumped backwards drops every packet it is then handed.
+ *
+ * 一部装在浏览器打不开的盒子里的片子,被放进一个它打得开的盒子 —— 而且是边放边换。
+ *
+ * 没有任何东西被预先下载,也没有任何东西被预先转换。片子从一个个 Range 请求里一次读几兆字节、
+ * 一块一块换掉、一块一块交给 MediaSource,于是决定开头要等多久的,是一块的大小,而不是文件的大小。
+ * 一部四吉字节的片子开始播放所花的时间,和一部四兆字节的差不多。
+ *
+ * 这也正是上限消失的原因。过去是有一个的,在半吉字节那里;它之所以存在,
+ * 是因为老办法要在能展示任何东西之前把整个新文件在内存里搭起来 —— 超过那个数,诚实的答复是"这里不行"。
+ * 而现在什么都不攥着,也就没有什么可超过的了。
+ *
+ * 转换跟着看的人走,而不是跟着文件走。跑够远了就停,人追上来了就再开;
+ * 而当人跳到一个它还没到的地方,它就把手上的东西扔掉、从那里重新开始 ——
+ * 那是一个新的头和一个新的 muxer,因为一个被往回跳过的 muxer,会把此后递给它的每一个包都丢掉。
+ */
 async function convertAndPlay(n, src) {
-  const box = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
+  const here = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
+  let film = null;
   try {
-    const res = await fetch(src);
-    if (!res.ok) throw new Error('e_drive_not_found');
-    const blob = await res.blob();
-    if (!box()) return;
     const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
-    const { blob: mp4, silent } = await mod.toMp4(blob);
-    const el = box();
-    if (!el) return;
-    pvBlob = URL.createObjectURL(mp4);
+    // An entry inside an archive has already been extracted and is in hand; everything else is a
+    // URL the drive answers in ranges. Both are read the same way from here on.
+    // 压缩包里的条目已经解出来、就在手上;其余一切都是网盘会按区间作答的 URL。
+    // 从这里往后,两者的读法一模一样。
+    const source = /^blob:/.test(src)
+      ? await (await fetch(src)).blob()
+      : { url: src, size: n.size || 0 };
+    film = await mod.stream(source);
+    const el = here();
+    if (!el) throw new Error('e_drive_remux_failed');
+    if (!window.MediaSource || !MediaSource.isTypeSupported(film.mime)) {
+      throw new Error('e_drive_video_codec');
+    }
+    const v = el.querySelector('.drv-view-body video');
+    if (!v) throw new Error('e_drive_remux_failed');
+    dropPvBlob();
+    pvFilm = film;
+
+    const ms = new MediaSource();
+    pvBlob = URL.createObjectURL(ms);
+    v.src = pvBlob;
+    await new Promise((go, no) => {
+      ms.addEventListener('sourceopen', go, { once: true });
+      ms.addEventListener('error', () => no(new Error('e_drive_remux_failed')), { once: true });
+    });
+    if (pvFilm !== film) return;
+    const sb = ms.addSourceBuffer(film.mime);
+    if (film.duration) { try { ms.duration = film.duration; } catch { /* it will grow / 它会自己长 */ } }
     // The film plays; the sound does not exist in a form anything here can read.
     // 片子会放;而那路声音,不存在于这里任何东西读得懂的形式里。
-    if (silent) toast(t('drv_vid_silent', silent.toUpperCase()));
-    const v = el.querySelector('.drv-view-body video');
-    if (v) {
-      v.src = pvBlob;
-      v.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
+    if (film.silent) toast(t('drv_vid_silent', film.silent.toUpperCase()));
+
+    // A jump is not acted on where it is noticed. It is noted, and the loop below deals with it at
+    // a point where it is not in the middle of appending something.
+    // 一次跳转不在它被察觉的地方处理。那里只是记下来,由下面那个循环在"手上没在追加东西"的时刻去办。
+    let jumped = null;
+    v.addEventListener('seeking', () => {
+      if (!sbHas(sb, v.currentTime)) jumped = v.currentTime;
+    });
+
+    v.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
+
+    // Where the next piece belongs. A fragment states its time relative to the stretch it is part
+    // of, so every stretch after a jump arrives calling itself zero; without this the film would
+    // be laid back over its own beginning, and the player -- asked for minute forty and handed
+    // minute nought -- would give up and go to the end.
+    // 下一块该坐在哪里。一块分片陈述的时间是相对它所属的那一段说的,
+    // 于是每一段跳转之后的片段到来时都管自己叫零;没有这一步,片子会被铺回它自己的开头,
+    // 而播放器 —— 要的是第四十分钟、拿到的是第零分钟 —— 会放弃,然后跳到片尾。
+    let place = true;
+
+    for (;;) {
+      if (pvFilm !== film) return;
+      if (jumped !== null) {
+        const to = jumped;
+        jumped = null;
+        // The film moves; the buffer is left alone. Emptying it first leaves the player holding
+        // nothing at all for as long as the new stretch takes to arrive, and a player holding
+        // nothing does not wait politely -- it decides playback is over and jumps to the end.
+        // What is no longer wanted is thrown away below, once there is something to replace it.
+        // 片子挪过去,缓冲不动。先把它清空,会让播放器在新的一段到来之前完全空着手 ——
+        // 而一个空着手的播放器不会客气地等,它会认定播放结束、直接跳到片尾。
+        // 不再需要的东西在下面扔掉 —— 等到有东西可以顶替它的时候。
+        await film.seek(to);
+        if (pvFilm !== film) return;
+        place = true;
+        continue;
+      }
+      if (sbAhead(sb, v) > AHEAD) { await sbRest(v); continue; }
+      const piece = await film.pull();
+      if (pvFilm !== film) return;
+      if (!piece) {
+        // The end of the film, which is not the end of watching it: somebody can still jump back
+        // into what has already gone by, and that starts the whole thing up again.
+        // 片子的结尾,并不是"看这部片子"的结尾:人还可以跳回已经过去的地方,
+        // 而那会把整件事重新开动起来。
+        try { if (ms.readyState === 'open') { await sbIdle(sb); ms.endOfStream(); } } catch { /* already ended / 已经结束了 */ }
+        while (pvFilm === film && jumped === null) await sbRest(v);
+        continue;
+      }
+      if (place) {
+        await sbIdle(sb);
+        try { sb.timestampOffset = film.at; } catch { /* it will land where it says / 那就按它自己说的落 */ }
+        place = false;
+      }
+      if (!await sbPut(sb, piece, v)) throw new Error('e_drive_remux_failed');
+      // What is far from where somebody is watching goes -- behind them and, after a jump, the
+      // stretch they jumped away from. Never what is being watched, and never close to it: the cut
+      // is a whole window back, so a small step backwards does not have to be converted twice.
+      // 离"人正在看的地方"远的东西丢掉 —— 他身后的,以及一次跳转之后他跳离的那一段。
+      // 绝不丢正在看的,也绝不丢挨着它的:切口留在整整一个窗口之前,
+      // 于是往回走一小步,不必再转换一遍。
+      const at = v.currentTime;
+      if (at > BEHIND * 2) await sbDrop(sb, 0, at - BEHIND);
+      const far = at + AHEAD * 3;
+      if (film.duration && far < film.duration) await sbDrop(sb, far, film.duration + 3600);
     }
   } catch (e) {
-    const el = box();
+    if (film && pvFilm !== film) await film.close().catch(() => {});
+    else if (film && pvFilm === film) dropPvBlob();
+    const el = here();
     const body = el?.querySelector('.drv-view-body');
     // The conversion is the only thing that failed. What is left to say is the same thing that is
     // said about a format nothing here can open, because from here on that is what it is.
@@ -2765,17 +2959,19 @@ async function paintPreview() {
   const film = verdict(n.name, mime);
   if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
   else if (film === 'native' || VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
-  // A box that can be changed, and a film small enough that changing it is still a preview.
-  // 一个可以换掉的盒子,以及一部小到"换掉它仍算预览"的片子。
-  else if (film === 'remux' && (n.size || 0) <= REMUX_MAX) {
+  // A box that can be changed. How big it is does not come into it any more: the film is changed
+  // a piece at a time while it plays, so a four-gigabyte one is the same wait as a small one.
+  // 一个可以换掉的盒子。它有多大已经不在考虑之列了:片子是边放边一块一块换的,
+  // 于是一部四吉字节的与一部小的,等的是同样久。
+  else if (film === 'remux') {
     body = `<video controls></video><div class="drv-pvwait">${spinnerHtml()}<div class="drv-conv">${esc(t('drv_vid_converting'))}</div></div>`;
   }
   // Nothing here will open it, and saying so is the whole improvement: a file icon and silence
   // reads as "this application is broken" rather than "this format needs another program".
   // 这里没有东西打得开它,而把这句话说出来就是全部的改进:
   // 一个文件图标加沉默,读起来是"这个应用坏了",而不是"这个格式需要另一个程序"。
-  else if (film === 'remux' || film === 'no') {
-    body = noprevHtml(n, t(film === 'remux' ? 'drv_vid_too_big' : 'drv_vid_no_codec'));
+  else if (film === 'no') {
+    body = noprevHtml(n, t('drv_vid_no_codec'));
   }
   else if (isAudio) {
     // Cover-art card: the stored thumbnail doubles as the artwork
@@ -2793,7 +2989,7 @@ async function paintPreview() {
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
   loadVersions(n);
-  if (film === 'remux' && (n.size || 0) <= REMUX_MAX) void convertAndPlay(n, src);
+  if (film === 'remux') void convertAndPlay(n, src);
   // Media inside archives: sequential playback only, no seeking (compressed entries would
   // have to re-decode from the start on every jump).
   // 压缩包内媒体只允许顺序播放,禁止 seek(压缩条目每跳一次都得从头重解)。
