@@ -4,6 +4,8 @@
   "fragments": [
     "avformat",
     "avcodec",
+    "avfilter",
+    "swresample",
     "format-ogg",
     "format-webm",
     "format-mp4",
@@ -33,8 +35,10 @@
     "parser-dca",
     "decoder-dca",
     "encoder-aac",
-    "audio-filters"
+    "audio-filters",
+    "decoder-mpeg4",
+    "decoder-msmpeg4v3"
   ],
-  "fingerprint": "5233cd06456fc728",
-  "built_at": "2026-08-23T09:37:56.896Z"
+  "fingerprint": "501e77f8ac23d4ef",
+  "built_at": "2026-08-23T10:07:36.271Z"
 }

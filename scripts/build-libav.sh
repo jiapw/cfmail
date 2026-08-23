@@ -38,7 +38,13 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   demuxer-avi/asf/flv  the boxes libav's published builds cannot open at all
 #   decoder-ac3, -dca    the sound on a disc rip, which no browser decodes
 #   encoder-aac          what that sound is turned into, because every browser plays AAC
+#   avfilter, swresample the machinery those filters are made of. audio-filters names the
+#                        filters; without the library and the resampler underneath them, the
+#                        binding for building a filter graph is simply not there
 #   audio-filters        the resampling and downmixing on the way -- 5.1 at 48k is not stereo
+#   decoder-mpeg4/msmpeg4v3  Xvid and DivX: enough to draw a thumbnail of an old AVI. No
+#                        colour conversion is built in with them -- the decoded planes go to
+#                        WebCodecs as an I420 VideoFrame and the browser converts, in hardware.
 #
 # 各个片段,以及每一个为什么在这里。
 #
@@ -48,9 +54,14 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   demuxer-avi/asf/flv  libav 已发布的构建根本打不开的那些盒子
 #   decoder-ac3, -dca    碟版片源的声音,没有浏览器解得了
 #   encoder-aac          那些声音被转成什么 —— 因为每个浏览器都放得了 AAC
+#   avfilter, swresample 那些滤镜赖以构成的机器。audio-filters 点的是滤镜的名字;
+#                        底下没有这个库和这个重采样器,"建一张滤镜图"的那个绑定根本就不存在
 #   audio-filters        路上要做的重采样与缩混 —— 48k 的 5.1 不是立体声
+#   decoder-mpeg4/msmpeg4v3  Xvid 与 DivX:够画出一张老 AVI 的缩略图。不随它们带色彩转换 ——
+#                        解出来的平面作为 I420 的 VideoFrame 交给 WebCodecs,由浏览器硬件转换。
 FRAGMENTS='[
-  "avformat","avcodec","format-ogg","format-webm","format-mp4",
+  "avformat","avcodec","avfilter","swresample",
+  "format-ogg","format-webm","format-mp4",
   "parser-opus","codec-libopus","format-flac","parser-flac","codec-flac",
   "format-wav","codec-pcm_f32le",
   "parser-aac","parser-vp8","parser-vp9","parser-av1","parser-h264","parser-hevc",
@@ -58,7 +69,8 @@ FRAGMENTS='[
   "bsf-h264_metadata","bsf-hevc_metadata",
   "demuxer-avi","demuxer-asf","demuxer-flv",
   "parser-ac3","decoder-ac3","parser-dca","decoder-dca",
-  "encoder-aac","audio-filters"
+  "encoder-aac","audio-filters",
+  "decoder-mpeg4","decoder-msmpeg4v3"
 ]'
 
 # Docker may be next door rather than here.
