@@ -4,9 +4,9 @@ CFMail itself is MIT licensed (see [LICENSE](LICENSE)). This file lists the thir
 
 CFMail 本体以 MIT 授权(见 [LICENSE](LICENSE))。本文件列出随本项目分发或在构建时引入的第三方组件及其许可要求。
 
-Most components are permissively licensed (MIT / MIT-0 / BSD-3-Clause / Apache-2.0). **No component carries a strong copyleft licence and none is commercially licensed.** One is weak copyleft: FFmpeg, under **LGPL-2.1**, which reaches this project as libav.js. What that asks for is that its source stay available and that it stay replaceable — both hold here, and each libav.js entry below says how.
+Most components are permissively licensed (MIT / MIT-0 / BSD-3-Clause / Apache-2.0). **No component carries a strong copyleft licence and none is commercially licensed.** One is weak copyleft: FFmpeg, under **LGPL-2.1**, which reaches this project as libav.js. What that asks for is that its source stay available and that it stay replaceable — both hold here, and the libav.js entry below says how.
 
-多数组件为宽松许可(MIT / MIT-0 / BSD-3-Clause / Apache-2.0)。**没有任何组件带强 copyleft 许可,也没有任何商业授权组件。** 有一个是弱 copyleft:FFmpeg,**LGPL-2.1**,经由 libav.js 进入本项目。它所要求的是"源码保持可获取"与"它保持可被替换" —— 这两条在这里都成立,下文每一个 libav.js 条目都说明了是怎么成立的。
+多数组件为宽松许可(MIT / MIT-0 / BSD-3-Clause / Apache-2.0)。**没有任何组件带强 copyleft 许可,也没有任何商业授权组件。** 有一个是弱 copyleft:FFmpeg,**LGPL-2.1**,经由 libav.js 进入本项目。它所要求的是"源码保持可获取"与"它保持可被替换" —— 这两条在这里都成立,下文那个 libav.js 条目说明了是怎么成立的。
 
 ---
 
@@ -115,26 +115,6 @@ Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 Built from source rather than copied. CodeMirror 6 is published as several dozen npm packages that import one another by bare name, which no browser can resolve, so `npm run vendor` bundles them with esbuild into this directory — 37 packages in all, every one of them MIT, including the grammars (`@lezer/*`) and three small dependencies of the view (`crelt`, `style-mod`, `w3c-keyname`). Because minification discards everything that is not code, the notices are gathered back and written to `public/vendor/codemirror/LICENSE`, generated from the list of packages the bundler actually reached rather than from a list kept by hand. Split by language: opening a shell script fetches the shell grammar and not the other thirty-four. Loaded on demand, and only by the source editor (`assets/code/`). This project does not modify its code.
 
 自源码构建,而非拷贝。CodeMirror 6 以几十个 npm 包发布,彼此用裸名互相引用,而浏览器解析不了裸名,于是 `npm run vendor` 用 esbuild 把它们打进本目录 —— 共 37 个包,每一个都是 MIT,其中包括各种文法(`@lezer/*`)与视图的三个小依赖(`crelt`、`style-mod`、`w3c-keyname`)。由于压缩会丢掉一切不是代码的东西,那些声明被重新收集,写入 `public/vendor/codemirror/LICENSE` —— 名单取自打包器实际够到的那些包,而不是一份手工维护的清单。按语言分块:打开一个 shell 脚本取回的是 shell 文法,而不是另外三十四种。按需加载,且只由源码编辑器(`assets/code/`)加载。本项目未修改其源码。
-
-### libav.js (FFmpeg) → `public/vendor/libav/`
-
-```
-LGPL-2.1-or-later
-FFmpeg: Copyright (c) 2000-2025 the FFmpeg developers
-libav.js: Copyright (c) 2019-2025 Yahweasel and contributors
-```
-
-The `webcodecs` variant of the npm package `@libav.js/variant-webcodecs` v6.10.9, which is FFmpeg's libraries compiled to WebAssembly. Three files ship — the loader, the Emscripten glue and the `.wasm` — and nothing else: the threaded build needs `SharedArrayBuffer`, which needs the whole site to be cross-origin isolated, and the asm.js fallback is 4.5 MB for browsers that have not existed for years. This project does not modify its code.
-
-It is here because a browser plays a handful of containers and refuses the rest, and what it refuses is not always something it could not decode. A Matroska file usually holds H.264 or VP9 or AV1 — codecs every browser has decoders for. So the container is changed in the browser and the result goes to an ordinary `<video>`; no frame is decoded or re-encoded on the way. The build contains **parsers but no video decoders**, which is exactly the point: it can open the box, and the browser does the rest.
-
-**Source.** The build is upstream's, unmodified, and its source is upstream's: <https://github.com/Yahweasel/libav.js> at tag `v6.10.9.0`. Nothing is rebuilt or patched here, so there is no corresponding source of ours to publish.
-
-自 npm 包 `@libav.js/variant-webcodecs` v6.10.9 的 `webcodecs` 变体 —— 即编译成 WebAssembly 的 FFmpeg 各库。只发三个文件:加载器、Emscripten 胶水层与 `.wasm`,别的一律不发:线程版需要 `SharedArrayBuffer`,而那需要整个站点处于跨源隔离状态;asm.js 那份 4.5 MB 是给多年前就已不存在的浏览器准备的。本项目未修改其源码。
-
-它在这里,是因为浏览器只认少数几种容器、其余一概拒收,而它拒收的东西并不总是它解不了的东西。一个 Matroska 文件里装的通常是 H.264、VP9 或 AV1 —— 每个浏览器都有这些编码的解码器。所以就在浏览器里把容器换掉,换出来的东西交给一个普通的 `<video>`;整个过程没有一帧被解码或重新编码。这份构建**含解析器而不含视频解码器**,而这恰恰是要点:它负责打开盒子,其余交给浏览器。
-
-**源码。** 这份构建是上游的、未经修改,它的源码也是上游的:<https://github.com/Yahweasel/libav.js>,标签 `v6.10.9.0`。这里既不重新构建也不打补丁,因此不存在属于我们的"相应源码"需要发布。
 
 ### libav.js, built here → `public/vendor/libav-full/`
 
