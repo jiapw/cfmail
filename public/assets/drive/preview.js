@@ -9,7 +9,6 @@
 // 任何渲染失败都软着陆到「无法预览」卡片。
 import { esc, fileIcon } from '../ui.js';
 import { t } from '../i18n.js';
-import { renderMarkdown } from '../chat/markdown.js';
 import { store } from '../app.js';
 import { docxParse, drawioDraw, drawioPages, ext as extOf, kindOf, mhtmlParse } from './doc.js';
 import { httpSource, memSource } from './rzip.js';
@@ -63,7 +62,7 @@ const noprev = (node) => `
 
 // Everything scrolls inside the rounded document window, never at the overlay edge
 // 一切滚动都发生在圆角文档窗口内部,绝不挂在遮罩边上
-const win = (inner) => `<div class="drv-docwin">${inner}</div>`;
+const win = (inner, cls = '') => `<div class="drv-docwin${cls ? ' ' + cls : ''}">${inner}</div>`;
 
 /** The box a picture occupies, before the bytes for it exist. Rotation turns the frame as well
  *  as the picture, so a quarter turn swaps the box -- that is what keeps a rotated photograph
@@ -114,13 +113,37 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // re-rendering would show something that was never in the document.
       // Markdown 保持"截断"而非"分窗"。它的语义横跨整个文件 —— 一段代码围栏可能在这一块打开、
       // 在下一块闭合 —— 边追加边重渲,会显示出文档里从未有过的东西。
+      //
+      // Rendered by the editor's own renderer, into the editor's own container. A file previewed
+      // here and then opened for writing is then the same file: the same heading levels, the same
+      // footnotes, the same relative pictures resolved the same way. It used to be rendered by the
+      // chat renderer, which demotes every heading two levels and knows nothing about the folder
+      // the file lives in -- so the preview and the editor disagreed about a document neither of
+      // them was wrong about.
+      // 由编辑器自己的渲染器渲染,渲进编辑器自己的容器。于是"在这里预览过、随后打开来写"的,
+      // 是同一个文件:同样的标题层级、同样的脚注、同样的相对路径图片按同样的方式解析。
+      // 从前它由 chat 的渲染器来渲,那个渲染器会把每个标题降两级,
+      // 也不知道这个文件住在哪个目录里 —— 于是预览与编辑器对同一份文档各执一词,而两边都没错。
       const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${TXT_CAP - 1}` } });
       if (!r.ok && r.status !== 206) throw new Error('fetch');
       const raw = new TextDecoder().decode(await r.arrayBuffer());
       if (dead()) return { destroy };
       const note = node.size > TXT_CAP
         ? `<div class="drv-trunc">${esc(t('drv_truncated', '2 MB'))}</div>` : '';
-      box.innerHTML = win(`${note}<div class="drv-sheet drv-md">${renderMarkdown(raw)}</div>`);
+      const mod = await import('../md/render.js?v=' + encodeURIComponent(store.brand?.version || ''));
+      // The stylesheet and the parse are two waits with nothing to say to each other.
+      // 样式表与解析是两件互不相干的等待。
+      const [, frag] = await Promise.all([mod.ensureCss(), mod.mdFragment(raw, node.parent_id || 'root')]);
+      if (dead()) return { destroy };
+      box.innerHTML = win(`${note}<div class="md-doc"></div>`, 'drv-mdwin');
+      const doc = box.querySelector('.md-doc');
+      doc.appendChild(frag);
+      // The same click rules the editor follows: an anchor scrolls, a relative link is resolved
+      // against this file's folder, an outside link opens beside. The listener leaves with the
+      // element it is on.
+      // 与编辑器所遵循的是同一套点击规则:锚点滚动,相对链接按这个文件所在的目录解析,
+      // 外部链接开在旁边。监听器随它所在的那个元素一起离开。
+      doc.addEventListener('click', (e) => mod.docClick(e, doc, node.parent_id || 'root'));
       return { destroy };
     }
 

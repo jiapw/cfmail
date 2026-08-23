@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast } from './ui.js';
+import { esc, icon, qs, toast } from './ui.js';
 import { t, setLang, lang, LANG_OPTIONS } from './i18n.js';
 import { store, navigate, refreshMe, show, applyMode, currentMode, pageTitle, applyFonts } from './app.js';
 import { pickFont } from './fontpicker.js';

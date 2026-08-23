@@ -690,40 +690,19 @@
   font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 13px; background: #f0f1f3; border-radius: 4px; padding: 1px 5px;
 }
-/* The chat markdown renderer demotes headings two levels on purpose (# becomes h3). Give the
-   md sheet its own scale matched to that mapping, or ### lands SMALLER than body text.
-   chat 的 Markdown 渲染器有意把标题降两级。# 即 h3。给 md 白纸配一套对齐该映射的字阶,
-   否则 ### 会比正文还小。 */
-.drv-md h3 { font-size: 24px; }
-.drv-md h4 { font-size: 19.5px; }
-.drv-md h5 { font-size: 16.5px; }
-.drv-md h6 { font-size: 15px; }
-/* Markdown follows the theme; the other things on this sheet do not.
-   A docx is a page, an HTML file is a page, an MHTML capture is a page somebody saved -- white
-   with dark text is what those are, in any theme. A Markdown file is not a page: it is written in
-   this application, edited in this application's editor, and read here. So it is read in the same
-   colours it is written in, which are the editor's -- the same variables, so the two cannot drift.
-   Markdown 跟随主题,这张纸上的其它东西不跟。
-   docx 是一页纸,HTML 文件是一页纸,MHTML 存档是某人存下来的一页纸 ——
-   白底深字就是它们本来的样子,与主题无关。而一个 Markdown 文件不是一页纸:
-   它在这个应用里写、在这个应用的编辑器里改、也在这里读。
-   所以它被读的时候用的是它被写时的那套颜色,也就是编辑器的那套 —— 同一批变量,于是两边走不岔。 */
-.drv-sheet.drv-md {
-  background: var(--bg); color: var(--text); box-shadow: none;
-}
-.drv-sheet.drv-md blockquote { border-left-color: var(--border); color: var(--text-2); }
-.drv-sheet.drv-md td, .drv-sheet.drv-md th { border-color: var(--border); }
-.drv-sheet.drv-md th { background: var(--panel-2); }
-.drv-sheet.drv-md a { color: var(--primary); }
-.drv-sheet.drv-md code { background: var(--panel-2); }
-.drv-sheet.drv-md hr { background: var(--border); border: 0; height: .25em; }
-
-.drv-md blockquote { font-size: 14.5px; color: #444; }
-.drv-md .md-code { background: #f6f7f9; border: 1px solid #e3e5e8; border-radius: 8px; margin: .8em 0; overflow: auto; }
-.drv-md .md-code code { display: block; background: none; padding: 12px 14px; white-space: pre; font-size: 13px; }
-.drv-md .md-code-head { display: flex; padding: 6px 12px 0; color: #888; font-size: 11.5px; }
-.drv-md .md-copy { display: none; }
-.drv-md img { max-width: 100%; }
+/* The window a Markdown file is read in.
+   No padding and no centring of its own: what goes inside is .md-doc, the editor's container, and
+   it brings the width, the margins and the left alignment that a document is read with. Adding a
+   second set around it would be this window's opinion about a layout that is not its to have.
+   The background is the editor's too, so that opening the same file for writing does not change
+   the colour of the paper under it.
+   一个 Markdown 文件被阅读的那扇窗。
+   自己不留内边距、也不居中:放进去的是 .md-doc —— 编辑器的容器 ——
+   它自带一份文档被阅读时应有的宽度、边距与左对齐。在它外面再加一套,
+   是这扇窗对一个不归它管的排布发表意见。
+   背景也取编辑器的,于是把同一个文件打开来写时,底下这张纸的颜色不会变。 */
+.drv-docwin.drv-mdwin { padding: 0; text-align: left; background: var(--bg); }
+.drv-docwin.drv-mdwin .drv-trunc { margin: 12px 28px 0; }
 /* pptx slide cards: absolute shapes in percent coords; cqw font sizes scale with the card
    pptx 幻灯片卡片:形状按百分比绝对定位,字号用 cqw 随卡片等比缩放 */
 .drv-slidewrap { width: 100%; margin: 0 auto 18px; }
