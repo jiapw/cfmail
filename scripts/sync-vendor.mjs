@@ -30,6 +30,7 @@
 // 用法:node scripts/sync-vendor.mjs [--check]
 //   --check 只校验不写入,缺文件就非零退出(CI 用)
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -310,7 +311,90 @@ function writeBundleLicense(out, metafile) {
   fs.writeFileSync(path.join(out, 'LICENSE'), parts.join('\n') + '\n');
 }
 
+/**
+ * The one build that is not copied from anywhere, checked rather than made.
+ *
+ * It is committed, so a fresh clone already has it and nobody needs Docker to install or deploy
+ * this project. What this does is notice the two ways it can be wrong: absent, or present but built
+ * before somebody changed which codecs go into it. The second is the one worth catching -- a binary
+ * that no longer matches the list beside it fails months later, as a file that will not play, for a
+ * reason that is nowhere in the code.
+ *
+ * Whether it is required is not stated here; it is asked of the application. While nothing imports
+ * it, a missing build is worth mentioning and not worth stopping for. The moment something does,
+ * the same absence becomes a broken deployment, and this says so.
+ *
+ * 唯一一份不是从哪儿拷过来的构建 —— 这里是查它,不是造它。
+ *
+ * 它是入库的,所以新克隆下来就已经有了,没有人为了安装或部署这个项目而需要 Docker。
+ * 这段代码做的是察觉它可能出错的那两种方式:不在,或者在、但建于"有人改动了要装哪些编码"之前。
+ * 值得抓的是第二种 —— 一个与旁边那份清单不再相符的二进制,会在几个月后失败,
+ * 表现为某个文件放不了,而原因在代码里任何地方都找不到。
+ *
+ * 它是不是必需的,这里不表态;这个问题去问应用。在没有任何东西 import 它之前,
+ * 缺失值得一提,但不值得为它停下。而一旦有东西 import 了它,同一个缺失就是一次坏掉的部署,
+ * 这段代码会照实说。
+ */
+function checkLibavFull() {
+  const dir = path.join(VENDOR, 'libav-full');
+  const script = path.join(ROOT, 'scripts', 'build-libav.sh');
+  let want;
+  try {
+    const s = fs.readFileSync(script, 'utf8');
+    const version = /VERSION="\$\{LIBAV_VERSION:-([\d.]+)\}"/.exec(s)[1];
+    const frags = JSON.parse(/FRAGMENTS='(\[[\s\S]*?\])'/.exec(s)[1]);
+    want = {
+      version,
+      fingerprint: crypto.createHash('sha256')
+        .update(version + '\n' + [...frags].sort().join(',')).digest('hex').slice(0, 16),
+    };
+  } catch {
+    console.error('  ✗ 读不出 scripts/build-libav.sh 里的构建配置');
+    missing++;
+    return;
+  }
+
+  // Asked of the application, not decided here.
+  // 去问应用,而不是在这里裁定。
+  const used = (() => {
+    const hits = [];
+    (function walk(d) {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (e.name === 'vendor') continue;
+        if (e.isDirectory()) walk(path.join(d, e.name));
+        else if (e.name.endsWith('.js') && fs.readFileSync(path.join(d, e.name), 'utf8').includes('libav-full')) {
+          hits.push(e.name);
+        }
+      }
+    })(path.join(ROOT, 'public', 'assets'));
+    return hits;
+  })();
+
+  let have = null;
+  try { have = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8')); } catch { /* 没建过 */ }
+
+  const say = used.length
+    ? (m) => { console.error('  ✗ ' + m); missing++; needsLibav = true; }
+    : (m) => console.log('  · ' + m);
+  if (!have) {
+    say(`libav-full 未构建${used.length ? `(${used.join('、')} 需要它)` : '(暂无人使用)'}:跑 npm run libav`);
+    return;
+  }
+  if (have.fingerprint !== want.fingerprint) {
+    say(`libav-full 与 build-libav.sh 的配置不符(${have.version}/${have.fingerprint} ≠ ${want.version}/${want.fingerprint}):跑 npm run libav 重建`);
+    return;
+  }
+  const files = collect(dir, '', null).filter((f) => f !== 'build.json');
+  const bytes = files.reduce((n2, rel) => n2 + fs.statSync(path.join(dir, rel)).size, 0);
+  console.log(`  libav-full  ${String(files.length).padStart(3)} 文件  (自建 ${Math.round(bytes / 1024)} KB)  v${have.version}`);
+}
+
 let copied = 0;
+// Set when what is missing is the build npm cannot supply, because the fix for that one is a
+// different command and sending somebody to the wrong one wastes the trip.
+// 当缺的是那份 npm 供不了的构建时置位:它的修法是另一条命令,
+// 而把人指向错的那条,是让人白跑一趟。
+let needsLibav = false;
 let missing = 0;
 let removed = 0;
 
@@ -384,10 +468,19 @@ function readVersion(from) {
 }
 
 await buildCodeMirror();
+checkLibavFull();
 
 if (CHECK_ONLY) {
   if (missing) {
-    console.error(`\n✗ public/vendor/ 有 ${missing} 个文件缺失或过期,跑 npm run vendor 修复`);
+    // Naming the command that can actually fix it. `npm run vendor` copies from node_modules and
+    // cannot produce the one build that is not there, so sending somebody to it for that is
+    // sending them to run something that will report the same problem again.
+    // 说出真能修好它的那条命令。`npm run vendor` 是从 node_modules 拷贝,
+    // 造不出那份不在里面的构建 —— 为那件事把人指向它,是让人去跑一条会把同样的问题再报一遍的命令。
+    const how = needsLibav
+      ? (missing > 1 ? '跑 npm run vendor 与 npm run libav 修复' : '跑 npm run libav 修复')
+      : '跑 npm run vendor 修复';
+    console.error(`\n✗ public/vendor/ 有 ${missing} 个文件缺失或过期,${how}`);
     process.exit(1);
   }
   console.log('\n✓ public/vendor/ 与 node_modules 一致');

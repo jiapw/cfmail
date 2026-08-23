@@ -7,6 +7,7 @@
     "postinstall": "node scripts/sync-vendor.mjs",
     "vendor": "node scripts/sync-vendor.mjs",
     "vendor:check": "node scripts/sync-vendor.mjs --check",
+    "libav": "bash scripts/build-libav.sh",
     "dev": "node scripts/sync-vendor.mjs --check && wrangler dev",
     "deploy": "node scripts/deploy.mjs",
     "typecheck": "tsc --noEmit",
