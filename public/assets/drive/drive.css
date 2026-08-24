@@ -364,6 +364,13 @@
 .drv-menu .mi wa-icon { color: var(--text-2); font-size: 18px; }
 .drv-menu .sep { height: 1px; background: var(--border); margin: 5px 8px; }
 .drv-menu .mi.danger, .drv-menu .mi.danger wa-icon { color: #e5484d; }
+/* A line that answers instead of acting: it does not light up under the pointer, and it is
+   allowed to run to several lines, because what it has to say does not fit in two words.
+   一行用来作答、而不是用来动作的字:指针经过时它不亮起,
+   而且允许它折成好几行 —— 因为它要说的话,两个词装不下。 */
+.drv-menu .mi.hint { align-items: flex-start; cursor: default; color: var(--text-2); max-width: 320px; }
+.drv-menu .mi.hint:hover { background: none; }
+.drv-menu .mi.hint span { white-space: normal; line-height: 1.5; }
 
 /* ---------- Upload panel ---------- */
 /* ---------- 上传面板 ---------- */
