@@ -2,6 +2,10 @@ import type { Env } from './types';
 import { app } from './api';
 import { backupTick } from './backup';
 export { ChatAgent } from './chat/agent';
+// The container's Durable Object class, likewise -- a binding names a class the
+// entry module must actually export.
+// 容器那个 Durable Object 类同理 —— 绑定点的名字,入口模块必须真的导出。
+export { BackupContainer } from './backup';
 import { backfillContacts, backfillSubjectNorm, findMailboxByAddress, ingestEml, insertFailedPlaceholder, logUnrouted, purgeOldUnrouted, retryFailedParses, deleteMessageDerived } from './parse';
 import { driveCronDaily, driveCronHourly } from './drive';
 import { processOutbox } from './send';

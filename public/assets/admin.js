@@ -582,70 +582,136 @@ async function tabUsers(body) {
 // ---------- Automatic backup ----------
 // ---------- 自动备份 ----------
 
+/**
+ * Copy every archive that is not already in a folder the operator picks.
+ *
+ * Which ones are missing is decided by name and size together. Name alone would call a half
+ * finished download complete; a hash would mean reading gigabytes on both sides to learn what the
+ * size already says, since these archives are written once and never edited.
+ *
+ * 把操作者选定的目录里还没有的包全部取下来。
+ *
+ * "缺哪些"由文件名和大小共同决定。只看名字,会把一次下到一半的传输当成完成;
+ * 而算哈希意味着两边各读几个 GB,只为得到大小已经给出的答案 —— 这些包写一次就再不改动。
+ */
+async function syncBackups(st, statusEl) {
+  let dir;
+  try {
+    dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+  } catch {
+    return; // 用户取消
+  }
+  const say = (s) => { statusEl.textContent = s; };
+
+  const want = [...(st.daily || []), ...(st.monthly || []), ...(st.yearly || [])];
+  const have = new Map();
+  for await (const [name, handle] of dir.entries()) {
+    if (handle.kind !== 'file') continue;
+    have.set(name, (await handle.getFile()).size);
+  }
+  const missing = want.filter((a) => {
+    const file = a.key.split('/').pop();
+    return have.get(file) !== a.size;
+  });
+  if (!missing.length) {
+    say(t('bk_sync_uptodate', want.length));
+    return;
+  }
+
+  let done = 0;
+  let bytes = 0;
+  for (const a of missing) {
+    const file = a.key.split('/').pop();
+    say(t('bk_sync_doing', file, done + 1, missing.length));
+    const res = await fetch(`/api/admin/backup/file/${a.key}`);
+    if (!res.ok) { say(t('bk_sync_failed', file)); return; }
+    // Straight from the network to the disk. These are gigabyte files and the tab has no reason
+    // to hold one. / 从网络直接落盘。这些是 GB 级的文件,页签没有理由把它攥在手里。
+    const fh = await dir.getFileHandle(file, { create: true });
+    const w = await fh.createWritable();
+    await res.body.pipeTo(w);
+    done++;
+    bytes += a.size;
+  }
+  say(t('bk_sync_done', done, fmtSize(bytes)));
+}
+
 async function tabBackup(body) {
   const st = await api('GET', '/api/admin/backup');
-  const running = st.phase && st.phase !== 'idle';
-  const fmtWhen = (t) => (t ? fmtDateTime(t) : '—');
-  // What is running right now, in the operator's terms rather than the state machine's
-  // 现在在跑什么 —— 用操作者的说法,不是状态机的说法
-  const phaseText = {
-    rows: t('bk_phase_rows', st.table || ''),
-    mail: t('bk_phase_mail'),
-    finishing: t('bk_phase_finishing'),
-  }[st.phase] || t('bk_phase_idle');
+  const running = st.state === 'running';
+  const hours = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0'));
 
-  const period = (title, list, cls) => `
+  const row = (a) => `
+    <div class="bk-row">
+      <span class="bk-name">${esc(a.name)}</span>
+      <span class="dim">${fmtSize(a.size)}</span>
+      <span class="dim bk-when">${a.at ? fmtDateTime(a.at) : ''}</span>
+      <a class="bk-dl" href="/api/admin/backup/file/${esc(a.key)}" download>${icon('download', 15)}</a>
+    </div>`;
+  const group = (title, list) => `
     <div class="bk-col">
       <div class="side-title">${esc(title)} (${list.length})</div>
-      ${list.length
-        ? list.slice().sort().reverse().slice(0, 24).map((x) => `<div class="bk-item ${cls}">${esc(x)}</div>`).join('')
-        : `<div class="dim" style="padding:4px 2px">${esc(t('bk_none'))}</div>`}
+      ${list.length ? list.map(row).join('') : `<div class="dim" style="padding:4px 2px">${esc(t('bk_none'))}</div>`}
     </div>`;
 
   body.innerHTML = `
     <section class="card">
       <h3>${esc(t('a_backup'))}</h3>
       <p class="dim" style="margin:0 0 12px">${esc(t('bk_note'))}</p>
-      ${st.bound ? '' : `<p class="chip chip-warn" style="display:inline-block">${esc(t('bk_no_bucket'))}</p>`}
+      ${st.ready ? '' : `<p class="chip chip-warn" style="display:inline-block">${esc(t(st.why || 'bk_not_ready'))}</p>`}
       <div class="form-row">
         <label>${esc(t('bk_enable'))}</label>
-        <wa-switch id="bk-on" ${st.enabled ? 'checked' : ''} ${st.bound ? '' : 'disabled'}></wa-switch>
-        <span class="dim">${esc(t('bk_enable_note', String(st.start_hour_utc).padStart(2, '0')))}</span>
+        <wa-switch id="bk-on" ${st.enabled ? 'checked' : ''} ${st.ready ? '' : 'disabled'}></wa-switch>
+        <label style="margin-left:18px">${esc(t('bk_hour'))}</label>
+        <wa-select id="bk-hour" value="${st.hour}" style="width:110px">
+          ${hours.map((h) => `<wa-option value="${parseInt(h, 10)}">${h}:00</wa-option>`).join('')}
+        </wa-select>
+        <span class="dim">${esc(t('bk_hour_note'))}</span>
       </div>
       <div class="form-row">
         <label>${esc(t('bk_status'))}</label>
-        <span>${esc(phaseText)}</span>
-        ${running ? `<span class="dim">${esc(t('bk_copied', st.copied, st.skipped))}</span>` : ''}
+        <span>${esc(running ? t('bk_running', st.day) : t('bk_idle'))}</span>
+        ${running && st.line ? `<span class="dim">${esc(st.line)}</span>` : ''}
         <span class="flex1"></span>
-        <wa-button appearance="outlined" size="small" id="bk-run" ${st.bound && !running ? '' : 'disabled'}>${esc(t('bk_run_now'))}</wa-button>
+        <wa-button appearance="outlined" size="small" id="bk-run" ${st.ready && !running ? '' : 'disabled'}>${esc(t('bk_run_now'))}</wa-button>
       </div>
       <div class="form-row">
         <label>${esc(t('bk_last'))}</label>
-        <span>${esc(st.finished_day || '—')}</span><span class="dim">${esc(fmtWhen(st.finished_at))}</span>
+        <span>${esc(st.finished_day || '—')}</span>
+        <span class="dim">${st.finished_at ? esc(fmtDateTime(st.finished_at)) : ''}</span>
+        ${st.result ? `<span class="dim">${esc(t('bk_last_result', st.result.objects ?? 0, fmtSize(st.result.size || 0)))}</span>` : ''}
       </div>
       ${st.last_error ? `<div class="form-row"><label>${esc(t('bk_error'))}</label><span class="dim">${esc(st.last_error)}</span></div>` : ''}
-      ${st.pool ? `<div class="form-row"><label>${esc(t('bk_pool'))}</label><span>${esc(t('bk_pool_n', st.pool.objects, fmtSize(st.pool.bytes)))}</span></div>` : ''}
     </section>
-    ${st.bound ? `
     <section class="card">
-      <h3>${esc(t('bk_kept'))}</h3>
-      <p class="dim" style="margin:0 0 10px">${esc(t('bk_kept_note'))}</p>
-      <div class="bk-cols">
-        ${period(t('bk_daily'), st.daily || [], 'd')}
-        ${period(t('bk_monthly'), st.monthly || [], 'm')}
-        ${period(t('bk_yearly'), st.yearly || [], 'y')}
+      <h3>${esc(t('bk_files'))}</h3>
+      <div class="form-row">
+        <span class="dim">${esc(t('bk_sync_note'))}</span>
+        <span class="flex1"></span>
+        <span class="dim" id="bk-sync-status"></span>
+        <wa-button appearance="outlined" size="small" id="bk-sync">${icon('download', 15)} ${esc(t('bk_sync'))}</wa-button>
       </div>
-    </section>` : ''}`;
+      <div class="bk-cols">
+        ${group(t('bk_daily'), st.daily || [])}
+        ${group(t('bk_monthly'), st.monthly || [])}
+        ${group(t('bk_yearly'), st.yearly || [])}
+      </div>
+    </section>`;
 
-  qs('#bk-on')?.addEventListener('change', async (e) => {
+  const save = async () => {
     try {
-      await api('POST', '/api/admin/backup', { enabled: !!e.target.checked });
+      await api('POST', '/api/admin/backup', {
+        enabled: !!qs('#bk-on').checked,
+        hour: parseInt(qs('#bk-hour').value, 10),
+      });
       toast(t('t_saved'));
     } catch (err) {
       toast(err.message, true);
       tabBackup(body);
     }
-  });
+  };
+  qs('#bk-on')?.addEventListener('change', save);
+  qs('#bk-hour')?.addEventListener('change', save);
   qs('#bk-run')?.addEventListener('click', async () => {
     try {
       await api('POST', '/api/admin/backup/run', {});
@@ -655,7 +721,23 @@ async function tabBackup(body) {
       toast(err.message, true);
     }
   });
+  qs('#bk-sync')?.addEventListener('click', () => {
+    if (!window.showDirectoryPicker) return toast(t('bk_sync_unsupported'), true);
+    syncBackups(st, qs('#bk-sync-status'));
+  });
+
+  // While something is running, the page follows it. It stops asking the moment it is over, so an
+  // open tab left overnight is not a request a minute for nothing.
+  // 有东西在跑时,页面跟着它走。一结束就不再问,于是一个开着过夜的页签
+  // 不会变成每分钟一次的空转请求。
+  if (running) {
+    clearTimeout(bkTimer);
+    bkTimer = setTimeout(() => {
+      if (document.querySelector('#bk-run')) tabBackup(body);
+    }, 5000);
+  }
 }
+let bkTimer = null;
 
 // ---------- Mail for unmatched recipients ----------
 // ---------- 未匹配收件人的来信 ----------

@@ -347,6 +347,7 @@ Open `https://<entry-subdomain>.<your-domain>/#/admin`.
 | **Import / 导入工具** | Bring in `.eml` archives from an old provider / 把旧服务商导出的 `.eml` 搬进来 |
 | **Export / 导出工具** | Write mailboxes back out to a local folder as `.eml` / 把邮箱写回本地目录 |
 | **Audit log / 审计日志** | Who did what, downloadable as CSV or JSONL / 谁做了什么,可下载 CSV 或 JSONL |
+| **Backup / 备份** | Switch the nightly backup on, pick the hour, download any archive, or sync them all into a local folder / 打开每晚的自动备份、选时刻、下载任意一份包,或把它们全部同步到本地目录 |
 
 ### As a user / 普通用户
 
@@ -364,6 +365,110 @@ Where the domain has the Drive enabled, the nav bar carries an entry to it — t
 1. Admin console → **Invites** → generate a link / 管理后台 → **邀请** → 生成链接
 2. Send the link to your colleague / 把链接发给同事
 3. They set a password, confirm a code sent to their personal email, and they're in / 对方设密码、输入发到其个人邮箱的验证码,就进来了
+
+---
+
+## Backup / 备份
+
+Off by default. Turn it on in the admin console under **Backup**, pick the hour, and once a day
+the mail side of the deployment is packed into one file you can download and keep anywhere.
+
+默认关闭。在后台 **备份** 页签打开、选好时刻,此后每天邮件一侧的数据会被打成一个文件,
+你可以下载下来放到任何地方。
+
+### What is in an archive / 包里有什么
+
+```
+daily/2026-08-23.7z      整库 SQL(22 张表)+ 当天新到与当天导入的邮件原件(含附件)
+monthly/2026-08.zip      当月各份日包,原样收进来(zip store,不重压)
+yearly/2026.zip          当年各份月包,同上
+```
+
+Each message appears in exactly one daily -- the one for the day it arrived -- so nothing is
+stored twice. A monthly is a container of that month's dailies and a yearly a container of that
+year's monthlies, so restoring any given day means opening at most three nested files. On the
+first of a month last month's dailies are folded and deleted; on 2 January the same fold makes a
+year.
+
+每封信只出现在它到达那一天的日包里,所以没有任何东西被存两次。月包是当月日包的容器,
+年包是当年月包的容器,于是要恢复某一天,最多打开三层文件。每月 1 号折叠并删除上月日包,
+每年 1 月 2 号同样折出年包。
+
+Days are cut at **UTC+0**, and a run backs up the day that has just ended. Not included:
+Drive, the AI assistant, live sessions, and short-lived tokens -- restoring a login is not
+restoring data.
+
+按 **UTC+0** 切分,每次备份的是刚结束的那一天。不含网盘、AI 助手、登录态和短期令牌 ——
+恢复一个登录态不叫恢复数据。
+
+### Where it runs / 跑在哪儿
+
+In a container, not in the Worker. A Worker has thirty seconds of CPU, 128 MB, and no LZMA; this
+job compresses with 7-Zip and takes as long as it takes. The Worker starts the container, asks
+once a minute how it is going, and stops it the moment it reports done -- a container still
+running is a container still being charged for.
+
+在容器里,不在 Worker 里。Worker 只有三十秒 CPU、128 MB 内存,而且没有 LZMA;
+这个任务用 7-Zip 压缩,该跑多久跑多久。Worker 负责起容器、每分钟问一次进展、
+一做完立刻停掉 —— 还在跑的容器是还在计费的容器。
+
+The container has no bindings, so it reaches Cloudflare on its own: R2 over the S3 API, D1 over
+REST, both on one token. R2 derives its S3 credentials rather than issuing them -- the access key
+is the token's id and the secret is the SHA-256 of its value -- so one token is enough.
+
+容器没有 binding,所以它自己够到 Cloudflare:R2 走 S3 接口,D1 走 REST,共用一个 token。
+R2 的 S3 凭据是推导出来的(access key = token 的 id,secret = token value 的 SHA-256),
+所以一个 token 就够。
+
+### Turning it on / 怎么开起来
+
+The image has to be built and pushed once. **This is the only step that needs Docker** -- ordinary
+deploys reference the image from the registry and do not.
+
+镜像要先构建推送一次。**这是唯一需要 Docker 的一步** —— 日常部署引用仓库里的镜像,不需要 Docker。
+
+```sh
+# 1. 构建并推送镜像(需要 Docker;Windows 上用 WSL 里的 Docker 也可以)
+npx wrangler containers build ./container \
+  --tag registry.cloudflare.com/<account-id>/cfmail-backup:1 --push
+
+# 2. 部署时带上备份用的 token,它会被存成 wrangler secret
+node scripts/deploy.mjs --token <deploy token> --backup-token <backup token>
+```
+
+`--backup-token` is separate from `--token` on purpose: the deploy token lives only in the memory
+of that one run, while the backup token stays in the Worker as a secret. Give the backup one only
+**Account → D1 · Read** and **Account → Workers R2 Storage · Edit**; it needs nothing else.
+
+`--backup-token` 与 `--token` 分开是有意的:部署 token 只活在那一次运行的内存里,
+而备份 token 会作为 secret 长期留在 Worker 里。给它 **Account → D1 · Read** 和
+**Account → Workers R2 Storage · Edit** 就够,别的一概不需要。
+
+Without the image, or without the token, the console says so and the switch stays off. A
+deployment with neither is simply a deployment without backups.
+
+镜像没构建、或 token 没给,后台会直说,开关也开不起来。两样都没有的部署,就是一套没有备份的部署。
+
+### Restoring / 恢复
+
+Open the archive. `database.sql` is a plain SQL dump -- `wrangler d1 execute <db> --remote
+--file=database.sql` puts it back -- and `mail/` holds the message files under their original
+storage keys. Afterwards rebuild the search index:
+
+打开包。`database.sql` 就是普通的 SQL dump,`wrangler d1 execute <db> --remote --file=database.sql`
+即可写回;`mail/` 下面是按原始存储 key 排好的邮件原件。之后重建一次全文索引:
+
+```sh
+npx wrangler d1 execute cfmail --remote \
+  --command "INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"
+```
+
+The index is deliberately not in the backup: it is derived from `message_texts`, and D1 refuses to
+export a database that contains a virtual table at all -- which is why the backup names its
+twenty-two tables explicitly rather than asking for everything.
+
+索引有意不进备份:它是从 `message_texts` 派生的,而且 D1 根本拒绝导出含虚拟表的数据库 ——
+这也正是备份显式点名那 22 张表、而不是"全都要"的原因。
 
 ---
 

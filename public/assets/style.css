@@ -976,13 +976,18 @@ body.impersonating .boot-loading { min-height: calc(100vh - 34px); }
   body.impersonating .sidebar { top: 94px; }
 }
 
-/* ---------- 备份:三级保留的并列清单 ---------- */
-.bk-cols { display: flex; gap: 24px; flex-wrap: wrap; }
-.bk-col { min-width: 150px; }
-.bk-item {
-  font-variant-numeric: tabular-nums; font-size: 13px;
-  padding: 3px 8px; border-radius: 6px; margin: 2px 0;
-  background: var(--accent-soft); display: inline-block; margin-right: 6px;
+/* ---------- 备份:三级包的并列清单 ---------- */
+.bk-cols { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.bk-col { min-width: 250px; flex: 1; }
+.bk-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 8px; border-radius: 8px; font-size: 13px;
 }
-.bk-item.m { background: var(--selected); }
-.bk-item.y { background: var(--wa-color-success-fill-quiet); color: var(--wa-color-success-on-quiet); }
+.bk-row:hover { background: var(--hover); }
+.bk-name { font-variant-numeric: tabular-nums; min-width: 92px; }
+.bk-when { margin-left: auto; }
+.bk-dl {
+  display: inline-flex; align-items: center; color: var(--text-3);
+  padding: 2px; border-radius: 6px; flex: none;
+}
+.bk-dl:hover { color: var(--primary); background: var(--selected); }
