@@ -966,6 +966,37 @@ adminApp.post('/backup/run', async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Hand over one archive, whole. Streamed, never buffered: a yearly archive is gigabytes and there
+ * is no reason for it to pass through the Worker's memory on its way out.
+ *
+ * The path after /file/ is the key, and only the three shapes a backup can have are accepted. A
+ * key is not a path, but a caller who sends one with .. in it is not asking for a backup.
+ *
+ * 原样交出一份包。走流不缓冲:年包是几个 GB,没有理由让它出门时先经过 Worker 的内存。
+ *
+ * /file/ 后面就是 key,而且只接受备份可能有的那三种形状。key 不是路径,
+ * 但一个在里面塞 .. 的调用方要的不是备份。
+ */
+adminApp.get('/backup/file/*', async (c) => {
+  requireGlobalAdmin(c);
+  if (!c.env.BACKUP) throw new HttpError(400, 'e_backup_no_bucket');
+  const key = decodeURIComponent(new URL(c.req.url).pathname.split('/backup/file/')[1] || '');
+  if (!key || key.includes('..') || !/^(daily\/[\d-]+\.7z|monthly\/[\d-]+\.zip|yearly\/\d+\.zip)$/.test(key)) {
+    throw new HttpError(400, 'e_bad_request');
+  }
+  const obj = await c.env.BACKUP.get(key);
+  if (!obj) throw new HttpError(404, 'e_not_found');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
+      'Content-Length': String(obj.size),
+      'Content-Disposition': `attachment; filename="${key.split('/').pop()}"`,
+      'Cache-Control': 'private, no-store',
+    },
+  });
+});
+
 adminApp.get('/mailboxes/:id/export-list', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
   if (!mb) throw new HttpError(404, 'e_mailbox_not_found');

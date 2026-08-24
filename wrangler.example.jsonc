@@ -74,6 +74,7 @@
     { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] }
   ],
 
+
   // Cloudflare Email Sending (public beta). Sending to outside recipients
   // requires the Workers Paid plan; local dev never sends for real.
   //

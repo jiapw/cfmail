@@ -6101,15 +6101,6 @@ Object.assign(DICTS.fr, { a_backup: "Sauvegarde" });
 Object.assign(DICTS.es, { a_backup: "Copia de seguridad" });
 Object.assign(DICTS.ru, { a_backup: "Резервные копии" });
 
-Object.assign(DICTS['zh-CN'], { bk_note: "每天把邮件一侧的全部数据复制到独立的存储桶:账号、域名与设置、邮箱、邮件与附件、标签、草稿、通讯录、邀请、审计。不含网盘与 AI 助手,也不含登录态和短期令牌。" });
-Object.assign(DICTS['zh-TW'], { bk_note: "每天把郵件一側的全部資料複製到獨立的儲存桶:帳號、網域與設定、信箱、郵件與附件、標籤、草稿、通訊錄、邀請、稽核。不含雲端硬碟與 AI 助理,也不含登入狀態與短期權杖。" });
-Object.assign(DICTS.en, { bk_note: "Copies the whole mail side into a bucket of its own, once a day: accounts, domains and their settings, mailboxes, messages and attachments, labels, drafts, contacts, invites, the audit trail. Drive and the assistant are not included, nor are live logins and short-lived tokens." });
-Object.assign(DICTS.ja, { bk_note: "メール側のデータ一式を毎日、専用のバケットへ複製します:アカウント、ドメインと設定、メールボックス、メールと添付、ラベル、下書き、連絡先、招待、監査記録。ドライブとAIアシスタント、ログイン状態や短期トークンは含みません。" });
-Object.assign(DICTS.ko, { bk_note: "메일 쪽 데이터 전체를 매일 전용 버킷으로 복사합니다: 계정, 도메인과 설정, 메일함, 메일과 첨부, 라벨, 임시보관, 주소록, 초대, 감사 기록. 드라이브와 AI 어시스턴트, 로그인 상태와 단기 토큰은 제외됩니다." });
-Object.assign(DICTS.de, { bk_note: "Kopiert täglich die gesamte Mail-Seite in einen eigenen Bucket: Konten, Domains und deren Einstellungen, Postfächer, Nachrichten und Anhänge, Labels, Entwürfe, Kontakte, Einladungen, das Protokoll. Drive und der Assistent sind nicht dabei, ebenso wenig aktive Anmeldungen und kurzlebige Token." });
-Object.assign(DICTS.fr, { bk_note: "Copie chaque jour toute la partie messagerie dans un bucket dédié : comptes, domaines et leurs réglages, boîtes, messages et pièces jointes, libellés, brouillons, contacts, invitations, journal d'audit. Le Drive et l'assistant en sont exclus, de même que les sessions et les jetons éphémères." });
-Object.assign(DICTS.es, { bk_note: "Copia a diario todo el lado del correo a un bucket propio: cuentas, dominios y sus ajustes, buzones, mensajes y adjuntos, etiquetas, borradores, contactos, invitaciones y la auditoría. No incluye el Drive ni el asistente, ni las sesiones ni los tokens efímeros." });
-Object.assign(DICTS.ru, { bk_note: "Ежедневно копирует всю почтовую часть в отдельный бакет: учётные записи, домены и их настройки, ящики, письма и вложения, метки, черновики, контакты, приглашения, журнал аудита. Диск и ассистент не входят, как и активные сеансы и краткоживущие токены." });
 
 Object.assign(DICTS['zh-CN'], { bk_enable: "自动备份" });
 Object.assign(DICTS['zh-TW'], { bk_enable: "自動備份" });
@@ -6121,15 +6112,6 @@ Object.assign(DICTS.fr, { bk_enable: "Sauvegarde automatique" });
 Object.assign(DICTS.es, { bk_enable: "Copia automática" });
 Object.assign(DICTS.ru, { bk_enable: "Автоматическое копирование" });
 
-Object.assign(DICTS['zh-CN'], { bk_enable_note: "每天 {0}:00(UTC)开始,分片进行,不占用整块时间。" });
-Object.assign(DICTS['zh-TW'], { bk_enable_note: "每天 {0}:00(UTC)開始,分片進行,不佔用整塊時間。" });
-Object.assign(DICTS.en, { bk_enable_note: "Starts daily at {0}:00 UTC and runs in slices, never in one long block." });
-Object.assign(DICTS.ja, { bk_enable_note: "毎日 {0}:00(UTC)に開始し、細かく分けて実行します。" });
-Object.assign(DICTS.ko, { bk_enable_note: "매일 {0}:00(UTC)에 시작하여 조각으로 나누어 실행합니다." });
-Object.assign(DICTS.de, { bk_enable_note: "Beginnt täglich um {0}:00 UTC und läuft in Abschnitten, nie am Stück." });
-Object.assign(DICTS.fr, { bk_enable_note: "Démarre chaque jour à {0}:00 UTC et progresse par tranches, jamais d’un seul bloc." });
-Object.assign(DICTS.es, { bk_enable_note: "Empieza cada día a las {0}:00 UTC y avanza por tramos, nunca de una vez." });
-Object.assign(DICTS.ru, { bk_enable_note: "Запускается ежедневно в {0}:00 UTC и выполняется частями, а не одним блоком." });
 
 Object.assign(DICTS['zh-CN'], { bk_status: "当前" });
 Object.assign(DICTS['zh-TW'], { bk_status: "目前" });
@@ -6141,55 +6123,10 @@ Object.assign(DICTS.fr, { bk_status: "En ce moment" });
 Object.assign(DICTS.es, { bk_status: "Ahora" });
 Object.assign(DICTS.ru, { bk_status: "Сейчас" });
 
-Object.assign(DICTS['zh-CN'], { bk_phase_idle: "空闲" });
-Object.assign(DICTS['zh-TW'], { bk_phase_idle: "閒置" });
-Object.assign(DICTS.en, { bk_phase_idle: "Idle" });
-Object.assign(DICTS.ja, { bk_phase_idle: "待機中" });
-Object.assign(DICTS.ko, { bk_phase_idle: "대기 중" });
-Object.assign(DICTS.de, { bk_phase_idle: "Bereit" });
-Object.assign(DICTS.fr, { bk_phase_idle: "Au repos" });
-Object.assign(DICTS.es, { bk_phase_idle: "En reposo" });
-Object.assign(DICTS.ru, { bk_phase_idle: "Простой" });
 
-Object.assign(DICTS['zh-CN'], { bk_phase_rows: "正在导出数据表:{0}" });
-Object.assign(DICTS['zh-TW'], { bk_phase_rows: "正在匯出資料表:{0}" });
-Object.assign(DICTS.en, { bk_phase_rows: "Dumping table {0}" });
-Object.assign(DICTS.ja, { bk_phase_rows: "テーブルを書き出し中:{0}" });
-Object.assign(DICTS.ko, { bk_phase_rows: "테이블 내보내는 중: {0}" });
-Object.assign(DICTS.de, { bk_phase_rows: "Tabelle wird gesichert: {0}" });
-Object.assign(DICTS.fr, { bk_phase_rows: "Export de la table {0}" });
-Object.assign(DICTS.es, { bk_phase_rows: "Volcando la tabla {0}" });
-Object.assign(DICTS.ru, { bk_phase_rows: "Выгрузка таблицы {0}" });
 
-Object.assign(DICTS['zh-CN'], { bk_phase_mail: "正在复制邮件原件" });
-Object.assign(DICTS['zh-TW'], { bk_phase_mail: "正在複製郵件原件" });
-Object.assign(DICTS.en, { bk_phase_mail: "Copying message bytes" });
-Object.assign(DICTS.ja, { bk_phase_mail: "メール本体を複製中" });
-Object.assign(DICTS.ko, { bk_phase_mail: "메일 원본 복사 중" });
-Object.assign(DICTS.de, { bk_phase_mail: "Nachrichten werden kopiert" });
-Object.assign(DICTS.fr, { bk_phase_mail: "Copie des messages" });
-Object.assign(DICTS.es, { bk_phase_mail: "Copiando los mensajes" });
-Object.assign(DICTS.ru, { bk_phase_mail: "Копирование писем" });
 
-Object.assign(DICTS['zh-CN'], { bk_phase_finishing: "正在收尾与合并" });
-Object.assign(DICTS['zh-TW'], { bk_phase_finishing: "正在收尾與合併" });
-Object.assign(DICTS.en, { bk_phase_finishing: "Finishing and folding" });
-Object.assign(DICTS.ja, { bk_phase_finishing: "仕上げと統合" });
-Object.assign(DICTS.ko, { bk_phase_finishing: "마무리 및 병합" });
-Object.assign(DICTS.de, { bk_phase_finishing: "Abschluss und Zusammenfassung" });
-Object.assign(DICTS.fr, { bk_phase_finishing: "Finalisation et consolidation" });
-Object.assign(DICTS.es, { bk_phase_finishing: "Cerrando y consolidando" });
-Object.assign(DICTS.ru, { bk_phase_finishing: "Завершение и свёртка" });
 
-Object.assign(DICTS['zh-CN'], { bk_copied: "本次新复制 {0} 个,已在库中 {1} 个" });
-Object.assign(DICTS['zh-TW'], { bk_copied: "本次新複製 {0} 個,已在庫中 {1} 個" });
-Object.assign(DICTS.en, { bk_copied: "{0} copied this run, {1} already there" });
-Object.assign(DICTS.ja, { bk_copied: "今回 {0} 件を複製、{1} 件は既存" });
-Object.assign(DICTS.ko, { bk_copied: "이번에 {0}개 복사, {1}개는 이미 있음" });
-Object.assign(DICTS.de, { bk_copied: "{0} kopiert, {1} bereits vorhanden" });
-Object.assign(DICTS.fr, { bk_copied: "{0} copiés cette fois, {1} déjà présents" });
-Object.assign(DICTS.es, { bk_copied: "{0} copiados esta vez, {1} ya estaban" });
-Object.assign(DICTS.ru, { bk_copied: "Скопировано {0}, уже было {1}" });
 
 Object.assign(DICTS['zh-CN'], { bk_run_now: "立即备份" });
 Object.assign(DICTS['zh-TW'], { bk_run_now: "立即備份" });
@@ -6231,45 +6168,9 @@ Object.assign(DICTS.fr, { bk_error: "Dernière erreur" });
 Object.assign(DICTS.es, { bk_error: "Último error" });
 Object.assign(DICTS.ru, { bk_error: "Последняя ошибка" });
 
-Object.assign(DICTS['zh-CN'], { bk_pool: "邮件池" });
-Object.assign(DICTS['zh-TW'], { bk_pool: "郵件池" });
-Object.assign(DICTS.en, { bk_pool: "Message pool" });
-Object.assign(DICTS.ja, { bk_pool: "メールプール" });
-Object.assign(DICTS.ko, { bk_pool: "메일 풀" });
-Object.assign(DICTS.de, { bk_pool: "Nachrichten-Pool" });
-Object.assign(DICTS.fr, { bk_pool: "Réserve de messages" });
-Object.assign(DICTS.es, { bk_pool: "Reserva de mensajes" });
-Object.assign(DICTS.ru, { bk_pool: "Хранилище писем" });
 
-Object.assign(DICTS['zh-CN'], { bk_pool_n: "{0} 个对象,{1}" });
-Object.assign(DICTS['zh-TW'], { bk_pool_n: "{0} 個物件,{1}" });
-Object.assign(DICTS.en, { bk_pool_n: "{0} objects, {1}" });
-Object.assign(DICTS.ja, { bk_pool_n: "{0} 件、{1}" });
-Object.assign(DICTS.ko, { bk_pool_n: "{0}개, {1}" });
-Object.assign(DICTS.de, { bk_pool_n: "{0} Objekte, {1}" });
-Object.assign(DICTS.fr, { bk_pool_n: "{0} objets, {1}" });
-Object.assign(DICTS.es, { bk_pool_n: "{0} objetos, {1}" });
-Object.assign(DICTS.ru, { bk_pool_n: "{0} объектов, {1}" });
 
-Object.assign(DICTS['zh-CN'], { bk_kept: "保留了哪些" });
-Object.assign(DICTS['zh-TW'], { bk_kept: "保留了哪些" });
-Object.assign(DICTS.en, { bk_kept: "What is kept" });
-Object.assign(DICTS.ja, { bk_kept: "保持しているもの" });
-Object.assign(DICTS.ko, { bk_kept: "보관 중인 것" });
-Object.assign(DICTS.de, { bk_kept: "Was aufbewahrt wird" });
-Object.assign(DICTS.fr, { bk_kept: "Ce qui est conservé" });
-Object.assign(DICTS.es, { bk_kept: "Lo que se conserva" });
-Object.assign(DICTS.ru, { bk_kept: "Что хранится" });
 
-Object.assign(DICTS['zh-CN'], { bk_kept_note: "日备份保留到当月结束,然后当月最后一份成为月备份;十二个月后同样折成年备份。邮件原件只复制一次,不随日期重复,合并时也不搬动。" });
-Object.assign(DICTS['zh-TW'], { bk_kept_note: "日備份保留到當月結束,然後當月最後一份成為月備份;十二個月後同樣折成年備份。郵件原件只複製一次,不隨日期重複,合併時也不搬動。" });
-Object.assign(DICTS.en, { bk_kept_note: "Daily copies live until their month is over; the last of them becomes that month. Twelve months later the same fold makes a year. Message bytes are copied once, never duplicated per day and never moved by a fold." });
-Object.assign(DICTS.ja, { bk_kept_note: "日次は当月が終わるまで残り、その最後のものが月次になります。12 か月後には同じ要領で年次に畳まれます。メール本体は一度だけ複製され、日ごとに重複せず、統合でも移動しません。" });
-Object.assign(DICTS.ko, { bk_kept_note: "일일 백업은 해당 월이 끝날 때까지 남고, 그중 마지막이 월간 백업이 됩니다. 12개월 뒤에는 같은 방식으로 연간으로 접힙니다. 메일 원본은 한 번만 복사되며 날짜마다 중복되지 않고 병합 때도 옮기지 않습니다." });
-Object.assign(DICTS.de, { bk_kept_note: "Tageskopien bleiben bis zum Monatsende; die letzte wird zur Kopie des Monats. Zwölf Monate später faltet dieselbe Regel ein Jahr. Nachrichten werden einmal kopiert, nie pro Tag dupliziert und beim Falten nie verschoben." });
-Object.assign(DICTS.fr, { bk_kept_note: "Les copies quotidiennes vivent jusqu'à la fin de leur mois ; la dernière devient celle du mois. Douze mois plus tard, le même pliage donne l'année. Les messages sont copiés une seule fois, jamais dupliqués par jour ni déplacés lors d'un pliage." });
-Object.assign(DICTS.es, { bk_kept_note: "Las copias diarias viven hasta que acaba su mes; la última pasa a ser la del mes. Doce meses después el mismo plegado da la del año. Los mensajes se copian una sola vez, nunca se duplican por día ni se mueven al plegar." });
-Object.assign(DICTS.ru, { bk_kept_note: "Ежедневные копии живут до конца своего месяца; последняя становится месячной. Через двенадцать месяцев та же свёртка даёт годовую. Письма копируются один раз, не дублируются по дням и не перемещаются при свёртке." });
 
 Object.assign(DICTS['zh-CN'], { bk_daily: "日" });
 Object.assign(DICTS['zh-TW'], { bk_daily: "日" });
@@ -6311,15 +6212,6 @@ Object.assign(DICTS.fr, { bk_none: "Aucune" });
 Object.assign(DICTS.es, { bk_none: "Ninguna" });
 Object.assign(DICTS.ru, { bk_none: "Пока нет" });
 
-Object.assign(DICTS['zh-CN'], { bk_no_bucket: "这套部署还没有备份存储桶。重新跑一次部署命令即可创建。" });
-Object.assign(DICTS['zh-TW'], { bk_no_bucket: "這套部署還沒有備份儲存桶。重新跑一次部署指令即可建立。" });
-Object.assign(DICTS.en, { bk_no_bucket: "This deployment has no backup bucket yet. Run the deploy command again to create one." });
-Object.assign(DICTS.ja, { bk_no_bucket: "この配備にはまだバックアップ用バケットがありません。デプロイコマンドを再実行すると作成されます。" });
-Object.assign(DICTS.ko, { bk_no_bucket: "이 배포에는 아직 백업 버킷이 없습니다. 배포 명령을 다시 실행하면 생성됩니다." });
-Object.assign(DICTS.de, { bk_no_bucket: "Diese Installation hat noch keinen Sicherungs-Bucket. Der Deploy-Befehl legt ihn an." });
-Object.assign(DICTS.fr, { bk_no_bucket: "Ce déploiement n'a pas encore de bucket de sauvegarde. Relancez la commande de déploiement pour le créer." });
-Object.assign(DICTS.es, { bk_no_bucket: "Este despliegue aún no tiene bucket de copias. Ejecute de nuevo el comando de despliegue para crearlo." });
-Object.assign(DICTS.ru, { bk_no_bucket: "В этой установке ещё нет бакета для копий. Запустите команду развёртывания ещё раз, чтобы его создать." });
 
 Object.assign(DICTS['zh-CN'], { e_backup_running: "已经有一次备份在进行中。" });
 Object.assign(DICTS['zh-TW'], { e_backup_running: "已經有一次備份在進行中。" });
@@ -6340,3 +6232,173 @@ Object.assign(DICTS.de, { e_backup_no_bucket: "Diese Installation hat keinen Sic
 Object.assign(DICTS.fr, { e_backup_no_bucket: "Ce déploiement n'a pas de bucket de sauvegarde ; redéployez pour le créer." });
 Object.assign(DICTS.es, { e_backup_no_bucket: "Este despliegue no tiene bucket de copias; vuelva a desplegar para crearlo." });
 Object.assign(DICTS.ru, { e_backup_no_bucket: "В этой установке нет бакета для копий; разверните ещё раз, чтобы создать." });
+
+Object.assign(DICTS['zh-CN'], { bk_note: "每天把邮件一侧的全部数据打成一个包:整库 SQL,加上当天新到与当天导入的邮件原件(含附件)。日包用 7z 高压缩,每月 1 号把上月各日包收进一个 zip(store,不重压)并删掉日包,每年 1 月 2 号同样把上年各月包收进一个 zip。每封信只出现在它到达那天的包里,不重复存放。不含网盘与 AI 助手,也不含登录态和短期令牌。" });
+Object.assign(DICTS['zh-TW'], { bk_note: "每天把郵件一側的全部資料打成一個包:整庫 SQL,加上當天新到與當天匯入的郵件原件(含附件)。日包用 7z 高壓縮,每月 1 號把上月各日包收進一個 zip(store,不重壓)並刪掉日包,每年 1 月 2 號同樣把上年各月包收進一個 zip。每封信只出現在它到達那天的包裡,不重複存放。不含雲端硬碟與 AI 助理,也不含登入狀態與短期權杖。" });
+Object.assign(DICTS.en, { bk_note: "Packs the whole mail side into one file a day: the database as SQL, plus the messages that arrived or were imported that day, attachments included. Dailies use 7-Zip; on the first of each month last month’s dailies go into one stored zip and the dailies are deleted, and on 2 January the same fold makes a year. Each message appears in the archive for the day it arrived and nowhere else. Drive and the assistant are not included, nor are live logins and short-lived tokens." });
+Object.assign(DICTS.ja, { bk_note: "メール側のデータ一式を毎日ひとつのファイルにまとめます:データベースの SQL と、その日に届いた・取り込んだメール本体(添付を含む)。日次は 7-Zip、毎月 1 日に前月の日次をひとつの zip(無圧縮)へ収めて日次を削除し、1 月 2 日には同じ要領で年次を作ります。各メールは届いた日の書庫にのみ現れ、重複しません。ドライブと AI アシスタント、ログイン状態や短期トークンは含みません。" });
+Object.assign(DICTS.ko, { bk_note: "메일 쪽 데이터 전체를 매일 파일 하나로 묶습니다: 데이터베이스 SQL과 그날 도착하거나 가져온 메일 원본(첨부 포함). 일간은 7-Zip으로 압축하고, 매월 1일에 지난달 일간들을 zip 하나(무압축)에 담고 일간을 삭제하며, 1월 2일에는 같은 방식으로 연간을 만듭니다. 각 메일은 도착한 날의 보관 파일에만 들어가며 중복되지 않습니다. 드라이브와 AI 어시스턴트, 로그인 상태와 단기 토큰은 제외됩니다." });
+Object.assign(DICTS.de, { bk_note: "Packt die gesamte Mail-Seite täglich in eine Datei: die Datenbank als SQL, dazu die an dem Tag eingegangenen oder importierten Nachrichten samt Anhängen. Tageskopien nutzen 7-Zip; am Monatsersten wandern die Tage des Vormonats in ein gespeichertes Zip und werden gelöscht, am 2. Januar ebenso für das Jahr. Jede Nachricht liegt nur im Archiv ihres Eingangstags. Drive und der Assistent sind nicht dabei, ebenso wenig aktive Anmeldungen und kurzlebige Token." });
+Object.assign(DICTS.fr, { bk_note: "Emballe chaque jour toute la partie messagerie dans un seul fichier : la base en SQL, plus les messages arrivés ou importés ce jour-là, pièces jointes comprises. Les quotidiennes utilisent 7-Zip ; le 1er de chaque mois, celles du mois passé entrent dans un zip non compressé et sont supprimées, et le 2 janvier le même pliage donne l'année. Chaque message ne figure que dans l'archive de son jour d'arrivée. Le Drive et l'assistant en sont exclus, de même que les sessions et les jetons éphémères." });
+Object.assign(DICTS.es, { bk_note: "Empaqueta a diario todo el lado del correo en un solo archivo: la base como SQL, más los mensajes que llegaron o se importaron ese día, adjuntos incluidos. Las diarias usan 7-Zip; el día 1 de cada mes las del mes anterior pasan a un zip sin comprimir y se borran, y el 2 de enero el mismo plegado da el año. Cada mensaje figura solo en el archivo de su día de llegada. No incluye el Drive ni el asistente, ni las sesiones ni los tokens efímeros." });
+Object.assign(DICTS.ru, { bk_note: "Каждый день собирает всю почтовую часть в один файл: база в виде SQL плюс письма, пришедшие или импортированные в тот день, вместе с вложениями. Ежедневные сжимаются 7-Zip; 1-го числа прошлый месяц складывается в один zip без сжатия, а 2 января так же собирается год. Каждое письмо есть только в архиве своего дня. Диск и ассистент не входят, как и активные сеансы и краткоживущие токены." });
+
+Object.assign(DICTS['zh-CN'], { bk_hour: "每天" });
+Object.assign(DICTS['zh-TW'], { bk_hour: "每天" });
+Object.assign(DICTS.en, { bk_hour: "Daily at" });
+Object.assign(DICTS.ja, { bk_hour: "毎日" });
+Object.assign(DICTS.ko, { bk_hour: "매일" });
+Object.assign(DICTS.de, { bk_hour: "Täglich um" });
+Object.assign(DICTS.fr, { bk_hour: "Chaque jour à" });
+Object.assign(DICTS.es, { bk_hour: "Cada día a las" });
+Object.assign(DICTS.ru, { bk_hour: "Ежедневно в" });
+
+Object.assign(DICTS['zh-CN'], { bk_hour_note: "UTC 时间。备份的是刚结束的那一天(按 UTC+0 切分)。" });
+Object.assign(DICTS['zh-TW'], { bk_hour_note: "UTC 時間。備份的是剛結束的那一天(按 UTC+0 切分)。" });
+Object.assign(DICTS.en, { bk_hour_note: "UTC. What is backed up is the day that has just ended, cut at UTC+0." });
+Object.assign(DICTS.ja, { bk_hour_note: "UTC。バックアップ対象は、UTC+0 で区切った「終わったばかりの一日」です。" });
+Object.assign(DICTS.ko, { bk_hour_note: "UTC 기준. 백업 대상은 UTC+0으로 끊은 \"방금 끝난 하루\"입니다." });
+Object.assign(DICTS.de, { bk_hour_note: "UTC. Gesichert wird der Tag, der gerade zu Ende ging, geschnitten bei UTC+0." });
+Object.assign(DICTS.fr, { bk_hour_note: "UTC. Ce qui est sauvegardé, c'est la journée qui vient de s'achever, découpée à UTC+0." });
+Object.assign(DICTS.es, { bk_hour_note: "UTC. Se copia el día que acaba de terminar, cortado en UTC+0." });
+Object.assign(DICTS.ru, { bk_hour_note: "UTC. Сохраняется только что закончившийся день, отсчёт по UTC+0." });
+
+Object.assign(DICTS['zh-CN'], { bk_idle: "空闲" });
+Object.assign(DICTS['zh-TW'], { bk_idle: "閒置" });
+Object.assign(DICTS.en, { bk_idle: "Idle" });
+Object.assign(DICTS.ja, { bk_idle: "待機中" });
+Object.assign(DICTS.ko, { bk_idle: "대기 중" });
+Object.assign(DICTS.de, { bk_idle: "Bereit" });
+Object.assign(DICTS.fr, { bk_idle: "Au repos" });
+Object.assign(DICTS.es, { bk_idle: "En reposo" });
+Object.assign(DICTS.ru, { bk_idle: "Простой" });
+
+Object.assign(DICTS['zh-CN'], { bk_running: "正在备份 {0}" });
+Object.assign(DICTS['zh-TW'], { bk_running: "正在備份 {0}" });
+Object.assign(DICTS.en, { bk_running: "Backing up {0}" });
+Object.assign(DICTS.ja, { bk_running: "{0} をバックアップ中" });
+Object.assign(DICTS.ko, { bk_running: "{0} 백업 중" });
+Object.assign(DICTS.de, { bk_running: "Sichert {0}" });
+Object.assign(DICTS.fr, { bk_running: "Sauvegarde de {0}" });
+Object.assign(DICTS.es, { bk_running: "Copiando {0}" });
+Object.assign(DICTS.ru, { bk_running: "Сохраняется {0}" });
+
+Object.assign(DICTS['zh-CN'], { bk_last_result: "{0} 封邮件,{1}" });
+Object.assign(DICTS['zh-TW'], { bk_last_result: "{0} 封郵件,{1}" });
+Object.assign(DICTS.en, { bk_last_result: "{0} messages, {1}" });
+Object.assign(DICTS.ja, { bk_last_result: "{0} 通、{1}" });
+Object.assign(DICTS.ko, { bk_last_result: "{0}통, {1}" });
+Object.assign(DICTS.de, { bk_last_result: "{0} Nachrichten, {1}" });
+Object.assign(DICTS.fr, { bk_last_result: "{0} messages, {1}" });
+Object.assign(DICTS.es, { bk_last_result: "{0} mensajes, {1}" });
+Object.assign(DICTS.ru, { bk_last_result: "{0} писем, {1}" });
+
+Object.assign(DICTS['zh-CN'], { bk_files: "备份包" });
+Object.assign(DICTS['zh-TW'], { bk_files: "備份包" });
+Object.assign(DICTS.en, { bk_files: "Archives" });
+Object.assign(DICTS.ja, { bk_files: "書庫" });
+Object.assign(DICTS.ko, { bk_files: "보관 파일" });
+Object.assign(DICTS.de, { bk_files: "Archive" });
+Object.assign(DICTS.fr, { bk_files: "Archives" });
+Object.assign(DICTS.es, { bk_files: "Archivos" });
+Object.assign(DICTS.ru, { bk_files: "Архивы" });
+
+Object.assign(DICTS['zh-CN'], { bk_sync: "同步到本地目录" });
+Object.assign(DICTS['zh-TW'], { bk_sync: "同步到本機目錄" });
+Object.assign(DICTS.en, { bk_sync: "Sync to a folder" });
+Object.assign(DICTS.ja, { bk_sync: "フォルダーへ同期" });
+Object.assign(DICTS.ko, { bk_sync: "폴더로 동기화" });
+Object.assign(DICTS.de, { bk_sync: "In einen Ordner abgleichen" });
+Object.assign(DICTS.fr, { bk_sync: "Synchroniser vers un dossier" });
+Object.assign(DICTS.es, { bk_sync: "Sincronizar a una carpeta" });
+Object.assign(DICTS.ru, { bk_sync: "Синхронизировать в папку" });
+
+Object.assign(DICTS['zh-CN'], { bk_sync_note: "选一个目录,把里面还没有的包补齐;已经下好的按大小比对,不会重下。" });
+Object.assign(DICTS['zh-TW'], { bk_sync_note: "選一個目錄,把裡面還沒有的包補齊;已經下好的按大小比對,不會重下。" });
+Object.assign(DICTS.en, { bk_sync_note: "Pick a folder and the archives it does not have are fetched; those already there are matched by size and left alone." });
+Object.assign(DICTS.ja, { bk_sync_note: "フォルダーを選ぶと、そこに無い書庫だけを取得します。既にあるものはサイズで照合し、再取得しません。" });
+Object.assign(DICTS.ko, { bk_sync_note: "폴더를 고르면 없는 보관 파일만 받아옵니다. 이미 있는 것은 크기로 대조하여 건너뜁니다." });
+Object.assign(DICTS.de, { bk_sync_note: "Wählen Sie einen Ordner; was fehlt, wird geholt, was da ist, wird über die Größe erkannt und in Ruhe gelassen." });
+Object.assign(DICTS.fr, { bk_sync_note: "Choisissez un dossier : ce qui manque est téléchargé, ce qui est déjà là est reconnu à la taille et laissé tel quel." });
+Object.assign(DICTS.es, { bk_sync_note: "Elija una carpeta: se descarga lo que falta y lo que ya está se reconoce por el tamaño y se deja igual." });
+Object.assign(DICTS.ru, { bk_sync_note: "Выберите папку — недостающее будет загружено, а уже имеющееся сверено по размеру и останется как есть." });
+
+Object.assign(DICTS['zh-CN'], { bk_sync_uptodate: "已是最新,{0} 个包都在" });
+Object.assign(DICTS['zh-TW'], { bk_sync_uptodate: "已是最新,{0} 個包都在" });
+Object.assign(DICTS.en, { bk_sync_uptodate: "Up to date: all {0} archives are there" });
+Object.assign(DICTS.ja, { bk_sync_uptodate: "最新です。{0} 件すべて揃っています" });
+Object.assign(DICTS.ko, { bk_sync_uptodate: "최신입니다. {0}개 모두 있습니다" });
+Object.assign(DICTS.de, { bk_sync_uptodate: "Aktuell: alle {0} Archive sind da" });
+Object.assign(DICTS.fr, { bk_sync_uptodate: "À jour : les {0} archives sont là" });
+Object.assign(DICTS.es, { bk_sync_uptodate: "Al día: los {0} archivos están" });
+Object.assign(DICTS.ru, { bk_sync_uptodate: "Всё актуально: все {0} архивов на месте" });
+
+Object.assign(DICTS['zh-CN'], { bk_sync_doing: "正在下载 {0}({1}/{2})" });
+Object.assign(DICTS['zh-TW'], { bk_sync_doing: "正在下載 {0}({1}/{2})" });
+Object.assign(DICTS.en, { bk_sync_doing: "Downloading {0} ({1}/{2})" });
+Object.assign(DICTS.ja, { bk_sync_doing: "{0} をダウンロード中({1}/{2})" });
+Object.assign(DICTS.ko, { bk_sync_doing: "{0} 내려받는 중 ({1}/{2})" });
+Object.assign(DICTS.de, { bk_sync_doing: "Lädt {0} ({1}/{2})" });
+Object.assign(DICTS.fr, { bk_sync_doing: "Téléchargement de {0} ({1}/{2})" });
+Object.assign(DICTS.es, { bk_sync_doing: "Descargando {0} ({1}/{2})" });
+Object.assign(DICTS.ru, { bk_sync_doing: "Загрузка {0} ({1}/{2})" });
+
+Object.assign(DICTS['zh-CN'], { bk_sync_done: "完成:{0} 个包,{1}" });
+Object.assign(DICTS['zh-TW'], { bk_sync_done: "完成:{0} 個包,{1}" });
+Object.assign(DICTS.en, { bk_sync_done: "Done: {0} archives, {1}" });
+Object.assign(DICTS.ja, { bk_sync_done: "完了:{0} 件、{1}" });
+Object.assign(DICTS.ko, { bk_sync_done: "완료: {0}개, {1}" });
+Object.assign(DICTS.de, { bk_sync_done: "Fertig: {0} Archive, {1}" });
+Object.assign(DICTS.fr, { bk_sync_done: "Terminé : {0} archives, {1}" });
+Object.assign(DICTS.es, { bk_sync_done: "Listo: {0} archivos, {1}" });
+Object.assign(DICTS.ru, { bk_sync_done: "Готово: {0} архивов, {1}" });
+
+Object.assign(DICTS['zh-CN'], { bk_sync_failed: "下载 {0} 失败,已停下" });
+Object.assign(DICTS['zh-TW'], { bk_sync_failed: "下載 {0} 失敗,已停下" });
+Object.assign(DICTS.en, { bk_sync_failed: "Could not download {0}; stopped" });
+Object.assign(DICTS.ja, { bk_sync_failed: "{0} を取得できず、中断しました" });
+Object.assign(DICTS.ko, { bk_sync_failed: "{0}을(를) 받지 못해 중단했습니다" });
+Object.assign(DICTS.de, { bk_sync_failed: "{0} ließ sich nicht laden; abgebrochen" });
+Object.assign(DICTS.fr, { bk_sync_failed: "Échec du téléchargement de {0} ; arrêté" });
+Object.assign(DICTS.es, { bk_sync_failed: "No se pudo descargar {0}; detenido" });
+Object.assign(DICTS.ru, { bk_sync_failed: "Не удалось загрузить {0}; остановлено" });
+
+Object.assign(DICTS['zh-CN'], { bk_sync_unsupported: "这个浏览器不支持选择本地目录,请用 Chrome 或 Edge。" });
+Object.assign(DICTS['zh-TW'], { bk_sync_unsupported: "這個瀏覽器不支援選擇本機目錄,請用 Chrome 或 Edge。" });
+Object.assign(DICTS.en, { bk_sync_unsupported: "This browser cannot pick a folder; use Chrome or Edge." });
+Object.assign(DICTS.ja, { bk_sync_unsupported: "このブラウザーはフォルダー選択に対応していません。Chrome か Edge をお使いください。" });
+Object.assign(DICTS.ko, { bk_sync_unsupported: "이 브라우저는 폴더 선택을 지원하지 않습니다. Chrome이나 Edge를 사용하세요." });
+Object.assign(DICTS.de, { bk_sync_unsupported: "Dieser Browser kann keinen Ordner auswählen; nutzen Sie Chrome oder Edge." });
+Object.assign(DICTS.fr, { bk_sync_unsupported: "Ce navigateur ne peut pas choisir de dossier ; utilisez Chrome ou Edge." });
+Object.assign(DICTS.es, { bk_sync_unsupported: "Este navegador no puede elegir una carpeta; use Chrome o Edge." });
+Object.assign(DICTS.ru, { bk_sync_unsupported: "Этот браузер не умеет выбирать папку; используйте Chrome или Edge." });
+
+Object.assign(DICTS['zh-CN'], { bk_not_ready: "这套部署还不能备份。" });
+Object.assign(DICTS['zh-TW'], { bk_not_ready: "這套部署還不能備份。" });
+Object.assign(DICTS.en, { bk_not_ready: "This deployment cannot back up yet." });
+Object.assign(DICTS.ja, { bk_not_ready: "この配備はまだバックアップできません。" });
+Object.assign(DICTS.ko, { bk_not_ready: "이 배포는 아직 백업할 수 없습니다." });
+Object.assign(DICTS.de, { bk_not_ready: "Diese Installation kann noch nicht sichern." });
+Object.assign(DICTS.fr, { bk_not_ready: "Ce déploiement ne peut pas encore sauvegarder." });
+Object.assign(DICTS.es, { bk_not_ready: "Este despliegue aún no puede copiar." });
+Object.assign(DICTS.ru, { bk_not_ready: "Эта установка пока не может делать копии." });
+
+Object.assign(DICTS['zh-CN'], { e_backup_no_container: "这套部署没有备份容器。重新部署一次即可创建(需要先构建并推送镜像)。" });
+Object.assign(DICTS['zh-TW'], { e_backup_no_container: "這套部署沒有備份容器。重新部署一次即可建立(需要先建置並推送映像)。" });
+Object.assign(DICTS.en, { e_backup_no_container: "This deployment has no backup container. Deploy again to create one; the image has to be built and pushed first." });
+Object.assign(DICTS.ja, { e_backup_no_container: "この配備にはバックアップ用コンテナがありません。再デプロイで作成されます(先にイメージのビルドとプッシュが必要)。" });
+Object.assign(DICTS.ko, { e_backup_no_container: "이 배포에는 백업 컨테이너가 없습니다. 다시 배포하면 생성됩니다(먼저 이미지를 빌드해 푸시해야 합니다)." });
+Object.assign(DICTS.de, { e_backup_no_container: "Diese Installation hat keinen Sicherungs-Container. Ein erneutes Deploy legt ihn an; das Image muss zuvor gebaut und gepusht sein." });
+Object.assign(DICTS.fr, { e_backup_no_container: "Ce déploiement n'a pas de conteneur de sauvegarde. Redéployez pour le créer ; l'image doit d'abord être construite et poussée." });
+Object.assign(DICTS.es, { e_backup_no_container: "Este despliegue no tiene contenedor de copias. Vuelva a desplegar para crearlo; antes hay que construir y subir la imagen." });
+Object.assign(DICTS.ru, { e_backup_no_container: "В этой установке нет контейнера для копий. Разверните снова; образ нужно сначала собрать и отправить." });
+
+Object.assign(DICTS['zh-CN'], { e_backup_no_credentials: "备份容器缺少凭据。部署脚本会建好 token 并写成 secret,重新部署一次即可。" });
+Object.assign(DICTS['zh-TW'], { e_backup_no_credentials: "備份容器缺少憑據。部署腳本會建好 token 並寫成 secret,重新部署一次即可。" });
+Object.assign(DICTS.en, { e_backup_no_credentials: "The backup container has no credentials. The deploy script creates the token and stores it; deploy again." });
+Object.assign(DICTS.ja, { e_backup_no_credentials: "バックアップ用コンテナに資格情報がありません。デプロイスクリプトがトークンを作成して保存します。再デプロイしてください。" });
+Object.assign(DICTS.ko, { e_backup_no_credentials: "백업 컨테이너에 자격 증명이 없습니다. 배포 스크립트가 토큰을 만들어 저장합니다. 다시 배포하세요." });
+Object.assign(DICTS.de, { e_backup_no_credentials: "Dem Sicherungs-Container fehlen die Zugangsdaten. Das Deploy-Skript legt das Token an und speichert es; erneut deployen." });
+Object.assign(DICTS.fr, { e_backup_no_credentials: "Le conteneur de sauvegarde n'a pas d'identifiants. Le script de déploiement crée le jeton et l'enregistre ; redéployez." });
+Object.assign(DICTS.es, { e_backup_no_credentials: "El contenedor de copias no tiene credenciales. El script de despliegue crea el token y lo guarda; vuelva a desplegar." });
+Object.assign(DICTS.ru, { e_backup_no_credentials: "У контейнера нет учётных данных. Скрипт развёртывания создаёт токен и сохраняет его; разверните снова." });

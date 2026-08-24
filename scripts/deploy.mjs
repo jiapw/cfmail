@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { stripJsonc, withBucket, withEntryRoute } from './wrangler-config.mjs';
+import { stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
@@ -91,6 +91,14 @@ function usage(code) {
   --account <id>  账号 id。仅当这个 token 能看到多个账号时才需要。
   --adopt         账号里已经有同名的 Worker / 数据库 / 存储桶,但本地没有配置文件时,
                   用它明确表示"就是要接管这一套",否则脚本拒绝动手。
+  --backup-token <t>
+                  开启自动备份用的 token。与 --token 分开,是因为备份的 token 会作为
+                  wrangler secret 长期留在 Worker 里,而 --token 只活在这次运行的内存里。
+                  它只需要 Account 的 D1 · Read 与 Workers R2 Storage · Edit。
+  --backup-image <ref>
+                  备份容器的镜像地址,默认 registry.cloudflare.com/<账号>/cfmail-backup:1。
+                  镜像要先构建推送一次(需要 Docker):
+                    wrangler containers build ./container --tag <ref> --push
   --prune-domains 允许这次部署摘掉线上有、配置里没有的自定义域(默认是保留它们)。
   --dry-run       只打印将要做什么,不做任何改动。
   --help          显示本说明。
@@ -404,6 +412,36 @@ text = text
   if (withBk === null) die(`${CFG_NAME} 里找不到 r2_buckets 数组`);
   if (withBk !== text) { text = withBk; plan(`r2_buckets 补上 BACKUP → ${BK_NAME}`); }
 }
+// --- Backup container -----------------------------------------------------
+// --- 备份容器 --------------------------------------------------------------
+// Three things have to line up for a backup to be possible: the container in the configuration,
+// an image in the registry for it to run, and a token of its own to reach D1 and R2 with. Any of
+// them missing means the deployment simply has no backup, and says so -- which is better than a
+// switch in the console that turns nothing on.
+//
+// 备份要成立,三样东西必须对齐:配置里的容器、仓库里给它跑的镜像、以及它自己够到 D1 和 R2 的 token。
+// 缺任何一样,这套部署就只是没有备份功能,并且明说 —— 那好过后台上一个开了也不管用的开关。
+{
+  // The container is written in only for a deployment that asked for backups. Its mere presence
+  // makes `wrangler dev` require an API token, and somebody who never wanted a backup should not
+  // pay that toll to run the thing locally.
+  // 只有要备份的部署才写入这一段。它一旦出现在配置里,`wrangler dev` 就要 API token,
+  // 而一个从没打算备份的人,不该为了在本地把系统跑起来交这笔过路费。
+  const already = /"class_name"\s*:\s*"BackupContainer"/.test(text);
+  if (args['backup-token'] || already) {
+    const image = args['backup-image']
+      || `registry.cloudflare.com/${accountId}/cfmail-backup:1`;
+    const withBk = withBackupContainer(text, image);
+    if (withBk === null) log('⚠ 配置里找不到 durable_objects / migrations,跳过备份容器');
+    else if (withBk !== text) { text = withBk; plan(`备份容器 → ${image}`); }
+    const v1 = withVar(text, 'CF_ACCOUNT_ID', accountId);
+    const v2 = v1 && withVar(v1, 'CF_D1_DATABASE_ID', databaseId);
+    if (v2) text = v2;
+    const withDev = withDevContainersOff(text);
+    if (withDev && withDev !== text) { text = withDev; plan('dev.enable_containers = false(本地开发不拉镜像)'); }
+  }
+}
+
 
 // APP_ORIGIN is what invite and password-reset links are built from. It is set from the first
 // entry host and never left as a placeholder -- a link pointing at "<entry-subdomain>" reaches
@@ -547,6 +585,34 @@ step('部署 Worker');
   if ((r.status ?? 1) !== 0) die('同步 public/vendor/ 失败');
 }
 if (wrangler(['deploy', '-c', CONFIG]) !== 0) die('部署失败');
+
+// --- Backup credentials ---------------------------------------------------
+// --- 备份凭据 --------------------------------------------------------------
+// The container has no bindings, so it needs a token of its own to reach D1 and R2 with. It is
+// deliberately not the token this script was given: that one lives only in the memory of this
+// run, while this one stays in the Worker as a secret, and the two should not be the same key.
+//
+// 容器没有 binding,所以它需要一个自己的 token 才够得到 D1 和 R2。它有意不是本脚本收到的那个:
+// 那一个只活在这次运行的内存里,而这一个会作为 secret 长期留在 Worker 里 —— 两者不该是同一把钥匙。
+
+if (args['backup-token']) {
+  step('备份凭据');
+  const bt = String(args['backup-token']);
+  const idRes = await fetch(`${API}/accounts/${accountId}/tokens/verify`, {
+    headers: { Authorization: `Bearer ${bt}` },
+  });
+  const idJson = await idRes.json().catch(() => ({}));
+  const tokenId = idJson?.result?.id;
+  if (!tokenId) die('--backup-token 校验失败,拿不到它的 id:' + JSON.stringify(idJson.errors || idJson).slice(0, 300));
+  if (DRY) {
+    plan(`写入 secret BACKUP_TOKEN_ID / BACKUP_TOKEN_VALUE(token ${tokenId.slice(0, 8)}…)`);
+  } else {
+    const put = (name, value) => wrangler(['secret', 'put', name, '-c', CONFIG], { input: value });
+    if (put('BACKUP_TOKEN_ID', tokenId) !== 0) die('写入 BACKUP_TOKEN_ID 失败');
+    if (put('BACKUP_TOKEN_VALUE', bt) !== 0) die('写入 BACKUP_TOKEN_VALUE 失败');
+    log('已写入两个 secret;备份可以在后台打开了');
+  }
+}
 
 // --- 8. Mail routing ------------------------------------------------------
 // --- 8. 收信 ---------------------------------------------------------------
