@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { stripJsonc, withEntryRoute } from './wrangler-config.mjs';
+import { stripJsonc, withBucket, withEntryRoute } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
@@ -395,6 +395,15 @@ const host = domain ? `${entry}.${domain}` : '';
 text = text
   .replace(/"account_id"\s*:\s*"[^"]*"/, `"account_id": "${accountId}"`)
   .replace(/"database_id"\s*:\s*"[^"]*"/, `"database_id": "${databaseId}"`);
+
+// A configuration written before the backup bucket existed has no binding for it, and would
+// deploy a Worker that can never back anything up.
+// 在备份桶还不存在时写下的配置里没有它的绑定,那样部署出来的 Worker 永远备份不了任何东西。
+{
+  const withBk = withBucket(text, 'BACKUP', BK_NAME);
+  if (withBk === null) die(`${CFG_NAME} 里找不到 r2_buckets 数组`);
+  if (withBk !== text) { text = withBk; plan(`r2_buckets 补上 BACKUP → ${BK_NAME}`); }
+}
 
 // APP_ORIGIN is what invite and password-reset links are built from. It is set from the first
 // entry host and never left as a placeholder -- a link pointing at "<entry-subdomain>" reaches

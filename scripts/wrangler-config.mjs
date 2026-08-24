@@ -121,6 +121,38 @@ export function entrySubdomain(cfg = loadWranglerConfig()) {
  * 模板里那条 <占位符> route 是拿来被替换的,不是拿来陪跑的,所以 pattern 里还带 <> 的整行删掉。
  * 返回新文本;找不到 routes 数组则返回 null。
  */
+/**
+ * Make sure a bucket binding is in the configuration, adding it if a previous version of this
+ * script wrote the file before the binding existed.
+ *
+ * A generated configuration does not follow the template it came from. Every binding added after
+ * a deployment was first set up is therefore invisible to it -- the Worker simply starts without
+ * that binding, and the feature behind it is quietly never available. Routes have been kept in
+ * step this way since the beginning; buckets need the same treatment.
+ *
+ * 确保某个桶的绑定在配置里,缺了就补上 —— 那是本脚本的旧版本在这个绑定还不存在时写下的文件。
+ *
+ * 生成出来的配置不会跟着它的模板走。于是每一个"部署建好之后才加的绑定"对它都是隐形的:
+ * Worker 就那么少一个绑定地启动了,它背后的功能悄无声息地永远不可用。
+ * routes 从一开始就是这样保持同步的,桶也该照办。
+ */
+export function withBucket(text, binding, bucket) {
+  if (new RegExp('"binding"\\s*:\\s*"' + binding + '"').test(text)) return text;
+  const m = /("r2_buckets"\s*:\s*\[)([\s\S]*?)(\n[ \t]*\])/.exec(text);
+  if (!m) return null;
+  const lines = m[2].split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i].trim();
+    if (!t || t.startsWith('//')) continue;
+    if (!t.endsWith(',')) lines[i] = lines[i].replace(/\s*$/, ',');
+    break;
+  }
+  const body = lines.join('\n').replace(/\n+$/, '');
+  return text.slice(0, m.index) + m[1] + body +
+         `\n    { "binding": "${binding}", "bucket_name": "${bucket}" }` + m[3] +
+         text.slice(m.index + m[0].length);
+}
+
 export function withEntryRoute(text, host) {
   const m = /("routes"\s*:\s*\[)([\s\S]*?)(\n[ \t]*\])/.exec(text);
   if (!m) return null;
