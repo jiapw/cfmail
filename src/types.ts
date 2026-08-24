@@ -3,6 +3,20 @@ export interface Env {
   RAW: R2Bucket;
   /** Automatic backup target; absent on a deployment that predates it / 自动备份的去处;早于这个功能的部署上没有它 */
   BACKUP?: R2Bucket;
+  /** The container the backup job runs in; absent when the deployment was made without Docker
+   *  跑备份任务的容器;部署时没有 Docker 的话不存在 */
+  BACKUP_CONTAINER?: DurableObjectNamespace<import('./backup').BackupContainer>;
+  /** One API token, doing two jobs: bearer for D1's export, and (id, sha256(value)) as R2's
+   *  S3 key pair. Set as wrangler secrets by the deploy script.
+   *  一个 API token 干两件事:D1 导出的 bearer,以及 (id, sha256(value)) 作为 R2 的 S3 密钥对。
+   *  由部署脚本设成 wrangler secret。 */
+  BACKUP_TOKEN_ID?: string;
+  BACKUP_TOKEN_VALUE?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_D1_DATABASE_ID?: string;
+  R2_RAW_BUCKET?: string;
+  R2_BACKUP_BUCKET?: string;
+  SEVENZ_LEVEL?: string;
   ASSETS: Fetcher;
   AI: Ai;
   CHAT_AGENT: DurableObjectNamespace;

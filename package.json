@@ -16,6 +16,7 @@
     "deploy:worker": "node scripts/sync-vendor.mjs && wrangler deploy"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "agents": "^0.20.1",
     "ai": "^7.0.60",
     "aws4fetch": "^1.0.20",
