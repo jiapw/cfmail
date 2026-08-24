@@ -4385,8 +4385,16 @@ function renderUpPanel() {
   // 而当两个都在发生时,它说那句对两者都成立的话,而不是挑一边站。
   const done = up.tasks.filter((x) => x.status === 'ok');
   const word = (list, up1, down1, both) => {
-    const u = list.some((x) => !x.down);
-    const d = list.some((x) => x.down);
+    // Which direction to name comes from everything in the panel; only the count comes from the
+    // list being described. A panel of downloads where none has finished has an empty "done"
+    // list, and an empty list has no direction in it at all -- it fell through to the upload
+    // wording and renamed the panel after something that never happened.
+    // "该说哪个方向"由面板里有什么决定,只有那个数字来自被描述的那份名单。
+    // 一个"一件都还没完成"的下载面板,它的 done 是空的,而一份空名单里根本没有方向可言 ——
+    // 于是它掉进了上传的那句文案,把面板改名成了一件从未发生过的事。
+    const from = list.length ? list : up.tasks;
+    const u = from.some((x) => !x.down);
+    const d = from.some((x) => x.down);
     return t(u && d ? both : d ? down1 : up1, list.length);
   };
   const head = live.length
