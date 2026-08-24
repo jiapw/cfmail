@@ -1204,7 +1204,7 @@ function openMenu(x, y, nodes, own) {
   menuEl.className = 'drv-menu';
   menuEl.innerHTML = items.map((it, i) => it === '-'
     ? '<div class="sep"></div>'
-    : `<div class="mi ${it.danger ? 'danger' : ''}" data-mi="${i}">${icon(it.ic, 18)}<span>${esc(it.label)}</span></div>`
+    : `<div class="mi ${it.danger ? 'danger' : ''}${it.hint ? ' hint' : ''}" data-mi="${i}">${icon(it.ic, 18)}<span>${esc(it.label)}</span></div>`
   ).join('');
   document.body.appendChild(menuEl);
   const r = menuEl.getBoundingClientRect();
@@ -1216,7 +1216,7 @@ function openMenu(x, y, nodes, own) {
     if (!el) return;
     const it = items[parseInt(el.dataset.mi, 10)];
     closeMenu();
-    it.fn();
+    it.fn?.();
   });
 }
 
@@ -3344,7 +3344,7 @@ async function offerSubs(n, video, film) {
       });
     } catch { /* a pair that will not open is a pair not offered / 打不开的一对,就不端上来 */ }
   }
-  if (!tracks.length || !video) return;
+  if (!video) return;
   if (!pv || pv.list[pv.idx] !== n) return;
 
   pvSubs = { node: n, video, film, tracks, lines: new Map(), shown: null, made: new Map() };
@@ -3385,6 +3385,13 @@ async function offerSubs(n, video, film) {
 /** The menu behind the button: off, then one entry per track, with the one being shown marked.
  *  按钮后面的那份菜单:先是关闭,然后每条轨一项,正在显示的那一条打上记号。 */
 function subsMenu() {
+  // Nothing was found, and saying so is the whole point of being here. A film with no subtitles
+  // anywhere and a film whose subtitles failed to load look identical from the outside; what
+  // differs is what the person watching should do next, and only one of those two has an answer.
+  // 什么都没找到,而把这句话说出来,正是这里存在的全部理由。
+  // 一部哪里都没有字幕的片子,和一部字幕没能读出来的片子,从外面看是一模一样的;
+  // 不同的是"看的人接下来该做什么",而这两者里只有一个有答案。
+  if (!pvSubs.tracks.length) return [{ ic: 'subtitles', label: t('drv_subs_none'), hint: true }];
   const out = [{
     ic: pvSubs.shown ? 'blank' : 'check',
     label: t('drv_subs_off'),
