@@ -444,10 +444,14 @@ of that one run, while the backup token stays in the Worker as a secret. Give th
 而备份 token 会作为 secret 长期留在 Worker 里。给它 **Account → D1 · Read** 和
 **Account → Workers R2 Storage · Edit** 就够,别的一概不需要。
 
-Without the image, or without the token, the console says so and the switch stays off. A
-deployment with neither is simply a deployment without backups.
+Without the image, or without the token, the console says so and the switch stays off. The
+container is in the configuration either way, though -- one shape of configuration rather than
+two -- which is why **`wrangler dev` wants an API token in the environment** even when you are not
+working on the backup. `.env.deploy` is enough; local development still needs no Docker.
 
-镜像没构建、或 token 没给,后台会直说,开关也开不起来。两样都没有的部署,就是一套没有备份的部署。
+镜像没构建、或 token 没给,后台会直说,开关也开不起来。但容器**始终**在配置里 ——
+只有一种形状的配置,不是两种 —— 所以**即使你不碰备份,`wrangler dev` 也要环境里有 API token**。
+有 `.env.deploy` 就够了;本地开发仍然不需要 Docker。
 
 ### Restoring / 恢复
 
