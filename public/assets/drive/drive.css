@@ -448,6 +448,95 @@
    本身是图画的字幕:一块与片子分毫不差地叠在上面的画布,按"字幕当年所依据的画幅"作画,
    再拉伸贴合。它不接受点击 —— 它下面的控件仍然是控件。 */
 .drv-subpic { position: absolute; pointer-events: none; z-index: 3; }
+/* ---------- The player's own controls ---------- */
+/* ---------- 播放器自己的那套控件 ---------- */
+/* Laid over the film's own rectangle -- which is smaller than the box the film is centred in, and
+   moves when the window does -- so the row sits on the picture and not on the space beside it.
+   铺在片子自己的矩形上 —— 那个矩形比"片子居中于其中的盒子"小,而且会随窗口移动 ——
+   于是这一排落在画面上,而不是落在它旁边的空处。 */
+.drv-pl {
+  position: absolute; z-index: 4; pointer-events: none;
+  color: #fff; font-size: 12.5px; user-select: none;
+}
+.drv-pl-tap { position: absolute; inset: 0; pointer-events: auto; cursor: pointer; }
+.drv-pl:not(.awake) .drv-pl-tap { cursor: none; }
+
+/* The one in the middle: there while the film is not running, gone the moment it is.
+   中间那个:片子没在走的时候它在,一开走就不在了。 */
+.drv-pl-big {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 68px; height: 68px; border-radius: 50%; background: rgba(0,0,0,.42);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto; cursor: pointer; transition: opacity .18s, background .18s;
+}
+.drv-pl-big:hover { background: rgba(0,0,0,.62); }
+.drv-pl.playing .drv-pl-big { opacity: 0; pointer-events: none; }
+
+.drv-pl-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; pointer-events: auto;
+  display: flex; align-items: center; gap: 8px; padding: 22px 12px 10px;
+  background: linear-gradient(to top, rgba(0,0,0,.74), rgba(0,0,0,0));
+  opacity: 0; transition: opacity .18s;
+}
+.drv-pl.awake .drv-pl-bar { opacity: 1; }
+
+.drv-pl-b {
+  appearance: none; border: 0; background: none; color: #fff; padding: 4px; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; cursor: pointer; line-height: 0;
+}
+.drv-pl-b:hover { background: rgba(255,255,255,.18); }
+.drv-pl-b wa-icon { color: #fff; }
+.drv-pl-slot { display: flex; align-items: center; }
+
+/* The rail carries three things at once: how far the film has been watched, which stretch of it
+   has actually been made -- a window around where we are, because it is converted as it plays --
+   and where the hand is.
+   这条轨道同时载着三件事:片子被看到了哪里、哪一段是真的已经做好了 ——
+   一个围绕"我们所在之处"的窗口,因为它是边放边转的 —— 以及手在哪里。 */
+.drv-pl-seek { position: relative; flex: 1; min-width: 60px; height: 16px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.drv-pl-seek .rail { position: relative; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,.26); }
+.drv-pl-seek .buf { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: rgba(255,255,255,.36); }
+.drv-pl-seek .cur { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; background: var(--primary); }
+.drv-pl-seek .knob {
+  position: absolute; top: 50%; width: 11px; height: 11px; margin-left: -5.5px;
+  border-radius: 50%; background: #fff; transform: translateY(-50%);
+  opacity: 0; transition: opacity .12s;
+}
+.drv-pl:hover .drv-pl-seek .knob { opacity: 1; }
+
+.drv-pl-time { display: flex; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: .95; }
+.drv-pl-time .sep { opacity: .5; }
+
+.drv-pl-vol { display: flex; align-items: center; gap: 2px; }
+/* Always out, never sliding open. A rail that grows on hover is a rail whose width is wrong for
+   the fifth of a second somebody is most likely to click it in.
+   一直在外面,不做展开动画。一条 hover 时才长出来的轨道,
+   恰恰在"人最可能去点它"的那五分之一秒里,宽度是错的。 */
+.drv-pl-volbar { width: 68px; display: flex; align-items: center; height: 16px; cursor: pointer; touch-action: none; }
+.drv-pl-volbar .rail { position: relative; width: 60px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.26); }
+.drv-pl-volbar .cur { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; background: #fff; }
+
+/* Filling the screen means the film and what belongs to it, and nothing that belongs to the page.
+   铺满屏幕,指的是片子和属于片子的东西,而不包括任何属于这一页的东西。 */
+.drv-view-body:fullscreen { padding: 0; background: #000; }
+.drv-view-body:fullscreen .drv-view-nav,
+.drv-view-body:fullscreen .drv-pvvers { display: none; }
+
+/* The words themselves. A player's own default is white on a black slab, and that slab is a
+   second rectangle laid across the picture -- it covers the film to make the words readable.
+   An outline does the same work and covers nothing.
+   字幕本身。播放器自带的样子是白字加一块黑底,而那块黑底是横在画面上的第二个矩形 ——
+   它靠遮住片子来让字看得清。描边做的是同一件事,却什么也不遮。 */
+.drv-view-body video::cue {
+  background: transparent;
+  color: #fff;
+  text-shadow:
+    -1px -1px 0 #000, 0 -1px 0 #000, 1px -1px 0 #000,
+    -1px 0 0 #000, 1px 0 0 #000,
+    -1px 1px 0 #000, 0 1px 0 #000, 1px 1px 0 #000,
+    0 0 4px rgba(0,0,0,.85);
+}
 /* The document window: one rounded dark surface per preview, scrolling INSIDE itself -- the
    scrollbar hugs the window's right edge instead of floating at the overlay's. White "paper"
    cards (pdf pages, docx sheets, slides) stack within; text and code render directly on it.

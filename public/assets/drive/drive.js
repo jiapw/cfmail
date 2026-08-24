@@ -15,6 +15,7 @@ import { editorFor, editorHash } from '../edit/kinds.js';
 import { verdict } from './remux.js';
 import { cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
 import { decodeSpu, readIndex, spuAt } from './vobsub.js';
+import { mountPlayer } from './player.js';
 
 export { arcSeed };
 
@@ -1196,7 +1197,7 @@ window.addEventListener('keydown', (e) => {
  *  同一份菜单,不论从哪里打开。给它一个选区,它自己推出能对它做什么;
  *  直接给它一份清单,它就显示那一份 —— 而这正是"一个自带选项的控件"(比如字幕选择器)
  *  用上其余一切都在用的那份菜单、而不是自己另造一份的办法。 */
-function openMenu(x, y, nodes, own) {
+function openMenu(x, y, nodes, own, above) {
   closeMenu();
   const items = own || menuItems(nodes);
   if (!items.length) return;
@@ -1208,8 +1209,16 @@ function openMenu(x, y, nodes, own) {
   ).join('');
   document.body.appendChild(menuEl);
   const r = menuEl.getBoundingClientRect();
-  menuEl.style.left = Math.min(x, innerWidth - r.width - 8) + 'px';
-  menuEl.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
+  // A control at the foot of the player has no room below it. Asked to open above, the menu hangs
+  // its bottom-right corner off the point it was given instead of its top-left.
+  // 一个待在播放器底部的控件,下面没有地方。要它向上开时,
+  // 菜单把右下角挂在给定的那个点上,而不是左上角。
+  menuEl.style.left = (above
+    ? Math.max(8, Math.min(x - r.width, innerWidth - r.width - 8))
+    : Math.min(x, innerWidth - r.width - 8)) + 'px';
+  menuEl.style.top = (above
+    ? Math.max(8, y - r.height)
+    : Math.min(y, innerHeight - r.height - 8)) + 'px';
   menuEl.addEventListener('click', (e) => {
     e.stopPropagation();
     const el = e.target.closest('[data-mi]');
@@ -2495,7 +2504,11 @@ function killMedia(rootEl) {
   });
 }
 
+let pvPlayer = null;
+
 function closePreview() {
+  pvPlayer?.destroy();
+  pvPlayer = null;
   dropPvBlob();
   destroyPdfPreview();
   pvRich?.destroy?.();
@@ -2708,6 +2721,11 @@ async function renderPdfPreview(node, box) {
 
 function pvKeys(e) {
   if (!pv) return;
+  // A film answers to most of these itself -- space, the arrows, m, f -- and only what it does
+  // not take goes on to mean "the next file".
+  // 一部片子自己就听得懂这里的大部分按键 —— 空格、方向键、m、f ——
+  // 只有它没接下的那些,才继续表示"下一个文件"。
+  if (e.key !== 'Escape' && pvPlayer?.keys(e)) return;
   if (e.key === 'Escape') closePreview();
   else if (e.key === 'ArrowLeft') pvStep(-1);
   else if (e.key === 'ArrowRight') pvStep(1);
@@ -2870,6 +2888,10 @@ async function loadVersions(node) {
 /** Overlay chrome shared by the normal path and the extract-in-progress state
  *  预览层外壳。正常路径与"解出中"状态共用 */
 function paintPvShell(n, body) {
+  // Whatever was on the last film goes with the last film's shell.
+  // 上一部片子上挂着的东西,随上一部片子的壳一起走。
+  pvPlayer?.destroy();
+  pvPlayer = null;
   const vn = verView(n);
   pv.el.innerHTML = `
     <div class="drv-view-head">
@@ -3311,43 +3333,49 @@ function subLabel(s, nth) {
  * 不该长出一个"点开是一份空菜单"的控件。
  */
 async function offerSubs(n, video, film) {
-  const tracks = [];
-  if (film) {
-    film.subs.forEach((s, i) => tracks.push({ id: 'in:' + s.index, label: subLabel(s, i + 1), inside: s }));
-  }
-  // The folder, asked for once. What is next to a film is not something the film knows.
-  // 那个文件夹,只问一次。一部片子旁边有什么,不是这部片子知道的事。
-  let beside = [];
-  try {
-    const data = await api('GET', `/api/drive/list?parent=${encodeURIComponent(n.parent_id || 'root')}`);
-    beside = sidecarsFor(n.name, data.nodes || []);
-  } catch { /* a folder that cannot be listed simply has nothing beside it / 列不出来的文件夹,就当它旁边什么都没有 */ }
-  for (const f of beside) {
-    if (!f.pictures) { tracks.push({ id: 'file:' + f.node.id, label: f.label, file: f }); continue; }
-    // A DVD's subtitles say inside themselves which languages they hold, and the half that says
-    // so is forty kilobytes. Read now, so the menu can offer 日本語 rather than IDX; the pictures
-    // themselves are three megabytes and are left where they are until somebody asks.
-    // 一张 DVD 的字幕,在自己内部说明它装着哪些语言,而"说这件事的那一半"是四十千字节。
-    // 现在就读,好让菜单能给出"日本語"而不是"IDX";图画本身有三兆字节,
-    // 在有人开口要之前,就让它待在原处。
-    try {
-      const res = await fetch(dlUrl(f.node.id, false, verTag(f.node)));
-      if (!res.ok) continue;
-      const index = readIndex(readText(new Uint8Array(await res.arrayBuffer()), f.node.name));
-      index.streams.forEach((st, i) => {
-        if (!st.cues.length) return;
-        tracks.push({
-          id: `pic:${f.node.id}:${i}`,
-          label: labelOf(st.lang, f.label),
-          pic: { index, stream: i, mate: f.mate, bytes: null },
-        });
-      });
-    } catch { /* a pair that will not open is a pair not offered / 打不开的一对,就不端上来 */ }
-  }
-  if (!video) return;
-  if (!pv || pv.list[pv.idx] !== n) return;
+  if (!video || !pv || pv.list[pv.idx] !== n) return;
+  const box = video.parentElement;
+  if (!box || box.querySelector('[data-subs]')) return;
 
-  pvSubs = { node: n, video, film, tracks, lines: new Map(), shown: null, made: new Map() };
+  // The control first, before anything that can fail.
+  //
+  // Looking for subtitles means asking the folder what is in it and reading files out of it, and
+  // every one of those steps can go wrong. When one did, this function ended before it ever
+  // reached the line that puts the button up, and the failure arrived as an absence -- which is
+  // the one answer nobody can act on, because it is also what a film with no subtitles looks
+  // like, and what a page running yesterday's code looks like. So the button exists from the
+  // start and the menu behind it says which of those happened.
+  //
+  // 先摆控件,再做任何可能失败的事。
+  //
+  // 找字幕意味着问文件夹里有什么、再把文件读出来,而这里每一步都可能出岔子。
+  // 出岔子的那一次,这个函数在够到"摆按钮"那一行之前就结束了,
+  // 于是失败以"什么都没有"的样子到达 —— 而那恰恰是没人能据以行动的答案,
+  // 因为一部本来就没有字幕的片子是这个样子,一页还跑着昨天的代码也是这个样子。
+  // 所以按钮从一开始就在,由它背后的菜单去说,发生的是哪一种。
+  pvSubs = { node: n, video, film, tracks: [], lines: new Map(), shown: null, made: new Map(),
+    reading: true, trouble: null };
+  const mine = pvSubs;
+  // Where a subtitles control is looked for: on the player, at the end of the row of controls,
+  // not up in the header among the things that are done to the file. Somebody who wants
+  // subtitles is watching the film, and their eyes are on the film.
+  // 一个字幕控件会被到哪里去找:在播放器上,在那一排控件的末端 ——
+  // 而不是在顶栏里、混在"对这个文件做的事"当中。想要字幕的人正在看片子,而他的眼睛在片子上。
+  const btn = document.createElement('button');
+  btn.className = 'drv-pl-b';
+  btn.setAttribute('data-subs', '');
+  btn.setAttribute('aria-label', t('drv_subs'));
+  btn.title = t('drv_subs');
+  btn.innerHTML = icon('subtitles', 20);
+  (pvPlayer?.slot || box).appendChild(btn);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const r = btn.getBoundingClientRect();
+    openMenu(r.right + 12, r.top - 10, null, subsMenu(), true);
+  });
+
+  // Wired before the reading starts, because the film is already being read and its lines are
+  // already arriving. 在开始找之前就接上,因为片子已经在被读了,它的字也已经在到达了。
   if (film) {
     film.onSub = (c) => {
       if (!pvSubs || pvSubs.film !== film) return;
@@ -3364,46 +3392,68 @@ async function offerSubs(n, video, film) {
     };
   }
 
-  const head = pv.el?.querySelector('.drv-view-head');
-  const dl = head?.querySelector('[data-dl]');
-  if (!head || head.querySelector('[data-subs]')) return;
-  const btn = document.createElement('wa-button');
-  btn.className = 'icon';
-  btn.setAttribute('appearance', 'plain');
-  btn.setAttribute('data-subs', '');
-  btn.setAttribute('aria-label', t('drv_subs'));
-  btn.title = t('drv_subs');
-  btn.innerHTML = icon('subtitles', 20);
-  head.insertBefore(btn, dl || null);
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const r = btn.getBoundingClientRect();
-    openMenu(r.left, r.bottom + 4, null, subsMenu());
-  });
+  const tracks = [];
+  try {
+    if (film) {
+      film.subs.forEach((s, i) => tracks.push({ id: 'in:' + s.index, label: subLabel(s, i + 1), inside: s }));
+    }
+    // The folder, asked for once. What is next to a film is not something the film knows.
+    // 那个文件夹,只问一次。一部片子旁边有什么,不是这部片子知道的事。
+    let beside = [];
+    try {
+      const data = await api('GET', `/api/drive/list?parent=${encodeURIComponent(n.parent_id || 'root')}`);
+      beside = sidecarsFor(n.name, data.nodes || []);
+    } catch (e) {
+      // A folder that will not answer is not the same as a folder with nothing in it, and the
+      // difference is worth a line in the menu.
+      // 一个不肯作答的文件夹,不等于一个里面什么都没有的文件夹,这个区别值得在菜单里占一行。
+      mine.trouble = tErr(e);
+    }
+    for (const f of beside) {
+      if (!f.pictures) { tracks.push({ id: 'file:' + f.node.id, label: f.label, file: f }); continue; }
+      // A DVD's subtitles say inside themselves which languages they hold, and the half that says
+      // so is forty kilobytes. Read now, so the menu can offer 日本語 rather than IDX; the pictures
+      // themselves are three megabytes and are left where they are until somebody asks.
+      // 一张 DVD 的字幕,在自己内部说明它装着哪些语言,而"说这件事的那一半"是四十千字节。
+      // 现在就读,好让菜单能给出"日本語"而不是"IDX";图画本身有三兆字节,
+      // 在有人开口要之前,就让它待在原处。
+      try {
+        const res = await fetch(dlUrl(f.node.id, false, verTag(f.node)));
+        if (!res.ok) throw new Error('e_drive_subs_empty');
+        const index = readIndex(readText(new Uint8Array(await res.arrayBuffer()), f.node.name));
+        index.streams.forEach((st, i) => {
+          if (!st.cues.length) return;
+          tracks.push({
+            id: `pic:${f.node.id}:${i}`,
+            label: labelOf(st.lang, f.label),
+            pic: { index, stream: i, mate: f.mate, bytes: null },
+          });
+        });
+      } catch (e) { mine.trouble = `${f.node.name}: ${tErr(e)}`; }
+    }
+  } catch (e) { mine.trouble = tErr(e); }
+  if (pvSubs !== mine) return;
+  mine.tracks = tracks;
+  mine.reading = false;
 }
 
 /** The menu behind the button: off, then one entry per track, with the one being shown marked.
  *  按钮后面的那份菜单:先是关闭,然后每条轨一项,正在显示的那一条打上记号。 */
 function subsMenu() {
-  // Nothing was found, and saying so is the whole point of being here. A film with no subtitles
-  // anywhere and a film whose subtitles failed to load look identical from the outside; what
-  // differs is what the person watching should do next, and only one of those two has an answer.
-  // 什么都没找到,而把这句话说出来,正是这里存在的全部理由。
-  // 一部哪里都没有字幕的片子,和一部字幕没能读出来的片子,从外面看是一模一样的;
-  // 不同的是"看的人接下来该做什么",而这两者里只有一个有答案。
-  if (!pvSubs.tracks.length) return [{ ic: 'subtitles', label: t('drv_subs_none'), hint: true }];
-  const out = [{
-    ic: pvSubs.shown ? 'blank' : 'check',
-    label: t('drv_subs_off'),
-    fn: () => showSub(null),
-  }];
-  for (const tr of pvSubs.tracks) {
-    out.push({
-      ic: pvSubs.shown === tr.id ? 'check' : 'blank',
-      label: tr.label,
-      fn: () => showSub(tr.id),
-    });
+  if (!pvSubs) return [];
+  const out = [];
+  if (pvSubs.tracks.length) {
+    out.push({ ic: pvSubs.shown ? 'blank' : 'check', label: t('drv_subs_off'), fn: () => showSub(null) });
+    for (const tr of pvSubs.tracks) {
+      out.push({ ic: pvSubs.shown === tr.id ? 'check' : 'blank', label: tr.label, fn: () => showSub(tr.id) });
+    }
   }
+  // Still looking, nothing found, or something went wrong -- three different things, and an empty
+  // menu said all three at once.
+  // 还在找、什么都没找到、出了错 —— 三件不同的事,而一份空菜单把它们说成了同一件。
+  if (pvSubs.reading) out.push({ ic: 'subtitles', label: t('drv_subs_reading'), hint: true });
+  else if (pvSubs.trouble) out.push({ ic: 'subtitles', label: pvSubs.trouble, hint: true });
+  else if (!out.length) out.push({ ic: 'subtitles', label: t('drv_subs_none'), hint: true });
   return out;
 }
 
@@ -3529,13 +3579,13 @@ async function paintPreview() {
   dropPvBlob();
   const film = verdict(n.name, mime);
   if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
-  else if (film === 'native' || VID_RE.test(mime)) body = `<video controls autoplay src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
+  else if (film === 'native' || VID_RE.test(mime)) body = `<video autoplay playsinline src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
   // A box that can be changed. How big it is does not come into it any more: the film is changed
   // a piece at a time while it plays, so a four-gigabyte one is the same wait as a small one.
   // 一个可以换掉的盒子。它有多大已经不在考虑之列了:片子是边放边一块一块换的,
   // 于是一部四吉字节的与一部小的,等的是同样久。
   else if (film === 'remux') {
-    body = `<video controls></video><div class="drv-pvwait">${spinnerHtml()}<div class="drv-conv">${esc(t('drv_vid_converting'))}</div></div>`;
+    body = `<video playsinline></video><div class="drv-pvwait">${spinnerHtml()}<div class="drv-conv">${esc(t('drv_vid_converting'))}</div></div>`;
   }
   // Nothing here will open it, and saying so is the whole improvement: a file icon and silence
   // reads as "this application is broken" rather than "this format needs another program".
@@ -3560,6 +3610,15 @@ async function paintPreview() {
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
   loadVersions(n);
+  // The controls belong to the film from the moment there is a film element, not from the moment
+  // it has something to play: a conversion takes a while to start, and a player with nothing in
+  // it yet is still the thing that will be reached for.
+  // 控件从"有这个视频元素"的那一刻起就属于这部片子,而不是从"它有东西可放"的那一刻起:
+  // 转换要过一会儿才开得起来,而一个还空着的播放器,仍然是人会伸手去够的那个东西。
+  if (film === 'remux' || film === 'native') {
+    const v = pv.el?.querySelector('.drv-view-body video');
+    if (v) pvPlayer = mountPlayer(v, v.parentElement);
+  }
   if (film === 'remux') void convertAndPlay(n, src);
   // A film the browser opens by itself still has a folder around it, and the folder may hold the
   // words. Nothing here had to be converted for that to be true.
