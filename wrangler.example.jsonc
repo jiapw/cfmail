@@ -67,11 +67,30 @@
   "ai": { "binding": "AI" },
   "durable_objects": {
     "bindings": [
+      { "name": "BACKUP_CONTAINER", "class_name": "BackupContainer" },
       { "name": "CHAT_AGENT", "class_name": "ChatAgent" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] }
+    { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] },
+    { "tag": "v2", "new_sqlite_classes": ["BackupContainer"] }
+  ],
+
+  // 备份跑在容器里:那儿有 7-Zip、有磁盘、想跑多久跑多久,而 Worker 三样都没有。
+  // 镜像引用仓库地址而不是在此构建,所以部署不需要 Docker。
+  // Where the backup runs: 7-Zip, a disk, and as long as it takes. The image is referenced
+  // from the registry rather than built here, so a deploy needs no Docker.
+  // 本地开发不碰容器:否则 wrangler dev 会去拉镜像,那要求 Docker 跑着。
+  // Local development leaves the container alone; pulling the image wants Docker.
+  "dev": { "enable_containers": false },
+
+  "containers": [
+    {
+      "class_name": "BackupContainer",
+      "image": "registry.cloudflare.com/<account-id>/cfmail-backup:1",
+      "instance_type": "standard-2",
+      "max_instances": 1
+    }
   ],
 
 

@@ -97,8 +97,9 @@ function usage(code) {
                   它只需要 Account 的 D1 · Read 与 Workers R2 Storage · Edit。
   --backup-image <ref>
                   备份容器的镜像地址,默认 registry.cloudflare.com/<账号>/cfmail-backup:1。
-                  镜像要先构建推送一次(需要 Docker):
+                  镜像要先构建推送一次(唯一需要 Docker 的一步):
                     wrangler containers build ./container --tag <ref> --push
+                  容器无论开不开备份都写进配置,所以 wrangler dev 会要环境里有 API token。
   --prune-domains 允许这次部署摘掉线上有、配置里没有的自定义域(默认是保留它们)。
   --dry-run       只打印将要做什么,不做任何改动。
   --help          显示本说明。
@@ -414,32 +415,25 @@ text = text
 }
 // --- Backup container -----------------------------------------------------
 // --- 备份容器 --------------------------------------------------------------
-// Three things have to line up for a backup to be possible: the container in the configuration,
-// an image in the registry for it to run, and a token of its own to reach D1 and R2 with. Any of
-// them missing means the deployment simply has no backup, and says so -- which is better than a
-// switch in the console that turns nothing on.
+// The container goes in whether or not this deployment has switched backups on. Writing it in
+// later, only for those who ask, means two shapes of configuration to reason about and a feature
+// that is missing in a way nobody notices until they need it. One shape, one prerequisite: a
+// deployment carries the container, and `wrangler dev` therefore wants an API token.
 //
-// 备份要成立,三样东西必须对齐:配置里的容器、仓库里给它跑的镜像、以及它自己够到 D1 和 R2 的 token。
-// 缺任何一样,这套部署就只是没有备份功能,并且明说 —— 那好过后台上一个开了也不管用的开关。
+// 无论这套部署有没有打开备份,容器都写进去。等到有人开口才补,意味着有两种形状的配置要照顾,
+// 而那个功能会以"没人注意得到"的方式缺席,直到真的要用它的那天。
+// 一种形状、一道门槛:部署里就是带着容器,于是 `wrangler dev` 会要一个 API token。
 {
-  // The container is written in only for a deployment that asked for backups. Its mere presence
-  // makes `wrangler dev` require an API token, and somebody who never wanted a backup should not
-  // pay that toll to run the thing locally.
-  // 只有要备份的部署才写入这一段。它一旦出现在配置里,`wrangler dev` 就要 API token,
-  // 而一个从没打算备份的人,不该为了在本地把系统跑起来交这笔过路费。
-  const already = /"class_name"\s*:\s*"BackupContainer"/.test(text);
-  if (args['backup-token'] || already) {
-    const image = args['backup-image']
-      || `registry.cloudflare.com/${accountId}/cfmail-backup:1`;
-    const withBk = withBackupContainer(text, image);
-    if (withBk === null) log('⚠ 配置里找不到 durable_objects / migrations,跳过备份容器');
-    else if (withBk !== text) { text = withBk; plan(`备份容器 → ${image}`); }
-    const v1 = withVar(text, 'CF_ACCOUNT_ID', accountId);
-    const v2 = v1 && withVar(v1, 'CF_D1_DATABASE_ID', databaseId);
-    if (v2) text = v2;
-    const withDev = withDevContainersOff(text);
-    if (withDev && withDev !== text) { text = withDev; plan('dev.enable_containers = false(本地开发不拉镜像)'); }
-  }
+  const image = args['backup-image']
+    || `registry.cloudflare.com/${accountId}/cfmail-backup:1`;
+  const withBk = withBackupContainer(text, image);
+  if (withBk === null) log('⚠ 配置里找不到 durable_objects / migrations,跳过备份容器');
+  else if (withBk !== text) { text = withBk; plan(`备份容器 → ${image}`); }
+  const v1 = withVar(text, 'CF_ACCOUNT_ID', accountId);
+  const v2 = v1 && withVar(v1, 'CF_D1_DATABASE_ID', databaseId);
+  if (v2) text = v2;
+  const withDev = withDevContainersOff(text);
+  if (withDev && withDev !== text) { text = withDev; plan('dev.enable_containers = false(本地开发不拉镜像)'); }
 }
 
 
