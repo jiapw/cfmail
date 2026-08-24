@@ -9,17 +9,12 @@
  * requests, and a job compressing a gigabyte makes no requests at all, so the once-a-minute
  * question is doing two things: reporting, and saying "still needed".
  *
- * 薄的那一层。Worker 看不了一个跑半小时的任务 —— 一次定时调用最多活十五分钟 ——
- * 所以容器不让它看。POST 一下任务就开跑并立刻返回;此后 Worker 每分钟问一次进展,
- * 回答只有几百字节。
  *
- * 这个轮询同时也是让容器不睡着的东西。一个实例在一段时间没有请求之后会休眠,
- * 而一个正在压一个 GB 的任务根本不发请求 —— 所以那句每分钟一问干了两件事:报告进展,以及说"还要用"。
  */
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 
-/** The one job this container ever runs, and what is known about it / 这个容器唯一会跑的任务,以及关于它已知的一切 */
+/** The one job this container ever runs, and what is known about it */
 let job = null;
 
 function start(body) {
@@ -36,8 +31,6 @@ function start(body) {
 
   // Keep the last line, not the whole log: the Worker wants to show progress, and a container
   // holding an hour of output in memory to answer that is a container doing the wrong job.
-  // 只留最后一行,不留整份日志:Worker 要显示的是进度,
-  // 而一个为了回答这个问题把一小时的输出攥在内存里的容器,做的是别的活儿。
   const watch = (stream, isErr) => {
     let buf = '';
     stream.setEncoding('utf8');

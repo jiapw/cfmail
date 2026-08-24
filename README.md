@@ -455,12 +455,22 @@ working on the backup. `.env.deploy` is enough; local development still needs no
 
 ### Restoring / 恢复
 
-Open the archive. `database.sql` is a plain SQL dump -- `wrangler d1 execute <db> --remote
---file=database.sql` puts it back -- and `mail/` holds the message files under their original
-storage keys. Afterwards rebuild the search index:
+```sh
+node scripts/restore.mjs --token <token> --from daily/2026-08-23 --dry-run
+```
 
-打开包。`database.sql` 就是普通的 SQL dump,`wrangler d1 execute <db> --remote --file=database.sql`
-即可写回;`mail/` 下面是按原始存储 key 排好的邮件原件。之后重建一次全文索引:
+It fetches the archive, opens it, puts the rows back, puts the message files back under the
+storage keys they had, and rebuilds the search index. It never deletes: running it over a live
+database repairs what is missing and leaves anything newer alone. Start with `--dry-run`.
+
+它取回压缩包、打开、写回行数据、把邮件原件按原始存储 key 放回去,最后重建全文索引。
+**它从不删除**:对着活库跑是补上缺的,更新的东西原样留着。先用 `--dry-run` 看一眼。
+
+Nothing about the archive requires that script, though. `database.sql` is a plain SQL dump and
+`mail/` is just files, so any archiver and one wrangler command will do:
+
+不过这个包不依赖那个脚本。`database.sql` 就是普通 SQL dump,`mail/` 就是一堆文件,
+任何解压工具加一条 wrangler 命令也够:
 
 ```sh
 npx wrangler d1 execute cfmail --remote \
