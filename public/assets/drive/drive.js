@@ -2915,7 +2915,14 @@ function paintPvShell(n, body) {
     else if (e.target.closest('[data-dl]')) downloadFile(n, pv?.verSel || '');
     else if (vrow) pickVersion(vrow.dataset.ver);
     else if (e.target.closest('[data-nav]')) pvStep(parseInt(e.target.closest('[data-nav]').dataset.nav, 10));
-    else if (e.target === pv.el.querySelector('.drv-view-body')) closePreview();
+    // A picture is left by clicking away from it, which is how every viewer works. A film is
+    // not: the space beside a film is where a hand rests during two hours of watching, and one
+    // stray click there should not end the film. The close button is the way out, and Escape.
+    // 一张图片,靠"点开它旁边"来离开,所有看图的东西都是这么做的。一部片子不是:
+    // 片子旁边那片空处,是人在两个小时的观看里搁手的地方,而那里一次无心的点击不该结束这部片子。
+    // 出口是关闭按钮,以及 Escape。
+    else if (e.target === pv.el.querySelector('.drv-view-body')
+      && !pv.el.querySelector('.drv-view-body video, .drv-view-body audio')) closePreview();
   };
 }
 
@@ -3425,9 +3432,20 @@ async function offerSubs(n, video, film) {
   btn.innerHTML = icon('subtitles', 20);
   (pvPlayer?.slot || box).appendChild(btn);
   btn.addEventListener('click', (e) => {
+    // A button that opens a menu closes it again. Everything else here is dismissed by clicking
+    // away, but the click that lands on the button never reaches the document -- it has to be
+    // stopped, or it would close the menu it is about to open -- so the second press has to be
+    // recognised right here.
+    // 一个打开菜单的按钮,再按一次就把它关上。这里其余的东西都靠"点别处"来消掉,
+    // 但落在按钮上的那一下永远到不了 document —— 它必须被拦住,
+    // 否则它会把自己正要打开的菜单关掉 —— 所以第二次按下只能在这里认出来。
     e.stopPropagation();
+    if (menuEl?.dataset.subs) { closeMenu(); return; }
+    closeMenu();
+    pvPlayer?.closeVolume?.();
     const r = btn.getBoundingClientRect();
     openMenu(r.right + 12, r.top - 10, null, subsMenu(), true);
+    if (menuEl) menuEl.dataset.subs = '1';
   });
 
   // Wired before the reading starts, because the film is already being read and its lines are
@@ -3689,7 +3707,12 @@ async function paintPreview() {
   // 转换要过一会儿才开得起来,而一个还空着的播放器,仍然是人会伸手去够的那个东西。
   if (film === 'remux' || film === 'native') {
     const v = pv.el?.querySelector('.drv-view-body video');
-    if (v) pvPlayer = mountPlayer(v, v.parentElement, { bytes: () => pvFilm?.fetched });
+    if (v) {
+      pvPlayer = mountPlayer(v, v.parentElement, {
+        bytes: () => pvFilm?.fetched,
+        onOpen: () => closeMenu(),
+      });
+    }
   }
   if (film === 'remux') void convertAndPlay(n, src);
   // A film the browser opens by itself still has a folder around it, and the folder may hold the
