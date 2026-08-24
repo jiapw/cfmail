@@ -280,7 +280,13 @@ export function mountPlayer(video, box, opts = {}) {
     else box.requestFullscreen?.().catch(() => {});
   };
   const openVol = (on) => {
-    vol.classList.toggle('open', on === undefined ? !vol.classList.contains('open') : !!on);
+    const now = on === undefined ? !vol.classList.contains('open') : !!on;
+    vol.classList.toggle('open', now);
+    // Two things hanging off one row of controls, and only one of them at a time. Whoever mounted
+    // this owns the other one, so they are the one who can put it away.
+    // 一排控件上挂着两样东西,而一次只该有一样。另一样归"挂载这套控件的人"所有,
+    // 所以能把它收起来的也是那个人。
+    if (now) opts.onOpen?.();
     wake();
   };
 
@@ -413,6 +419,7 @@ export function mountPlayer(video, box, opts = {}) {
     slot: q('.drv-pl-slot'),
     keys,
     place,
+    closeVolume: () => openVol(false),
     picture: () => pictureOf(video),
     destroy() {
       clearTimeout(sleep);
