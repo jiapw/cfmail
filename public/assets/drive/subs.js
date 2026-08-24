@@ -6,10 +6,10 @@
 // next to the film, named after it, one per language, which is how anything ripped from a disc
 // before the container could hold them was shipped.
 //
-// What arrives is text either way, and nothing here decodes a picture. That is a real boundary
-// rather than a shortcut: VobSub -- the .idx and .sub pair -- holds the words as bitmaps, which is
-// a different problem with a different answer, and pretending otherwise would put a track in the
-// menu that shows nothing when it is picked.
+// What arrives here is text either way. A DVD's subtitles are not words at all -- the .idx and
+// .sub pair holds them as bitmaps -- and that is a different problem with a different answer,
+// which lives in vobsub.js. This file finds them and says which language each is; it does not
+// pretend to read them.
 //
 // The two things this has to get right, and both of them are about somebody else's file rather
 // than about subtitles: which bytes are which characters, and which of the nine fields on a line
@@ -22,9 +22,9 @@
 // 而一个文件夹把它们作为文件放在片子旁边,以片子命名,一种语言一个 ——
 // 在容器还装不下它们的年代,从碟上抓下来的东西就是这么发行的。
 //
-// 两条路上到达的都是文本,这里不解码任何图像。那是一条真实的边界,而不是一条捷径:
-// VobSub —— 那一对 .idx 和 .sub —— 把字存成位图,那是另一个问题、另一种答案;
-// 假装不是这样,只会在菜单里多出一项,而它被选中时什么都不显示。
+// 到达这里的两条路上,都是文本。一张 DVD 的字幕根本就不是字 —— 那一对 .idx 和 .sub
+// 把它们存成位图 —— 那是另一个问题、另一种答案,住在 vobsub.js 里。
+// 这个文件负责找到它们、说出每一条是哪种语言;它不假装自己读得懂它们。
 //
 // 这里必须做对的两件事,而它们都关于"别人的文件",而非关于字幕本身:
 // 哪些字节对应哪些字,以及一行上的九个字段里,哪一个是人真正在读的那个。
@@ -35,7 +35,7 @@
  *  一个文件要叫什么,才可能是字。`.sub` 也在这里,而它并不总是字 ——
  *  同样这三个字母既被一种文本格式用过,也被 DVD 的位图用着 ——
  *  所以它到底是什么,由 `looksBinary` 去看一眼再定。 */
-export const SUB_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub']);
+export const SUB_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub', 'idx']);
 
 /** Text subtitle encodings as libav names them. The rest of a film's streams are pictures or
  *  sound; these are the ones whose packets are words already.
@@ -304,8 +304,17 @@ export function sidecarsFor(filmName, siblings) {
     const low = stem(n.name).toLowerCase();
     if (low !== base && !low.startsWith(base + '.') && !low.startsWith(base + '_') && !low.startsWith(base + '-')) continue;
     if (ext === 'sub' && paired.has(low)) continue;
+    // An .idx is the half of a DVD's subtitles that says when; the pictures are in the .sub
+    // beside it, and one is no use without the other.
+    // 一个 .idx 是一张 DVD 字幕里"说什么时候"的那一半;图画在它旁边的 .sub 里,
+    // 而两者缺一都没用。
+    let mate = null;
+    if (ext === 'idx') {
+      mate = all.find((x) => extOf(x.name) === 'sub' && stem(x.name).toLowerCase() === low) || null;
+      if (!mate) continue;
+    }
     const tag = stem(n.name).slice(base.length).replace(/^[._-]+/, '');
-    out.push({ node: n, ext, tag, label: labelOf(tag, ext.toUpperCase()) });
+    out.push({ node: n, ext, tag, pictures: ext === 'idx', mate, label: labelOf(tag, ext.toUpperCase()) });
   }
   out.sort((a, b) => a.label.localeCompare(b.label));
   return out;

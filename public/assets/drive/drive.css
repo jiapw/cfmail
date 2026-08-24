@@ -435,6 +435,12 @@
 .drv-view-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 64px 24px; position: relative; }
 .drv-view-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .drv-view-body video { max-width: 100%; max-height: 100%; }
+/* Subtitles that are pictures: a canvas laid over the film at exactly its size, drawn in the
+   frame the subtitles were authored against and stretched to fit. It takes no clicks -- the
+   controls underneath it are still the controls.
+   本身是图画的字幕:一块与片子分毫不差地叠在上面的画布,按"字幕当年所依据的画幅"作画,
+   再拉伸贴合。它不接受点击 —— 它下面的控件仍然是控件。 */
+.drv-subpic { position: absolute; pointer-events: none; z-index: 3; }
 /* The document window: one rounded dark surface per preview, scrolling INSIDE itself -- the
    scrollbar hugs the window's right edge instead of floating at the overlay's. White "paper"
    cards (pdf pages, docx sheets, slides) stack within; text and code render directly on it.

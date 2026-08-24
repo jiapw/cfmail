@@ -14,6 +14,7 @@ import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDr
 import { editorFor, editorHash } from '../edit/kinds.js';
 import { verdict } from './remux.js';
 import { cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
+import { decodeSpu, readIndex, spuAt } from './vobsub.js';
 
 export { arcSeed };
 
@@ -3187,6 +3188,91 @@ let pvSubs = null;
 
 function dropSubs() {
   pvSubs = null;
+  document.querySelector('.drv-subpic')?.remove();
+}
+
+/**
+ * Subtitles that are pictures, drawn over the film.
+ *
+ * These cannot go into a text track: there are no words in them. So a canvas is laid over the
+ * video at exactly its size, and the picture for the moment being watched is drawn into it. The
+ * canvas is made the size of the frame the subtitles were authored against -- seven hundred and
+ * twenty by four hundred and eighty, whatever the film itself is -- so the positions in the file
+ * can be used as they are and the browser does the scaling. A DVD's subtitles were placed by
+ * somebody, and moving them is worse than stretching them.
+ *
+ * Only the picture on screen is decoded. There are eight hundred and fifty of them in this film
+ * and each is a bitmap the size of the frame; decoding them all at the start would cost a hundred
+ * megabytes to show one line of Japanese.
+ *
+ * 那些本身是图画的字幕,画在片子上面。
+ *
+ * 它们进不了文字轨:里面没有字。所以在视频上铺一块画布,大小与它分毫不差,
+ * 再把"正在看的这一刻"那张图画进去。画布被做成"字幕当年所依据的画幅"的大小 ——
+ * 七百二十乘四百八十,不管片子本身是多大 —— 这样文件里的位置就可以照用,
+ * 缩放交给浏览器。一张 DVD 的字幕,位置是有人摆过的;挪动它,比拉伸它更糟。
+ *
+ * 只解码正在屏幕上的那一张。这部片子里有八百五十张,每一张都是一整幅画那么大的位图;
+ * 开头就把它们全解出来,是为了显示一行日文而先花掉一百兆字节。
+ */
+function paintPictures(spec) {
+  const v = pvSubs.video;
+  const box = v.parentElement;
+  const cv = document.createElement('canvas');
+  cv.className = 'drv-subpic';
+  cv.width = spec.pic.index.size.w;
+  cv.height = spec.pic.index.size.h;
+  box.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const cues = spec.pic.index.streams[spec.pic.stream].cues;
+  const seen = new Map();
+  let showing = -1;
+
+  const tick = () => {
+    if (!pvSubs || pvSubs.shown !== spec.id || !cv.isConnected) { cv.remove(); return; }
+    // Over the film, not over the space around it: the video element is exactly as big as the
+    // picture it is showing, so its own rectangle is the one to cover.
+    // 盖在片子上,而不是盖在它周围的空处:视频元素恰好就是它所显示的画面那么大,
+    // 所以要覆盖的就是它自己的那个矩形。
+    const r = v.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    cv.style.left = `${r.left - b.left}px`;
+    cv.style.top = `${r.top - b.top}px`;
+    cv.style.width = `${r.width}px`;
+    cv.style.height = `${r.height}px`;
+
+    const t = v.currentTime;
+    let lo = 0;
+    let hi = cues.length - 1;
+    let at = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (cues[mid].at <= t) { at = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    let pic = null;
+    if (at >= 0) {
+      if (!seen.has(at)) {
+        const spu = spuAt(spec.pic.bytes, cues[at].pos);
+        seen.set(at, spu ? decodeSpu(spu, spec.pic.index.palette) : null);
+        // A few dozen kept, and the oldest let go: enough that stepping back a line costs nothing
+        // and small enough that an hour of subtitles is not carried around.
+        // 留住几十张,最老的放掉:足够让"往回退一行"不花什么代价,
+        // 又小到不至于把一个小时的字幕一直背在身上。
+        if (seen.size > 48) seen.delete(seen.keys().next().value);
+      }
+      const got = seen.get(at);
+      if (got && t >= cues[at].at + got.from && t < cues[at].at + got.to) pic = got;
+    }
+    if (!pic) {
+      if (showing !== -1) { ctx.clearRect(0, 0, cv.width, cv.height); showing = -1; }
+    } else if (at !== showing) {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.putImageData(new ImageData(pic.data, pic.w, pic.h), pic.x, pic.y);
+      showing = at;
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 /** What to call a track in the menu. A file that typed its own title has said it better than any
@@ -3236,7 +3322,28 @@ async function offerSubs(n, video, film) {
     const data = await api('GET', `/api/drive/list?parent=${encodeURIComponent(n.parent_id || 'root')}`);
     beside = sidecarsFor(n.name, data.nodes || []);
   } catch { /* a folder that cannot be listed simply has nothing beside it / 列不出来的文件夹,就当它旁边什么都没有 */ }
-  for (const f of beside) tracks.push({ id: 'file:' + f.node.id, label: f.label, file: f });
+  for (const f of beside) {
+    if (!f.pictures) { tracks.push({ id: 'file:' + f.node.id, label: f.label, file: f }); continue; }
+    // A DVD's subtitles say inside themselves which languages they hold, and the half that says
+    // so is forty kilobytes. Read now, so the menu can offer 日本語 rather than IDX; the pictures
+    // themselves are three megabytes and are left where they are until somebody asks.
+    // 一张 DVD 的字幕,在自己内部说明它装着哪些语言,而"说这件事的那一半"是四十千字节。
+    // 现在就读,好让菜单能给出"日本語"而不是"IDX";图画本身有三兆字节,
+    // 在有人开口要之前,就让它待在原处。
+    try {
+      const res = await fetch(dlUrl(f.node.id, false, verTag(f.node)));
+      if (!res.ok) continue;
+      const index = readIndex(readText(new Uint8Array(await res.arrayBuffer()), f.node.name));
+      index.streams.forEach((st, i) => {
+        if (!st.cues.length) return;
+        tracks.push({
+          id: `pic:${f.node.id}:${i}`,
+          label: labelOf(st.lang, f.label),
+          pic: { index, stream: i, mate: f.mate, bytes: null },
+        });
+      });
+    } catch { /* a pair that will not open is a pair not offered / 打不开的一对,就不端上来 */ }
+  }
   if (!tracks.length || !video) return;
   if (!pv || pv.list[pv.idx] !== n) return;
 
@@ -3316,11 +3423,29 @@ async function showSub(id) {
   if (!pvSubs) return;
   const v = pvSubs.video;
   for (const tr of v.textTracks) tr.mode = 'disabled';
+  document.querySelector('.drv-subpic')?.remove();
   pvSubs.shown = id;
   if (!id) return;
+  const spec = pvSubs.tracks.find((x) => x.id === id);
+  // Pictures do not go into a text track, because there are no words in them to put there.
+  // 图画进不了文字轨,因为里面没有字可以放进去。
+  if (spec?.pic) {
+    if (!spec.pic.bytes) {
+      try {
+        const res = await fetch(dlUrl(spec.pic.mate.id, false, verTag(spec.pic.mate)));
+        if (!res.ok) throw new Error('e_drive_not_found');
+        spec.pic.bytes = new Uint8Array(await res.arrayBuffer());
+      } catch (e) {
+        toast(tErr(e), true);
+        pvSubs.shown = null;
+        return;
+      }
+    }
+    if (pvSubs.shown === id) paintPictures(spec);
+    return;
+  }
   let track = pvSubs.made.get(id);
   if (!track) {
-    const spec = pvSubs.tracks.find((x) => x.id === id);
     track = v.addTextTrack('subtitles', spec.label, spec.inside?.lang || spec.file?.tag || '');
     pvSubs.made.set(id, track);
     // A file beside the film is fetched whole, now. It is tens of kilobytes and it is the whole
