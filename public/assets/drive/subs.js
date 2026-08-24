@@ -43,6 +43,49 @@ export const SUB_EXTS = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub', 'idx']);
  *  而这几种的包里装的本来就是字。 */
 export const SUB_CODECS = new Set(['ass', 'ssa', 'subrip', 'srt', 'text', 'webvtt', 'mov_text']);
 
+/**
+ * The same tags, as codes rather than names.
+ *
+ * A language picked once has to be recognisable when it comes back spelled differently -- chs and
+ * zh-CN and zh-Hans are one choice, not three -- and it has to be comparable with what the browser
+ * says this person reads, which is written in a third way again. So both sides are put through
+ * here first.
+ *
+ * 同样那些标签,写成代码而不是名字。
+ *
+ * 一种被选过一次的语言,必须在换一种拼法回来的时候还认得出 —— chs、zh-CN、zh-Hans 是同一个选择,
+ * 不是三个 —— 而且它必须能和"浏览器说这个人读什么"比较,而那边又是第三种写法。
+ * 所以两边都先从这里过一遍。
+ */
+const CODE = {
+  chs: 'zh-Hans', gb: 'zh-Hans', sc: 'zh-Hans', zhs: 'zh-Hans', 'zh-cn': 'zh-Hans', 'zh-sg': 'zh-Hans', 'zh-hans': 'zh-Hans',
+  cht: 'zh-Hant', big5: 'zh-Hant', tc: 'zh-Hant', zht: 'zh-Hant', 'zh-tw': 'zh-Hant', 'zh-hk': 'zh-Hant', 'zh-mo': 'zh-Hant', 'zh-hant': 'zh-Hant',
+  chi: 'zh', zho: 'zh', zh: 'zh',
+  eng: 'en', en: 'en',
+  jpn: 'ja', ja: 'ja', jp: 'ja',
+  kor: 'ko', ko: 'ko',
+  fra: 'fr', fre: 'fr', fr: 'fr',
+  deu: 'de', ger: 'de', de: 'de',
+  spa: 'es', es: 'es',
+  rus: 'ru', ru: 'ru',
+  ita: 'it', it: 'it',
+  por: 'pt', pt: 'pt',
+  ara: 'ar', ar: 'ar',
+  tha: 'th', th: 'th',
+  vie: 'vi', vi: 'vi',
+  ind: 'id', id: 'id',
+  rum: 'ro', ron: 'ro', ro: 'ro',
+};
+
+export function codeOf(tag) {
+  const k = String(tag || '').trim().toLowerCase().replace(/_/g, '-');
+  if (!k) return '';
+  if (CODE[k]) return CODE[k];
+  const head = k.split('-')[0];
+  if (CODE[head]) return CODE[head];
+  return /^[a-z]{2,3}$/.test(head) ? head : '';
+}
+
 /** Languages by the name they call themselves, because a menu of subtitles is read by the person
  *  who wants that language, not by everybody else. Anything not here shows the tag it came with,
  *  which is better than guessing.
