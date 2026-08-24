@@ -51,7 +51,11 @@
   // Create with `wrangler r2 bucket create cfmail-raw`.
   // 用 `wrangler r2 bucket create cfmail-raw` 创建。
   "r2_buckets": [
-    { "binding": "RAW", "bucket_name": "cfmail-raw" }
+    { "binding": "RAW", "bucket_name": "cfmail-raw" },
+    // 自动备份的去处。与 RAW 分开,是为了让应用自己的删除路径够不着它。
+    // Where the automatic backup goes. Kept apart from RAW so the application's own delete
+    // paths cannot reach it.
+    { "binding": "BACKUP", "bucket_name": "cfmail-backup" }
   ],
 
   // Experimental chat agent: Workers AI + Agents SDK (one Durable Object per session).

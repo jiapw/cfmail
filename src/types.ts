@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   RAW: R2Bucket;
+  /** Automatic backup target; absent on a deployment that predates it / 自动备份的去处;早于这个功能的部署上没有它 */
+  BACKUP?: R2Bucket;
   ASSETS: Fetcher;
   AI: Ai;
   CHAT_AGENT: DurableObjectNamespace;

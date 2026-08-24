@@ -16,6 +16,7 @@ export type AuditAction =
   | 'chat.settings'
   | 'drive.settings' | 'drive.quota' | 'drive.versioning'
   | 'mail.import' | 'mail.export'
+  | 'backup.settings' | 'backup.run'
   | 'unrouted.view' | 'unrouted.delete';
 
 export async function audit(

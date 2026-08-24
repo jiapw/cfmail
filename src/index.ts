@@ -1,5 +1,6 @@
 import type { Env } from './types';
 import { app } from './api';
+import { backupTick } from './backup';
 export { ChatAgent } from './chat/agent';
 import { backfillContacts, backfillSubjectNorm, findMailboxByAddress, ingestEml, insertFailedPlaceholder, logUnrouted, purgeOldUnrouted, retryFailedParses, deleteMessageDerived } from './parse';
 import { driveCronDaily, driveCronHourly } from './drive';
@@ -50,6 +51,9 @@ async function handleEmail(message: ForwardableEmailMessage, env: Env, _ctx: Exe
 
 async function runCron(env: Env): Promise<void> {
   await processOutbox(env);
+  // Its own slice of work every minute; idle unless a run is going or it is time to start one
+  // 每分钟一个切片;没有正在进行的运行、也不到点时是空转
+  await backupTick(env).catch(() => {});
   await retryFailedParses(env);
   await backfillSubjectNorm(env);
   await backfillContacts(env);

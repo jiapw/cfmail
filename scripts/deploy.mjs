@@ -53,6 +53,7 @@ const API = 'https://api.cloudflare.com/client/v4';
 const WORKER = 'cfmail';
 const D1_NAME = 'cfmail';
 const R2_NAME = 'cfmail-raw';
+const BK_NAME = 'cfmail-backup';
 
 // ---------------------------------------------------------------------------
 // Arguments / 参数
@@ -261,10 +262,12 @@ const d1 = (d1list.data.result || []).find((d) => d.name === D1_NAME) || null;
 const r2list = await cf('GET', `/accounts/${accountId}/r2/buckets`);
 if (!r2list.ok) die('读取 R2 列表失败:' + why(r2list));
 const r2 = (r2list.data.result?.buckets || []).find((b) => b.name === R2_NAME) || null;
+const bk = (r2list.data.result?.buckets || []).find((b) => b.name === BK_NAME) || null;
 
 log(`Worker "${WORKER}"      ${workerExists ? '已存在' : '不存在'}`);
 log(`D1 "${D1_NAME}"         ${d1 ? '已存在 ' + d1.uuid : '不存在'}`);
 log(`R2 "${R2_NAME}"     ${r2 ? '已存在' : '不存在'}`);
+log(`R2 "${BK_NAME}"  ${bk ? '已存在' : '不存在'}`);
 log(`本地 ${CFG_NAME.padEnd(14)} ${haveConfig ? '有' : '没有'}`);
 if (CONFIG !== MAIN_CONFIG) {
   log(`  wrangler.jsonc 是账号 ${mainOwner} 的,不是这一个 —— 本次用 ${CFG_NAME},那份原封不动`);
@@ -313,6 +316,17 @@ else {
   const made = await cf('POST', `/accounts/${accountId}/r2/buckets`, { name: R2_NAME });
   if (!made.ok) die('创建 R2 桶失败:' + why(made));
   log(`已创建 R2 桶 "${R2_NAME}"`);
+}
+
+// The backup lives in a bucket of its own, so that the application's own delete paths --
+// emptying a trash, purging a mailbox, removing a user -- cannot reach it.
+// 备份放在自己的桶里,好让应用自身的删除路径 —— 清空回收站、清空邮箱、删除用户 —— 够不着它。
+if (bk) skip(`R2 桶 "${BK_NAME}" 已存在,直接用`);
+else if (DRY) plan(`创建 R2 桶 "${BK_NAME}"(自动备份用)`);
+else {
+  const made = await cf('POST', `/accounts/${accountId}/r2/buckets`, { name: BK_NAME });
+  if (!made.ok) die('创建备份桶失败:' + why(made));
+  log(`已创建 R2 桶 "${BK_NAME}"`);
 }
 
 // --- 4. Zone --------------------------------------------------------------

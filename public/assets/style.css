@@ -975,3 +975,14 @@ body.impersonating .boot-loading { min-height: calc(100vh - 34px); }
 @media (max-width: 900px) {
   body.impersonating .sidebar { top: 94px; }
 }
+
+/* ---------- 备份:三级保留的并列清单 ---------- */
+.bk-cols { display: flex; gap: 24px; flex-wrap: wrap; }
+.bk-col { min-width: 150px; }
+.bk-item {
+  font-variant-numeric: tabular-nums; font-size: 13px;
+  padding: 3px 8px; border-radius: 6px; margin: 2px 0;
+  background: var(--accent-soft); display: inline-block; margin-right: 6px;
+}
+.bk-item.m { background: var(--selected); }
+.bk-item.y { background: var(--wa-color-success-fill-quiet); color: var(--wa-color-success-on-quiet); }

@@ -4,6 +4,7 @@ import type { Env, User } from './types';
 import { THEME_NAMES } from './themes-list';
 import { isKnownFont } from './fonts';
 import { beginImpersonation, requireAuth, revokeAllSessions } from './auth';
+import { backupStatus, setBackupEnabled, startBackupNow } from './backup';
 import { createSystemFolders, ingestEml, type PreParsed } from './parse';
 import { HttpError, E } from './errors';
 import { isEmail, jsonTry, normalizeAddr, now, randomToken, sha256Hex, uid } from './util';
@@ -936,6 +937,32 @@ adminApp.post('/mailboxes/:id/have', async (c) => {
   const have: string[] = [];
   for (const r of res) for (const row of r.results || []) have.push(row.message_id);
   return c.json({ have });
+});
+
+// ---------- Automatic backup (global administrator only) ----------
+// ---------- 自动备份(仅全局管理员) ----------
+
+adminApp.get('/backup', async (c) => {
+  requireGlobalAdmin(c);
+  return c.json(await backupStatus(c.env));
+});
+
+adminApp.post('/backup', async (c) => {
+  const me = requireGlobalAdmin(c);
+  const body = await c.req.json<any>().catch(() => ({}));
+  const on = !!body.enabled;
+  await setBackupEnabled(c.env, on);
+  await audit(c.env, me, 'backup.settings', on ? 'on' : 'off');
+  return c.json({ ok: true, enabled: on });
+});
+
+adminApp.post('/backup/run', async (c) => {
+  const me = requireGlobalAdmin(c);
+  if (!c.env.BACKUP) throw new HttpError(400, 'e_backup_no_bucket');
+  const r = await startBackupNow(c.env);
+  if (!r.started) throw new HttpError(409, r.reason || 'e_backup_running');
+  await audit(c.env, me, 'backup.run');
+  return c.json({ ok: true });
 });
 
 adminApp.get('/mailboxes/:id/export-list', async (c) => {
