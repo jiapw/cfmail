@@ -1,150 +1,66 @@
 /**
- * Automatic backup: the mail side of this deployment, copied into a bucket of its own.
+ * Automatic backup: the control plane. The work itself happens in a container, in container/.
  *
- * WHAT IS IN IT
- * Everything an administrator or a user can produce through this application, minus Drive and the
- * assistant: accounts, domains and their settings, mailboxes, folders, messages, labels, drafts,
- * contacts, invites, the audit trail -- and the original bytes of every message, which is where
- * attachments live too, since they are never stored apart from the .eml they arrived in.
+ * WHY THE WORK IS NOT HERE
+ * A Worker gets thirty seconds of CPU, a hundred and twenty-eight megabytes, and no LZMA. The job
+ * compresses a gigabyte with 7-Zip and takes as long as it takes. So this file starts a container,
+ * asks it once a minute how it is going, writes down the answer, and stops it the moment it is
+ * done -- a container that is still running is a container still being charged for.
  *
- * Sessions and the short-lived tokens beside them are deliberately absent. Restoring a live login
- * is not restoring data, and a password-reset token that comes back from a year-old backup is a
- * key somebody once mailed to an inbox.
+ * That once-a-minute question is doing double duty. An instance sleeps after a stretch with no
+ * requests, and a job compressing a gigabyte makes no requests at all, so asking is also what
+ * says "still needed".
  *
- * TWO KINDS OF DATA, TWO STRATEGIES
- * Rows are dumped whole, every day. A true row-level increment would have to know what changed,
- * and most of these tables carry no modification time and no tombstone for a deleted row -- so an
- * increment would silently miss deletions, and a chain of them would restore to something that
- * never existed. A whole dump is a few tens of megabytes; correctness is worth more than that.
+ * WHAT THE CONTAINER PRODUCES
+ *   daily/YYYY-MM-DD.7z    the whole database as SQL, plus the .eml that arrived that day
+ *   monthly/YYYY-MM.zip    that month's dailies, stored, not recompressed
+ *   yearly/YYYY.zip        that year's monthlies, likewise
  *
- * Message bytes are copied once and never again. They are immutable from the moment they are
- * written, so the pool under mail/ only ever grows, and no daily, monthly or yearly consolidation
- * ever moves them. Moving them would mean reading and rewriting a gigabyte to save nothing, and
- * every move restarts the minimum-duration clock on infrequent-access storage.
+ * Each message appears in exactly one daily, the one for the day it arrived; a monthly is a
+ * container of dailies and a yearly a container of monthlies. No message is stored twice.
  *
- * ROLLUP
- * Daily runs are kept until the month they belong to is over; then the last of them becomes that
- * month's copy and the rest are deleted. Twelve months later the last month becomes the year's
- * copy and the months are deleted. The pool of message bytes is untouched by all of it.
+ * 自动备份:控制面。真正干活的在容器里,见 container/。
  *
- * 自动备份:把这套部署的邮件一侧,复制到一个自己的桶里。
+ * 为什么活儿不在这里
+ * Worker 有三十秒 CPU、一百二十八兆内存,而且没有 LZMA。这个任务要用 7-Zip 压一个 GB,
+ * 该跑多久跑多久。所以本文件只做四件事:起一个容器、每分钟问一次进展、把回答记下来、
+ * 一做完立刻把它停掉 —— 还在跑的容器是还在计费的容器。
  *
- * 备了什么
- * 除网盘和 AI 助手之外,管理员和用户能产生的一切:账号、域名及其设置、邮箱、文件夹、邮件、标签、
- * 草稿、通讯录、邀请、审计记录 —— 以及每封信的原始字节;附件也在里面,因为附件从来不与它所在的
- * .eml 分开存放。
+ * 那句每分钟一问是一举两得的。实例在一段时间没有请求之后会休眠,
+ * 而一个正在压一个 GB 的任务根本不发请求 —— 所以"问"本身也在说"还要用"。
  *
- * 会话和它旁边那几种短命令牌有意不备。恢复一个还活着的登录态不叫恢复数据,
- * 而一份从一年前的备份里回来的密码重置令牌,是一把曾经被寄进某个收件箱的钥匙。
+ * 容器产出什么
+ *   daily/YYYY-MM-DD.7z    整库 SQL,加上当天到达的 .eml
+ *   monthly/YYYY-MM.zip    当月各份日备份,store 不重压
+ *   yearly/YYYY.zip        当年各份月备份,同上
  *
- * 两类数据,两种策略
- * 行数据每天整份导出。真正的行级增量得知道"什么变了",而这些表大多没有修改时间、
- * 删掉的行也不留墓碑 —— 增量会悄悄漏掉删除,一串增量叠起来会还原出一个从未存在过的状态。
- * 整份导出不过几十兆,正确性比这几十兆值钱。
- *
- * 邮件字节只复制一次,此后再不搬动。它们写入即不可变,所以 mail/ 下面那个池只增不减,
- * 日、月、年三级合并都不碰它。搬它意味着为了省下零而读写一个 GB,
- * 而且每搬一次都把低频存储的最短计费期重新归零。
- *
- * 合并
- * 日备份保留到它所属的那个月结束,然后其中最后一份成为该月的副本,其余删除。
- * 十二个月后,最后一个月成为该年的副本,月备份删除。邮件池全程不受影响。
+ * 每封信只出现在它到达那一天的日包里;月包是日包的容器,年包是月包的容器。没有一封信被存过两次。
  */
+import { Container, getContainer } from '@cloudflare/containers';
 import type { Env } from './types';
 import { now } from './util';
 
-/**
- * Tables that go into a backup, in an order that a restore can replay top to bottom without
- * tripping over a reference that is not there yet.
- *
- * Absent on purpose: sessions / password_resets / pending_regs (live credentials, see above);
- * messages_fts and its shadow tables (an index over message_texts, rebuilt with one statement);
- * d1_migrations, _cf_KV, sqlite_sequence (the infrastructure's own); chat_* and drive_* (out of
- * scope -- and a Drive tree restored without its bytes would be worse than no Drive at all).
- *
- * 进备份的表,顺序排成"从上往下重放不会撞见还不存在的引用"。
- * 有意不含:sessions / password_resets / pending_regs(活的凭据,理由见上);
- * messages_fts 及其影子表(message_texts 上的索引,一条语句就能重建);
- * d1_migrations、_cf_KV、sqlite_sequence(基础设施自己的);chat_* 与 drive_*(不在范围内 ——
- * 一棵没有字节的网盘目录树,比没有网盘更糟)。
- */
-export const BACKUP_TABLES = [
-  'users',
-  'domains',
-  'domain_admins',
-  'mailboxes',
-  'aliases',
-  'grants',
-  'folders',
-  'labels',
-  'messages',
-  'message_texts',
-  'attachments',
-  'message_labels',
-  'drafts',
-  'outbox',
-  'contacts',
-  'invites',
-  'invite_uses',
-  'suppressions',
-  'unrouted',
-  'uploads',
-  'audit_log',
-  'meta',
-] as const;
-
-/** R2 prefixes whose objects are part of the mail data. brand/ is a domain's logo -- small, and
- *  a restored deployment that has forgotten what the company looks like is a poor restore.
- *  属于邮件数据的 R2 前缀。brand/ 是各域的 logo —— 很小,而一套忘了公司长什么样的恢复不算恢复。 */
-export const BACKUP_PREFIXES = ['import/', 'raw/', 'unrouted/', 'brand/'] as const;
-
 const STATE_KEY = 'backup_state';
 const ENABLED_KEY = 'backup_enabled';
-/** UTC hour the daily run starts. One hour before the trash purge, so a backup always holds the
- *  mail that purge is about to delete.
- *  日备份的启动时刻(UTC)。比清空回收站早一小时,于是备份里总是留着那批即将被删掉的邮件。 */
-const START_HOUR = 18;
-/** Rows per part file. Small enough that one part is built, compressed and written well inside a
- *  single invocation, even for message_texts, whose rows carry whole message bodies.
- *  每个分片的行数。小到足以在一次调用里完成"取出、压缩、写入" —— 哪怕是每行都带着整封正文的 message_texts。 */
-const ROWS_PER_PART = 500;
-/** Message objects copied per tick. The cap is wall-clock, not size: each one is a read and a
- *  write, and the run has all day to finish.
- *  每次 tick 复制的邮件对象数。限制的是墙上时间而不是体积:每个对象一读一写,而这次运行有一整天可用。 */
-const OBJECTS_PER_TICK = 40;
+const HOUR_KEY = 'backup_hour';
+/** Default start hour, UTC. Late enough that the day being backed up is over everywhere.
+ *  默认启动时刻(UTC)。晚到被备份的那一天在各地都已经结束。 */
+const DEFAULT_HOUR = 2;
 
-export type BackupPhase = 'idle' | 'rows' | 'mail' | 'finishing';
-
-export interface BackupState {
-  phase: BackupPhase;
-  /** The day this run belongs to, as YYYY-MM-DD in UTC / 这次运行属于哪一天(UTC) */
-  day: string;
-  startedAt: number;
-  /** Index into BACKUP_TABLES / 走到第几张表 */
-  table: number;
-  /** Rows already written for the current table / 当前表已写出的行数 */
-  rowOffset: number;
-  part: number;
-  /** Where the listing of the current prefix stopped / 当前前缀列到哪儿了 */
-  prefix: number;
-  cursor?: string;
-  parts: Record<string, number>;
-  copied: number;
-  skipped: number;
-  bytes: number;
-  lastError?: string;
-  /** Set when the previous run finished, for the console to show / 上一次跑完时留下的,给后台显示 */
-  finishedAt?: number;
-  finishedDay?: string;
+/**
+ * The container this deployment runs its backups in. One instance, always the same one, because
+ * two backups at once would fight over the same archive names.
+ * 这套部署跑备份用的容器。只有一个实例,而且永远是同一个 —— 两次备份同时跑会为同一批包名打架。
+ */
+export class BackupContainer extends Container<Env> {
+  defaultPort = 8080;
+  /** Long enough to survive a slow minute between polls, short enough that a container nobody
+   *  stopped does not sit there for an hour.
+   *  长到熬得过两次轮询之间偶尔慢下来的一分钟,短到"没人停它"的容器不会在那儿待一小时。 */
+  sleepAfter = '5m';
 }
 
-const EMPTY: BackupState = {
-  phase: 'idle', day: '', startedAt: 0, table: 0, rowOffset: 0, part: 0,
-  prefix: 0, parts: {}, copied: 0, skipped: 0, bytes: 0,
-};
-
-export const utcDay = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
-export const utcMonth = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
+const CONTAINER_ID = 'cfmail-backup';
 
 async function readMeta(env: Env, key: string): Promise<string | null> {
   const row = await env.DB.prepare('SELECT value FROM meta WHERE key=?1').bind(key).first<any>();
@@ -161,9 +77,32 @@ export async function backupEnabled(env: Env): Promise<boolean> {
   return (await readMeta(env, ENABLED_KEY)) === '1';
 }
 
-export async function setBackupEnabled(env: Env, on: boolean): Promise<void> {
-  await writeMeta(env, ENABLED_KEY, on ? '1' : '0');
+export async function backupHour(env: Env): Promise<number> {
+  const v = parseInt((await readMeta(env, HOUR_KEY)) || '', 10);
+  return Number.isInteger(v) && v >= 0 && v <= 23 ? v : DEFAULT_HOUR;
 }
+
+export async function setBackupSettings(env: Env, on: boolean, hour: number): Promise<void> {
+  await writeMeta(env, ENABLED_KEY, on ? '1' : '0');
+  const h = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_HOUR;
+  await writeMeta(env, HOUR_KEY, String(h));
+}
+
+export interface BackupState {
+  /** running while the container has the job; idle otherwise / 容器手上有任务时是 running,否则 idle */
+  state: 'idle' | 'running';
+  day: string;
+  mode: string;
+  startedAt: number;
+  /** The container's last line of output, for the console to show / 容器最后一行输出,给后台显示 */
+  line?: string;
+  finishedAt?: number;
+  finishedDay?: string;
+  result?: any;
+  lastError?: string;
+}
+
+const EMPTY: BackupState = { state: 'idle', day: '', mode: '', startedAt: 0 };
 
 export async function loadState(env: Env): Promise<BackupState> {
   const raw = await readMeta(env, STATE_KEY);
@@ -175,266 +114,169 @@ export async function loadState(env: Env): Promise<BackupState> {
   }
 }
 
-async function saveState(env: Env, s: BackupState): Promise<void> {
-  await writeMeta(env, STATE_KEY, JSON.stringify(s));
+const saveState = (env: Env, s: BackupState) => writeMeta(env, STATE_KEY, JSON.stringify(s));
+
+const dayBefore = (t: number) => new Date(t - 24 * 3600 * 1000).toISOString().slice(0, 10);
+
+/** Everything the container needs to reach Cloudflare on its own. It has no bindings: R2 goes
+ *  through the S3 API and D1 through the REST API, both on one token.
+ *  容器自己够到 Cloudflare 所需的一切。它没有 binding:R2 走 S3 接口,D1 走 REST 接口,
+ *  两者共用一个 token。 */
+function jobEnv(env: Env): Record<string, string> | null {
+  const id = env.BACKUP_TOKEN_ID;
+  const value = env.BACKUP_TOKEN_VALUE;
+  const account = env.CF_ACCOUNT_ID;
+  const db = env.CF_D1_DATABASE_ID;
+  if (!id || !value || !account || !db) return null;
+  return {
+    CF_ACCOUNT_ID: account,
+    CF_D1_DATABASE_ID: db,
+    CF_TOKEN_ID: id,
+    CF_TOKEN_VALUE: value,
+    R2_RAW_BUCKET: env.R2_RAW_BUCKET || 'cfmail-raw',
+    R2_BACKUP_BUCKET: env.R2_BACKUP_BUCKET || 'cfmail-backup',
+    SEVENZ_LEVEL: env.SEVENZ_LEVEL || '9',
+  };
 }
+
+/** Is this deployment able to back up at all? / 这套部署到底具不具备备份能力? */
+export function backupReady(env: Env): { ok: boolean; why?: string } {
+  if (!env.BACKUP_CONTAINER) return { ok: false, why: 'e_backup_no_container' };
+  if (!jobEnv(env)) return { ok: false, why: 'e_backup_no_credentials' };
+  return { ok: true };
+}
+
+const container = (env: Env) => getContainer(env.BACKUP_CONTAINER!, CONTAINER_ID);
 
 /** Ask for a run now, whatever the hour. Refuses while one is already going.
  *  不管几点,现在就跑一次。已经在跑时拒绝。 */
-export async function startBackupNow(env: Env): Promise<{ started: boolean; reason?: string }> {
+export async function startBackupNow(env: Env, mode = 'all'): Promise<{ started: boolean; reason?: string }> {
+  const ready = backupReady(env);
+  if (!ready.ok) return { started: false, reason: ready.why };
   const s = await loadState(env);
-  if (s.phase !== 'idle') return { started: false, reason: 'e_backup_running' };
-  await saveState(env, { ...EMPTY, phase: 'rows', day: utcDay(), startedAt: now() });
+  if (s.state === 'running') return { started: false, reason: 'e_backup_running' };
+  return await launch(env, dayBefore(Date.now()), mode, s);
+}
+
+async function launch(env: Env, day: string, mode: string, prev: BackupState) {
+  const c = container(env);
+  const res = await c.containerFetch('http://c/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode, day, env: jobEnv(env) }),
+  });
+  const j: any = await res.json().catch(() => ({}));
+  if (!j.started) return { started: false, reason: j.reason || 'e_backup_running' };
+  await saveState(env, {
+    state: 'running', day, mode, startedAt: now(),
+    finishedAt: prev.finishedAt, finishedDay: prev.finishedDay, result: prev.result,
+  });
   return { started: true };
 }
 
-const gzip = async (text: string): Promise<ArrayBuffer> => {
-  const cs = new CompressionStream('gzip');
-  const stream = new Blob([text]).stream().pipeThrough(cs);
-  return await new Response(stream).arrayBuffer();
-};
-
 /**
- * One slice of work, sized to finish inside a single cron invocation. Called every minute; does
- * nothing at all unless a run is in progress or it is time to start one.
- * 一次可以在单次 cron 调用里跑完的工作切片。每分钟调用一次;没有正在进行的运行、也不到点时,什么都不做。
+ * One minute's worth of attention. Starts the day's run when the hour comes round, and otherwise
+ * keeps an eye on one that is already going -- which is also what keeps the container from
+ * deciding it is idle.
+ * 一分钟份的照看。到点了就起当天那一次,否则就盯着已经在跑的那一次 ——
+ * 而这一盯,也正是让容器不至于认为自己闲着的原因。
  */
 export async function backupTick(env: Env): Promise<void> {
-  if (!env.BACKUP) return;                       // 没绑定备份桶(旧部署),静默跳过
+  if (!backupReady(env).ok) return;
   if (!(await backupEnabled(env))) return;
   const s = await loadState(env);
 
-  if (s.phase === 'idle') {
-    const d = new Date();
-    if (d.getUTCHours() !== START_HOUR || d.getUTCMinutes() !== 0) return;
-    if (s.finishedDay === utcDay()) return;      // 今天已经跑过
-    await saveState(env, { ...EMPTY, phase: 'rows', day: utcDay(), startedAt: now(), finishedAt: s.finishedAt, finishedDay: s.finishedDay });
+  if (s.state === 'running') {
+    await poll(env, s);
     return;
   }
+  const d = new Date();
+  if (d.getUTCHours() !== (await backupHour(env)) || d.getUTCMinutes() !== 0) return;
+  const target = dayBefore(Date.now());
+  if (s.finishedDay === target) return;          // 昨天那份已经做过了
+  await launch(env, target, 'all', s).catch(() => {});
+}
 
+async function poll(env: Env, s: BackupState): Promise<void> {
+  let j: any;
   try {
-    if (s.phase === 'rows') await stepRows(env, s);
-    else if (s.phase === 'mail') await stepMail(env, s);
-    else if (s.phase === 'finishing') await stepFinish(env, s);
+    const res = await container(env).containerFetch('http://c/status');
+    j = await res.json();
   } catch (e: any) {
-    // A failed slice must not wedge the run: record it and let the next minute try the same slice
-    // again. Only the state is written, so nothing half-done is ever recorded as done.
-    // 一次切片失败不该让整次运行卡死:记下来,下一分钟再试同一片。
-    // 只写状态,所以做了一半的东西绝不会被记成做完了。
-    s.lastError = String(e?.message || e).slice(0, 300);
-    await saveState(env, s);
-  }
-}
-
-async function stepRows(env: Env, s: BackupState): Promise<void> {
-  const table = BACKUP_TABLES[s.table];
-  if (!table) {
-    s.phase = 'mail';
-    s.prefix = 0;
-    s.cursor = undefined;
-    await saveState(env, s);
+    // The container is gone -- evicted, restarted, or never came up. The run is over either way,
+    // and saying so is better than leaving the console showing a job that nobody is running.
+    // 容器没了 —— 被回收、重启,或者根本没起来。无论哪种,这次运行都结束了;
+    // 说出来,好过让后台一直显示着一个没有人在跑的任务。
+    await saveState(env, {
+      ...s, state: 'idle', lastError: '容器失联:' + String(e?.message || e).slice(0, 200),
+    });
     return;
   }
-  const rows = await env.DB.prepare(`SELECT * FROM ${table} LIMIT ?1 OFFSET ?2`)
-    .bind(ROWS_PER_PART, s.rowOffset).all<any>();
-  const list = rows.results || [];
-  if (list.length) {
-    const body = list.map((r: any) => JSON.stringify(r)).join('\n') + '\n';
-    const key = `daily/${s.day}/rows/${table}.${String(s.part).padStart(4, '0')}.ndjson.gz`;
-    await env.BACKUP!.put(key, await gzip(body), {
-      httpMetadata: { contentType: 'application/x-ndjson', contentEncoding: 'gzip' },
-    });
-    s.parts[table] = s.part + 1;
-    s.part += 1;
-    s.rowOffset += list.length;
-  }
-  // A short page is the last page. An exactly-full one may or may not be, so it costs one more
-  // query to find out -- which is cheaper than being wrong.
-  // 不满一页就是最后一页。刚好满页的可能是也可能不是,多问一次才知道 —— 这比猜错便宜。
-  if (list.length < ROWS_PER_PART) {
-    if (!list.length && s.part === 0) s.parts[table] = 0;   // 空表也要留个记号
-    s.table += 1;
-    s.rowOffset = 0;
-    s.part = 0;
-  }
-  await saveState(env, s);
-}
 
-async function stepMail(env: Env, s: BackupState): Promise<void> {
-  const prefix = BACKUP_PREFIXES[s.prefix];
-  if (!prefix) {
-    s.phase = 'finishing';
-    await saveState(env, s);
+  if (j.state === 'running') {
+    await saveState(env, { ...s, line: j.line || '' });
     return;
   }
-  const listed = await env.RAW.list({ prefix, cursor: s.cursor, limit: OBJECTS_PER_TICK });
-  for (const obj of listed.objects) {
-    const dest = `mail/${obj.key}`;
-    // Already in the pool: nothing to do, ever. These objects do not change.
-    // 池子里已经有了:此后永远无需再做。这些对象不会变。
-    const have = await env.BACKUP!.head(dest);
-    if (have) { s.skipped += 1; continue; }
-    const src = await env.RAW.get(obj.key);
-    if (!src) { s.skipped += 1; continue; }      // 刚被删掉,不是错误
-    await env.BACKUP!.put(dest, src.body, {
-      httpMetadata: src.httpMetadata,
-      customMetadata: { ...(src.customMetadata || {}), backedUpAt: String(now()) },
-    });
-    s.copied += 1;
-    s.bytes += obj.size;
-  }
-  s.cursor = listed.truncated ? listed.cursor : undefined;
-  if (!listed.truncated) { s.prefix += 1; s.cursor = undefined; }
-  await saveState(env, s);
-}
 
-async function stepFinish(env: Env, s: BackupState): Promise<void> {
-  const manifest = {
+  const done = j.state === 'done';
+  await saveState(env, {
+    state: 'idle',
     day: s.day,
+    mode: s.mode,
     startedAt: s.startedAt,
     finishedAt: now(),
-    tables: s.parts,
-    mail: { copied: s.copied, alreadyThere: s.skipped, bytes: s.bytes },
-    note: 'rows/*.ndjson.gz 是当天的整份行数据;邮件字节在共用的 mail/ 池里,不随日期复制。',
-  };
-  await env.BACKUP!.put(`daily/${s.day}/manifest.json`, JSON.stringify(manifest, null, 2), {
-    httpMetadata: { contentType: 'application/json' },
+    finishedDay: done ? s.day : s.finishedDay,
+    result: done ? j.result : s.result,
+    lastError: done ? undefined : (j.error || `退出码 ${j.code}`),
   });
-  await rollup(env);
-  await saveState(env, { ...EMPTY, finishedAt: manifest.finishedAt, finishedDay: s.day });
+  // Stop it the moment there is nothing left to do. A container kept alive out of politeness is
+  // billed by the second like any other.
+  // 一旦没事可做立刻停掉。出于客气留着的容器,和别的容器一样按秒计费。
+  await container(env).stop().catch(() => {});
 }
 
-/**
- * Fold finished periods into one copy each. Runs after every daily run, and does nothing at all
- * on the days when there is nothing to fold -- which is most days.
- *
- * The last day of a month becomes that month; the last month of a year becomes that year. What is
- * folded is copied first and deleted second, so a failure between the two leaves a duplicate
- * rather than a hole.
- *
- * 把已经结束的时段各折成一份。每次日备份之后运行,而在没什么可折的日子里什么也不做 —— 那是大多数日子。
- * 某月的最后一天成为该月,某年的最后一个月成为该年。折叠时先复制后删除,
- * 于是中途失败留下的是一份重复,而不是一个窟窿。
- */
-async function rollup(env: Env): Promise<void> {
-  const thisMonth = utcMonth();
-  const days = await listDirs(env, 'daily/');
-  const months = new Set(days.map((d) => d.slice(0, 7)));
-  for (const m of months) {
-    if (m >= thisMonth) continue;                // 当月还没结束,不动
-    const mine = days.filter((d) => d.startsWith(m)).sort();
-    const keep = mine[mine.length - 1];
-    if (!(await env.BACKUP!.head(`monthly/${m}/manifest.json`))) {
-      await copyTree(env, `daily/${keep}/`, `monthly/${m}/`);
-    }
-    for (const d of mine) await deleteTree(env, `daily/${d}/`);
-  }
-
-  const thisYear = String(new Date().getUTCFullYear());
-  const got = await listDirs(env, 'monthly/');
-  const years = new Set(got.map((m) => m.slice(0, 4)));
-  for (const y of years) {
-    if (y >= thisYear) continue;
-    const mine = got.filter((m) => m.startsWith(y)).sort();
-    const keep = mine[mine.length - 1];
-    if (!(await env.BACKUP!.head(`yearly/${y}/manifest.json`))) {
-      await copyTree(env, `monthly/${keep}/`, `yearly/${y}/`);
-    }
-    for (const m of mine) await deleteTree(env, `monthly/${m}/`);
-  }
-}
-
-/** The immediate children of a prefix, e.g. daily/ -> ['2026-08-21', ...]
- *  某个前缀下的直接子目录,例如 daily/ → ['2026-08-21', …] */
-async function listDirs(env: Env, prefix: string): Promise<string[]> {
-  const out: string[] = [];
+/** The archives that exist, newest first / 现有的包,新的在前 */
+async function listArchives(env: Env, prefix: string, ext: string): Promise<any[]> {
+  if (!env.BACKUP) return [];
+  const out: any[] = [];
   let cursor: string | undefined;
   for (;;) {
-    const r: any = await env.BACKUP!.list({ prefix, delimiter: '/', cursor, limit: 500 });
-    for (const p of r.delimitedPrefixes || []) out.push(String(p).slice(prefix.length).replace(/\/$/, ''));
-    if (!r.truncated) break;
-    cursor = r.cursor;
-  }
-  return out;
-}
-
-/**
- * Copy one period's small files into their consolidated home, in infrequent-access storage.
- *
- * Only rows and manifests are ever copied here -- tens of megabytes, read perhaps never. That is
- * exactly what the cheaper class is for, and the thirty-day minimum it charges is no cost at all
- * on something kept for a year. The message pool never comes this way; it is written once, in the
- * standard class, and left alone.
- *
- * 把某个时段那几个小文件复制到它合并后的位置,用低频访问存储。
- * 走这条路的只有行数据和清单 —— 几十兆,也许永远不会被读。这正是便宜那一档的用途,
- * 而它收的三十天最短计费期,对一份要留一年的东西等于不收。邮件池不走这条路:
- * 它只写一次、用标准存储、此后不再动它。
- */
-async function copyTree(env: Env, from: string, to: string): Promise<void> {
-  let cursor: string | undefined;
-  for (;;) {
-    const r = await env.BACKUP!.list({ prefix: from, cursor, limit: 200 });
+    const r = await env.BACKUP.list({ prefix, cursor, limit: 500 });
     for (const o of r.objects) {
-      const src = await env.BACKUP!.get(o.key);
-      if (!src) continue;
-      await env.BACKUP!.put(to + o.key.slice(from.length), src.body, {
-        httpMetadata: src.httpMetadata,
-        storageClass: 'InfrequentAccess',
+      if (!o.key.endsWith(ext)) continue;
+      out.push({
+        name: o.key.slice(prefix.length, -ext.length),
+        key: o.key,
+        size: o.size,
+        at: +new Date(o.uploaded),
       });
     }
     if (!r.truncated) break;
     cursor = r.cursor;
   }
+  return out.sort((a, b) => (a.name < b.name ? 1 : -1));
 }
 
-async function deleteTree(env: Env, prefix: string): Promise<void> {
-  let cursor: string | undefined;
-  for (;;) {
-    const r = await env.BACKUP!.list({ prefix, cursor, limit: 500 });
-    const keys = r.objects.map((o) => o.key);
-    if (keys.length) await env.BACKUP!.delete(keys);
-    if (!r.truncated) break;
-    cursor = r.cursor;
-  }
-}
-
-/** What the console shows: the switch, what is running, and what is stored.
- *  后台要显示的东西:开关、正在跑什么、以及存下了什么。 */
 export async function backupStatus(env: Env): Promise<any> {
-  const enabled = await backupEnabled(env);
-  const state = await loadState(env);
+  const ready = backupReady(env);
+  const s = await loadState(env);
   const out: any = {
-    enabled,
-    bound: !!env.BACKUP,
-    phase: state.phase,
-    day: state.day,
-    started_at: state.startedAt || null,
-    finished_at: state.finishedAt || null,
-    finished_day: state.finishedDay || null,
-    last_error: state.lastError || null,
-    table: state.phase === 'rows' ? BACKUP_TABLES[state.table] || null : null,
-    copied: state.copied,
-    skipped: state.skipped,
-    start_hour_utc: START_HOUR,
-    tables: BACKUP_TABLES.length,
+    enabled: await backupEnabled(env),
+    hour: await backupHour(env),
+    ready: ready.ok,
+    why: ready.why || null,
+    state: s.state,
+    day: s.day,
+    line: s.line || null,
+    started_at: s.startedAt || null,
+    finished_at: s.finishedAt || null,
+    finished_day: s.finishedDay || null,
+    result: s.result || null,
+    last_error: s.lastError || null,
   };
   if (!env.BACKUP) return out;
-  out.daily = await listDirs(env, 'daily/');
-  out.monthly = await listDirs(env, 'monthly/');
-  out.yearly = await listDirs(env, 'yearly/');
-  // What the pool holds. Counted, not listed -- there are as many objects as there are messages.
-  // 池子里有什么。只数不列 —— 它的对象数与邮件数一样多。
-  let objects = 0;
-  let bytes = 0;
-  let cursor: string | undefined;
-  for (let guard = 0; guard < 40; guard++) {
-    const r = await env.BACKUP.list({ prefix: 'mail/', cursor, limit: 1000 });
-    objects += r.objects.length;
-    for (const o of r.objects) bytes += o.size;
-    if (!r.truncated) break;
-    cursor = r.cursor;
-  }
-  out.pool = { objects, bytes };
+  out.daily = await listArchives(env, 'daily/', '.7z');
+  out.monthly = await listArchives(env, 'monthly/', '.zip');
+  out.yearly = await listArchives(env, 'yearly/', '.zip');
   return out;
 }
