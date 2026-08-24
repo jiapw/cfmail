@@ -30,6 +30,7 @@ const TABS = () => [
   { key: 'audit', name: t('a_audit') },
   { key: 'ai', name: t('a_ai') },
   { key: 'drive', name: t('a_drive') },
+  { key: 'backup', name: t('a_backup'), globalOnly: true },
 ];
 
 export async function renderAdmin(tab) {
@@ -63,6 +64,7 @@ export async function renderAdmin(tab) {
     else if (tab === 'audit') await tabAudit(body);
     else if (tab === 'ai') await tabAI(body);
     else if (tab === 'drive') await tabDrive(body);
+    else if (tab === 'backup') await tabBackup(body);
   } catch (e) {
     body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
@@ -573,6 +575,84 @@ async function tabUsers(body) {
       await api('DELETE', `/api/admin/users/${id}`);
       toast(t('t_deleted'));
       tabUsers(body);
+    }
+  });
+}
+
+// ---------- Automatic backup ----------
+// ---------- 自动备份 ----------
+
+async function tabBackup(body) {
+  const st = await api('GET', '/api/admin/backup');
+  const running = st.phase && st.phase !== 'idle';
+  const fmtWhen = (t) => (t ? fmtDateTime(t) : '—');
+  // What is running right now, in the operator's terms rather than the state machine's
+  // 现在在跑什么 —— 用操作者的说法,不是状态机的说法
+  const phaseText = {
+    rows: t('bk_phase_rows', st.table || ''),
+    mail: t('bk_phase_mail'),
+    finishing: t('bk_phase_finishing'),
+  }[st.phase] || t('bk_phase_idle');
+
+  const period = (title, list, cls) => `
+    <div class="bk-col">
+      <div class="side-title">${esc(title)} (${list.length})</div>
+      ${list.length
+        ? list.slice().sort().reverse().slice(0, 24).map((x) => `<div class="bk-item ${cls}">${esc(x)}</div>`).join('')
+        : `<div class="dim" style="padding:4px 2px">${esc(t('bk_none'))}</div>`}
+    </div>`;
+
+  body.innerHTML = `
+    <section class="card">
+      <h3>${esc(t('a_backup'))}</h3>
+      <p class="dim" style="margin:0 0 12px">${esc(t('bk_note'))}</p>
+      ${st.bound ? '' : `<p class="chip chip-warn" style="display:inline-block">${esc(t('bk_no_bucket'))}</p>`}
+      <div class="form-row">
+        <label>${esc(t('bk_enable'))}</label>
+        <wa-switch id="bk-on" ${st.enabled ? 'checked' : ''} ${st.bound ? '' : 'disabled'}></wa-switch>
+        <span class="dim">${esc(t('bk_enable_note', String(st.start_hour_utc).padStart(2, '0')))}</span>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('bk_status'))}</label>
+        <span>${esc(phaseText)}</span>
+        ${running ? `<span class="dim">${esc(t('bk_copied', st.copied, st.skipped))}</span>` : ''}
+        <span class="flex1"></span>
+        <wa-button appearance="outlined" size="small" id="bk-run" ${st.bound && !running ? '' : 'disabled'}>${esc(t('bk_run_now'))}</wa-button>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('bk_last'))}</label>
+        <span>${esc(st.finished_day || '—')}</span><span class="dim">${esc(fmtWhen(st.finished_at))}</span>
+      </div>
+      ${st.last_error ? `<div class="form-row"><label>${esc(t('bk_error'))}</label><span class="dim">${esc(st.last_error)}</span></div>` : ''}
+      ${st.pool ? `<div class="form-row"><label>${esc(t('bk_pool'))}</label><span>${esc(t('bk_pool_n', st.pool.objects, fmtSize(st.pool.bytes)))}</span></div>` : ''}
+    </section>
+    ${st.bound ? `
+    <section class="card">
+      <h3>${esc(t('bk_kept'))}</h3>
+      <p class="dim" style="margin:0 0 10px">${esc(t('bk_kept_note'))}</p>
+      <div class="bk-cols">
+        ${period(t('bk_daily'), st.daily || [], 'd')}
+        ${period(t('bk_monthly'), st.monthly || [], 'm')}
+        ${period(t('bk_yearly'), st.yearly || [], 'y')}
+      </div>
+    </section>` : ''}`;
+
+  qs('#bk-on')?.addEventListener('change', async (e) => {
+    try {
+      await api('POST', '/api/admin/backup', { enabled: !!e.target.checked });
+      toast(t('t_saved'));
+    } catch (err) {
+      toast(err.message, true);
+      tabBackup(body);
+    }
+  });
+  qs('#bk-run')?.addEventListener('click', async () => {
+    try {
+      await api('POST', '/api/admin/backup/run', {});
+      toast(t('bk_started'));
+      tabBackup(body);
+    } catch (err) {
+      toast(err.message, true);
     }
   });
 }

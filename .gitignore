@@ -94,6 +94,10 @@ scratch/
 scratchpad/
 .claude-scratch/
 wrangler.tmp*.jsonc
+
+# scripts/restore.mjs 恢复过程中的临时文件
+.restore.tmp
+.restore.*.sql
 *.local.mjs
 *.verify.mjs
 
