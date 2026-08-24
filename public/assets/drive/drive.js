@@ -13,6 +13,7 @@ import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
 import { verdict } from './remux.js';
+import { cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
 
 export { arcSeed };
 
@@ -1188,9 +1189,15 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-function openMenu(x, y, nodes) {
+/** The same menu, wherever it is opened from. Given a selection it works out what can be done to
+ *  it; given a list outright it shows that -- which is how a control with its own choices, like
+ *  the subtitle picker, gets the menu everything else uses instead of one of its own.
+ *  同一份菜单,不论从哪里打开。给它一个选区,它自己推出能对它做什么;
+ *  直接给它一份清单,它就显示那一份 —— 而这正是"一个自带选项的控件"(比如字幕选择器)
+ *  用上其余一切都在用的那份菜单、而不是自己另造一份的办法。 */
+function openMenu(x, y, nodes, own) {
   closeMenu();
-  const items = menuItems(nodes);
+  const items = own || menuItems(nodes);
   if (!items.length) return;
   menuEl = document.createElement('div');
   menuEl.className = 'drv-menu';
@@ -2903,6 +2910,7 @@ function paintPvShell(n, body) {
 let pvBlob = null;
 let pvFilm = null;
 function dropPvBlob() {
+  dropSubs();
   if (pvBlob) URL.revokeObjectURL(pvBlob);
   pvBlob = null;
   const film = pvFilm;
@@ -3072,6 +3080,11 @@ async function convertAndPlay(n, src) {
     });
 
     v.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
+    // The words this film carries, and the ones lying next to it. Not waited for: a film that
+    // plays is the thing that was asked for, and the offer of subtitles arrives when it arrives.
+    // 这部片子携带的字,以及躺在它旁边的那些。不等它:能播的片子才是被要的东西,
+    // 而有字幕可选这件事,什么时候到就什么时候到。
+    void offerSubs(n, v, film);
 
     // Where the next piece belongs. A fragment states its time relative to the stretch it is part
     // of, so every stretch after a jump arrives calling itself zero; without this the film would
@@ -3153,6 +3166,185 @@ async function convertAndPlay(n, src) {
     // 因为从此刻起,它就是那种东西。
     if (body) body.innerHTML = noprevHtml(n, t('drv_vid_no_codec'));
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Subtitles
+// ---------------------------------------------------------------------------------------------
+
+/** The subtitles on offer for the film being watched, and which of them is being shown.
+ *
+ *  The lines are kept even while nobody is reading them, because a film carrying four languages
+ *  hands over all four as it is read, and somebody who switches at minute twelve wants the
+ *  eleven minutes that already went past -- not a track that starts where they clicked.
+ *
+ *  正在看的这部片子有哪些字幕可选,以及正在显示哪一条。
+ *
+ *  那些字在没人读它们的时候也留着 —— 因为一部带四种语言的片子在被读的过程中会把四种全交出来,
+ *  而一个在第十二分钟才切过去的人,要的是已经过去的那十一分钟,
+ *  而不是一条从他点下去的地方才开始的轨。 */
+let pvSubs = null;
+
+function dropSubs() {
+  pvSubs = null;
+}
+
+/** What to call a track in the menu. A file that typed its own title has said it better than any
+ *  table of language codes could, so that wins; a language tag is the next best; and a track that
+ *  says neither is still a track, and gets a number.
+ *  一条轨在菜单里叫什么。一个自己打了标题的文件,说得比任何语言代码表都好,所以它优先;
+ *  语言标签次之;而一条两样都没说的轨仍然是一条轨,给它一个编号。 */
+function subLabel(s, nth) {
+  const title = String(s.title || '').trim();
+  if (title) return title;
+  const lang = labelOf(s.lang, '');
+  if (lang) return lang;
+  return t('drv_subs_track', nth);
+}
+
+/**
+ * Everything that could put words on this film, and a way to switch between them.
+ *
+ * Two places, and neither is inside the picture. The film may carry its own tracks -- a disc rip
+ * in Matroska usually carries three or four -- and those arrive as it is read, a little ahead of
+ * the frames they belong to. And the folder may hold files named after the film, one per language,
+ * which is how everything ripped before the container could hold them was shipped; those are
+ * fetched whole the moment somebody asks for one.
+ *
+ * The button is only put up when there is something behind it. A film with no words anywhere
+ * should not grow a control that opens a menu with nothing in it.
+ *
+ * 一切能给这部片子配上字的东西,以及在它们之间切换的办法。
+ *
+ * 两个地方,而且都不在画面里面。片子可能自带字幕轨 —— 一个 Matroska 的碟版片源通常带三四条 ——
+ * 它们随着片子被读而到达,比它们所属的画面略早。而文件夹里可能放着以片子命名的文件,
+ * 一种语言一个 —— 在容器还装不下它们的年代,从碟上抓下来的东西都是这么发行的;
+ * 这些是在有人真的要其中一条的那一刻,整个取回来。
+ *
+ * 只有当按钮后面确实有东西时,它才会被摆出来。一部哪里都没有字的片子,
+ * 不该长出一个"点开是一份空菜单"的控件。
+ */
+async function offerSubs(n, video, film) {
+  const tracks = [];
+  if (film) {
+    film.subs.forEach((s, i) => tracks.push({ id: 'in:' + s.index, label: subLabel(s, i + 1), inside: s }));
+  }
+  // The folder, asked for once. What is next to a film is not something the film knows.
+  // 那个文件夹,只问一次。一部片子旁边有什么,不是这部片子知道的事。
+  let beside = [];
+  try {
+    const data = await api('GET', `/api/drive/list?parent=${encodeURIComponent(n.parent_id || 'root')}`);
+    beside = sidecarsFor(n.name, data.nodes || []);
+  } catch { /* a folder that cannot be listed simply has nothing beside it / 列不出来的文件夹,就当它旁边什么都没有 */ }
+  for (const f of beside) tracks.push({ id: 'file:' + f.node.id, label: f.label, file: f });
+  if (!tracks.length || !video) return;
+  if (!pv || pv.list[pv.idx] !== n) return;
+
+  pvSubs = { node: n, video, film, tracks, lines: new Map(), shown: null, made: new Map() };
+  if (film) {
+    film.onSub = (c) => {
+      if (!pvSubs || pvSubs.film !== film) return;
+      const key = 'in:' + c.index;
+      const kept = pvSubs.lines.get(key) || [];
+      // The same line arrives twice when somebody jumps back over ground already read. Matched on
+      // when it starts, because that is what a player would show twice.
+      // 有人跳回已经读过的地方时,同一行会到达两次。按"它从什么时候开始"来认 ——
+      // 因为那正是播放器会显示两次的东西。
+      if (kept.some((x) => Math.abs(x.from - c.from) < 0.01 && x.text === c.text)) return;
+      kept.push(c);
+      pvSubs.lines.set(key, kept);
+      if (pvSubs.shown === key) addCue(pvSubs.made.get(key), c);
+    };
+  }
+
+  const head = pv.el?.querySelector('.drv-view-head');
+  const dl = head?.querySelector('[data-dl]');
+  if (!head || head.querySelector('[data-subs]')) return;
+  const btn = document.createElement('wa-button');
+  btn.className = 'icon';
+  btn.setAttribute('appearance', 'plain');
+  btn.setAttribute('data-subs', '');
+  btn.setAttribute('aria-label', t('drv_subs'));
+  btn.title = t('drv_subs');
+  btn.innerHTML = icon('subtitles', 20);
+  head.insertBefore(btn, dl || null);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const r = btn.getBoundingClientRect();
+    openMenu(r.left, r.bottom + 4, null, subsMenu());
+  });
+}
+
+/** The menu behind the button: off, then one entry per track, with the one being shown marked.
+ *  按钮后面的那份菜单:先是关闭,然后每条轨一项,正在显示的那一条打上记号。 */
+function subsMenu() {
+  const out = [{
+    ic: pvSubs.shown ? 'blank' : 'check',
+    label: t('drv_subs_off'),
+    fn: () => showSub(null),
+  }];
+  for (const tr of pvSubs.tracks) {
+    out.push({
+      ic: pvSubs.shown === tr.id ? 'check' : 'blank',
+      label: tr.label,
+      fn: () => showSub(tr.id),
+    });
+  }
+  return out;
+}
+
+const addCue = (track, c) => {
+  if (!track) return;
+  try { track.addCue(new VTTCue(c.from, Math.max(c.to, c.from + 0.2), c.text)); } catch { /* a line the browser would not take / 一行浏览器不肯收的字 */ }
+};
+
+/**
+ * Show one track, or none.
+ *
+ * A track the browser has been given cannot be taken back, so each one is made once and then
+ * turned on and off. Which is also why the lines are kept here rather than only in the track:
+ * everything read so far goes in the moment a track is asked for, and everything read afterwards
+ * goes in as it arrives.
+ *
+ * 显示一条轨,或者一条都不显示。
+ *
+ * 一条已经交给浏览器的轨收不回来,所以每一条只造一次,此后只是被打开和关上。
+ * 这也正是那些字要留在这里、而不是只留在轨里的原因:
+ * 一条轨被要到的那一刻,至今读到的一切都进去;此后读到的,到一条进一条。
+ */
+async function showSub(id) {
+  if (!pvSubs) return;
+  const v = pvSubs.video;
+  for (const tr of v.textTracks) tr.mode = 'disabled';
+  pvSubs.shown = id;
+  if (!id) return;
+  let track = pvSubs.made.get(id);
+  if (!track) {
+    const spec = pvSubs.tracks.find((x) => x.id === id);
+    track = v.addTextTrack('subtitles', spec.label, spec.inside?.lang || spec.file?.tag || '');
+    pvSubs.made.set(id, track);
+    // A file beside the film is fetched whole, now. It is tens of kilobytes and it is the whole
+    // film's worth, so there is nothing to stream and nothing to wait for twice.
+    // 片子旁边的那个文件,现在整个取回来。它是几十千字节,而且是整部片子的量 ——
+    // 没有什么可流的,也没有什么值得等第二次。
+    if (spec.file) {
+      try {
+        const res = await fetch(dlUrl(spec.file.node.id, false, verTag(spec.file.node)));
+        if (!res.ok) throw new Error('e_drive_not_found');
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        if (looksBinary(bytes)) throw new Error('e_drive_subs_bitmap');
+        const cues = cuesOf(readText(bytes, spec.file.node.name), spec.file.ext);
+        if (!cues.length) throw new Error('e_drive_subs_empty');
+        pvSubs.lines.set(id, cues);
+      } catch (e) {
+        toast(tErr(e), true);
+        pvSubs.shown = null;
+        return;
+      }
+    }
+    for (const c of pvSubs.lines.get(id) || []) addCue(track, c);
+  }
+  if (pvSubs.shown === id) track.mode = 'showing';
 }
 
 async function paintPreview() {
@@ -3237,6 +3429,13 @@ async function paintPreview() {
   paintPvShell(n, body);
   loadVersions(n);
   if (film === 'remux') void convertAndPlay(n, src);
+  // A film the browser opens by itself still has a folder around it, and the folder may hold the
+  // words. Nothing here had to be converted for that to be true.
+  // 一部浏览器自己就打得开的片子,周围一样有一个文件夹,而那个文件夹里可能放着那些字。
+  // 这件事成立,不需要这里转换过任何东西。
+  else if (film === 'native' && !n.arc) {
+    void offerSubs(n, pv.el.querySelector('.drv-view-body video'), null);
+  }
   // Media inside archives: sequential playback only, no seeking (compressed entries would
   // have to re-decode from the start on every jump).
   // 压缩包内媒体只允许顺序播放,禁止 seek(压缩条目每跳一次都得从头重解)。

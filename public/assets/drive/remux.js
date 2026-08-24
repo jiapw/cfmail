@@ -60,6 +60,7 @@
 // 而那不是预览。一个文件属于三者中的哪一种由 `verdict()` 说明,
 // 于是网盘可以告诉人他手上的是哪一种,而不是两种都给他看一个转圈。
 import { store } from '../app.js';
+import { assDialogue, SUB_CODECS } from './subs.js';
 
 const V = () => encodeURIComponent(store.brand?.version || '');
 const BASE = '/vendor/libav-full';
@@ -133,6 +134,8 @@ async function libav() {
 
 const AV_VIDEO = 0;
 const AV_AUDIO = 1;
+const AV_SUBTITLE = 3;
+const UTF8 = new TextDecoder();
 const AVERROR_EOF = -541478725;
 const NOPTS_HI = -2147483648;
 const told = (hi) => hi !== NOPTS_HI;
@@ -193,6 +196,13 @@ const AV_CH_STEREO = 3;
 async function choose(av, streams) {
   const named = [];
   for (const s of streams) named.push({ s, name: await av.avcodec_get_name(s.codec_id) });
+  // Subtitles do not go in the box -- MP4 cannot hold ASS, and handing it one is how the whole
+  // conversion fails -- but they are not thrown away either. They are words, they are already
+  // words in the packets, and where they end up is a track the player can be told to show.
+  // 字幕不进那个盒子 —— MP4 装不下 ASS,而交给它一条正是整次转换失败的方式 ——
+  // 但它们也不是被扔掉。它们是字,在包里就已经是字了;
+  // 而它们的去处,是一条可以叫播放器显示出来的轨。
+  const words = named.filter((x) => x.s.codec_type === AV_SUBTITLE && SUB_CODECS.has(x.name));
   const first = (type, ok) => named.find((x) => x.s.codec_type === type && ok.has(x.name));
   const v = first(AV_VIDEO, PLAYS_VIDEO);
   if (!v) {
@@ -206,7 +216,7 @@ async function choose(av, streams) {
     throw err;
   }
   const a = first(AV_AUDIO, PLAYS_AUDIO);
-  if (a) return { take: [v, a], convert: null, silent: '' };
+  if (a) return { take: [v, a], convert: null, silent: '', words };
 
   // Sound the browser will not play. Whether anything can be done about it is asked of the build
   // rather than looked up in a list here: a list would be a second statement of what was compiled
@@ -214,11 +224,11 @@ async function choose(av, streams) {
   // 浏览器不会放的声音。能不能对它做点什么,是去问这份构建,而不是在这里查一份名单 ——
   // 一份名单会成为"编进去了什么"的第二处陈述,而它们会在 build-libav.sh 的片段第一次变动时就吵起来。
   const heard = named.find((x) => x.s.codec_type === AV_AUDIO);
-  if (!heard) return { take: [v], convert: null, silent: '' };
+  if (!heard) return { take: [v], convert: null, silent: '', words };
   const canDecode = await av.avcodec_find_decoder(heard.s.codec_id).catch(() => 0);
   const canEncode = await av.avcodec_find_encoder_by_name('aac').catch(() => 0);
-  if (canDecode && canEncode) return { take: [v], convert: heard, silent: '' };
-  return { take: [v], convert: null, silent: heard.name };
+  if (canDecode && canEncode) return { take: [v], convert: heard, silent: '', words };
+  return { take: [v], convert: null, silent: heard.name, words };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1063,6 +1073,46 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     const madeAt = kept.convert ? kept.take.length : -1;
     const stop = seconds > 0 ? seconds * tb : 0;
 
+    // ---- the words, which go around the box rather than into it ----
+    //
+    // What each track is called is the whole of what a menu has to go on, and a Matroska is the
+    // one place that says: a language tag, and often a title somebody typed. Read once, here,
+    // because after this there are only packets.
+    //
+    // ---- 那些字:它们绕过盒子,而不是进入盒子 ----
+    //
+    // 每一条轨叫什么,是一份菜单所能依据的全部;而 Matroska 是唯一会说出来的地方:
+    // 一个语言标签,以及常常还有一个某人打上去的标题。在这里读一次,因为再往后就只剩包了。
+    const said = new Map(kept.words.map((w) => [w.s.index, w]));
+    const subs = [];
+    for (const w of kept.words) {
+      const tags = {};
+      try {
+        const dict = await av.AVStream_metadata(w.s.ptr);
+        for (let e = await av.av_dict_iterate(dict, 0); e; e = await av.av_dict_iterate(dict, e)) {
+          tags[String(await av.AVDictionaryEntry_key(e)).toLowerCase()] = await av.AVDictionaryEntry_value(e);
+        }
+      } catch { /* a file with nothing to say about its tracks / 一个对自己的轨无话可说的文件 */ }
+      subs.push({ index: w.s.index, codec: w.name, lang: tags.language || '', title: tags.title || '' });
+    }
+    let onSub = null;
+    /** One subtitle packet, as a cue. The words are in the packet already; the instant it belongs
+     *  to is on the packet, which is why none of this needs a decoder.
+     *  一个字幕包,变成一条字幕。字在包里本来就是字;它所属的那个时刻在包上 ——
+     *  这正是这一切都不需要解码器的原因。 */
+    const speak = (w, p) => {
+      if (!onSub || !told(p.ptshi)) return;
+      const per = (w.s.time_base_num || 1) / (w.s.time_base_den || 1);
+      const from = av.i64tof64(p.pts, p.ptshi) * per;
+      const lasts = av.i64tof64(p.duration || 0, p.durationhi || 0) * per;
+      const raw = UTF8.decode(p.data);
+      const text = w.name === 'ass' || w.name === 'ssa' ? assDialogue(raw) : raw.trim();
+      // A line with no duration is a line somebody has to be able to read anyway; four seconds is
+      // what a player shows when the file will not say.
+      // 一行没有时长的字幕,仍然得让人读得完;文件不肯说的时候,播放器显示的就是四秒。
+      if (text) onSub({ index: w.s.index, from, to: from + (lasts > 0 ? lasts : 4), text });
+    };
+
     pkt = await av.av_packet_alloc();
     wpkt = await av.av_packet_alloc();
 
@@ -1176,6 +1226,8 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
         for (const r of order.push(p, at)) add(r.p, r.dts);
       };
       for (const p of raw) {
+        const w = said.get(p.stream_index);
+        if (w) { speak(w, p); continue; }
         if (!renumber.has(p.stream_index)) continue;
         if (p.stream_index !== vid.index) { add(p); continue; }
         if (told(p.ptshi)) { picture(p, av.i64tof64(p.pts, p.ptshi)); continue; }
@@ -1398,6 +1450,17 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
        *  rather than counted, and in microseconds whatever the streams use.
        *  片长,秒;文件没说就是零。是问文件要的、不是数出来的;而且不管流用什么单位,它都是微秒。 */
       duration: told(hi) && (lo || hi) ? av.i64tof64(lo, hi) / 1e6 : 0,
+      /** The subtitle tracks the film carries, as the film names them. Not in the box that comes
+       *  out -- an MP4 cannot hold them -- but named, so somebody can be offered them.
+       *  这部片子携带的字幕轨,按这部片子给它们的叫法。它们不在交出去的那个盒子里 ——
+       *  一个 MP4 装不下它们 —— 但它们被叫出了名字,好让人能被提供它们。 */
+      subs,
+      /** Where the words go as they are read. Set it and lines arrive a little ahead of the
+       *  picture they belong to, which is the same order everything else here arrives in.
+       *  那些字被读出来之后往哪儿去。设上它,一行行字就会比它们所属的画面略早到达 ——
+       *  而这里其余的一切,到达的顺序也是这个。 */
+      get onSub() { return onSub; },
+      set onSub(fn) { onSub = fn; },
       /** The codec of a sound track nothing here could remake, or nothing at all.
        *  一条这里重做不出来的音轨的编码名;没有就是空。 */
       get silent() { return silent; },
