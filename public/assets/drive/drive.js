@@ -13,9 +13,9 @@ import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
 import { verdict } from './remux.js';
-import { cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
+import { codeOf, cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
 import { decodeSpu, readIndex, spuAt } from './vobsub.js';
-import { mountPlayer } from './player.js';
+import { mountPlayer, pictureOf } from './player.js';
 
 export { arcSeed };
 
@@ -3208,6 +3208,62 @@ async function convertAndPlay(n, src) {
  *  而不是一条从他点下去的地方才开始的轨。 */
 let pvSubs = null;
 
+/**
+ * Which language this person actually reads, learned rather than asked.
+ *
+ * Kept as a tally rather than a single last-used value, because somebody who watches Japanese
+ * films with Chinese subtitles and English films with none has two habits, not one history; the
+ * tally lets the second-favourite win on a film that does not carry the first. Only choices made
+ * by hand are counted -- a choice made here on their behalf must not vote for itself.
+ *
+ * Nothing has been chosen yet on a new browser, and then the question is not what they have
+ * picked but what they read, which the browser has been carrying all along.
+ *
+ * 这个人到底读哪种语言 -- 学出来的,不是问出来的。
+ *
+ * 存的是一份计数,而不是"上一次用的那个",因为一个"看日本片配中文字幕、看英文片不配"的人
+ * 有两种习惯,而不是一段历史;有了计数,在没有第一名的片子上,第二名才赢得下来。
+ * 只有亲手做出的选择才计数 -- 一个替他做的选择,不该给自己投票。
+ *
+ * 换一台浏览器就什么都还没选过,那时该问的就不是"他挑过什么",
+ * 而是"他读什么" -- 那件事浏览器一直带在身上。
+ */
+const SUB_MEM = 'drv.subs.langs';
+
+const subMemory = () => {
+  try { return JSON.parse(localStorage.getItem(SUB_MEM) || '{}') || {}; } catch { return {}; }
+};
+
+const rememberSub = (code) => {
+  if (!code) return;
+  const m = subMemory();
+  m[code] = (m[code] || 0) + 1;
+  try { localStorage.setItem(SUB_MEM, JSON.stringify(m)); } catch { /* no room, no memory / 没地方存就不记 */ }
+};
+
+function preferredSub(tracks) {
+  const coded = tracks.filter((x) => x.lang);
+  if (!coded.length) return null;
+  const m = subMemory();
+  let best = null;
+  let most = 0;
+  for (const tr of coded) {
+    if ((m[tr.lang] || 0) > most) { most = m[tr.lang]; best = tr; }
+  }
+  if (best) return best;
+  // In the order the browser lists them, because that order is itself the answer.
+  // 按浏览器列出来的次序,因为那个次序本身就是答案。
+  const wants = navigator.languages?.length ? navigator.languages : [navigator.language || ''];
+  for (const want of wants) {
+    const w = codeOf(want);
+    if (!w) continue;
+    const hit = coded.find((tr) => tr.lang === w)
+      || coded.find((tr) => tr.lang.split('-')[0] === w.split('-')[0]);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function dropSubs() {
   pvSubs = null;
   document.querySelector('.drv-subpic')?.remove();
@@ -3256,7 +3312,7 @@ function paintPictures(spec) {
     // picture it is showing, so its own rectangle is the one to cover.
     // 盖在片子上,而不是盖在它周围的空处:视频元素恰好就是它所显示的画面那么大,
     // 所以要覆盖的就是它自己的那个矩形。
-    const r = v.getBoundingClientRect();
+    const r = pictureOf(v);
     const b = box.getBoundingClientRect();
     cv.style.left = `${r.left - b.left}px`;
     cv.style.top = `${r.top - b.top}px`;
@@ -3395,7 +3451,9 @@ async function offerSubs(n, video, film) {
   const tracks = [];
   try {
     if (film) {
-      film.subs.forEach((s, i) => tracks.push({ id: 'in:' + s.index, label: subLabel(s, i + 1), inside: s }));
+      film.subs.forEach((s, i) => tracks.push({
+        id: 'in:' + s.index, label: subLabel(s, i + 1), lang: codeOf(s.lang), inside: s,
+      }));
     }
     // The folder, asked for once. What is next to a film is not something the film knows.
     // 那个文件夹,只问一次。一部片子旁边有什么,不是这部片子知道的事。
@@ -3410,7 +3468,10 @@ async function offerSubs(n, video, film) {
       mine.trouble = tErr(e);
     }
     for (const f of beside) {
-      if (!f.pictures) { tracks.push({ id: 'file:' + f.node.id, label: f.label, file: f }); continue; }
+      if (!f.pictures) {
+        tracks.push({ id: 'file:' + f.node.id, label: f.label, lang: codeOf(f.tag), file: f });
+        continue;
+      }
       // A DVD's subtitles say inside themselves which languages they hold, and the half that says
       // so is forty kilobytes. Read now, so the menu can offer 日本語 rather than IDX; the pictures
       // themselves are three megabytes and are left where they are until somebody asks.
@@ -3426,6 +3487,7 @@ async function offerSubs(n, video, film) {
           tracks.push({
             id: `pic:${f.node.id}:${i}`,
             label: labelOf(st.lang, f.label),
+            lang: codeOf(st.lang),
             pic: { index, stream: i, mate: f.mate, bytes: null },
           });
         });
@@ -3435,6 +3497,12 @@ async function offerSubs(n, video, film) {
   if (pvSubs !== mine) return;
   mine.tracks = tracks;
   mine.reading = false;
+  // Nothing has been asked for, so ask on this person's behalf.
+  // 还没有人开口要,那就替他开这个口。
+  if (!mine.shown) {
+    const pick = preferredSub(tracks);
+    if (pick) void showSub(pick.id);
+  }
 }
 
 /** The menu behind the button: off, then one entry per track, with the one being shown marked.
@@ -3445,7 +3513,11 @@ function subsMenu() {
   if (pvSubs.tracks.length) {
     out.push({ ic: pvSubs.shown ? 'blank' : 'check', label: t('drv_subs_off'), fn: () => showSub(null) });
     for (const tr of pvSubs.tracks) {
-      out.push({ ic: pvSubs.shown === tr.id ? 'check' : 'blank', label: tr.label, fn: () => showSub(tr.id) });
+      out.push({
+        ic: pvSubs.shown === tr.id ? 'check' : 'blank',
+        label: tr.label,
+        fn: () => { rememberSub(tr.lang); showSub(tr.id); },
+      });
     }
   }
   // Still looking, nothing found, or something went wrong -- three different things, and an empty
@@ -3617,7 +3689,7 @@ async function paintPreview() {
   // 转换要过一会儿才开得起来,而一个还空着的播放器,仍然是人会伸手去够的那个东西。
   if (film === 'remux' || film === 'native') {
     const v = pv.el?.querySelector('.drv-view-body video');
-    if (v) pvPlayer = mountPlayer(v, v.parentElement);
+    if (v) pvPlayer = mountPlayer(v, v.parentElement, { bytes: () => pvFilm?.fetched });
   }
   if (film === 'remux') void convertAndPlay(n, src);
   // A film the browser opens by itself still has a folder around it, and the folder may hold the

@@ -18,12 +18,13 @@
 //
 // 除了布局之外这换来的是:每个平台上同一种行为,一个"把跳转变成 currentTime"的唯一地点,
 // 以及给这个应用真正拥有的那些控件留出的位置。
-import { icon } from '../ui.js';
+import { icon, fmtSize } from '../ui.js';
 import { t } from '../i18n.js';
 
 const QUIET_AFTER = 2600;
 const NUDGE = 5;
 const VOL_STEP = 0.05;
+const SAMPLE = 500;
 
 /** h:mm:ss when a film is that long, m:ss when it is not. An unknown length is not zero.
  *  片长到了小时就写 h:mm:ss,没到就写 m:ss。未知的长度不是零。 */
@@ -41,19 +42,48 @@ function clock(s) {
 const pct = (x) => `${Math.max(0, Math.min(1, x)) * 100}%`;
 
 /**
+ * The rectangle the picture actually occupies inside its element.
+ *
+ * Usually the two are the same: a film is given no width and no height, so the element takes the
+ * size of what is in it. Filling the screen is the exception -- there the element is the whole
+ * screen and the picture is centred inside it with bars at the sides or above and below -- and
+ * everything laid over the film has to follow the picture rather than the element, or the
+ * subtitles end up in the bars.
+ *
+ * 画面在它的元素内部真正占据的那个矩形。
+ *
+ * 通常两者是同一个:片子没有被指定宽高,于是元素就是它内容的大小。铺满屏幕是例外 ——
+ * 那时元素是整块屏幕,而画面居中在里面、两侧或上下留着黑边 ——
+ * 于是一切叠在片子上的东西都必须跟着画面走而不是跟着元素走,否则字幕会落到黑边里。
+ */
+export function pictureOf(video) {
+  const r = video.getBoundingClientRect();
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh || !r.width || !r.height) return r;
+  const k = Math.min(r.width / vw, r.height / vh);
+  const w = vw * k;
+  const h = vh * k;
+  const left = r.left + (r.width - w) / 2;
+  const top = r.top + (r.height - h) / 2;
+  return { left, top, width: w, height: h, right: left + w, bottom: top + h };
+}
+
+/**
  * Put a set of controls on a film.
  *
- * `box` is the positioned element the film sits inside; the controls are laid over the film's own
- * rectangle, which is smaller than the box and moves when the window does. Returns a handle: a
- * slot for controls this module does not own, and a way to take the whole thing down again.
+ * `box` is the positioned element the film sits inside; the controls are laid over the picture,
+ * which is smaller than the box and moves when the window does. `opts.bytes` returns how many
+ * bytes of the source have been fetched so far, if anybody is counting -- it is what turns a
+ * spinner into an answer.
  *
  * 给一部片子装上一套控件。
  *
- * `box` 是片子所在的那个定位元素;控件铺在片子自己的矩形上 ——
- * 那个矩形比盒子小,而且会随窗口移动。返回一个把手:一个留给"本模块不拥有的控件"的位置,
- * 以及一个把整套东西再拆下来的办法。
+ * `box` 是片子所在的那个定位元素;控件铺在画面上,而画面比盒子小、并且会随窗口移动。
+ * `opts.bytes` 返回"到目前为止取回了多少源字节",如果有人在数的话 ——
+ * 正是它把一个转圈变成一个答复。
  */
-export function mountPlayer(video, box) {
+export function mountPlayer(video, box, opts = {}) {
   if (!video || !box || box.querySelector('.drv-pl')) return null;
   video.removeAttribute('controls');
   video.controls = false;
@@ -62,14 +92,18 @@ export function mountPlayer(video, box) {
   el.className = 'drv-pl';
   el.innerHTML = `
     <div class="drv-pl-tap"></div>
+    <div class="drv-pl-stall"><div class="drv-spin"></div><span class="rate"></span></div>
     <div class="drv-pl-big">${icon('play', 34)}</div>
     <div class="drv-pl-bar">
       <button class="drv-pl-b" data-pl="play"></button>
       <div class="drv-pl-seek"><div class="rail"><div class="buf"></div><div class="cur"></div></div><div class="knob"></div></div>
       <div class="drv-pl-time"><span class="now">0:00</span><span class="sep">/</span><span class="all">--:--</span></div>
       <div class="drv-pl-vol">
-        <button class="drv-pl-b" data-pl="mute"></button>
-        <div class="drv-pl-volbar"><div class="rail"><div class="cur"></div></div></div>
+        <button class="drv-pl-b" data-pl="vol"></button>
+        <div class="drv-pl-volpop">
+          <div class="drv-pl-volbar"><div class="rail"><div class="cur"></div></div></div>
+          <button class="drv-pl-b" data-pl="mute"></button>
+        </div>
       </div>
       <span class="drv-pl-slot"></span>
       <button class="drv-pl-b" data-pl="full"></button>
@@ -78,17 +112,19 @@ export function mountPlayer(video, box) {
 
   const q = (s) => el.querySelector(s);
   const bPlay = q('[data-pl="play"]');
+  const bVol = q('[data-pl="vol"]');
   const bMute = q('[data-pl="mute"]');
   const bFull = q('[data-pl="full"]');
   const seek = q('.drv-pl-seek');
   const seekCur = q('.drv-pl-seek .cur');
   const seekBuf = q('.drv-pl-seek .buf');
   const knob = q('.drv-pl-seek .knob');
+  const vol = q('.drv-pl-vol');
   const volBar = q('.drv-pl-volbar');
   const volCur = q('.drv-pl-volbar .cur');
   const tNow = q('.drv-pl-time .now');
   const tAll = q('.drv-pl-time .all');
-  const big = q('.drv-pl-big');
+  const rate = q('.drv-pl-stall .rate');
 
   // ---- what the buttons currently say ----
   const paint = () => {
@@ -97,10 +133,13 @@ export function mountPlayer(video, box) {
     bPlay.title = t(video.paused ? 'drv_pl_play' : 'drv_pl_pause');
     bPlay.setAttribute('aria-label', bPlay.title);
     const off = video.muted || !video.volume;
-    bMute.innerHTML = icon(off ? 'muted' : 'volume', 20);
+    bVol.innerHTML = icon(off ? 'muted' : 'volume', 20);
+    bVol.title = t('drv_pl_volume');
+    bVol.setAttribute('aria-label', bVol.title);
+    bMute.innerHTML = icon(off ? 'volume' : 'muted', 18);
     bMute.title = t(off ? 'drv_pl_unmute' : 'drv_pl_mute');
     bMute.setAttribute('aria-label', bMute.title);
-    volCur.style.width = pct(off ? 0 : video.volume);
+    volCur.style.height = pct(off ? 0 : video.volume);
     const full = document.fullscreenElement === box;
     bFull.innerHTML = icon(full ? 'windowed' : 'fullscreen', 20);
     bFull.title = t(full ? 'drv_pl_windowed' : 'drv_pl_fullscreen');
@@ -126,24 +165,78 @@ export function mountPlayer(video, box) {
   const bufUp = () => {
     const d = video.duration;
     if (!d || !video.buffered.length) { seekBuf.style.left = '0%'; seekBuf.style.width = '0%'; return; }
-    const at = video.currentTime;
+    const now = video.currentTime;
     let lo = 0;
     let hi = 0;
     for (let i = 0; i < video.buffered.length; i++) {
       const s = video.buffered.start(i);
       const e = video.buffered.end(i);
-      if (at >= s - 0.5 && at <= e + 0.5) { lo = s; hi = e; break; }
+      if (now >= s - 0.5 && now <= e + 0.5) { lo = s; hi = e; break; }
       if (!hi) { lo = s; hi = e; }
     }
     seekBuf.style.left = pct(lo / d);
     seekBuf.style.width = pct((hi - lo) / d);
   };
 
+  /**
+   * Waiting, and what the waiting is worth.
+   *
+   * A spinner says only that something is happening. What somebody wants to know while a film
+   * stops is whether it is coming -- so the bytes actually arriving are counted and shown. It is
+   * the rate off the network, not the rate of the film: this pipeline fetches a stretch of the
+   * source, converts it, and comes back for more, so the two are not the same number, and the
+   * first is the one that answers "is this going to work".
+   *
+   * 等待,以及这次等待值多少。
+   *
+   * 一个转圈只说明"有事在发生"。片子停住时人想知道的是它还来不来 ——
+   * 所以把真正到达的字节数出来给人看。这是网络上的速率,不是片子的速率:
+   * 这条流水线取一段源、转一段、再回头取,两者不是同一个数字,
+   * 而"这事儿到底成不成"要靠前一个来回答。
+   */
+  const WINDOW = 3000;
+  let marks = [];
+  let ever = false;
+  const sample = () => {
+    const got = opts.bytes?.();
+    if (typeof got !== 'number') return;
+    const now = performance.now();
+    marks.push({ at: now, got });
+    while (marks.length > 2 && now - marks[0].at > WINDOW) marks.shift();
+  };
+  // Over the last few seconds rather than the last half-second, and as a plain division rather
+  // than a running average. A window of the source is fetched in one burst and then nothing
+  // happens until the converter wants more, so any measure short enough to sit inside one of
+  // those gaps reports a stopped network on a film that is arriving perfectly well.
+  // 按最近这几秒来算,而不是按最近半秒;用一次直白的除法,而不是滚动平均。
+  // 一个源窗口是一口气取回来的,之后直到转换器再要之前什么都不发生 ——
+  // 于是任何短到能整个落进那些间隙里的测量,都会在一部下得好好的片子上报出"网络停了"。
+  const rateNow = () => {
+    if (marks.length < 2) return 0;
+    const first = marks[0];
+    const last = marks[marks.length - 1];
+    const dt = last.at - first.at;
+    return dt > 0 ? ((last.got - first.got) * 1000) / dt : 0;
+  };
+  const stallUp = () => {
+    if (!el.isConnected) return;
+    if (video.readyState >= 3) ever = true;
+    // Before the film has ever run, the veil over the whole preview is what is speaking; two
+    // spinners at once say less than one.
+    // 在片子第一次跑起来之前,说话的是盖住整个预览的那层遮罩;两个转圈一起转,说的比一个还少。
+    const stuck = ever && (!video.paused || video.seeking) && video.readyState < 3;
+    el.classList.toggle('stalled', stuck);
+    if (!stuck) return;
+    const bps = rateNow();
+    rate.textContent = bps > 1 ? `${fmtSize(bps)}/s` : '';
+  };
+
   // ---- the controls come and go with the pointer ----
   let sleep = null;
   const quiet = () => {
     if (!el.isConnected) return;
-    if (video.paused || video.ended || scrubbing || document.querySelector('.drv-menu')) {
+    if (video.paused || video.ended || scrubbing
+      || vol.classList.contains('open') || document.querySelector('.drv-menu')) {
       sleep = setTimeout(quiet, 1200);
       return;
     }
@@ -156,10 +249,10 @@ export function mountPlayer(video, box) {
     sleep = setTimeout(quiet, QUIET_AFTER);
   };
 
-  // ---- the film's own rectangle, which is not the box's ----
+  // ---- over the picture, which is not the element once the screen is full ----
   const place = () => {
     if (!el.isConnected) return;
-    const r = video.getBoundingClientRect();
+    const r = pictureOf(video);
     const b = box.getBoundingClientRect();
     el.style.left = `${Math.round(r.left - b.left)}px`;
     el.style.top = `${Math.round(r.top - b.top)}px`;
@@ -186,22 +279,24 @@ export function mountPlayer(video, box) {
     if (document.fullscreenElement === box) document.exitFullscreen?.();
     else box.requestFullscreen?.().catch(() => {});
   };
+  const openVol = (on) => {
+    vol.classList.toggle('open', on === undefined ? !vol.classList.contains('open') : !!on);
+    wake();
+  };
 
   // ---- dragging a rail ----
   /** One rail, dragged. The value follows the pointer from the moment it goes down, including
-   *  outside the rail, because a pointer that leaves a slider is still holding it.
+   *  outside the rail, because a pointer that leaves a slider is still holding it. Measured
+   *  against the painted rail rather than the box around it, and a rail that stands up is read
+   *  from its foot.
    *  一条轨道,被拖动。取值从指针按下的那一刻起就跟着它走,离开轨道也算 ——
-   *  因为一个离开了滑块的指针,手里还攥着它。 */
-  const draggable = (rail, onMove, onDone) => {
-    // Measured against the painted rail, not against the box it sits in: the volume box is
-    // clipped to nothing until the pointer is near it, and a width of zero turns every position
-    // into the far end.
-    // 按画出来的那条轨道量,而不是按装着它的盒子量:音量盒在指针靠近之前被裁成没有宽度,
-    // 而宽度为零会把每一个位置都算成最右端。
+   *  因为一个离开了滑块的指针,手里还攥着它。按画出来的那条轨道量,而不是按装着它的盒子量;
+   *  而竖着的那条,从脚下往上读。 */
+  const draggable = (rail, onMove, onDone, upright) => {
     const frac = (e) => {
       const r = (rail.querySelector('.rail') || rail).getBoundingClientRect();
-      if (!r.width) return 0;
-      return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      if (upright) return r.height ? Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height)) : 0;
+      return r.width ? Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) : 0;
     };
     rail.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -244,32 +339,41 @@ export function mountPlayer(video, box) {
     video.volume = f;
     paint();
     wake();
-  });
+  }, null, true);
 
+  const tap = q('.drv-pl-tap');
   bPlay.addEventListener('click', (e) => { e.stopPropagation(); toggle(); wake(); });
+  bVol.addEventListener('click', (e) => { e.stopPropagation(); openVol(); });
   bMute.addEventListener('click', (e) => { e.stopPropagation(); video.muted = !video.muted; paint(); wake(); });
   bFull.addEventListener('click', (e) => { e.stopPropagation(); fullscreen(); wake(); });
-  big.addEventListener('click', (e) => { e.stopPropagation(); toggle(); wake(); });
-  q('.drv-pl-tap').addEventListener('click', (e) => { e.stopPropagation(); toggle(); wake(); });
-  q('.drv-pl-tap').addEventListener('dblclick', (e) => { e.stopPropagation(); fullscreen(); });
-  el.querySelector('.drv-pl-bar').addEventListener('click', (e) => e.stopPropagation());
+  q('.drv-pl-big').addEventListener('click', (e) => { e.stopPropagation(); toggle(); wake(); });
+  tap.addEventListener('click', (e) => { e.stopPropagation(); openVol(false); toggle(); wake(); });
+  tap.addEventListener('dblclick', (e) => { e.stopPropagation(); fullscreen(); });
+  q('.drv-pl-bar').addEventListener('click', (e) => e.stopPropagation());
 
   const on = (target, name, fn) => { target.addEventListener(name, fn); return [target, name, fn]; };
   const bound = [
     on(video, 'play', paint), on(video, 'pause', paint), on(video, 'ended', paint),
     on(video, 'volumechange', paint), on(video, 'ratechange', paint),
     on(video, 'timeupdate', () => { clockUp(); bufUp(); }),
-    on(video, 'durationchange', clockUp), on(video, 'loadedmetadata', () => { clockUp(); place(); }),
-    on(video, 'progress', bufUp), on(video, 'seeked', () => { clockUp(); bufUp(); }),
+    on(video, 'durationchange', clockUp),
+    on(video, 'loadedmetadata', () => { clockUp(); place(); }),
+    on(video, 'progress', () => { bufUp(); stallUp(); }),
+    on(video, 'seeked', () => { clockUp(); bufUp(); stallUp(); }),
+    on(video, 'seeking', stallUp), on(video, 'waiting', stallUp),
+    on(video, 'playing', () => { ever = true; stallUp(); }),
+    on(video, 'canplay', stallUp), on(video, 'stalled', stallUp),
     on(video, 'resize', place),
     on(box, 'mousemove', wake), on(box, 'mouseenter', wake),
     on(document, 'fullscreenchange', () => { paint(); place(); wake(); }),
+    on(document, 'pointerdown', (e) => { if (!vol.contains(e.target)) openVol(false); }),
     on(window, 'resize', place),
   ];
 
   const eye = new ResizeObserver(place);
   eye.observe(video);
   eye.observe(box);
+  const beat = setInterval(() => { sample(); stallUp(); place(); }, SAMPLE);
 
   paint();
   clockUp();
@@ -283,9 +387,12 @@ export function mountPlayer(video, box) {
    *  比如"翻到下一个文件" —— 知道这一下不归它。 */
   const keys = (e) => {
     if (!el.isConnected) return false;
-    if (e.metaKey || e.ctrlKey || e.altKey) return false;
     const to = e.target;
     if (to && (to.isContentEditable || /^(input|textarea|select)$/i.test(to.tagName || ''))) return false;
+    // The one combination that is a combination. Everywhere else Alt+Enter has meant this.
+    // 唯一一个带修饰键的组合。别处的 Alt+Enter 一直是这个意思。
+    if (e.altKey && e.key === 'Enter') { fullscreen(); e.preventDefault(); wake(); return true; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return false;
     switch (e.key) {
       case ' ': case 'k': case 'K': toggle(); break;
       case 'ArrowLeft': nudge(-NUDGE); break;
@@ -306,8 +413,10 @@ export function mountPlayer(video, box) {
     slot: q('.drv-pl-slot'),
     keys,
     place,
+    picture: () => pictureOf(video),
     destroy() {
       clearTimeout(sleep);
+      clearInterval(beat);
       eye.disconnect();
       for (const [target, name, fn] of bound) target.removeEventListener(name, fn);
       el.remove();

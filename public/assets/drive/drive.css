@@ -506,20 +506,53 @@
 .drv-pl:hover .drv-pl-seek .knob { opacity: 1; }
 
 .drv-pl-time { display: flex; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: .95; }
+
+/* Stopped, and how fast the bytes are coming while it is. A spinner alone says only that
+   something is happening; the rate says whether it is going to end.
+   停住了,以及停住期间字节来得多快。光一个转圈只说明"有事在发生";
+   那个速率说明的是"这事会不会有个头"。 */
+.drv-pl-stall {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: none; flex-direction: column; align-items: center; gap: 10px;
+  pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,.9);
+}
+.drv-pl.stalled .drv-pl-stall { display: flex; }
+.drv-pl.stalled .drv-pl-big { opacity: 0; }
+.drv-pl-stall .drv-spin { border-color: rgba(255,255,255,.28); border-top-color: #fff; }
+.drv-pl-stall .rate { font-variant-numeric: tabular-nums; font-size: 12.5px; opacity: .92; }
 .drv-pl-time .sep { opacity: .5; }
 
-.drv-pl-vol { display: flex; align-items: center; gap: 2px; }
-/* Always out, never sliding open. A rail that grows on hover is a rail whose width is wrong for
-   the fifth of a second somebody is most likely to click it in.
-   一直在外面,不做展开动画。一条 hover 时才长出来的轨道,
-   恰恰在"人最可能去点它"的那五分之一秒里,宽度是错的。 */
-.drv-pl-volbar { width: 68px; display: flex; align-items: center; height: 16px; cursor: pointer; touch-action: none; }
-.drv-pl-volbar .rail { position: relative; width: 60px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.26); }
-.drv-pl-volbar .cur { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; background: #fff; }
+/* One button in the row; the rail stands up above it when asked for, with the mute switch at its
+   foot. A row is short and a film is wide -- the length that makes a volume rail usable is
+   vertical space, which there is plenty of, rather than horizontal space, which there is not.
+   一排里只放一个按钮;要用的时候,轨道竖起来立在它上面,静音开关在轨道脚下。
+   一排是矮的,而片子是宽的 —— 让音量轨好用的那段长度,是竖着的空间(有的是),
+   而不是横着的空间(没有)。 */
+.drv-pl-vol { position: relative; display: flex; align-items: center; }
+.drv-pl-volpop {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  display: none; flex-direction: column; align-items: center; gap: 8px;
+  padding: 12px 8px 8px; border-radius: 12px;
+  background: rgba(0,0,0,.72); box-shadow: 0 4px 18px rgba(0,0,0,.35);
+}
+.drv-pl-vol.open .drv-pl-volpop { display: flex; }
+.drv-pl-volbar { width: 20px; height: 96px; display: flex; justify-content: center; cursor: pointer; touch-action: none; }
+.drv-pl-volbar .rail { position: relative; width: 4px; height: 100%; border-radius: 2px; background: rgba(255,255,255,.26); }
+.drv-pl-volbar .cur { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 2px; background: #fff; }
 
 /* Filling the screen means the film and what belongs to it, and nothing that belongs to the page.
    铺满屏幕,指的是片子和属于片子的东西,而不包括任何属于这一页的东西。 */
 .drv-view-body:fullscreen { padding: 0; background: #000; }
+/* max-width and max-height only ever shrink. Filling the screen with a seven-hundred-and-twenty
+   pixel film means telling it to take the whole screen and keep its shape, which puts bars at the
+   sides -- so the picture is no longer the element, and everything laid over it measures the
+   picture. See pictureOf() in player.js.
+   max-width / max-height 只会把东西缩小,不会放大。要让一部七百二十像素宽的片子铺满屏幕,
+   就得让它占满整块屏幕并保持形状,于是两侧出现黑边 —— 画面从此不再等于元素,
+   而一切叠在它上面的东西都改为按画面来量。见 player.js 的 pictureOf()。 */
+.drv-view-body:fullscreen video {
+  width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain;
+}
 .drv-view-body:fullscreen .drv-view-nav,
 .drv-view-body:fullscreen .drv-pvvers { display: none; }
 
