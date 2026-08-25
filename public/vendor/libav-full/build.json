@@ -37,8 +37,14 @@
     "encoder-aac",
     "audio-filters",
     "decoder-mpeg4",
-    "decoder-msmpeg4v3"
+    "decoder-msmpeg4v3",
+    "decoder-wmav1",
+    "decoder-wmav2",
+    "decoder-wmapro",
+    "decoder-wmalossless",
+    "decoder-mp3",
+    "decoder-alac"
   ],
-  "fingerprint": "501e77f8ac23d4ef",
-  "built_at": "2026-08-23T10:07:36.271Z"
+  "fingerprint": "bf33b4ccde733c73",
+  "built_at": "2026-08-25T09:32:08.773Z"
 }

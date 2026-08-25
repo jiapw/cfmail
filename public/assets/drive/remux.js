@@ -174,6 +174,26 @@ const AAC_BITS = 160000;
 const AV_CH_STEREO = 3;
 
 /**
+ * A count of channels, as the set of speakers they are.
+ *
+ * These are not the same kind of number and the difference is invisible until it is not: a layout
+ * is one bit per speaker, so stereo is three -- front left and front right -- and two would be
+ * front right alone. A decoder that knows how many channels it has and not what they are leaves
+ * the layout at zero, which is not a layout either; wmav2 does exactly that. Handing either number
+ * to a filter graph as a layout is refused with "invalid argument", a phrase that names nothing,
+ * from a call two steps away from the mistake.
+ *
+ * 一个声道的数目,换成它们所是的那一组喇叭。
+ *
+ * 这两个不是同一类数字,而其间的差别在出事之前是看不见的:一个布局是每只喇叭一个比特,
+ * 于是立体声是三 —— 左前加右前 —— 而二会是"只有右前"。一个知道自己有几个声道、
+ * 却不知道它们是什么的解码器,会把布局留成零,而零也不是一个布局;wmav2 正是这么做的。
+ * 把这两个数字中的任何一个当作布局交给滤镜图,换来的是"参数无效" ——
+ * 一个什么都没指明的说法,而且来自距离错误两步之遥的一次调用。
+ */
+const speakers = (n) => (n === 1 ? 4 : n === 2 ? AV_CH_STEREO : (1 << Math.max(1, n || 2)) - 1);
+
+/**
  * Which streams go into the new box, and what is left behind.
  *
  * One picture and one sound. Everything else is dropped, and dropping it is not a simplification --
@@ -744,7 +764,7 @@ function sound(av, track) {
         [graph, src, sink] = await av.ff_init_filter_graph('aresample', {
           sample_rate: first.sample_rate,
           sample_fmt: first.format,
-          channel_layout: first.channel_layout ?? first.channels,
+          channel_layout: first.channel_layout || speakers(first.channels),
         }, {
           sample_rate: AAC_RATE,
           sample_fmt: av.AV_SAMPLE_FMT_FLTP,
@@ -1575,4 +1595,181 @@ export async function toMp4(file, { seconds = 0, limit = 0 } = {}) {
   // 被留下的那路声音随片子一起交出去,因为正在看的人马上就会察觉它不在,
   // 而他应该被告知原因,而不是被留在那儿猜。
   return { blob: new Blob(parts, { type: 'video/mp4' }), silent: film.silent };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Songs
+// ---------------------------------------------------------------------------------------------
+
+/** Containers a browser opens by itself, and the ones it will not.
+ *
+ *  ASF is on the second list whatever is inside it. Several of the files here are a .wma holding
+ *  an ordinary MP3 stream -- the sound would play, and the file still will not, because the
+ *  wrapper is the part no browser reads. So the question asked of a song is about its box first
+ *  and its contents second, which is the opposite of the question asked of a film.
+ *
+ *  浏览器自己就打得开的容器,和它打不开的那些。
+ *
+ *  ASF 在第二份名单上,不管它里面装的是什么。这里的样本里有好几个 .wma 装着一条普普通通的
+ *  MP3 流 —— 那段声音本身是能放的,而那个文件依然不能,因为没有浏览器读得懂那层包装。
+ *  所以对一首歌先问的是它的盒子、其次才是它的内容 —— 这与对一部片子的问法正好相反。 */
+const HEARD = new Set(['mp3', 'm4a', 'm4b', 'aac', 'ogg', 'oga', 'opus', 'weba', 'wav', 'flac', 'aiff', 'aif']);
+const REWRAP = new Set(['wma', 'asf', 'mka', 'ape', 'wv', 'tta', 'ac3', 'dts', 'amr', 'au', 'ra', 'rm', 'mpc']);
+const SONG = new Set([...HEARD, ...REWRAP]);
+
+/** A cover comes out of a file as the image file it went in as, so it is handed over as one.
+ *  一张封面从文件里出来时,还是它当初进去时的那个图像文件,所以就照那样交出去。 */
+const PICTURE = {
+  mjpeg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  bmp: 'image/bmp', gif: 'image/gif', webp: 'image/webp',
+};
+
+/** How far to read looking for a picture that may not be there. A cover sits at the front of
+ *  every format that carries one -- ID3 puts it in the header, ASF in the objects before the
+ *  data -- so not having found one in the first few megabytes means there is none.
+ *  为一张也许根本不存在的图,愿意读多远。每一种带封面的格式都把它放在前面 ——
+ *  ID3 放在头里,ASF 放在数据之前的对象里 —— 所以头几兆字节里没找到,就是没有。 */
+const LOOK = 4;
+
+export function hearing(name, mime) {
+  const e = extOf(name);
+  const m = String(mime || '').toLowerCase();
+  if (!SONG.has(e) && !m.startsWith('audio/')) return null;
+  return REWRAP.has(e) ? 'remux' : 'native';
+}
+
+/**
+ * A song, rebuilt into something a browser will play, and the picture that was inside it.
+ *
+ * Not streamed, and that is the point rather than a shortcut. Streaming exists here because a film
+ * is gigabytes and nobody will wait for the whole of one; a song is three megabytes and is
+ * finished before a person has decided whether they want it. Handing over one blob at the end
+ * costs a second and buys back everything the streaming path has to work for -- seeking anywhere,
+ * a duration that is known from the start, and no machinery at all.
+ *
+ * The picture is read whether or not anything is rebuilt, because a file that plays by itself
+ * still has a cover somebody would like to see.
+ *
+ * 一首歌,被重建成浏览器肯放的样子,以及它里面的那张图。
+ *
+ * 不做流式,而这是重点,不是偷懒。流式在这里存在,是因为一部片子有几吉字节、
+ * 没人愿意等完整的一部;而一首歌只有三兆字节,在人还没决定要不要听它之前就已经做完了。
+ * 最后一次性交出一个 blob,代价是一秒钟,换回来的是流式那条路要费力去挣的一切 ——
+ * 任意位置定位、一开始就知道的时长,以及一台机器都不用。
+ *
+ * 那张图不管重建与否都会去读,因为一个自己就能放的文件,一样有一张有人想看的封面。
+ */
+export async function song(source, { convert = true } = {}) {
+  const av = await libav();
+  route(av);
+  const inName = `song-${++serial}.dat`;
+  const outName = `${inName}.mp4`;
+  const bytes = bytesOf(source);
+  sources.set(inName, bytes);
+
+  let ctx = 0;
+  let pkt = 0;
+  let wpkt = 0;
+  let oc = 0;
+  let pb = 0;
+  let snd = null;
+
+  const drop = async () => {
+    sources.delete(inName);
+    sinks.delete(outName);
+    if (oc) await av.ff_free_muxer(oc, pb).catch(() => {});
+    if (wpkt) await av.av_packet_free_js(wpkt).catch(() => {});
+    if (pkt) await av.av_packet_free_js(pkt).catch(() => {});
+    if (snd) await snd.close().catch(() => {});
+    if (ctx) await av.avformat_close_input_js(ctx).catch(() => {});
+    await av.unlink(inName).catch(() => {});
+    await av.unlink(outName).catch(() => {});
+  };
+
+  try {
+    await av.mkblockreaderdev(inName, bytes.size);
+    let streams;
+    [ctx, streams] = await av.ff_init_demuxer_file(inName);
+    if (!streams.length) throw new Error('e_drive_no_streams');
+    const named = [];
+    for (const st of streams) named.push({ s: st, name: await av.avcodec_get_name(st.codec_id) });
+    const heard = named.find((x) => x.s.codec_type === AV_AUDIO);
+    if (!heard) throw new Error('e_drive_no_streams');
+    const drawn = named.find((x) => x.s.codec_type === AV_VIDEO && PICTURE[x.name]);
+    // Whether this sound can be taken apart is asked of the build rather than looked up in a list
+    // here, for the same reason the film side asks: a list would be a second statement of what was
+    // compiled in, and the two disagree the first time the fragments change.
+    // 这段声音拆不拆得开,是去问这份构建,而不是在这里查一份名单 —— 理由和片子那边一样:
+    // 一份名单会成为"编进去了什么"的第二处陈述,而它们会在片段第一次变动时就吵起来。
+    if (convert && !await av.avcodec_find_decoder(heard.s.codec_id).catch(() => 0)) {
+      const err = new Error('e_drive_audio_codec');
+      err.codec = heard.name;
+      throw err;
+    }
+
+    const out = sink();
+    sinks.set(outName, out);
+    await av.mkwriterdev(outName);
+    pkt = await av.av_packet_alloc();
+    wpkt = await av.av_packet_alloc();
+
+    let eof = false;
+    const round = async () => {
+      if (eof) return [];
+      const [res, by] = await av.ff_read_frame_multi(ctx, pkt, { unify: true, limit: ROUND });
+      if (res === AVERROR_EOF || (res < 0 && !paused(res))) eof = true;
+      return by[0] || [];
+    };
+
+    let cover = null;
+    const look = (list) => {
+      if (cover || !drawn) return;
+      const hit = list.find((p) => p.stream_index === drawn.s.index && p.data?.length);
+      if (hit) cover = new Blob([hit.data.slice()], { type: PICTURE[drawn.name] });
+    };
+
+    if (convert) snd = sound(av, heard);
+    let started = false;
+    const write = async (made) => {
+      if (!made.length) return;
+      if (!started) {
+        [oc, , pb] = await av.ff_init_muxer(
+          { filename: outName, format_name: 'mp4', open: true, codecpars: true },
+          [[snd.par, 1, AAC_RATE]]);
+        if (await av.avformat_write_header(oc) < 0) throw new Error('e_drive_remux_failed');
+        started = true;
+      }
+      await av.ff_write_multi(oc, wpkt, made.map((p) => ({ ...p, stream_index: 0 })), true);
+    };
+
+    for (let n = 0; ; n++) {
+      const list = await round();
+      look(list);
+      if (!convert) {
+        // Nothing to build, so the only reason to keep reading is a picture, and there is a point
+        // past which there is no picture.
+        // 没有东西要建,所以继续读的唯一理由是找那张图,而"找不到"是有个尽头的。
+        if (cover || eof || !drawn || n >= LOOK) break;
+        continue;
+      }
+      const mine = list.filter((p) => p.stream_index === heard.s.index);
+      if (mine.length || eof) await write(await snd.take(mine, eof));
+      if (eof) break;
+    }
+
+    if (convert) {
+      if (!started) throw new Error('e_drive_remux_failed');
+      await av.av_write_trailer(oc).catch(() => {});
+      await av.avio_flush(pb).catch(() => {});
+    }
+    const whole = convert ? out.rest() : null;
+    if (convert && !whole?.length) throw new Error('e_drive_remux_failed');
+    return {
+      blob: whole ? new Blob([whole], { type: 'audio/mp4' }) : null,
+      cover,
+      fetched: bytes.served,
+    };
+  } finally {
+    await drop();
+  }
 }

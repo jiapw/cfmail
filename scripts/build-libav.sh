@@ -45,6 +45,13 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   decoder-mpeg4/msmpeg4v3  Xvid and DivX: enough to draw a thumbnail of an old AVI. No
 #                        colour conversion is built in with them -- the decoded planes go to
 #                        WebCodecs as an I420 VideoFrame and the browser converts, in hardware.
+#   decoder-wmav1/2/pro/lossless  a music folder from the Windows Media years. The wrapper is
+#                        the part no browser reads, so the sound has to come out of it and go
+#                        back in somewhere else -- and coming out means decoding it here.
+#   decoder-mp3          not for MP3 files, which every browser plays. For the ones inside a
+#                        .wma: several of these hold an ordinary MP3 stream, and the file is
+#                        still unopenable, because what cannot be read is the box.
+#   decoder-alac         Apple Lossless in an .m4a, for the browsers that decline it.
 #
 # 各个片段,以及每一个为什么在这里。
 #
@@ -59,6 +66,12 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   audio-filters        路上要做的重采样与缩混 —— 48k 的 5.1 不是立体声
 #   decoder-mpeg4/msmpeg4v3  Xvid 与 DivX:够画出一张老 AVI 的缩略图。不随它们带色彩转换 ——
 #                        解出来的平面作为 I420 的 VideoFrame 交给 WebCodecs,由浏览器硬件转换。
+#   decoder-wmav1/2/pro/lossless  一个来自 Windows Media 年代的音乐文件夹。没有浏览器读得懂
+#                        那层包装,所以声音必须从里面出来、再装进别处 —— 而"出来"就意味着在这里解码。
+#   decoder-mp3          不是为了 MP3 文件,那个每个浏览器都放得了。是为了 .wma 里面的那些:
+#                        这里好几个 .wma 装着一条普普通通的 MP3 流,而文件依然打不开 ——
+#                        因为读不懂的是那个盒子。
+#   decoder-alac         .m4a 里的 Apple Lossless,给那些不肯收它的浏览器。
 FRAGMENTS='[
   "avformat","avcodec","avfilter","swresample",
   "format-ogg","format-webm","format-mp4",
@@ -70,7 +83,9 @@ FRAGMENTS='[
   "demuxer-avi","demuxer-asf","demuxer-flv",
   "parser-ac3","decoder-ac3","parser-dca","decoder-dca",
   "encoder-aac","audio-filters",
-  "decoder-mpeg4","decoder-msmpeg4v3"
+  "decoder-mpeg4","decoder-msmpeg4v3",
+  "decoder-wmav1","decoder-wmav2","decoder-wmapro","decoder-wmalossless",
+  "decoder-mp3","decoder-alac"
 ]'
 
 # Docker may be next door rather than here.
