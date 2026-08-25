@@ -1189,6 +1189,19 @@ document.addEventListener('fullscreenchange', () => closeMenu());
 window.addEventListener('keydown', (e) => {
   if (!qs('.drv-body')) return;
   if (e.key === 'Escape') closeMenu();
+  if (e.key === 'Enter' && dst.sel.size === 1 && !pv
+    && !document.querySelector('wa-dialog[open]')
+    // Not when something else has the focus and its own idea of what Enter means: a button
+    // presses itself, a dropdown chooses, a field submits. This only speaks for the list.
+    // 当别的东西握着焦点、并且对回车有它自己的理解时,这里不作声:按钮会按下自己,
+    // 下拉会做出选择,输入框会提交。这一条只替那份列表说话。
+    && !e.target.closest('input,textarea,select,button,a,[contenteditable],wa-dialog,wa-dropdown,wa-select,wa-button')) {
+    const [n] = selNodes();
+    if (n) {
+      e.preventDefault();
+      openNode(n);
+    }
+  }
   if (e.key === 'Delete' && dst.sel.size && !e.target.closest('input,textarea,wa-dialog')) {
     const trashCtx = dst.view === 'trash' || dst.inTrash;
     if (trashCtx) deleteForever(selNodes());
@@ -1855,7 +1868,10 @@ async function newFolderDialog() {
   const name = await promptDialog(t('drv_new_folder'), t('drv_untitled_folder'), t('confirm'));
   if (!name) return;
   try {
-    await api('POST', '/api/drive/folders', { parent: currentParent(), name });
+    const node = await api('POST', '/api/drive/folders', { parent: currentParent(), name });
+    // Just made, so it is what somebody is about to rename, open, or drop something into.
+    // 刚建好,所以它正是接下来会被改名、被打开、被拖东西进去的那一个。
+    if (node?.id) dst.selectAfterLoad = node.id;
     reload();
   } catch (e) {
     toast(e.message, true);
