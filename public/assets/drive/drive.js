@@ -3837,7 +3837,12 @@ async function showSub(id) {
         if (!res.ok) throw new Error('e_drive_not_found');
         spec.pic.bytes = new Uint8Array(await res.arrayBuffer());
       } catch (e) {
-        toast(tErr(e), true);
+        // tErr is given a key, not the error that carries it. Handed the error itself it finds
+        // nothing under it and falls back to "something went wrong" -- which is what was shown
+        // for a file that was perfectly readable and had simply been misjudged.
+        // tErr 收的是一个键,而不是携带那个键的错误。把错误本身递给它,它在那底下什么都找不到,
+        // 于是退回到"操作失败" —— 而那正是一个完全读得出来、只是被误判了的文件所显示的东西。
+        toast(tErr(e?.message), true);
         pvSubs.shown = null;
         return;
       }
@@ -3863,7 +3868,12 @@ async function showSub(id) {
         if (!cues.length) throw new Error('e_drive_subs_empty');
         pvSubs.lines.set(id, cues);
       } catch (e) {
-        toast(tErr(e), true);
+        // tErr is given a key, not the error that carries it. Handed the error itself it finds
+        // nothing under it and falls back to "something went wrong" -- which is what was shown
+        // for a file that was perfectly readable and had simply been misjudged.
+        // tErr 收的是一个键,而不是携带那个键的错误。把错误本身递给它,它在那底下什么都找不到,
+        // 于是退回到"操作失败" —— 而那正是一个完全读得出来、只是被误判了的文件所显示的东西。
+        toast(tErr(e?.message), true);
         pvSubs.shown = null;
         return;
       }
