@@ -13,6 +13,11 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
+/* Web Awesome paints html with its surface color, and body is only one screen tall -- on any
+   longer page a strip of that surface showed below where body ended. Paint the canvas ourselves.
+   WA 会给 html 涂它的 surface 色,而 body 只有一屏高 -- 更长的页面在 body 之下会露出一条那个颜色。
+   画布的颜色自己来定。 */
+html { background: var(--bg); }
 /* ---------- 滚动条:全站统一 ----------
    之前各面板都是浏览器默认样式(Windows 上带上下箭头、方角槽),这里统一成圆角。
    18px = 系统默认 15px 的 120%;thumb 用透明 border + background-clip:content-box
