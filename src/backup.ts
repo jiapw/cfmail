@@ -12,13 +12,14 @@
  * says "still needed".
  *
  * WHAT THE CONTAINER PRODUCES
- *   daily/YYYY-MM-DD.7z        database as SQL, plus the mail that arrived that day
- *   daily/YYYY-MM-DD.extra.7z  the catch-up: imported mail, and days the nightly missed
- *   monthly/YYYY-MM.zip        that month's dailies, stored, not recompressed
- *   yearly/YYYY.zip            that year's monthlies, likewise
+ *   daily/YYYY-MM-DD.7z   a day of the current month
+ *   monthly/YYYY-MM.7z    a finished month of the current year
+ *   yearly/YYYY.7z        a finished year
  *
- * Each message appears in exactly one archive, the one for the day it arrived; imported mail
- * never enters on its own and waits for the catch-up. Everything is written as Infrequent Access.
+ * Every archive has the same shape inside -- database.sql, manifest.json, mail/ -- and mail is
+ * filed by the date each message itself shows, not by when its bytes arrived. Each message
+ * appears in exactly one archive; imported mail never enters on its own and waits for the
+ * catch-up. Everything is written as Infrequent Access.
  *
  * 自动备份:控制面。真正干活的在容器里,见 container/。
  *
@@ -31,11 +32,13 @@
  * 而一个正在压一个 GB 的任务根本不发请求 —— 所以"问"本身也在说"还要用"。
  *
  * 容器产出什么
- *   daily/YYYY-MM-DD.7z    整库 SQL,加上当天到达的 .eml
- *   monthly/YYYY-MM.zip    当月各份日备份,store 不重压
- *   yearly/YYYY.zip        当年各份月备份,同上
+ *   daily/YYYY-MM-DD.7z   本月中的某一天
+ *   monthly/YYYY-MM.7z    本年中某个已结束的月份
+ *   yearly/YYYY.7z        某个已结束的年份
  *
- * 每封信只出现在它到达那一天的日包里;月包是日包的容器,年包是月包的容器。没有一封信被存过两次。
+ * 每个包内部形状一致 —— database.sql、manifest.json、mail/ ——
+ * 邮件按它自己显示的时间归档,而不是字节落地的日子。每封信只出现在一个包里;
+ * 导入的邮件从不自动进包,等操作者补档。所有包都写成低频访问存储。
  */
 import { Container, getContainer } from '@cloudflare/containers';
 import type { Env } from './types';
@@ -68,7 +71,7 @@ export class BackupContainer extends Container<Env> {
  * version 1 -- visible only because the new code logs per table and the output stayed empty.
  * Bumping this name is how an instance is retired on purpose.
  */
-const CONTAINER_ID = 'cfmail-backup-2';
+const CONTAINER_ID = 'cfmail-backup-4';
 
 async function readMeta(env: Env, key: string): Promise<string | null> {
   const row = await env.DB.prepare('SELECT value FROM meta WHERE key=?1').bind(key).first<any>();
@@ -304,31 +307,68 @@ async function loadArchiveIndex(env: Env): Promise<Set<string>> {
 }
 
 /**
- * What is in no archive yet, grouped by arrival day, with the archive each day's mail would go
- * into. This is the preview the console shows before a catch-up; the container recomputes the
- * same answer for itself when the run actually starts.
+ * The archive a given day's mail goes into, by the calendar alone: a finished year is one yearly
+ * file, a finished month of the current year one monthly file, and only the current month is cut
+ * day by day. The container uses the same rule when the run actually starts.
+ * 某一天的邮件进哪个包,只看日历:已结束的年份一个年包,本年已结束的月份一个月包,
+ * 只有本月才按天切。真正开跑时容器用的也是同一条规则。
+ */
+function targetFor(day: string, today: string): string {
+  if (day.slice(0, 4) < today.slice(0, 4)) return `yearly/${day.slice(0, 4)}.7z`;
+  if (day.slice(0, 7) < today.slice(0, 7)) return `monthly/${day.slice(0, 7)}.7z`;
+  return `daily/${day}.7z`;
+}
+
+/** Every message's own date, keyed by its storage key -- the same date column the mail interface
+ *  shows. 每封信自己的时间,按存储 key 索引 —— 和邮件界面显示的是同一列。 */
+async function contentDates(env: Env): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const PAGE = 2000;
+  for (let offset = 0; ; offset += PAGE) {
+    const rs = await env.DB.prepare(
+      `SELECT r2_key, date FROM messages WHERE r2_key IS NOT NULL LIMIT ${PAGE} OFFSET ${offset}`
+    ).all<any>();
+    const rows = rs.results || [];
+    for (const r of rows) map.set(r.r2_key, r.date);
+    if (rows.length < PAGE) break;
+  }
+  return map;
+}
+
+/** A Date header is whatever the sender wrote; one claiming 1980 or next week falls back to the
+ *  arrival day. Date 头是发件人写什么就是什么;声称 1980 年或下周的,退回到达日。 */
+const EARLIEST = Date.parse('2000-01-01T00:00:00Z');
+
+/**
+ * What is in no archive yet, grouped by the archive it belongs to -- by each message's own date.
+ * This is the preview the console shows before a catch-up; the container recomputes the same
+ * answer for itself when the run actually starts.
  *
- * 还不在任何包里的邮件,按到达日分组,并标出每一天会进哪个包。
+ * 还不在任何包里的邮件,按所属的包分组 —— 依据是每封信自己的时间。
  * 这是后台在补档前展示的预览;真正开跑时,容器会自己把同一个答案再算一遍。
  */
 export async function backupPending(env: Env): Promise<any> {
   const index = await loadArchiveIndex(env);
   const today = new Date().toISOString().slice(0, 10);
-  const days = new Map<string, { count: number; bytes: number }>();
+  const dates = await contentDates(env);
+  const groups = new Map<string, { count: number; bytes: number }>();
   for (const prefix of ['import/', 'raw/', 'unrouted/', 'brand/']) {
     let cursor: string | undefined;
     for (;;) {
       const r = await env.RAW.list({ prefix, cursor, limit: 1000 });
       for (const o of r.objects) {
         if (index.has(o.key)) continue;
-        const day = new Date(o.uploaded).toISOString().slice(0, 10);
-        // Today's ordinary mail is tonight's run's business; only imports are pending on arrival
-        // 今天的普通来信是今晚那一次的事;只有导入的邮件一到就算待补
+        const t = dates.get(o.key);
+        const own = typeof t === 'number' && t >= EARLIEST && t <= Date.now() + 2 * 24 * 3600 * 1000;
+        const day = new Date(own ? (t as number) : +new Date(o.uploaded)).toISOString().slice(0, 10);
+        // Mail whose own day has not ended is a later run's business; only imports are pending at once
+        // 邮件自己的那一天还没过完的,是之后那一次的事;只有导入的邮件一到就算待补
         if (prefix !== 'import/' && day >= today) continue;
-        const g = days.get(day) || { count: 0, bytes: 0 };
+        const target = targetFor(day, today);
+        const g = groups.get(target) || { count: 0, bytes: 0 };
         g.count += 1;
         g.bytes += o.size;
-        days.set(day, g);
+        groups.set(target, g);
       }
       if (!r.truncated) break;
       cursor = r.cursor;
@@ -350,19 +390,15 @@ export async function backupPending(env: Env): Promise<any> {
 
   let count = 0;
   let bytes = 0;
-  const rows = [...days.entries()].sort().map(([day, g]) => {
-    count += g.count;
-    bytes += g.bytes;
-    const M = day.slice(0, 7);
-    const Y = day.slice(0, 4);
-    let target = `daily/${day}.extra.7z`;
-    let action = 'create';
-    if (have.has(`yearly/${Y}.zip`)) { target = `yearly/${Y}.zip`; action = 'add'; }
-    else if (have.has(`monthly/${M}.zip`)) { target = `monthly/${M}.zip`; action = 'add'; }
-    else if (have.has(target)) { action = 'add'; }
-    return { day, count: g.count, bytes: g.bytes, target, action };
-  });
-  return { count, bytes, days: rows };
+  const periodOf = (k: string) => k.slice(k.indexOf('/') + 1, -3);
+  const rows = [...groups.entries()]
+    .sort((a, b) => (periodOf(a[0]) < periodOf(b[0]) ? -1 : 1))
+    .map(([target, g]) => {
+      count += g.count;
+      bytes += g.bytes;
+      return { target, count: g.count, bytes: g.bytes, action: have.has(target) ? 'add' : 'create' };
+    });
+  return { count, bytes, targets: rows };
 }
 
 export async function backupStatus(env: Env): Promise<any> {
@@ -385,7 +421,7 @@ export async function backupStatus(env: Env): Promise<any> {
   };
   if (!env.BACKUP) return out;
   out.daily = await listArchives(env, 'daily/', '.7z');
-  out.monthly = await listArchives(env, 'monthly/', '.zip');
-  out.yearly = await listArchives(env, 'yearly/', '.zip');
+  out.monthly = await listArchives(env, 'monthly/', '.7z');
+  out.yearly = await listArchives(env, 'yearly/', '.7z');
   return out;
 }
