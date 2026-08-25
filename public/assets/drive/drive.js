@@ -3024,70 +3024,104 @@ async function playSong(n, src, mime) {
         veil.appendChild(note);
         veil.style.display = '';
       }
-      void rebuildSong(n, src, art);
+      void rebuildSong(n, src);
     }, { once: true });
     return;
   }
-  await rebuildSong(n, src, art);
+  await rebuildSong(n, src);
 }
 
-/** The half that opens a decoder: for a box no browser reads, and for the one that turned out to
- *  hold something this browser will not.
- *  动用解码器的那一半:给"没有浏览器读得懂的盒子",以及那个"结果里面装着这台浏览器不肯收的东西"的。 */
-async function rebuildSong(n, src, art) {
+/**
+ * The half that opens a decoder: for a box no browser reads, and for the one that turned out to
+ * hold something this browser will not.
+ *
+ * Fed to the player a piece at a time, the way a film is. Music is long -- a lossless album image
+ * is hundreds of megabytes -- and handing over one finished file means silence until the whole of
+ * it has been converted. The first piece is ready in a fifth of a second and the conversion runs
+ * at about thirty-four times the speed anybody listens, so it stays ahead for the rest of the song.
+ *
+ * Nothing is dropped from the buffer once it is in. A film's is a window because a film does not
+ * fit; an hour of AAC is fifty megabytes, so all of it stays and seeking backwards is instant.
+ * Only running out of room takes anything back, and sbPut knows what to do about that.
+ *
+ * 动用解码器的那一半:给"没有浏览器读得懂的盒子",以及那个"结果里面装着这台浏览器不肯收的东西"的。
+ *
+ * 一块一块地喂给播放器,和片子一样。音乐很长 —— 一张无损整轨镜像是几百兆 ——
+ * 而交出一个做完的整文件,意味着在它全部转换完之前一直是静默。第一块五分之一秒就好,
+ * 而转换的速度大约是任何人收听速度的三十四倍,所以它在这首歌余下的时间里一直领先。
+ *
+ * 进了缓冲的东西一样都不丢。片子的缓冲是一个窗口,因为片子装不下;
+ * 而一小时的 AAC 是五十兆,所以全都留着,往回跳是瞬时的。只有真的没地方了才会往回收 ——
+ * 而那件事 sbPut 知道该怎么办。
+ */
+async function rebuildSong(n, src) {
   const here = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
-  let out = null;
-  try {
-    const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
-    const source = /^blob:/.test(src)
-      ? await (await fetch(src)).blob()
-      : { url: src, size: n.size || 0 };
-    out = await mod.song(source, { convert: true });
-  } catch (e) {
-    // A song that plays by itself and only failed to give up its picture has lost nothing worth
-    // saying. One that had to be rebuilt and could not, has.
-    // 一首自己就能放、只是没交出封面的歌,没有损失什么值得一说的东西。
-    // 一首必须被重建而没能重建的,有。
-    const el = here();
-    const box = el?.querySelector('.drv-view-body');
+  const stumble = (e) => {
+    const box = here()?.querySelector('.drv-view-body');
     // Which encoding it was is worth carrying out: "this needs another program" is a different
     // sentence from "something went wrong", and only one of them tells somebody what to do.
     // 是哪一种编码,值得带出去:"这个需要另一个程序"和"出了点问题"不是同一句话,
     // 而其中只有一句告诉了人下一步该做什么。
     if (box) box.innerHTML = noprevHtml(n, e?.codec ? tErr('e_drive_audio_codec', [e.codec]) : tErr(e?.message));
+  };
+
+  let tune = null;
+  try {
+    const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    const source = /^blob:/.test(src)
+      ? await (await fetch(src)).blob()
+      : { url: src, size: n.size || 0 };
+    tune = await mod.song(source);
+  } catch (e) {
+    stumble(e);
     return;
   }
-  const el = here();
-  if (!el) return;
-  if (out.blob) {
-    if (pvBlob) URL.revokeObjectURL(pvBlob);
-    pvBlob = URL.createObjectURL(out.blob);
-    const au = el.querySelector('.drv-audio audio');
-    if (au) {
-      au.src = pvBlob;
-      au.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
-    }
-  }
-  // Only if the parsers came up empty: a rebuild has already read the whole file, so what it
-  // noticed on the way through costs nothing and covers the formats they do not know.
-  // 只在解析器空手而归时才用:一次重建已经把整个文件读过了,
-  // 于是它路过时注意到的东西不花什么代价,而且覆盖了它们不认识的那些格式。
-  if (!art && out.cover) await showCover(n, el, out.cover);
-}
 
-/** The front of a file, which is where a cover is. Read from the drive in one range request
- *  rather than by downloading a song to look at its header.
- *  一个文件的开头,封面就在那里。用一次区间请求从网盘取,
- *  而不是为了看一眼头部就把一首歌整个下下来。 */
-async function frontOf(n, src) {
-  const want = Math.min(n.size || FRONT, FRONT);
-  if (/^blob:/.test(src)) {
-    const b = await (await fetch(src)).blob();
-    return new Uint8Array(await b.slice(0, want).arrayBuffer());
+  const el = here();
+  const au = el?.querySelector('.drv-audio audio');
+  if (!el || !au) { await tune.close().catch(() => {}); return; }
+  if (!window.MediaSource || !MediaSource.isTypeSupported(tune.mime)) {
+    await tune.close().catch(() => {});
+    stumble(new Error('e_drive_audio_codec'));
+    return;
   }
-  const res = await fetch(src, { headers: { Range: `bytes=0-${want - 1}` } });
-  if (!res.ok) return null;
-  return new Uint8Array(await res.arrayBuffer());
+
+  pvSong = tune;
+  if (pvBlob) URL.revokeObjectURL(pvBlob);
+  const ms = new MediaSource();
+  pvBlob = URL.createObjectURL(ms);
+  au.src = pvBlob;
+  try {
+    await new Promise((go, no) => {
+      ms.addEventListener('sourceopen', go, { once: true });
+      ms.addEventListener('error', () => no(new Error('e_drive_remux_failed')), { once: true });
+    });
+    if (pvSong !== tune) return;
+    const sb = ms.addSourceBuffer(tune.mime);
+    // Stated up front, so the length shown is the length of the song rather than the length of
+    // what has been converted so far -- which would crawl forwards while somebody listened.
+    // 一开始就说明白,好让显示出来的长度是这首歌的长度,而不是"到目前为止转好了多少"的长度 ——
+    // 那个会在人听的过程中一点一点往前爬。
+    if (tune.duration) { try { ms.duration = tune.duration; } catch { /* it will grow / 它会自己长 */ } }
+    au.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
+    for (;;) {
+      const piece = await tune.pull();
+      if (pvSong !== tune) return;
+      if (!piece) {
+        try { ms.endOfStream(); } catch { /* already ended / 已经结束了 */ }
+        break;
+      }
+      if (!await sbPut(sb, piece, au)) throw new Error('e_drive_remux_failed');
+    }
+  } catch (e) {
+    if (pvSong !== tune) return;
+    stumble(e);
+    return;
+  }
+  // Converted to the end, so the file has nothing left to give and the machinery can go. What was
+  // handed over stays where it was handed to.
+  // 已经转到头了,这个文件再没有什么可给的,那套机器可以走了。交出去的东西留在被交到的地方。
+  await tune.close().catch(() => {});
 }
 
 /** The picture out of a song, on the card -- and kept, so the folder shows it too.
@@ -3148,9 +3182,17 @@ const FRONT = 8 * 1024 * 1024;
 
 let pvBlob = null;
 let pvArt = null;
+let pvSong = null;
 let pvFilm = null;
 function dropPvBlob() {
   dropSubs();
+  // A song being converted goes when the preview it belongs to goes: it holds a demuxer, an
+  // encoder and a place in the one WebAssembly instance everything here shares.
+  // 一首正在被转换的歌,随它所属的那个预览一起走:它握着一个解复用器、一个编码器,
+  // 以及这里一切共用的那唯一一个 WebAssembly 实例里的一个位置。
+  const tune = pvSong;
+  pvSong = null;
+  if (tune) void tune.close().catch(() => {});
   if (pvBlob) URL.revokeObjectURL(pvBlob);
   pvBlob = null;
   if (pvArt) URL.revokeObjectURL(pvArt);

@@ -948,67 +948,26 @@ function flacCover(u8) {
   return null;
 }
 
-/** No cover found: decode a bit of the audio and draw its waveform instead -- every audio file
- *  gets a meaningful tile.
- *  没有封面就解码音频画波形 —— 每个音频文件都有一张有意义的卡。 */
-async function waveThumb(buf) {
-  const octx = new OfflineAudioContext(1, 16000, 16000);
-  const audio = await octx.decodeAudioData(buf);
-  const ch = audio.getChannelData(0);
-  if (!ch.length) return null;
-  const BARS = 60;
-  const seg = Math.max(1, Math.floor(ch.length / BARS));
-  const peaks = [];
-  let maxPeak = 0;
-  for (let b = 0; b < BARS; b++) {
-    let m = 0;
-    const off = b * seg;
-    // Sample within the segment; reading every value of long files buys nothing
-    // 段内抽样即可。长文件逐点读没有意义
-    const step = Math.max(1, Math.floor(seg / 400));
-    for (let i = 0; i < seg; i += step) {
-      const v = Math.abs(ch[off + i] || 0);
-      if (v > m) m = v;
-    }
-    peaks.push(m);
-    if (m > maxPeak) maxPeak = m;
-  }
-  const c = document.createElement('canvas');
-  c.width = TW;
-  c.height = TH;
-  const g = c.getContext('2d');
-  g.fillStyle = '#202227';
-  g.fillRect(0, 0, TW, TH);
-  const bw = 4;
-  const gap = (TW - 48 - BARS * bw) / (BARS - 1);
-  g.fillStyle = '#7aa9f8';
-  for (let b = 0; b < BARS; b++) {
-    const h = Math.max(5, (peaks[b] / (maxPeak || 1)) * 240);
-    const x = 24 + b * (bw + gap);
-    g.beginPath();
-    g.roundRect(x, TH / 2 - h / 2, bw, h, 2);
-    g.fill();
-  }
-  return encode(c);
-}
+
 
 async function fromAudio(file) {
   // Covers live near the start except in rare rear-moov mp4 files; cap what we read
   // 封面一般在文件开头。罕见的 moov 在尾部的 mp4 除外。读取量设上限
   const buf = await (file.size <= 48 * 1024 * 1024 ? file : file.slice(0, 8 * 1024 * 1024)).arrayBuffer();
   const u8 = new Uint8Array(buf);
+  // Only the picture that is actually in there. A song with no cover gets no thumbnail: a
+  // waveform is a picture of nothing anybody recognises, the same grey scribble for every track,
+  // and a folder of those is worse to look at than a folder of file icons.
+  // 只要真的在里面的那张图。一首没有封面的歌就不给缩略图:
+  // 波形是一张"谁也认不出是什么"的图,每一轨都是同一团灰色涂鸦,
+  // 而一整个文件夹的那种东西,比一整个文件夹的文件图标还难看。
   const cover = coverIn(u8);
-  if (cover) {
-    try {
-      const bmp = await createImageBitmap(cover);
-      const out = await drawCover(bmp, bmp.width, bmp.height, false);
-      bmp.close();
-      if (out) return out;
-    } catch {}
-  }
-  if (file.size > 48 * 1024 * 1024) return null;
+  if (!cover) return null;
   try {
-    return await waveThumb(buf.slice(0));
+    const bmp = await createImageBitmap(cover);
+    const out = await drawCover(bmp, bmp.width, bmp.height, false);
+    bmp.close();
+    return out;
   } catch {
     return null;
   }
