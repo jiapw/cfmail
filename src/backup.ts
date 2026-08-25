@@ -60,7 +60,14 @@ export class BackupContainer extends Container<Env> {
   sleepAfter = '5m';
 }
 
-const CONTAINER_ID = 'cfmail-backup';
+/**
+ * Which instance the job runs in. The name carries a number because a stopped instance is kept
+ * and reused, and a reused instance keeps the image it was created from: after pushing a new
+ * image and deploying it, the application said version 2 while the job still ran the code from
+ * version 1 -- visible only because the new code logs per table and the output stayed empty.
+ * Bumping this name is how an instance is retired on purpose.
+ */
+const CONTAINER_ID = 'cfmail-backup-2';
 
 async function readMeta(env: Env, key: string): Promise<string | null> {
   const row = await env.DB.prepare('SELECT value FROM meta WHERE key=?1').bind(key).first<any>();
@@ -229,10 +236,14 @@ async function poll(env: Env, s: BackupState): Promise<void> {
     result: done ? j.result : s.result,
     lastError: done ? undefined : (j.error || `退出码 ${j.code}`),
   });
-  // Stop it the moment there is nothing left to do. A container kept alive out of politeness is
-  // billed by the second like any other.
-  // 一旦没事可做立刻停掉。出于客气留着的容器,和别的容器一样按秒计费。
-  await container(env).stop().catch(() => {});
+  // Destroy it the moment there is nothing left to do. A container kept alive out of politeness is
+  // billed by the second like any other -- and a merely stopped one is kept and started again as
+  // it was, image included, so a stopped instance would go on running yesterday's code after a
+  // new image had been deployed. The job has already exited by now; there is nothing to interrupt.
+  // 一做完就销毁。出于客气留着的容器和别的容器一样按秒计费 —— 而仅仅"停下"的实例会被留着、
+  // 并原样重新启动,镜像也照旧,于是新镜像部署之后它还在跑昨天的代码。
+  // 走到这一步任务已经退出,没有什么可打断的。
+  await container(env).destroy().catch(() => {});
 }
 
 /** The archives that exist, newest first / 现有的包,新的在前 */
