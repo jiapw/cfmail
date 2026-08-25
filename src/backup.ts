@@ -12,12 +12,13 @@
  * says "still needed".
  *
  * WHAT THE CONTAINER PRODUCES
- *   daily/YYYY-MM-DD.7z    the whole database as SQL, plus the .eml that arrived that day
- *   monthly/YYYY-MM.zip    that month's dailies, stored, not recompressed
- *   yearly/YYYY.zip        that year's monthlies, likewise
+ *   daily/YYYY-MM-DD.7z        database as SQL, plus the mail that arrived that day
+ *   daily/YYYY-MM-DD.extra.7z  the catch-up: imported mail, and days the nightly missed
+ *   monthly/YYYY-MM.zip        that month's dailies, stored, not recompressed
+ *   yearly/YYYY.zip            that year's monthlies, likewise
  *
- * Each message appears in exactly one daily, the one for the day it arrived; a monthly is a
- * container of dailies and a yearly a container of monthlies. No message is stored twice.
+ * Each message appears in exactly one archive, the one for the day it arrived; imported mail
+ * never enters on its own and waits for the catch-up. Everything is written as Infrequent Access.
  *
  * 自动备份:控制面。真正干活的在容器里,见 container/。
  *
@@ -107,6 +108,9 @@ export interface BackupState {
   finishedDay?: string;
   result?: any;
   lastError?: string;
+  /** The day the last automatic launch went for, tried once per day whether or not it succeeded
+   *  上一次自动启动瞄准的是哪一天;无论成败,每天只试一次 */
+  attemptDay?: string;
 }
 
 const EMPTY: BackupState = { state: 'idle', day: '', mode: '', startedAt: 0 };
@@ -162,10 +166,15 @@ export async function startBackupNow(env: Env, mode = 'all'): Promise<{ started:
   if (!ready.ok) return { started: false, reason: ready.why };
   const s = await loadState(env);
   if (s.state === 'running') return { started: false, reason: 'e_backup_running' };
-  return await launch(env, dayBefore(Date.now()), mode, s);
+  // A catch-up has no single day: it sweeps every day with unarchived mail. Sending one anyway
+  // would make the container treat it as a filter and quietly skip the rest.
+  // 补档没有"某一天":它扫过所有还有未归档邮件的日子。硬塞一个日期,
+  // 容器会把它当成过滤条件,把其余的日子悄悄跳过。
+  const day = mode === 'catchup' ? '' : dayBefore(Date.now());
+  return await launch(env, day, mode, s);
 }
 
-async function launch(env: Env, day: string, mode: string, prev: BackupState) {
+async function launch(env: Env, day: string, mode: string, prev: BackupState, attemptDay?: string) {
   const c = container(env);
   const res = await c.containerFetch('http://c/run', {
     method: 'POST',
@@ -177,6 +186,7 @@ async function launch(env: Env, day: string, mode: string, prev: BackupState) {
   await saveState(env, {
     state: 'running', day, mode, startedAt: now(),
     finishedAt: prev.finishedAt, finishedDay: prev.finishedDay, result: prev.result,
+    attemptDay: attemptDay ?? prev.attemptDay,
   });
   return { started: true };
 }
@@ -190,18 +200,26 @@ async function launch(env: Env, day: string, mode: string, prev: BackupState) {
  */
 export async function backupTick(env: Env): Promise<void> {
   if (!backupReady(env).ok) return;
-  if (!(await backupEnabled(env))) return;
   const s = await loadState(env);
 
+  // A running job is watched whatever the switch says: a catch-up may be going with the
+  // automatic backup off, and switching off mid-run must not orphan a run in progress.
+  // 正在跑的任务无论开关如何都要盯着:补档可能在自动备份关着的时候进行,
+  // 而中途关掉开关不该把一次进行中的运行晾成没人管。
   if (s.state === 'running') {
     await poll(env, s);
     return;
   }
-  const d = new Date();
-  if (d.getUTCHours() !== (await backupHour(env)) || d.getUTCMinutes() !== 0) return;
+  if (!(await backupEnabled(env))) return;
+
+  // Any minute past the hour will do, once per target day. Insisting on minute zero exactly
+  // meant that a catch-up still running at that moment silently cost a night's backup.
+  // 过了整点的任何一分钟都行,每个目标日只试一次。非得掐在零分那一下,
+  // 意味着那一刻恰好还在跑的补档,会悄悄吃掉一晚的备份。
+  if (new Date().getUTCHours() < (await backupHour(env))) return;
   const target = dayBefore(Date.now());
-  if (s.finishedDay === target) return;          // 昨天那份已经做过了
-  await launch(env, target, 'all', s).catch(() => {});
+  if (s.finishedDay === target || s.attemptDay === target) return;
+  await launch(env, target, 'all', s, target).catch(() => {});
 }
 
 async function poll(env: Env, s: BackupState): Promise<void> {
@@ -232,9 +250,14 @@ async function poll(env: Env, s: BackupState): Promise<void> {
     mode: s.mode,
     startedAt: s.startedAt,
     finishedAt: now(),
-    finishedDay: done ? s.day : s.finishedDay,
+    // A catch-up finishing is not a daily finishing: writing its empty day here would clear the
+    // record and make the next tick re-run a night that already happened.
+    // 补档跑完不等于日备份跑完:把它那个空的 day 写进来会抹掉记录,
+    // 让下一次 tick 把已经跑过的那一晚再跑一遍。
+    finishedDay: done && s.mode !== 'catchup' ? s.day : s.finishedDay,
     result: done ? j.result : s.result,
-    lastError: done ? undefined : (j.error || `退出码 ${j.code}`),
+    lastError: done ? undefined : String(j.error || `exit code ${j.code}`).slice(0, 2000),
+    attemptDay: s.attemptDay,
   });
   // Destroy it the moment there is nothing left to do. A container kept alive out of politeness is
   // billed by the second like any other -- and a merely stopped one is kept and started again as
@@ -268,6 +291,80 @@ async function listArchives(env: Env, prefix: string, ext: string): Promise<any[
   return out.sort((a, b) => (a.name < b.name ? 1 : -1));
 }
 
+const INDEX_KEY = 'index/archived.txt.gz';
+
+/** Every R2 key that is inside some archive, as the container's index records it.
+ *  已在某个包里的全部 R2 key,以容器维护的索引为准。 */
+async function loadArchiveIndex(env: Env): Promise<Set<string>> {
+  if (!env.BACKUP) return new Set();
+  const obj = await env.BACKUP.get(INDEX_KEY);
+  if (!obj) return new Set();
+  const text = await new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text();
+  return new Set(text.split('\n').filter(Boolean));
+}
+
+/**
+ * What is in no archive yet, grouped by arrival day, with the archive each day's mail would go
+ * into. This is the preview the console shows before a catch-up; the container recomputes the
+ * same answer for itself when the run actually starts.
+ *
+ * 还不在任何包里的邮件,按到达日分组,并标出每一天会进哪个包。
+ * 这是后台在补档前展示的预览;真正开跑时,容器会自己把同一个答案再算一遍。
+ */
+export async function backupPending(env: Env): Promise<any> {
+  const index = await loadArchiveIndex(env);
+  const today = new Date().toISOString().slice(0, 10);
+  const days = new Map<string, { count: number; bytes: number }>();
+  for (const prefix of ['import/', 'raw/', 'unrouted/', 'brand/']) {
+    let cursor: string | undefined;
+    for (;;) {
+      const r = await env.RAW.list({ prefix, cursor, limit: 1000 });
+      for (const o of r.objects) {
+        if (index.has(o.key)) continue;
+        const day = new Date(o.uploaded).toISOString().slice(0, 10);
+        // Today's ordinary mail is tonight's run's business; only imports are pending on arrival
+        // 今天的普通来信是今晚那一次的事;只有导入的邮件一到就算待补
+        if (prefix !== 'import/' && day >= today) continue;
+        const g = days.get(day) || { count: 0, bytes: 0 };
+        g.count += 1;
+        g.bytes += o.size;
+        days.set(day, g);
+      }
+      if (!r.truncated) break;
+      cursor = r.cursor;
+    }
+  }
+
+  const have = new Set<string>();
+  if (env.BACKUP) {
+    for (const prefix of ['daily/', 'monthly/', 'yearly/']) {
+      let cursor: string | undefined;
+      for (;;) {
+        const r = await env.BACKUP.list({ prefix, cursor, limit: 500 });
+        for (const o of r.objects) have.add(o.key);
+        if (!r.truncated) break;
+        cursor = r.cursor;
+      }
+    }
+  }
+
+  let count = 0;
+  let bytes = 0;
+  const rows = [...days.entries()].sort().map(([day, g]) => {
+    count += g.count;
+    bytes += g.bytes;
+    const M = day.slice(0, 7);
+    const Y = day.slice(0, 4);
+    let target = `daily/${day}.extra.7z`;
+    let action = 'create';
+    if (have.has(`yearly/${Y}.zip`)) { target = `yearly/${Y}.zip`; action = 'add'; }
+    else if (have.has(`monthly/${M}.zip`)) { target = `monthly/${M}.zip`; action = 'add'; }
+    else if (have.has(target)) { action = 'add'; }
+    return { day, count: g.count, bytes: g.bytes, target, action };
+  });
+  return { count, bytes, days: rows };
+}
+
 export async function backupStatus(env: Env): Promise<any> {
   const ready = backupReady(env);
   const s = await loadState(env);
@@ -277,6 +374,7 @@ export async function backupStatus(env: Env): Promise<any> {
     ready: ready.ok,
     why: ready.why || null,
     state: s.state,
+    mode: s.mode || null,
     day: s.day,
     line: s.line || null,
     started_at: s.startedAt || null,

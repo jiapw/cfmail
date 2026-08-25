@@ -4,7 +4,7 @@ import type { Env, User } from './types';
 import { THEME_NAMES } from './themes-list';
 import { isKnownFont } from './fonts';
 import { beginImpersonation, requireAuth, revokeAllSessions } from './auth';
-import { backupStatus, setBackupSettings, startBackupNow } from './backup';
+import { backupPending, backupStatus, setBackupSettings, startBackupNow } from './backup';
 import { createSystemFolders, ingestEml, type PreParsed } from './parse';
 import { HttpError, E } from './errors';
 import { isEmail, jsonTry, normalizeAddr, now, randomToken, sha256Hex, uid } from './util';
@@ -957,6 +957,22 @@ adminApp.post('/backup', async (c) => {
   return c.json({ ok: true, enabled: on });
 });
 
+/** The preview behind the catch-up button: what is in no archive, and where it would go
+ *  补档按钮背后的预览:哪些邮件不在任何包里,各自会进哪个包 */
+adminApp.get('/backup/pending', async (c) => {
+  requireGlobalAdmin(c);
+  return c.json(await backupPending(c.env));
+});
+
+/** File everything unarchived into the archives it belongs to / 把所有未归档的邮件收进各自所属的包 */
+adminApp.post('/backup/catchup', async (c) => {
+  const me = requireGlobalAdmin(c);
+  const r = await startBackupNow(c.env, 'catchup');
+  if (!r.started) throw new HttpError(409, r.reason || 'e_backup_running');
+  await audit(c.env, me, 'backup.run', 'catchup');
+  return c.json({ ok: true });
+});
+
 adminApp.post('/backup/run', async (c) => {
   const me = requireGlobalAdmin(c);
   if (!c.env.BACKUP) throw new HttpError(400, 'e_backup_no_bucket');
@@ -982,7 +998,7 @@ adminApp.get('/backup/file/*', async (c) => {
   requireGlobalAdmin(c);
   if (!c.env.BACKUP) throw new HttpError(400, 'e_backup_no_bucket');
   const key = decodeURIComponent(new URL(c.req.url).pathname.split('/backup/file/')[1] || '');
-  if (!key || key.includes('..') || !/^(daily\/[\d-]+\.7z|monthly\/[\d-]+\.zip|yearly\/\d+\.zip)$/.test(key)) {
+  if (!key || key.includes('..') || !/^(daily\/[\d-]+(?:\.extra)?\.7z|monthly\/[\d-]+\.zip|yearly\/\d+\.zip)$/.test(key)) {
     throw new HttpError(400, 'e_bad_request');
   }
   const obj = await c.env.BACKUP.get(key);
