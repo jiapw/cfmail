@@ -636,10 +636,40 @@ async function syncBackups(st, statusEl) {
   say(t('bk_sync_done', done, fmtSize(bytes)));
 }
 
+/** Minutes this browser is ahead of UTC. East is positive, which is the opposite of what
+ *  getTimezoneOffset reports. / 本浏览器比 UTC 快几分钟。东为正 —— 与 getTimezoneOffset 的符号相反。 */
+const tzOffsetMinutes = () => -new Date().getTimezoneOffset();
+
+/** "UTC+8", "UTC-5", "UTC+5:30" -- whole hours stay short, half-hour zones say so */
+function tzName() {
+  const m = tzOffsetMinutes();
+  const sign = m < 0 ? '-' : '+';
+  const h = Math.floor(Math.abs(m) / 60);
+  const min = Math.abs(m) % 60;
+  return `UTC${sign}${h}${min ? ':' + String(min).padStart(2, '0') : ''}`;
+}
+
+/** The local clock time of a given UTC hour. Not always on the hour: some zones are offset by
+ *  thirty or forty-five minutes, and rounding that away would name a time the job never runs at.
+ *  某个 UTC 整点对应的本地时刻。不一定是整点:有些时区偏移三十或四十五分钟,
+ *  把它抹平就等于报出一个任务根本不会运行的时间。 */
+function localHour(utc) {
+  const t = (utc * 60 + tzOffsetMinutes() + 1440 * 2) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
 async function tabBackup(body) {
   const st = await api('GET', '/api/admin/backup');
   const running = st.state === 'running';
-  const hours = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0'));
+  // The hour is stored as UTC, because that is the clock the run and the day boundary are cut on.
+  // It is shown as the reader's own, because nobody schedules a nightly job by thinking in UTC.
+  // The list is ordered by local time, so it reads 00:00 downwards wherever you are, and each
+  // entry carries the UTC hour it really sets.
+  // 存的是 UTC 小时 —— 运行时刻和日切都按那个钟。显示的是读者自己的钟,
+  // 因为没有人是靠换算 UTC 来安排一个夜里跑的任务的。列表按本地时间排序,
+  // 于是无论你在哪儿它都是从 00:00 往下读,而每一条背后是它真正设定的那个 UTC 小时。
+  const hours = Array.from({ length: 24 }, (_, utc) => ({ utc, label: localHour(utc) }))
+    .sort((a, b) => (a.label < b.label ? -1 : 1));
 
   const row = (a) => `
     <div class="bk-row">
@@ -663,10 +693,10 @@ async function tabBackup(body) {
         <label>${esc(t('bk_enable'))}</label>
         <wa-switch id="bk-on" ${st.enabled ? 'checked' : ''} ${st.ready ? '' : 'disabled'}></wa-switch>
         <label style="margin-left:18px">${esc(t('bk_hour'))}</label>
-        <wa-select id="bk-hour" value="${st.hour}" style="width:110px">
-          ${hours.map((h) => `<wa-option value="${parseInt(h, 10)}">${h}:00</wa-option>`).join('')}
+        <wa-select id="bk-hour" value="${st.hour}" style="width:150px">
+          ${hours.map((h) => `<wa-option value="${h.utc}">${esc(h.label)}</wa-option>`).join('')}
         </wa-select>
-        <span class="dim">${esc(t('bk_hour_note'))}</span>
+        <span class="dim">${esc(t('bk_hour_note', tzName()))}</span>
       </div>
       <div class="form-row">
         <label>${esc(t('bk_status'))}</label>
