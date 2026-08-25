@@ -61,8 +61,7 @@ export async function tabExport(body) {
           </tr>`).join('')}
         </tbody>
       </table>
-      <div class="form-row" style="margin-top:14px" id="exp-go-row">
-        <label></label>
+      <div class="form-row" style="margin-top:14px;padding-left:10px" id="exp-go-row">
         <wa-button variant="brand" id="exp-go" ${supported ? '' : 'disabled'}>${esc(t('exp_start'))}</wa-button>
         <span class="dim" id="exp-picked"></span>
         <span class="run-summary" id="exp-result"></span>
