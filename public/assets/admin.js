@@ -22,9 +22,9 @@ function currentDomainId(domains) {
 const TABS = () => [
   { key: 'overview', name: t('a_overview') },
   { sep: true },
+  { key: 'domains', name: t('a_domains') },
   { key: 'users', name: t('a_users') },
   { key: 'invites', name: t('a_invites') },
-  { key: 'domains', name: t('a_domains') },
   { key: 'audit', name: t('a_audit') },
   { sep: true },
   { key: 'mailboxes', name: t('a_mailboxes') },
@@ -958,6 +958,7 @@ async function viewUnrouted(id) {
     <div class="form-row"><label>${esc(t('fwd_date'))}</label><span>${fmtDateTime(d.created_at)}</span></div>
     <div class="unrouted-body" id="un-body"></div>
     <div class="modal-foot"><wa-button appearance="plain" id="un-close">${esc(t('close'))}</wa-button></div>`);
+  m.classList.add('unrouted-dlg');
   const box = m.querySelector('#un-body');
   if (d.html) {
     // Rendered in a sandboxed iframe with script disabled; remote images were already stripped server-side
@@ -975,8 +976,8 @@ async function viewUnrouted(id) {
       `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">` +
       `<style>html,body{height:auto}body{font:14px/1.6 system-ui,sans-serif;color:#1f1f1f;background:#fff;margin:0;padding:10px;word-break:break-word;overflow-wrap:anywhere}` +
       `a{pointer-events:none;color:#0b57d0;text-decoration:underline}img{max-width:100%}` +
-      // This viewer is a fixed 340px tall and always shows a scrollbar, so it matches the site-wide styling (an iframe cannot see the outer CSS)
-      // 这个查看框是固定 340px 高、必定出滚动条的,样式和全站对齐(iframe 拿不到外面的 CSS)
+      // This viewer is a fixed height and always shows a scrollbar, so it matches the site-wide styling (an iframe cannot see the outer CSS)
+      // 这个查看框是固定高度、必定出滚动条的,样式和全站对齐(iframe 拿不到外面的 CSS)
       `::-webkit-scrollbar{width:18px;height:18px}` +
       `::-webkit-scrollbar-track{background:rgba(0,0,0,.06);border-radius:999px}` +
       `::-webkit-scrollbar-thumb{background:rgba(0,0,0,.28);border-radius:999px;border:5px solid transparent;background-clip:content-box}` +
