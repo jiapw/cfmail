@@ -1181,6 +1181,11 @@ document.addEventListener('scroll', () => closeMenu(), true);
 // 导航也要关掉它。点链接恰好会被上面的 document click 关掉,但后退键和任何程序化跳转不会 ——
 // 菜单于是会悬在毫不相干的界面上(比如邮箱),还摆着"重命名文件"这种选项。
 window.addEventListener('hashchange', () => closeMenu());
+// Entering or leaving the full screen moves the ground the menu was standing on -- it belongs to
+// whatever is filling the screen, and that just changed. Reopened where it now belongs, by hand.
+// 进入或退出全屏,会把菜单脚下那块地挪走 —— 它归"正在铺满屏幕的东西"所有,而那件事刚刚变了。
+// 让它就此收起,由人再打开一次,那时它会落在新的归属里。
+document.addEventListener('fullscreenchange', () => closeMenu());
 window.addEventListener('keydown', (e) => {
   if (!qs('.drv-body')) return;
   if (e.key === 'Escape') closeMenu();
@@ -1207,7 +1212,15 @@ function openMenu(x, y, nodes, own, above) {
     ? '<div class="sep"></div>'
     : `<div class="mi ${it.danger ? 'danger' : ''}${it.hint ? ' hint' : ''}" data-mi="${i}">${icon(it.ic, 18)}<span>${esc(it.label)}</span></div>`
   ).join('');
-  document.body.appendChild(menuEl);
+  // A film filling the screen is in the top layer, and the top layer is all there is: the rest of
+  // the document is not painted at all, whatever its z-index says. So a menu goes inside whatever
+  // is filling the screen, or it opens somewhere nobody can see. Position is unaffected -- fixed
+  // is still measured against the viewport -- so only the parent changes.
+  // 一部铺满屏幕的片子处在 top layer 里,而 top layer 就是全部:文档的其余部分根本不会被绘制,
+  // 不管它的 z-index 写着什么。所以菜单要挂进"正在铺满屏幕的那个东西"里面,
+  // 否则它会开在一个谁也看不见的地方。位置不受影响 —— fixed 仍然是相对视口量的 ——
+  // 所以变的只有父节点。
+  (document.fullscreenElement || document.body).appendChild(menuEl);
   const r = menuEl.getBoundingClientRect();
   // A control at the foot of the player has no room below it. Asked to open above, the menu hangs
   // its bottom-right corner off the point it was given instead of its top-left.
