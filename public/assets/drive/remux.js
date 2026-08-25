@@ -1002,6 +1002,8 @@ function descriptors(b) {
  *  quickly, large enough that a film is not a hundred thousand turns.
  *  摇一圈把手,从源里读多少。小到第一块很快就出来,大到一部片子不至于要摇十万圈。 */
 const ROUND = 1024 * 1024;
+/** Where a song's first read starts. 一首歌的第一次读从多大起步。 */
+const SIP = 32 * 1024;
 /** How many pictures the opening is measured over before anything is written.
  *
  *  Every one of them is a picture read before anything plays, so this is the wait at the start and
@@ -1614,22 +1616,8 @@ export async function toMp4(file, { seconds = 0, limit = 0 } = {}) {
  *  MP3 流 —— 那段声音本身是能放的,而那个文件依然不能,因为没有浏览器读得懂那层包装。
  *  所以对一首歌先问的是它的盒子、其次才是它的内容 —— 这与对一部片子的问法正好相反。 */
 const HEARD = new Set(['mp3', 'm4a', 'm4b', 'aac', 'ogg', 'oga', 'opus', 'weba', 'wav', 'flac', 'aiff', 'aif']);
-const REWRAP = new Set(['wma', 'asf', 'mka', 'ape', 'wv', 'tta', 'ac3', 'dts', 'amr', 'au', 'ra', 'rm', 'mpc']);
+const REWRAP = new Set(['wma', 'asf', 'ape', 'tta', 'wv']);
 const SONG = new Set([...HEARD, ...REWRAP]);
-
-/** A cover comes out of a file as the image file it went in as, so it is handed over as one.
- *  一张封面从文件里出来时,还是它当初进去时的那个图像文件,所以就照那样交出去。 */
-const PICTURE = {
-  mjpeg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-  bmp: 'image/bmp', gif: 'image/gif', webp: 'image/webp',
-};
-
-/** How far to read looking for a picture that may not be there. A cover sits at the front of
- *  every format that carries one -- ID3 puts it in the header, ASF in the objects before the
- *  data -- so not having found one in the first few megabytes means there is none.
- *  为一张也许根本不存在的图,愿意读多远。每一种带封面的格式都把它放在前面 ——
- *  ID3 放在头里,ASF 放在数据之前的对象里 —— 所以头几兆字节里没找到,就是没有。 */
-const LOOK = 4;
 
 export function hearing(name, mime) {
   const e = extOf(name);
@@ -1639,27 +1627,35 @@ export function hearing(name, mime) {
 }
 
 /**
- * A song, rebuilt into something a browser will play, and the picture that was inside it.
+ * A song, rebuilt into something a browser will play, a piece at a time.
  *
- * Not streamed, and that is the point rather than a shortcut. Streaming exists here because a film
- * is gigabytes and nobody will wait for the whole of one; a song is three megabytes and is
- * finished before a person has decided whether they want it. Handing over one blob at the end
- * costs a second and buys back everything the streaming path has to work for -- seeking anywhere,
- * a duration that is known from the start, and no machinery at all.
+ * A piece at a time because music is long. Three minutes of Windows Media takes six seconds to
+ * take apart and put back together, and handing over one file at the end means six seconds of
+ * silence after somebody presses play; a lossless album image is twenty times that. Converting
+ * runs at about thirty-four times the speed it is listened to, so the first fragment is ready
+ * almost at once and the rest stays far ahead for the whole song.
  *
- * The picture is read whether or not anything is rebuilt, because a file that plays by itself
- * still has a cover somebody would like to see.
+ * Nothing is thrown away once written. A film's buffer is a window because a film is gigabytes;
+ * an hour of AAC is fifty megabytes, so the whole of it is kept and seeking anywhere is instant
+ * the moment the conversion has passed that point.
  *
- * 一首歌,被重建成浏览器肯放的样子,以及它里面的那张图。
+ * The picture inside a song is not read here. Every format that carries one puts it in the
+ * header, and reading a header does not need a decoder -- see coverIn() in thumb.js, which the
+ * preview and the thumbnail both ask.
  *
- * 不做流式,而这是重点,不是偷懒。流式在这里存在,是因为一部片子有几吉字节、
- * 没人愿意等完整的一部;而一首歌只有三兆字节,在人还没决定要不要听它之前就已经做完了。
- * 最后一次性交出一个 blob,代价是一秒钟,换回来的是流式那条路要费力去挣的一切 ——
- * 任意位置定位、一开始就知道的时长,以及一台机器都不用。
+ * 一首歌,被重建成浏览器肯放的样子,一块一块地。
  *
- * 那张图不管重建与否都会去读,因为一个自己就能放的文件,一样有一张有人想看的封面。
+ * 一块一块,是因为音乐很长。三分钟的 Windows Media,拆开再装回去要六秒,
+ * 而最后一次性交出整个文件,意味着人按下播放之后有六秒的静默;一张无损整轨镜像是这个的二十倍。
+ * 转换的速度大约是收听速度的三十四倍,所以第一块几乎立刻就好,而其余的在整首歌里一直遥遥领先。
+ *
+ * 写出去的东西一样都不丢。片子的缓冲是一个窗口,因为片子有几吉字节;
+ * 而一小时的 AAC 是五十兆,所以整首都留着 —— 转换一经过某一点,跳到那里就是瞬时的。
+ *
+ * 歌里的那张图不在这里读。每一种带封面的格式都把它放在头里,而读一段头部不需要解码器 ——
+ * 见 thumb.js 的 coverIn(),预览和缩略图问的都是它。
  */
-export async function song(source, { convert = true } = {}) {
+export async function song(source) {
   const av = await libav();
   route(av);
   const inName = `song-${++serial}.dat`;
@@ -1673,6 +1669,7 @@ export async function song(source, { convert = true } = {}) {
   let oc = 0;
   let pb = 0;
   let snd = null;
+  let shut = false;
 
   const drop = async () => {
     sources.delete(inName);
@@ -1695,81 +1692,124 @@ export async function song(source, { convert = true } = {}) {
     for (const st of streams) named.push({ s: st, name: await av.avcodec_get_name(st.codec_id) });
     const heard = named.find((x) => x.s.codec_type === AV_AUDIO);
     if (!heard) throw new Error('e_drive_no_streams');
-    const drawn = named.find((x) => x.s.codec_type === AV_VIDEO && PICTURE[x.name]);
     // Whether this sound can be taken apart is asked of the build rather than looked up in a list
     // here, for the same reason the film side asks: a list would be a second statement of what was
     // compiled in, and the two disagree the first time the fragments change.
     // 这段声音拆不拆得开,是去问这份构建,而不是在这里查一份名单 —— 理由和片子那边一样:
     // 一份名单会成为"编进去了什么"的第二处陈述,而它们会在片段第一次变动时就吵起来。
-    if (convert && !await av.avcodec_find_decoder(heard.s.codec_id).catch(() => 0)) {
+    if (!await av.avcodec_find_decoder(heard.s.codec_id).catch(() => 0)) {
       const err = new Error('e_drive_audio_codec');
       err.codec = heard.name;
       throw err;
     }
+    const [lo, hi] = [await av.AVFormatContext_duration(ctx), await av.AVFormatContext_durationhi(ctx)];
+    const duration = told(hi) && (lo || hi) ? av.i64tof64(lo, hi) / 1e6 : 0;
 
     const out = sink();
     sinks.set(outName, out);
     await av.mkwriterdev(outName);
     pkt = await av.av_packet_alloc();
     wpkt = await av.av_packet_alloc();
+    snd = sound(av, heard);
 
     let eof = false;
-    const round = async () => {
-      if (eof) return [];
-      const [res, by] = await av.ff_read_frame_multi(ctx, pkt, { unify: true, limit: ROUND });
-      if (res === AVERROR_EOF || (res < 0 && !paused(res))) eof = true;
-      return by[0] || [];
-    };
-
-    let cover = null;
-    const look = (list) => {
-      if (cover || !drawn) return;
-      const hit = list.find((p) => p.stream_index === drawn.s.index && p.data?.length);
-      if (hit) cover = new Blob([hit.data.slice()], { type: PICTURE[drawn.name] });
-    };
-
-    if (convert) snd = sound(av, heard);
     let started = false;
-    const write = async (made) => {
-      if (!made.length) return;
-      if (!started) {
+    let ended = false;
+    // How much of the source to take in one turn, starting small and growing.
+    //
+    // A megabyte is a fraction of a second of film and two minutes of a song at sixty-four
+    // kilobits: reading a fixed megabyte meant the first turn converted two minutes before it
+    // produced anything, and the first sound arrived four seconds after somebody pressed play.
+    // The size of a second differs by two orders of magnitude between the two, so what is fixed
+    // here cannot be the number of bytes -- it is where it starts. It doubles from there and is
+    // at full speed within a few turns, by which time nobody is waiting on it any more.
+    //
+    // 一turn 取多少源字节,从小开始,往上长。
+    //
+    // 一兆字节,对片子是不到一秒,对一首六十四千比特的歌是两分钟:固定读一兆,
+    // 意味着第一turn 要先转换两分钟才产出任何东西,而第一声在人按下播放的四秒之后才到。
+    // "一秒钟有多大"这件事在两者之间差着两个数量级,所以这里固定不下来的是字节数 ——
+    // 固定得下来的是它从哪里起步。此后每turn 翻一倍,几turn 就到满速,
+    // 而那时已经没有人在等它了。
+    let sip = SIP;
+
+    /** One turn of the handle: read what is next, decode it, encode it, write it.
+     *  摇一圈把手:读下一批、解开它、编码它、写出去。 */
+    const turn = async () => {
+      if (ended) return;
+      let list = [];
+      if (!eof) {
+        const [res, by] = await av.ff_read_frame_multi(ctx, pkt, { unify: true, limit: sip });
+        sip = Math.min(ROUND, sip * 2);
+        if (res === AVERROR_EOF || (res < 0 && !paused(res))) eof = true;
+        list = by[0] || [];
+      }
+      const mine = list.filter((p) => p.stream_index === heard.s.index);
+      const made = mine.length || eof ? await snd.take(mine, eof) : [];
+      if (made.length && !started) {
+        // The muxer is given the encoder's parameters, and those exist only once something has
+        // been encoded -- so the header cannot be written until the first batch is through.
+        // 交给 muxer 的是编码器的参数,而那要等到真有东西被编码过之后才存在 ——
+        // 所以在第一批走完之前,头是写不出来的。
         [oc, , pb] = await av.ff_init_muxer(
           { filename: outName, format_name: 'mp4', open: true, codecpars: true },
           [[snd.par, 1, AAC_RATE]]);
+        if (await av.av_opt_set(oc, 'movflags', 'frag_keyframe+empty_moov+delay_moov+default_base_moof', 1) < 0) {
+          throw new Error('e_drive_remux_failed');
+        }
+        await av.av_opt_set(oc, 'frag_duration', String(PIECE * 1000), 1);
         if (await av.avformat_write_header(oc) < 0) throw new Error('e_drive_remux_failed');
+        await av.avio_flush(pb);
         started = true;
       }
-      await av.ff_write_multi(oc, wpkt, made.map((p) => ({ ...p, stream_index: 0 })), true);
-    };
-
-    for (let n = 0; ; n++) {
-      const list = await round();
-      look(list);
-      if (!convert) {
-        // Nothing to build, so the only reason to keep reading is a picture, and there is a point
-        // past which there is no picture.
-        // 没有东西要建,所以继续读的唯一理由是找那张图,而"找不到"是有个尽头的。
-        if (cover || eof || !drawn || n >= LOOK) break;
-        continue;
+      if (made.length) {
+        await av.ff_write_multi(oc, wpkt, made.map((p) => ({ ...p, stream_index: 0 })), true);
       }
-      const mine = list.filter((p) => p.stream_index === heard.s.index);
-      if (mine.length || eof) await write(await snd.take(mine, eof));
-      if (eof) break;
-    }
-
-    if (convert) {
-      if (!started) throw new Error('e_drive_remux_failed');
-      await av.av_write_trailer(oc).catch(() => {});
-      await av.avio_flush(pb).catch(() => {});
-    }
-    const whole = convert ? out.rest() : null;
-    if (convert && !whole?.length) throw new Error('e_drive_remux_failed');
-    return {
-      blob: whole ? new Blob([whole], { type: 'audio/mp4' }) : null,
-      cover,
-      fetched: bytes.served,
+      if (eof) {
+        if (started) await av.av_write_trailer(oc).catch(() => {});
+        ended = true;
+      }
+      if (started) await av.avio_flush(pb).catch(() => {});
     };
-  } finally {
+
+    // What the first piece is has to be known before anything can be said about the whole: the
+    // header is in it, and the header is what names the encoding.
+    // 第一块是什么,必须在能对整体说任何话之前就知道:头在它里面,而正是那个头点出了编码的名字。
+    let first = null;
+    while (!first?.length && !ended) {
+      await turn();
+      first = out.take();
+    }
+    if (!first?.length) first = out.rest();
+    if (!first?.length) throw new Error('e_drive_remux_failed');
+    const codecs = codecsOf(first).filter(Boolean);
+    const mime = codecs.length ? `audio/mp4; codecs="${codecs.join(', ')}"` : 'audio/mp4';
+
+    return {
+      mime,
+      duration,
+      /** How much of the source has actually been fetched. 实际取回来了多少源字节。 */
+      get fetched() { return bytes.served; },
+      /** The next piece, or nothing when there will not be another.
+       *  下一块;而当不会再有下一块时,什么都不给。 */
+      async pull() {
+        if (first) { const piece = first; first = null; return piece; }
+        for (;;) {
+          if (shut) return null;
+          const piece = ended ? out.rest() : out.take();
+          if (piece?.length) return piece;
+          if (ended) return null;
+          await turn();
+        }
+      },
+      async close() {
+        if (shut) return;
+        shut = true;
+        await drop();
+      },
+    };
+  } catch (e) {
     await drop();
+    throw e;
   }
 }

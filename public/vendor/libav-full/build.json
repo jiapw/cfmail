@@ -43,8 +43,14 @@
     "decoder-wmapro",
     "decoder-wmalossless",
     "decoder-mp3",
-    "decoder-alac"
+    "decoder-alac",
+    "demuxer-ape",
+    "decoder-ape",
+    "demuxer-tta",
+    "decoder-tta",
+    "demuxer-wavpack",
+    "decoder-wavpack"
   ],
-  "fingerprint": "bf33b4ccde733c73",
-  "built_at": "2026-08-25T09:32:08.773Z"
+  "fingerprint": "c198b4188f75fef5",
+  "built_at": "2026-08-25T10:19:16.052Z"
 }

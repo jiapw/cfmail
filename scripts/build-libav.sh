@@ -52,6 +52,9 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #                        .wma: several of these hold an ordinary MP3 stream, and the file is
 #                        still unopenable, because what cannot be read is the box.
 #   decoder-alac         Apple Lossless in an .m4a, for the browsers that decline it.
+#   ape, tta, wavpack    the lossless formats a Chinese-language music collection is kept in.
+#                        Each needs its demuxer as well as its decoder: these are their own
+#                        containers, not codecs inside somebody else's.
 #
 # 各个片段,以及每一个为什么在这里。
 #
@@ -72,6 +75,8 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #                        这里好几个 .wma 装着一条普普通通的 MP3 流,而文件依然打不开 ——
 #                        因为读不懂的是那个盒子。
 #   decoder-alac         .m4a 里的 Apple Lossless,给那些不肯收它的浏览器。
+#   ape, tta, wavpack    一个中文音乐收藏所使用的那几种无损格式。每一种都既要解码器也要解复用器:
+#                        它们是自己的容器,不是别人容器里的编码。
 FRAGMENTS='[
   "avformat","avcodec","avfilter","swresample",
   "format-ogg","format-webm","format-mp4",
@@ -85,7 +90,10 @@ FRAGMENTS='[
   "encoder-aac","audio-filters",
   "decoder-mpeg4","decoder-msmpeg4v3",
   "decoder-wmav1","decoder-wmav2","decoder-wmapro","decoder-wmalossless",
-  "decoder-mp3","decoder-alac"
+  "decoder-mp3","decoder-alac",
+  "demuxer-ape","decoder-ape",
+  "demuxer-tta","decoder-tta",
+  "demuxer-wavpack","decoder-wavpack"
 ]'
 
 # Docker may be next door rather than here.
