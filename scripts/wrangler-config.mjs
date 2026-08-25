@@ -69,7 +69,6 @@ export function readWranglerText() {
  * no deploys, and the file is not in git, so there would be nothing to restore from.
  * `verify(parsed)` should return true if the intended change is actually in there.
  * Returns null on success, or the reason it refused to write.
- *
  */
 export function writeWranglerConfig(text, verify) {
   try {
@@ -112,7 +111,6 @@ export function entrySubdomain(cfg = loadWranglerConfig()) {
  * that binding, and the feature behind it is quietly never available. Routes have been kept in
  * step this way since the beginning; buckets need the same treatment.
  *
- *
  */
 export function withBucket(text, binding, bucket) {
   if (new RegExp('"binding"\\s*:\\s*"' + binding + '"').test(text)) return text;
@@ -152,7 +150,6 @@ export function withVar(text, name, value) {
  * `[\s\S]*?\]` stops at the inner bracket, and an insertion made there lands inside
  * new_sqlite_classes -- still valid JSON, still parses, and quietly wrong. Counting cannot make
  * that mistake.
- *
  *
  */
 function arraySpan(text, open) {
@@ -258,7 +255,6 @@ ${indent}],`;
  * The untouched template ships one <placeholder> route -- that line is meant to be replaced,
  * not to gain a sibling, so any pattern still containing <> is dropped.
  * Returns the new text, or null if there is no routes array to write into.
- *
  */
 export function withEntryRoute(text, host) {
   const m = /("routes"\s*:\s*\[)([\s\S]*?)(\n[ \t]*\])/.exec(text);

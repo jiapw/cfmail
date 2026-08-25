@@ -9,7 +9,6 @@
  * requests, and a job compressing a gigabyte makes no requests at all, so the once-a-minute
  * question is doing two things: reporting, and saying "still needed".
  *
- *
  */
 import { spawn } from 'node:child_process';
 import http from 'node:http';

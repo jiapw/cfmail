@@ -30,7 +30,6 @@ const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
  *
  * So the default file is used when it is free or already ours, and a second account gets a file
  * of its own, named after it. Neither can reach the other.
- *
  */
 let CONFIG = MAIN_CONFIG;
 const TEMPLATE = path.join(ROOT, 'wrangler.example.jsonc');

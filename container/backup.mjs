@@ -20,8 +20,6 @@
  * given day means opening at most three nested files.
  *
  *
- *
- *
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -101,7 +99,7 @@ async function s3(method, bucket, key, { query = {}, body = null, headers = {} }
   return res;
 }
 
-/** Every object under a prefix, with its size and last-modified time.
+/** Every object under a prefix, with its size and last-modified time. */
 async function listAll(bucket, prefix = '') {
   const out = [];
   let token;
@@ -199,7 +197,6 @@ async function del(bucket, key) {
  * out of scope; a Drive tree without its bytes would be worse than no Drive at all.
  *
  *
- *
  */
 const TABLES = [
   'users', 'domains', 'domain_admins', 'mailboxes', 'aliases', 'grants',
@@ -208,50 +205,77 @@ const TABLES = [
   'unrouted', 'uploads', 'audit_log', 'meta',
 ];
 
-/**
- * Ask D1 for those tables as SQL. The export is asynchronous: the same call is made again with the
- * bookmark it hands back until it says complete, and then there is a link, good for an hour, to
- * the finished dump.
- *
- * Two things about this API are easy to get wrong, and both cost twenty minutes to find out.
- * A fatal error arrives with status still reading "active" and the reason in a separate field, so
- * polling on status alone waits forever on a job that failed at the first second. And the link is
- * one level deeper than it looks: result.result.signed_url.
- *
- *
- */
-async function exportD1(file) {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/d1/database/${DB_ID}/export`;
-  let bookmark;
-  for (let i = 0; i < 600; i++) {
-    const res = await fetch(url, {
+/** One ordinary query against D1, over the REST API. */
+async function d1(sql, params = []) {
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/d1/database/${DB_ID}/query`,
+    {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN_VALUE}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        output_format: 'polling',
-        dump_options: { tables: TABLES },
-        current_bookmark: bookmark,
-      }),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!j.success) fail('the D1 export failed: ' + JSON.stringify(j.errors || j).slice(0, 400));
-    const r = j.result || {};
-    // An error field is fatal whatever the status says beside it
-    if (r.error) fail('the D1 export reported: ' + r.error);
-    if (r.status === 'error') fail('the D1 export failed: ' + JSON.stringify(r.messages || ''));
-    if (r.status === 'complete') {
-      const url2 = r.result?.signed_url || r.signed_url;
-      if (!url2) fail('the D1 export said complete but gave no download link');
-      const dl = await fetch(url2);
-      if (!dl.ok) fail(`could not download the D1 dump: HTTP ${dl.status}`);
-      await pipeline(Readable.fromWeb(dl.body), fs.createWriteStream(file));
-      return (await fs.promises.stat(file)).size;
+      body: JSON.stringify({ sql, params }),
     }
-    bookmark = r.at_bookmark || bookmark;
-    for (const m of r.messages || []) if (/Uploaded part/i.test(m)) log('  ' + m);
-    await new Promise((r2) => setTimeout(r2, 1000));
+  );
+  const j = await res.json().catch(() => ({}));
+  if (!j.success) fail(`query failed: ${sql.slice(0, 80)} -- ${JSON.stringify(j.errors || j).slice(0, 300)}`);
+  return j.result?.[0]?.results || [];
+}
+
+/** A SQLite literal. Numbers stay numbers, NULL stays NULL -- an empty string is a different
+ *  value and must not become one -- and anything binary goes back as an X'..' blob. */
+function sqlValue(v) {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+  if (typeof v === 'boolean') return v ? '1' : '0';
+  if (Array.isArray(v)) return "X'" + v.map((b) => b.toString(16).padStart(2, '0')).join('') + "'";
+  return `'${String(v).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Write the tables out as SQL, a page at a time.
+ *
+ * D1 has an export API that does this in one call, and it is not used, because a running export
+ * takes the database for itself: every other query fails with "Currently processing a long-running
+ * export" while it runs. Measured against this deployment, that was six to seven seconds in which
+ * the whole mail system answered 500 -- webmail requests, and any message arriving in that window.
+ * A backup that opens a daily hole in the thing it is protecting is not worth the convenience.
+ *
+ * Ordinary paged SELECTs block nothing. They cost a few dozen more round trips and a minute more
+ * wall clock, in a job that has all day.
+ */
+async function exportD1(file) {
+  const out = fs.createWriteStream(file);
+  const write = (s) => new Promise((res, rej) => out.write(s, (e) => (e ? rej(e) : res())));
+  await write('PRAGMA defer_foreign_keys=TRUE;\n');
+
+  // The schema as SQLite itself stores it. Indexes come along; the FTS5 virtual table and its
+  // shadow tables do not, because the index is rebuilt from message_texts with one statement.
+  const list = TABLES.map((t) => `'${t}'`).join(',');
+  const schema = await d1(
+    `SELECT type, name, sql FROM sqlite_master
+      WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+        AND (name IN (${list}) OR tbl_name IN (${list}))
+      ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END`
+  );
+  for (const row of schema) await write(row.sql.trim() + ';\n');
+
+  const PAGE = 500;
+  let rows = 0;
+  for (const table of TABLES) {
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await d1(`SELECT * FROM ${table} LIMIT ${PAGE} OFFSET ${offset}`);
+      if (!page.length) break;
+      const cols = Object.keys(page[0]);
+      const names = cols.join(',');
+      for (const r of page) {
+        await write(`INSERT INTO ${table} (${names}) VALUES (${cols.map((c) => sqlValue(r[c])).join(',')});\n`);
+      }
+      rows += page.length;
+      if (page.length < PAGE) break;
+    }
+    log(`  ${table.padEnd(16)} ${rows} rows so far`);
   }
-  fail('gave up waiting for the D1 export');
+  await new Promise((res) => out.end(res));
+  return (await fs.promises.stat(file)).size;
 }
 
 // ---------------------------------------------------------------------------
