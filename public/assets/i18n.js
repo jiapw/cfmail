@@ -6253,15 +6253,6 @@ Object.assign(DICTS.fr, { bk_hour: "Chaque jour à" });
 Object.assign(DICTS.es, { bk_hour: "Cada día a las" });
 Object.assign(DICTS.ru, { bk_hour: "Ежедневно в" });
 
-Object.assign(DICTS['zh-CN'], { bk_hour_note: "UTC 时间。备份的是刚结束的那一天(按 UTC+0 切分)。" });
-Object.assign(DICTS['zh-TW'], { bk_hour_note: "UTC 時間。備份的是剛結束的那一天(按 UTC+0 切分)。" });
-Object.assign(DICTS.en, { bk_hour_note: "UTC. What is backed up is the day that has just ended, cut at UTC+0." });
-Object.assign(DICTS.ja, { bk_hour_note: "UTC。バックアップ対象は、UTC+0 で区切った「終わったばかりの一日」です。" });
-Object.assign(DICTS.ko, { bk_hour_note: "UTC 기준. 백업 대상은 UTC+0으로 끊은 \"방금 끝난 하루\"입니다." });
-Object.assign(DICTS.de, { bk_hour_note: "UTC. Gesichert wird der Tag, der gerade zu Ende ging, geschnitten bei UTC+0." });
-Object.assign(DICTS.fr, { bk_hour_note: "UTC. Ce qui est sauvegardé, c'est la journée qui vient de s'achever, découpée à UTC+0." });
-Object.assign(DICTS.es, { bk_hour_note: "UTC. Se copia el día que acaba de terminar, cortado en UTC+0." });
-Object.assign(DICTS.ru, { bk_hour_note: "UTC. Сохраняется только что закончившийся день, отсчёт по UTC+0." });
 
 Object.assign(DICTS['zh-CN'], { bk_idle: "空闲" });
 Object.assign(DICTS['zh-TW'], { bk_idle: "閒置" });
@@ -6402,3 +6393,13 @@ Object.assign(DICTS.de, { e_backup_no_credentials: "Dem Sicherungs-Container feh
 Object.assign(DICTS.fr, { e_backup_no_credentials: "Le conteneur de sauvegarde n'a pas d'identifiants. Le script de déploiement crée le jeton et l'enregistre ; redéployez." });
 Object.assign(DICTS.es, { e_backup_no_credentials: "El contenedor de copias no tiene credenciales. El script de despliegue crea el token y lo guarda; vuelva a desplegar." });
 Object.assign(DICTS.ru, { e_backup_no_credentials: "У контейнера нет учётных данных. Скрипт развёртывания создаёт токен и сохраняет его; разверните снова." });
+
+Object.assign(DICTS['zh-CN'], { bk_hour_note: "你的本地时间({0})。备份的是刚结束的那一天,按 UTC+0 切分。" });
+Object.assign(DICTS['zh-TW'], { bk_hour_note: "你的本地時間({0})。備份的是剛結束的那一天,按 UTC+0 切分。" });
+Object.assign(DICTS.en, { bk_hour_note: "Your local time ({0}). What is backed up is the day that has just ended, cut at UTC+0." });
+Object.assign(DICTS.ja, { bk_hour_note: "お使いの端末の時刻({0})。バックアップ対象は、UTC+0 で区切った「終わったばかりの一日」です。" });
+Object.assign(DICTS.ko, { bk_hour_note: "사용 중인 기기의 시간({0}). 백업 대상은 UTC+0으로 끊은 \"방금 끝난 하루\"입니다." });
+Object.assign(DICTS.de, { bk_hour_note: "Ihre lokale Zeit ({0}). Gesichert wird der Tag, der gerade zu Ende ging, geschnitten bei UTC+0." });
+Object.assign(DICTS.fr, { bk_hour_note: "Votre heure locale ({0}). Ce qui est sauvegardé, c'est la journée qui vient de s'achever, découpée à UTC+0." });
+Object.assign(DICTS.es, { bk_hour_note: "Su hora local ({0}). Se copia el día que acaba de terminar, cortado en UTC+0." });
+Object.assign(DICTS.ru, { bk_hour_note: "Ваше местное время ({0}). Сохраняется только что закончившийся день, отсчёт по UTC+0." });
