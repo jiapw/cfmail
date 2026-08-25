@@ -6172,35 +6172,8 @@ Object.assign(DICTS.ru, { bk_error: "Последняя ошибка" });
 
 
 
-Object.assign(DICTS['zh-CN'], { bk_daily: "日" });
-Object.assign(DICTS['zh-TW'], { bk_daily: "日" });
-Object.assign(DICTS.en, { bk_daily: "Daily" });
-Object.assign(DICTS.ja, { bk_daily: "日次" });
-Object.assign(DICTS.ko, { bk_daily: "일간" });
-Object.assign(DICTS.de, { bk_daily: "Täglich" });
-Object.assign(DICTS.fr, { bk_daily: "Quotidiennes" });
-Object.assign(DICTS.es, { bk_daily: "Diarias" });
-Object.assign(DICTS.ru, { bk_daily: "Ежедневные" });
 
-Object.assign(DICTS['zh-CN'], { bk_monthly: "月" });
-Object.assign(DICTS['zh-TW'], { bk_monthly: "月" });
-Object.assign(DICTS.en, { bk_monthly: "Monthly" });
-Object.assign(DICTS.ja, { bk_monthly: "月次" });
-Object.assign(DICTS.ko, { bk_monthly: "월간" });
-Object.assign(DICTS.de, { bk_monthly: "Monatlich" });
-Object.assign(DICTS.fr, { bk_monthly: "Mensuelles" });
-Object.assign(DICTS.es, { bk_monthly: "Mensuales" });
-Object.assign(DICTS.ru, { bk_monthly: "Ежемесячные" });
 
-Object.assign(DICTS['zh-CN'], { bk_yearly: "年" });
-Object.assign(DICTS['zh-TW'], { bk_yearly: "年" });
-Object.assign(DICTS.en, { bk_yearly: "Yearly" });
-Object.assign(DICTS.ja, { bk_yearly: "年次" });
-Object.assign(DICTS.ko, { bk_yearly: "연간" });
-Object.assign(DICTS.de, { bk_yearly: "Jährlich" });
-Object.assign(DICTS.fr, { bk_yearly: "Annuelles" });
-Object.assign(DICTS.es, { bk_yearly: "Anuales" });
-Object.assign(DICTS.ru, { bk_yearly: "Ежегодные" });
 
 Object.assign(DICTS['zh-CN'], { bk_none: "还没有" });
 Object.assign(DICTS['zh-TW'], { bk_none: "還沒有" });
@@ -6395,15 +6368,6 @@ Object.assign(DICTS.fr, { bk_hour_note: "Ce sélecteur est à votre heure locale
 Object.assign(DICTS.es, { bk_hour_note: "Este selector va en su hora local ({0}). Se copia el día que acaba de terminar, cortado en UTC+0." });
 Object.assign(DICTS.ru, { bk_hour_note: "Здесь выбирается ваше местное время ({0}). Сохраняется только что закончившийся день, отсчёт по UTC+0." });
 
-Object.assign(DICTS['zh-CN'], { bk_note: "每天把邮件一侧打成一个包:整库 SQL,加上当天新到的邮件原件(含附件)。每封信只出现在一个包里。导入进来的邮件不会自动进包 —— 由下面的「补档」收进去。不含网盘与 AI 助手,也不含登录态和短期令牌。" });
-Object.assign(DICTS['zh-TW'], { bk_note: "每天把郵件一側打成一個包:整庫 SQL,加上當天新到的郵件原件(含附件)。每封信只出現在一個包裡。匯入進來的郵件不會自動進包 —— 由下面的「補檔」收進去。不含雲端硬碟與 AI 助理,也不含登入狀態與短期權杖。" });
-Object.assign(DICTS.en, { bk_note: "Packs the mail side into one file a day: the database as SQL, plus the messages that arrived that day, attachments included. Each message lives in exactly one archive. Imported mail never enters the archives on its own -- the catch-up below files it. Drive and the assistant are not included, nor are live logins and short-lived tokens." });
-Object.assign(DICTS.ja, { bk_note: "メール側のデータを毎日ひとつのファイルにまとめます:データベースの SQL と、その日に届いたメール本体(添付を含む)。各メールはただひとつの書庫にのみ入ります。取り込んだメールは自動では書庫に入りません —— 下の「補完」で収めます。ドライブと AI アシスタント、ログイン状態や短期トークンは含みません。" });
-Object.assign(DICTS.ko, { bk_note: "메일 쪽 데이터를 매일 파일 하나로 묶습니다: 데이터베이스 SQL과 그날 도착한 메일 원본(첨부 포함). 각 메일은 정확히 하나의 보관 파일에만 들어갑니다. 가져온 메일은 자동으로 들어가지 않으며 아래 \"보충 백업\"으로 수납합니다. 드라이브와 AI 어시스턴트, 로그인 상태와 단기 토큰은 제외됩니다." });
-Object.assign(DICTS.de, { bk_note: "Packt die Mail-Seite täglich in eine Datei: die Datenbank als SQL, dazu die an dem Tag eingegangenen Nachrichten samt Anhängen. Jede Nachricht liegt in genau einem Archiv. Importierte Mail gelangt nie von selbst hinein -- das Nachholen unten legt sie ab. Drive und der Assistent sind nicht dabei, ebenso wenig aktive Anmeldungen und kurzlebige Token." });
-Object.assign(DICTS.fr, { bk_note: "Emballe chaque jour la partie messagerie dans un seul fichier : la base en SQL, plus les messages arrivés ce jour-là, pièces jointes comprises. Chaque message ne vit que dans une seule archive. Le courrier importé n'y entre jamais de lui-même -- le rattrapage ci-dessous s'en charge. Le Drive et l'assistant en sont exclus, de même que les sessions et les jetons éphémères." });
-Object.assign(DICTS.es, { bk_note: "Empaqueta a diario el lado del correo en un solo archivo: la base como SQL, más los mensajes que llegaron ese día, adjuntos incluidos. Cada mensaje vive en exactamente un archivo. El correo importado nunca entra por sí solo: lo archiva la puesta al día de abajo. No incluye el Drive ni el asistente, ni las sesiones ni los tokens efímeros." });
-Object.assign(DICTS.ru, { bk_note: "Каждый день собирает почтовую часть в один файл: база в виде SQL плюс письма, пришедшие в тот день, вместе с вложениями. Каждое письмо лежит ровно в одном архиве. Импортированная почта сама туда не попадает — её укладывает донабор ниже. Диск и ассистент не входят, как и активные сеансы и краткоживущие токены." });
 
 Object.assign(DICTS['zh-CN'], { bk_catchup: "补档" });
 Object.assign(DICTS['zh-TW'], { bk_catchup: "補檔" });
@@ -6415,15 +6379,6 @@ Object.assign(DICTS.fr, { bk_catchup: "Rattrapage" });
 Object.assign(DICTS.es, { bk_catchup: "Puesta al día" });
 Object.assign(DICTS.ru, { bk_catchup: "Донабор" });
 
-Object.assign(DICTS['zh-CN'], { bk_catchup_note: "有两种邮件不在任何备份包里:导入进来的,以及自动备份关闭(或还没开启)期间到达的。这里把它们核对出来,补进各自到达日期所属的包。" });
-Object.assign(DICTS['zh-TW'], { bk_catchup_note: "有兩種郵件不在任何備份包裡:匯入進來的,以及自動備份關閉(或還沒開啟)期間到達的。這裡把它們核對出來,補進各自到達日期所屬的包。" });
-Object.assign(DICTS.en, { bk_catchup_note: "Two kinds of mail end up in no archive: imported messages, and mail that arrived while the automatic backup was off or not yet set up. This finds them and files them into the archives for the days they arrived." });
-Object.assign(DICTS.ja, { bk_catchup_note: "書庫に入っていないメールは二種類あります:取り込んだもの、そして自動バックアップが無効(または未設定)だった間に届いたものです。ここでそれらを洗い出し、届いた日の書庫へ収めます。" });
-Object.assign(DICTS.ko, { bk_catchup_note: "어느 보관 파일에도 없는 메일은 두 종류입니다: 가져온 메일, 그리고 자동 백업이 꺼져 있던(또는 아직 설정 전이던) 동안 도착한 메일. 여기서 그것들을 찾아 도착한 날짜의 보관 파일에 수납합니다." });
-Object.assign(DICTS.de, { bk_catchup_note: "Zwei Arten von Mail landen in keinem Archiv: importierte Nachrichten, und Mail, die ankam, während die automatische Sicherung aus oder noch nicht eingerichtet war. Dies findet sie und legt sie in die Archive ihrer Ankunftstage." });
-Object.assign(DICTS.fr, { bk_catchup_note: "Deux sortes de courrier ne figurent dans aucune archive : les messages importés, et ceux arrivés pendant que la sauvegarde automatique était coupée ou pas encore en place. Ceci les retrouve et les range dans les archives de leurs jours d'arrivée." });
-Object.assign(DICTS.es, { bk_catchup_note: "Dos tipos de correo quedan fuera de todo archivo: los mensajes importados y los que llegaron mientras la copia automática estaba apagada o aún sin configurar. Esto los encuentra y los guarda en los archivos de sus días de llegada." });
-Object.assign(DICTS.ru, { bk_catchup_note: "Два вида почты не попадают ни в один архив: импортированные письма и почта, пришедшая, пока автоматическое копирование было выключено или ещё не настроено. Здесь они находятся и укладываются в архивы своих дней прибытия." });
 
 Object.assign(DICTS['zh-CN'], { bk_pending_loading: "正在核对邮件桶与归档索引…" });
 Object.assign(DICTS['zh-TW'], { bk_pending_loading: "正在核對郵件桶與歸檔索引…" });
@@ -6445,35 +6400,8 @@ Object.assign(DICTS.fr, { bk_pending_none: "Rien à rattraper -- chaque message 
 Object.assign(DICTS.es, { bk_pending_none: "Nada que poner al día: cada mensaje ya está en un archivo." });
 Object.assign(DICTS.ru, { bk_pending_none: "Донабор не нужен — каждое письмо уже лежит в архиве." });
 
-Object.assign(DICTS['zh-CN'], { bk_pending_total: "{0} 封邮件不在任何备份包里,共 {1}。将按到达日期补进下列包:" });
-Object.assign(DICTS['zh-TW'], { bk_pending_total: "{0} 封郵件不在任何備份包裡,共 {1}。將按到達日期補進下列包:" });
-Object.assign(DICTS.en, { bk_pending_total: "{0} messages are in no archive, {1} in all. They will be filed by arrival day into:" });
-Object.assign(DICTS.ja, { bk_pending_total: "{0} 通のメール(計 {1})がどの書庫にもありません。届いた日ごとに次の書庫へ収めます:" });
-Object.assign(DICTS.ko, { bk_pending_total: "{0}통의 메일(총 {1})이 어느 보관 파일에도 없습니다. 도착일별로 다음 파일에 수납됩니다:" });
-Object.assign(DICTS.de, { bk_pending_total: "{0} Nachrichten ({1} insgesamt) liegen in keinem Archiv. Sie werden nach Ankunftstag abgelegt in:" });
-Object.assign(DICTS.fr, { bk_pending_total: "{0} messages ({1} au total) ne sont dans aucune archive. Ils seront rangés par jour d'arrivée dans :" });
-Object.assign(DICTS.es, { bk_pending_total: "{0} mensajes ({1} en total) no están en ningún archivo. Se guardarán por día de llegada en:" });
-Object.assign(DICTS.ru, { bk_pending_total: "{0} писем ({1} всего) нет ни в одном архиве. Они будут разложены по дням прибытия в:" });
 
-Object.assign(DICTS['zh-CN'], { bk_act_create: "新建 {0}" });
-Object.assign(DICTS['zh-TW'], { bk_act_create: "新建 {0}" });
-Object.assign(DICTS.en, { bk_act_create: "create {0}" });
-Object.assign(DICTS.ja, { bk_act_create: "{0} を新規作成" });
-Object.assign(DICTS.ko, { bk_act_create: "{0} 새로 만들기" });
-Object.assign(DICTS.de, { bk_act_create: "{0} anlegen" });
-Object.assign(DICTS.fr, { bk_act_create: "créer {0}" });
-Object.assign(DICTS.es, { bk_act_create: "crear {0}" });
-Object.assign(DICTS.ru, { bk_act_create: "создать {0}" });
 
-Object.assign(DICTS['zh-CN'], { bk_act_add: "并入 {0}" });
-Object.assign(DICTS['zh-TW'], { bk_act_add: "併入 {0}" });
-Object.assign(DICTS.en, { bk_act_add: "add to {0}" });
-Object.assign(DICTS.ja, { bk_act_add: "{0} へ追加" });
-Object.assign(DICTS.ko, { bk_act_add: "{0}에 추가" });
-Object.assign(DICTS.de, { bk_act_add: "zu {0} hinzufügen" });
-Object.assign(DICTS.fr, { bk_act_add: "ajouter à {0}" });
-Object.assign(DICTS.es, { bk_act_add: "añadir a {0}" });
-Object.assign(DICTS.ru, { bk_act_add: "добавить в {0}" });
 
 Object.assign(DICTS['zh-CN'], { bk_start_catchup: "开始备份" });
 Object.assign(DICTS['zh-TW'], { bk_start_catchup: "開始備份" });
@@ -6514,3 +6442,93 @@ Object.assign(DICTS.de, { imp_backup_hint_go: "Im Reiter „Sicherung\" nachhole
 Object.assign(DICTS.fr, { imp_backup_hint_go: "Rattraper dans l'onglet Sauvegarde" });
 Object.assign(DICTS.es, { imp_backup_hint_go: "Ponerse al día en la pestaña Copias" });
 Object.assign(DICTS.ru, { imp_backup_hint_go: "Донабор — во вкладке «Резервные копии»" });
+
+Object.assign(DICTS['zh-CN'], { bk_note: "每天把邮件一侧打成一个包:整库 SQL,加上属于当天的邮件原件(含附件)—— 按每封信自己显示的时间归档,而不是到达的日子。每封信只出现在一个包里。导入进来的邮件不会自动进包 —— 由下面的「补档」收进去。不含网盘与 AI 助手,也不含登录态和短期令牌。" });
+Object.assign(DICTS['zh-TW'], { bk_note: "每天把郵件一側打成一個包:整庫 SQL,加上屬於當天的郵件原件(含附件)—— 按每封信自己顯示的時間歸檔,而不是到達的日子。每封信只出現在一個包裡。匯入進來的郵件不會自動進包 —— 由下面的「補檔」收進去。不含雲端硬碟與 AI 助理,也不含登入狀態與短期權杖。" });
+Object.assign(DICTS.en, { bk_note: "Packs the mail side into one file a day: the database as SQL, plus the messages that belong to that day, attachments included -- filed by the date each message itself shows, not by when it arrived. Each message lives in exactly one archive. Imported mail never enters the archives on its own -- the catch-up below files it. Drive and the assistant are not included, nor are live logins and short-lived tokens." });
+Object.assign(DICTS.ja, { bk_note: "メール側のデータを毎日ひとつのファイルにまとめます:データベースの SQL と、その日に属するメール本体(添付を含む)。振り分けは各メール自身が示す日付で行い、届いた日ではありません。各メールはただひとつの書庫にのみ入ります。取り込んだメールは自動では書庫に入りません —— 下の「補完」で収めます。ドライブと AI アシスタント、ログイン状態や短期トークンは含みません。" });
+Object.assign(DICTS.ko, { bk_note: "메일 쪽 데이터를 매일 파일 하나로 묶습니다: 데이터베이스 SQL과 그날에 속하는 메일 원본(첨부 포함). 분류 기준은 도착일이 아니라 각 메일 자체에 표시된 날짜입니다. 각 메일은 정확히 하나의 보관 파일에만 들어갑니다. 가져온 메일은 자동으로 들어가지 않으며 아래 \"보충 백업\"으로 수납합니다. 드라이브와 AI 어시스턴트, 로그인 상태와 단기 토큰은 제외됩니다." });
+Object.assign(DICTS.de, { bk_note: "Packt die Mail-Seite täglich in eine Datei: die Datenbank als SQL, dazu die Nachrichten, die zu dem Tag gehören, samt Anhängen -- abgelegt nach dem Datum, das jede Nachricht selbst zeigt, nicht nach dem Ankunftstag. Jede Nachricht liegt in genau einem Archiv. Importierte Mail gelangt nie von selbst hinein -- das Nachholen unten legt sie ab. Drive und der Assistent sind nicht dabei, ebenso wenig aktive Anmeldungen und kurzlebige Token." });
+Object.assign(DICTS.fr, { bk_note: "Emballe chaque jour la partie messagerie dans un seul fichier : la base en SQL, plus les messages appartenant à ce jour, pièces jointes comprises -- classés d'après la date que chaque message affiche lui-même, pas celle de son arrivée. Chaque message ne vit que dans une seule archive. Le courrier importé n'y entre jamais de lui-même -- le rattrapage ci-dessous s'en charge. Le Drive et l'assistant en sont exclus, de même que les sessions et les jetons éphémères." });
+Object.assign(DICTS.es, { bk_note: "Empaqueta a diario el lado del correo en un solo archivo: la base como SQL, más los mensajes que pertenecen a ese día, adjuntos incluidos, clasificados por la fecha que cada mensaje muestra, no por la de llegada. Cada mensaje vive en exactamente un archivo. El correo importado nunca entra por sí solo: lo archiva la puesta al día de abajo. No incluye el Drive ni el asistente, ni las sesiones ni los tokens efímeros." });
+Object.assign(DICTS.ru, { bk_note: "Каждый день собирает почтовую часть в один файл: база в виде SQL плюс письма, относящиеся к этому дню, вместе с вложениями — раскладка идёт по дате, которую показывает само письмо, а не по дню прибытия. Каждое письмо лежит ровно в одном архиве. Импортированная почта сама туда не попадает — её укладывает донабор ниже. Диск и ассистент не входят, как и активные сеансы и краткоживущие токены." });
+
+Object.assign(DICTS['zh-CN'], { bk_catchup_note: "有两种邮件不在任何备份包里:导入进来的,以及自动备份关闭(或还没开启)期间到达的。这里把它们核对出来,按每封信自己的时间补进所属的包。" });
+Object.assign(DICTS['zh-TW'], { bk_catchup_note: "有兩種郵件不在任何備份包裡:匯入進來的,以及自動備份關閉(或還沒開啟)期間到達的。這裡把它們核對出來,按每封信自己的時間補進所屬的包。" });
+Object.assign(DICTS.en, { bk_catchup_note: "Two kinds of mail end up in no archive: imported messages, and mail that arrived while the automatic backup was off or not yet set up. This finds them and files them into the archives their own dates place them in." });
+Object.assign(DICTS.ja, { bk_catchup_note: "書庫に入っていないメールは二種類あります:取り込んだもの、そして自動バックアップが無効(または未設定)だった間に届いたものです。ここでそれらを洗い出し、各メール自身の日付が属する書庫へ収めます。" });
+Object.assign(DICTS.ko, { bk_catchup_note: "어느 보관 파일에도 없는 메일은 두 종류입니다: 가져온 메일, 그리고 자동 백업이 꺼져 있던(또는 아직 설정 전이던) 동안 도착한 메일. 여기서 그것들을 찾아 각 메일 자체의 날짜가 속하는 보관 파일에 수납합니다." });
+Object.assign(DICTS.de, { bk_catchup_note: "Zwei Arten von Mail landen in keinem Archiv: importierte Nachrichten, und Mail, die ankam, während die automatische Sicherung aus oder noch nicht eingerichtet war. Dies findet sie und legt sie in die Archive, in die ihr eigenes Datum sie einordnet." });
+Object.assign(DICTS.fr, { bk_catchup_note: "Deux sortes de courrier ne figurent dans aucune archive : les messages importés, et ceux arrivés pendant que la sauvegarde automatique était coupée ou pas encore en place. Ceci les retrouve et les range dans les archives où leur propre date les place." });
+Object.assign(DICTS.es, { bk_catchup_note: "Dos tipos de correo quedan fuera de todo archivo: los mensajes importados y los que llegaron mientras la copia automática estaba apagada o aún sin configurar. Esto los encuentra y los guarda en los archivos que su propia fecha les asigna." });
+Object.assign(DICTS.ru, { bk_catchup_note: "Два вида почты не попадают ни в один архив: импортированные письма и почта, пришедшая, пока автоматическое копирование было выключено или ещё не настроено. Здесь они находятся и укладываются в архивы, куда их относит их собственная дата." });
+
+Object.assign(DICTS['zh-CN'], { bk_pending_total: "{0} 封邮件不在任何备份包里,共 {1}。将按每封信自己的时间归入下列包:" });
+Object.assign(DICTS['zh-TW'], { bk_pending_total: "{0} 封郵件不在任何備份包裡,共 {1}。將按每封信自己的時間歸入下列包:" });
+Object.assign(DICTS.en, { bk_pending_total: "{0} messages are in no archive, {1} in all. They will be filed by each message's own date into:" });
+Object.assign(DICTS.ja, { bk_pending_total: "{0} 通のメール(計 {1})がどの書庫にもありません。各メール自身の日付で次の書庫へ収めます:" });
+Object.assign(DICTS.ko, { bk_pending_total: "{0}통의 메일(총 {1})이 어느 보관 파일에도 없습니다. 각 메일 자체의 날짜에 따라 다음 파일에 수납됩니다:" });
+Object.assign(DICTS.de, { bk_pending_total: "{0} Nachrichten ({1} insgesamt) liegen in keinem Archiv. Sie werden nach dem eigenen Datum jeder Nachricht abgelegt in:" });
+Object.assign(DICTS.fr, { bk_pending_total: "{0} messages ({1} au total) ne sont dans aucune archive. Ils seront rangés d'après leur propre date dans :" });
+Object.assign(DICTS.es, { bk_pending_total: "{0} mensajes ({1} en total) no están en ningún archivo. Se guardarán según la fecha propia de cada mensaje en:" });
+Object.assign(DICTS.ru, { bk_pending_total: "{0} писем ({1} всего) нет ни в одном архиве. Они будут разложены по собственной дате каждого письма в:" });
+
+Object.assign(DICTS['zh-CN'], { bk_act_new: "新建" });
+Object.assign(DICTS['zh-TW'], { bk_act_new: "新建" });
+Object.assign(DICTS.en, { bk_act_new: "new archive" });
+Object.assign(DICTS.ja, { bk_act_new: "新規作成" });
+Object.assign(DICTS.ko, { bk_act_new: "새로 만들기" });
+Object.assign(DICTS.de, { bk_act_new: "neu anlegen" });
+Object.assign(DICTS.fr, { bk_act_new: "à créer" });
+Object.assign(DICTS.es, { bk_act_new: "crear" });
+Object.assign(DICTS.ru, { bk_act_new: "создать" });
+
+Object.assign(DICTS['zh-CN'], { bk_act_merge: "并入现有包" });
+Object.assign(DICTS['zh-TW'], { bk_act_merge: "併入現有包" });
+Object.assign(DICTS.en, { bk_act_merge: "merge into existing" });
+Object.assign(DICTS.ja, { bk_act_merge: "既存の書庫へ併合" });
+Object.assign(DICTS.ko, { bk_act_merge: "기존 파일에 병합" });
+Object.assign(DICTS.de, { bk_act_merge: "in Bestehendes einfügen" });
+Object.assign(DICTS.fr, { bk_act_merge: "fusionner dans l'existante" });
+Object.assign(DICTS.es, { bk_act_merge: "añadir al existente" });
+Object.assign(DICTS.ru, { bk_act_merge: "добавить в существующий" });
+
+Object.assign(DICTS['zh-CN'], { bk_covered: "日备份完成至" });
+Object.assign(DICTS['zh-TW'], { bk_covered: "日備份完成至" });
+Object.assign(DICTS.en, { bk_covered: "Daily backups complete through" });
+Object.assign(DICTS.ja, { bk_covered: "日次バックアップの完了日" });
+Object.assign(DICTS.ko, { bk_covered: "일일 백업 완료 기준일" });
+Object.assign(DICTS.de, { bk_covered: "Tagessicherung vollständig bis" });
+Object.assign(DICTS.fr, { bk_covered: "Sauvegardes quotidiennes à jour jusqu'au" });
+Object.assign(DICTS.es, { bk_covered: "Copias diarias completas hasta" });
+Object.assign(DICTS.ru, { bk_covered: "Ежедневные копии готовы по" });
+
+Object.assign(DICTS['zh-CN'], { bk_daily: "每日备份" });
+Object.assign(DICTS['zh-TW'], { bk_daily: "每日備份" });
+Object.assign(DICTS.en, { bk_daily: "Daily backups" });
+Object.assign(DICTS.ja, { bk_daily: "日次バックアップ" });
+Object.assign(DICTS.ko, { bk_daily: "일일 백업" });
+Object.assign(DICTS.de, { bk_daily: "Tagessicherungen" });
+Object.assign(DICTS.fr, { bk_daily: "Sauvegardes quotidiennes" });
+Object.assign(DICTS.es, { bk_daily: "Copias diarias" });
+Object.assign(DICTS.ru, { bk_daily: "Ежедневные копии" });
+
+Object.assign(DICTS['zh-CN'], { bk_monthly: "月度备份" });
+Object.assign(DICTS['zh-TW'], { bk_monthly: "月度備份" });
+Object.assign(DICTS.en, { bk_monthly: "Monthly backups" });
+Object.assign(DICTS.ja, { bk_monthly: "月次バックアップ" });
+Object.assign(DICTS.ko, { bk_monthly: "월간 백업" });
+Object.assign(DICTS.de, { bk_monthly: "Monatssicherungen" });
+Object.assign(DICTS.fr, { bk_monthly: "Sauvegardes mensuelles" });
+Object.assign(DICTS.es, { bk_monthly: "Copias mensuales" });
+Object.assign(DICTS.ru, { bk_monthly: "Ежемесячные копии" });
+
+Object.assign(DICTS['zh-CN'], { bk_yearly: "年度备份" });
+Object.assign(DICTS['zh-TW'], { bk_yearly: "年度備份" });
+Object.assign(DICTS.en, { bk_yearly: "Yearly backups" });
+Object.assign(DICTS.ja, { bk_yearly: "年次バックアップ" });
+Object.assign(DICTS.ko, { bk_yearly: "연간 백업" });
+Object.assign(DICTS.de, { bk_yearly: "Jahressicherungen" });
+Object.assign(DICTS.fr, { bk_yearly: "Sauvegardes annuelles" });
+Object.assign(DICTS.es, { bk_yearly: "Copias anuales" });
+Object.assign(DICTS.ru, { bk_yearly: "Годовые копии" });

@@ -8,24 +8,30 @@
  * A Worker gets thirty seconds of CPU and a hundred and twenty-eight megabytes, and has no LZMA.
  * This job compresses a gigabyte with 7-Zip and takes as long as it takes. Those are not the same
  * kind of place, and pretending otherwise cost several hundred lines of streaming binary formats
- * that this script does not need: it has a disk, and tar, and 7z, and zip.
+ * that this script does not need: it has a disk, and 7z.
  *
  * WHAT IT PRODUCES
- *   daily/YYYY-MM-DD.7z    the whole database as SQL, plus the .eml that arrived that day
- *   monthly/YYYY-MM.zip    that month's dailies, stored, not recompressed
- *   yearly/YYYY.zip        that year's monthlies, likewise
+ *   daily/YYYY-MM-DD.7z   a day of the current month
+ *   monthly/YYYY-MM.7z    a finished month of the current year
+ *   yearly/YYYY.7z        a finished year
  *
- * Each .eml appears in exactly one daily, the daily it arrived in; a monthly is a container of
- * dailies and a yearly a container of monthlies, so no message is ever stored twice. Restoring a
- * given day means opening at most three nested files.
+ * Every archive has the same shape inside -- database.sql, manifest.json, and mail/ holding the
+ * message files flat under their storage keys -- so any archive restores the same way, and a fold
+ * is not a container of smaller archives but the same thing at a coarser grain: it opens the finer
+ * ones, tips the mail out, and compresses the lot again as one.
  *
- *
+ * WHICH ARCHIVE A MESSAGE BELONGS TO
+ * The date the message itself shows -- the one on it in the mail interface -- not the day its
+ * bytes happened to land in the bucket. An import of ten years of mail files into ten years of
+ * archives, not into one giant file named after an afternoon. Objects that are not messages
+ * (unrouted mail, brand images) and dates too broken to trust fall back to the arrival day.
+ * Each message lives in exactly one archive either way.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const env = process.env;
 const need = (k) => {
@@ -134,15 +140,17 @@ async function listAll(bucket, prefix = '') {
  * whole keeps the parser unpaused, and nothing fetched here outgrows the container's memory --
  * mail objects are kilobytes, and even a folded yearly is a fraction of it.
  *
- * Network failures that CAN be caught are retried twice: across eight thousand objects, one
- * reset connection should cost a retry, not the run.
+ * Returns false only for "not there". Any other failure is retried twice and then thrown:
+ * a merge that mistook a flaky 500 for "no archive yet" would create a fresh archive over a
+ * full one, and that is the one mistake this file must never make.
  */
 async function getToFile(bucket, key, file) {
   for (let attempt = 1; ; attempt++) {
     try {
       const { url, headers } = sign('GET', bucket, key, {}, sha256hex(Buffer.alloc(0)));
       const res = await fetch(url, { headers });
-      if (!res.ok) return false;
+      if (res.status === 404) return false;
+      if (!res.ok) throw new Error(`GET ${bucket}/${key}: HTTP ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
       await fs.promises.mkdir(path.dirname(file), { recursive: true });
       await fs.promises.writeFile(file, buf);
@@ -210,8 +218,8 @@ async function del(bucket, key) {
 /**
  * One gzipped list of every R2 key that is inside some archive. It is what makes "not yet backed
  * up" a question with an exact answer: catch-up is the set difference between the mail bucket and
- * this file. Folds move archives around but never un-archive anything, so the index only grows,
- * and it survives them untouched.
+ * this file. Folds move mail between archives but never un-archive anything, so the index only
+ * grows, and it survives them untouched.
  *
  * Single writer by construction -- the control plane runs one job at a time -- so read-modify-
  * write is safe.
@@ -332,89 +340,52 @@ async function exportD1(file) {
 }
 
 // ---------------------------------------------------------------------------
-// The job
+// Filing: which archive a message belongs to
 // ---------------------------------------------------------------------------
-
-function run(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit' });
-  if (r.error) fail(`could not run ${cmd}: ${r.error.message} (is it in the image?)`);
-  if ((r.status ?? 1) !== 0) fail(`${cmd} exited with ${r.status}`);
-}
 
 const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
 const rmrf = (p) => fs.rmSync(p, { recursive: true, force: true });
 
-/**
- * The mail that arrived on this UTC day and is not in an archive already.
- *
- * import/ is deliberately absent. An import drops thousands of historical messages into the
- * bucket in one afternoon, and sweeping them into that night's archive would make one daily a
- * gigabyte among kilobytes. Imported mail waits for the operator to run the catch-up, which files
- * it deliberately; the automatic nightly covers only what actually arrived.
- *
- * The index check closes the other gap: if a catch-up already archived something from this day,
- * tonight's run must not archive it again -- one message, one archive.
- */
-async function dailyBackup(day) {
-  const from = Date.parse(day + 'T00:00:00Z');
-  const to = from + 24 * 3600 * 1000;
-  const work = path.join(WORK, day);
-  rmrf(work);
-  await fs.promises.mkdir(path.join(work, 'mail'), { recursive: true });
-
-  log('exporting the database...');
-  const sqlBytes = await exportD1(path.join(work, 'database.sql'));
-  log(`  database.sql ${(sqlBytes / 1048576).toFixed(1)} MB`);
-
-  const index = await loadIndex();
-  log(`collecting the mail that arrived on ${day}...`);
-  let picked = 0;
-  let bytes = 0;
-  const keys = [];
-  for (const prefix of ['raw/', 'unrouted/', 'brand/']) {
-    const objs = (await listAll(RAW_BUCKET, prefix))
-      .filter((o) => o.modified >= from && o.modified < to && !index.has(o.key));
-    for (const o of objs) {
-      if (await getToFile(RAW_BUCKET, o.key, path.join(work, 'mail', o.key))) {
-        picked++;
-        bytes += o.size;
-        keys.push(o.key);
-      }
-      if (picked % 200 === 0 && picked) log(`  ${picked} so far...`);
-    }
-  }
-  log(`  ${picked} messages, ${(bytes / 1048576).toFixed(1)} MB`);
-
-  await fs.promises.writeFile(path.join(work, 'manifest.json'), JSON.stringify({
-    day, kind: 'daily', at: Date.now(),
-    database_bytes: sqlBytes, mail_objects: picked, mail_bytes: bytes,
-    note: 'database.sql is a SQL dump of the tables listed above. mail/ holds the messages that '
-        + 'arrived on this day, laid out under their original storage keys. Imported mail is not '
-        + 'here -- it enters the archives through the catch-up, in a .extra.7z beside this file. '
-        + 'Each message lives in exactly one archive.',
-  }, null, 2));
-
-  const out = path.join(WORK, `${day}.7z`);
-  rmrf(out);
-  log(`compressing (7z -mx=${LEVEL})...`);
-  run('7z', ['a', '-t7z', `-mx=${LEVEL}`, '-mmt=on', out, '.'], work);
-  const size = (await fs.promises.stat(out)).size;
-  log(`  ${(size / 1048576).toFixed(1)} MB`);
-
-  log(`uploading daily/${day}.7z...`);
-  await putFile(BK_BUCKET, `daily/${day}.7z`, out, 'application/x-7z-compressed', IA);
-  if (keys.length) {
-    for (const k of keys) index.add(k);
-    await saveIndex(index);
-  }
-  rmrf(work);
-  rmrf(out);
-  return { objects: picked, bytes, size };
+function run(cmd, args, cwd) {
+  // stdout is dropped: 7z narrates every file it touches, and the console's status line shows the
+  // last line of output -- which should be this script saying what it is doing, not a 7z banner.
+  // stderr still comes through; a failing 7z says why there.
+  const r = spawnSync(cmd, args, { cwd, stdio: ['ignore', 'ignore', 'inherit'] });
+  if (r.error) fail(`could not run ${cmd}: ${r.error.message} (is it in the image?)`);
+  if ((r.status ?? 1) !== 0) fail(`${cmd} exited with ${r.status}`);
 }
 
-// ---------------------------------------------------------------------------
-// Catch-up
-// ---------------------------------------------------------------------------
+/**
+ * 7-Zip with its percentage read off stdout. Compressing a large archive is the one place a run
+ * spends whole minutes with nothing to say; -bsp1 makes 7z report progress even into a pipe, and
+ * the percentage is relogged in steps of ten so the console's status line moves instead of
+ * standing still. Everything else 7z prints is dropped; a failing 7z still says why on stderr.
+ */
+function sevenZipProgress(args, cwd, say) {
+  return new Promise((resolve) => {
+    const child = spawn('7z', [...args, '-bsp1'], { cwd, stdio: ['ignore', 'pipe', 'inherit'] });
+    let tail = '';
+    let last = -10;
+    child.stdout.on('data', (d) => {
+      // Progress arrives as carriage-returned fragments, so keep a byte tail and read the last
+      // percentage out of it rather than waiting for line breaks that never come.
+      tail = (tail + d.toString('latin1')).slice(-256);
+      const m = tail.match(/(\d{1,3})%[^%]*$/);
+      if (m) {
+        const p = Math.min(100, parseInt(m[1], 10));
+        if (p >= last + 10) {
+          last = p;
+          say(p);
+        }
+      }
+    });
+    child.on('error', (e) => fail(`could not run 7z: ${e.message} (is it in the image?)`));
+    child.on('exit', (code) => {
+      if (code !== 0) fail(`7z exited with ${code}`);
+      resolve();
+    });
+  });
+}
 
 /** A few downloads at a time. Eight thousand sequential GETs would spend most of an hour waiting. */
 async function pool(items, width, fn) {
@@ -439,221 +410,272 @@ function walkLocal(dir, base = dir) {
   return out;
 }
 
-function writeCatchupManifest(dir, day) {
+/**
+ * The archive a given day's mail goes into, by the calendar alone: a finished year is one yearly
+ * file, a finished month of the current year one monthly file, and only the current month is cut
+ * day by day. Never by what happens to exist -- an archive created here for a month the fold has
+ * not reached yet is simply found by the fold and taken in.
+ */
+function targetFor(day, today) {
+  if (day.slice(0, 4) < today.slice(0, 4)) return `yearly/${day.slice(0, 4)}.7z`;
+  if (day.slice(0, 7) < today.slice(0, 7)) return `monthly/${day.slice(0, 7)}.7z`;
+  return `daily/${day}.7z`;
+}
+
+/**
+ * Every message's own date, keyed by its storage key -- the same date column the mail interface
+ * shows. One paged read of two columns, and filing stops depending on when bytes happened to
+ * arrive.
+ */
+async function loadContentDates() {
+  const map = new Map();
+  const PAGE = 2000;
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await d1(`SELECT r2_key, date FROM messages WHERE r2_key IS NOT NULL LIMIT ${PAGE} OFFSET ${offset}`);
+    for (const r of rows) map.set(r.r2_key, r.date);
+    if (rows.length < PAGE) break;
+  }
+  return map;
+}
+
+/** A Date header is whatever the sender wrote. One claiming 1980, or the day after tomorrow,
+ *  would mint an archive for a period that never happened -- those fall back to the arrival day,
+ *  as does everything that is not a message at all (unrouted mail, brand images). */
+const EARLIEST = Date.parse('2000-01-01T00:00:00Z');
+function contentDayOf(o, dates) {
+  const t = dates.get(o.key);
+  if (typeof t === 'number' && t >= EARLIEST && t <= Date.now() + 2 * 24 * 3600 * 1000) return dayOf(t);
+  return dayOf(o.modified);
+}
+
+// ---------------------------------------------------------------------------
+// The archives themselves
+// ---------------------------------------------------------------------------
+
+function readManifest(dir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')); } catch { return null; }
+}
+
+function writeManifest(dir, kind, period, dbAt) {
   const files = walkLocal(path.join(dir, 'mail'));
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
-    day, kind: 'catchup', at: Date.now(),
+    kind, period, at: Date.now(), db_at: dbAt || null,
     mail_objects: files.length,
     mail_bytes: files.reduce((n, f) => n + fs.statSync(f).size, 0),
-    note: 'Mail filed by the catch-up: imported messages, and mail from days the automatic backup '
-        + 'missed, under their original storage keys. There is no database.sql here -- the '
-        + 'automatic dailies carry those.',
+    note: 'database.sql is a dump of the application tables, taken when this archive was first '
+        + 'created; later merges add mail and leave it alone. mail/ holds message files under '
+        + 'their original storage keys, filed by the date each message itself shows. Each message '
+        + 'lives in exactly one archive.',
   }, null, 2));
 }
 
+/** One database dump per run, made the first time an archive needs one and copied ever after. */
+const dump = { file: null, at: 0 };
+async function ensureDump() {
+  if (dump.file) return;
+  const f = path.join(WORK, 'database.sql');
+  log('exporting the database...');
+  const bytes = await exportD1(f);
+  log(`  database.sql ${(bytes / 1048576).toFixed(1)} MB`);
+  dump.file = f;
+  dump.at = Date.now();
+}
+
 /**
- * What is in no archive yet, grouped by the UTC day it arrived.
+ * Put a batch of mail into one archive: fetch the archive if it exists, unpack it, lay the new
+ * messages in beside the old, and compress the whole again. A new archive also receives this
+ * run's database snapshot; a merge never touches the one already inside.
  *
- * Imported mail is pending whatever its day -- the automatic run never takes it. For everything
- * else, the current day is left out: tonight's run will take it, and archiving it here as well
- * would put one message in two archives.
+ * The read-modify-write is safe because the control plane runs one job at a time, and idempotent
+ * because a message already inside is recognized by its path and skipped -- a run cut short after
+ * uploading but before the index was saved just does that archive's work again for nothing.
  */
-async function pendingByDay(onlyDay) {
+async function fileInto(targetKey, objs, index) {
+  const kind = targetKey.split('/')[0];
+  const period = path.basename(targetKey, '.7z');
+  const work = path.join(WORK, 'file-' + period);
+  rmrf(work);
+  const dir = path.join(work, 'a');
+  await fs.promises.mkdir(path.join(dir, 'mail'), { recursive: true });
+
+  const cur = path.join(work, 'cur.7z');
+  const exists = await getToFile(BK_BUCKET, targetKey, cur);
+  let dbAt = 0;
+  if (exists) {
+    run('7z', ['x', cur, '-o' + dir, '-y']);
+    const man = readManifest(dir);
+    dbAt = man?.db_at || man?.at || 0;
+    rmrf(cur);
+  }
+
+  let added = 0;
+  let bytes = 0;
+  let seen = 0;
+  await pool(objs, 8, async (o) => {
+    seen++;
+    if (seen % 200 === 0) log(`  fetching ${seen}/${objs.length}...`);
+    const f = path.join(dir, 'mail', o.key);
+    if (fs.existsSync(f)) return;
+    if (!(await getToFile(RAW_BUCKET, o.key, f))) fail(`could not fetch ${o.key}`);
+    added++;
+    bytes += o.size;
+  });
+  if (exists && !added) {
+    rmrf(work);
+    return null;
+  }
+
+  if (!exists) {
+    await ensureDump();
+    await fs.promises.copyFile(dump.file, path.join(dir, 'database.sql'));
+    dbAt = dump.at;
+  }
+  writeManifest(dir, kind, period, dbAt);
+
+  const out = path.join(work, 'out.7z');
+  await sevenZipProgress(['a', '-t7z', `-mx=${LEVEL}`, '-mmt=on', out, '.'], dir,
+    (p) => log(`  compressing ${targetKey}: ${p}%`));
+  const size = (await fs.promises.stat(out)).size;
+  log(`  uploading ${targetKey} (${(size / 1048576).toFixed(1)} MB)...`);
+  await putFile(BK_BUCKET, targetKey, out, 'application/x-7z-compressed', IA);
+  log(`  ${exists ? 'merged into' : 'created'} ${targetKey} (${(size / 1048576).toFixed(1)} MB)`);
+  for (const o of objs) index.add(o.key);
+  await saveIndex(index);
+  rmrf(work);
+  return { added, bytes, size };
+}
+
+/**
+ * File everything that is in no archive yet into the archive it belongs to, oldest period first.
+ * The index is saved after every committed archive, so a run cut short loses nothing and repeats
+ * nothing: the next run simply has less to do.
+ *
+ * imports:  whether import/ is considered. The nightly never takes it -- imported mail enters the
+ *           archives only through the operator's catch-up. For everything else, mail whose own day
+ *           has not ended yet is left for a later run.
+ * ensureDay: the nightly's target day. Its archive is created even with no mail in it, because it
+ *           is also the day's database snapshot.
+ * onlyDay:  narrow a catch-up to one content day -- an operator's tool, not part of the normal
+ *           flow, where the control plane sends no day at all.
+ */
+async function sweep({ imports = false, ensureDay = '', onlyDay = '' } = {}) {
   const index = await loadIndex();
   const today = dayOf(Date.now());
-  const days = new Map();
-  for (const prefix of ['import/', 'raw/', 'unrouted/', 'brand/']) {
+  log('reading message dates...');
+  const dates = await loadContentDates();
+  log(`  ${dates.size} message(s) in the database`);
+
+  const groups = new Map();
+  const prefixes = imports ? ['import/', 'raw/', 'unrouted/', 'brand/'] : ['raw/', 'unrouted/', 'brand/'];
+  for (const prefix of prefixes) {
     for (const o of await listAll(RAW_BUCKET, prefix)) {
       if (index.has(o.key)) continue;
-      const d = dayOf(o.modified);
-      if (prefix !== 'import/' && d >= today) continue;
-      if (onlyDay && d !== onlyDay) continue;
-      let g = days.get(d);
-      if (!g) days.set(d, (g = []));
+      const day = contentDayOf(o, dates);
+      if (prefix !== 'import/' && day >= today) continue;
+      if (onlyDay && day !== onlyDay) continue;
+      const target = targetFor(day, today);
+      let g = groups.get(target);
+      if (!g) groups.set(target, (g = []));
       g.push(o);
     }
   }
-  return { index, days };
-}
-
-/** Build (or rebuild) the day's .extra.7z from a directory that already holds its mail. */
-function packExtra(dir, day, out) {
-  writeCatchupManifest(dir, day);
-  rmrf(out);
-  run('7z', ['a', '-t7z', `-mx=${LEVEL}`, '-mmt=on', out, '.'], dir);
-}
-
-/**
- * The day still lives at the top level: create daily/<day>.extra.7z, or merge into it if an
- * earlier catch-up already made one. The automatic daily/<day>.7z is never touched -- the two
- * names never collide, which is what lets a catch-up run while the nightly schedule goes on.
- */
-async function intoExtra(work, newMail, day, dailyNames) {
-  const key = `daily/${day}.extra.7z`;
-  const dir = path.join(work, 'x');
-  if (dailyNames.has(key)) {
-    const cur = path.join(work, 'cur.7z');
-    if (!(await getToFile(BK_BUCKET, key, cur))) fail(`could not fetch ${key}`);
-    run('7z', ['x', cur, '-o' + dir, '-y']);
-  } else {
-    await fs.promises.mkdir(dir, { recursive: true });
-  }
-  fs.cpSync(path.join(newMail, 'mail'), path.join(dir, 'mail'), { recursive: true });
-  const out = path.join(work, 'extra.7z');
-  packExtra(dir, day, out);
-  await putFile(BK_BUCKET, key, out, 'application/x-7z-compressed', IA);
-  dailyNames.add(key);
-  return key;
-}
-
-/**
- * The day has been folded: its archives live inside a monthly zip, possibly inside a yearly one.
- * The fold is opened, the day's .extra.7z is created or merged inside it, and the fold is packed
- * again -- stored zips all the way, so this is I/O, not compression. Restoring a day still means
- * opening at most three nested files.
- */
-async function intoFold(work, newMail, day, chain) {
-  const outerKey = chain[0];
-  const outerFile = path.join(work, 'outer.zip');
-  if (!(await getToFile(BK_BUCKET, outerKey, outerFile))) fail(`could not fetch ${outerKey}`);
-  const outerDir = path.join(work, 'outer');
-  run('7z', ['x', outerFile, '-o' + outerDir, '-y']);
-
-  let levelDir = outerDir;
-  if (chain.length === 2) {
-    const innerFile = path.join(outerDir, chain[1]);
-    const innerDir = path.join(work, 'inner');
-    if (fs.existsSync(innerFile)) {
-      run('7z', ['x', innerFile, '-o' + innerDir, '-y']);
-      fs.rmSync(innerFile);
-    } else {
-      fs.mkdirSync(innerDir, { recursive: true });
-    }
-    levelDir = innerDir;
+  if (ensureDay && !onlyDay) {
+    const t = targetFor(ensureDay, today);
+    if (!groups.has(t)) groups.set(t, []);
   }
 
-  const extraName = `${day}.extra.7z`;
-  const extraFile = path.join(levelDir, extraName);
-  const xDir = path.join(work, 'extra');
-  if (fs.existsSync(extraFile)) {
-    run('7z', ['x', extraFile, '-o' + xDir, '-y']);
-    fs.rmSync(extraFile);
-  } else {
-    fs.mkdirSync(xDir, { recursive: true });
-  }
-  fs.cpSync(path.join(newMail, 'mail'), path.join(xDir, 'mail'), { recursive: true });
-  packExtra(xDir, day, extraFile);
-
-  // The fold's manifest lists its members; a member that appeared later belongs on that list too.
-  try {
-    const mPath = path.join(levelDir, 'manifest.json');
-    const man = JSON.parse(fs.readFileSync(mPath, 'utf8'));
-    if (Array.isArray(man.members) && !man.members.includes(extraName)) {
-      man.members.push(extraName);
-      man.members.sort();
-      fs.writeFileSync(mPath, JSON.stringify(man, null, 2));
-    }
-  } catch { /* a fold without a manifest is still a fold */ }
-
-  if (chain.length === 2) {
-    const innerFile = path.join(outerDir, chain[1]);
-    run('zip', ['-0', '-r', '-q', innerFile, '.'], levelDir);
-  }
-  const outFile = path.join(work, 'packed.zip');
-  rmrf(outFile);
-  run('zip', ['-0', '-r', '-q', outFile, '.'], outerDir);
-  await putFile(BK_BUCKET, outerKey, outFile, 'application/zip', IA);
-  return outerKey;
-}
-
-/**
- * File everything that is in no archive into the archive it belongs to, one day at a time.
- * The index is saved after every committed day, so a run cut short loses nothing and repeats
- * nothing: the next catch-up simply has less to do.
- */
-async function catchup(onlyDay) {
-  const { index, days } = await pendingByDay(onlyDay);
-  if (!days.size) {
-    log('nothing to catch up');
-    return { days: 0, objects: 0, bytes: 0, archives: [] };
-  }
-  const dailyNames = new Set((await listAll(BK_BUCKET, 'daily/')).map((o) => o.key));
-  const monthlyNames = new Set((await listAll(BK_BUCKET, 'monthly/')).map((o) => o.key));
-  const yearlyNames = new Set((await listAll(BK_BUCKET, 'yearly/')).map((o) => o.key));
-
+  const periodOf = (k) => path.basename(k, '.7z');
+  const targets = [...groups.keys()].sort((a, b) => (periodOf(a) < periodOf(b) ? -1 : 1));
   let objects = 0;
   let bytes = 0;
-  const archives = new Set();
-  for (const day of [...days.keys()].sort()) {
-    const objs = days.get(day);
-    const dayBytes = objs.reduce((n, o) => n + o.size, 0);
-    log(`${day}: ${objs.length} message(s), ${(dayBytes / 1048576).toFixed(1)} MB`);
-
-    const work = path.join(WORK, 'catchup-' + day);
-    rmrf(work);
-    const newMail = path.join(work, 'new');
-    await fs.promises.mkdir(newMail, { recursive: true });
-    await pool(objs, 8, async (o) => {
-      if (!(await getToFile(RAW_BUCKET, o.key, path.join(newMail, 'mail', o.key)))) {
-        fail(`could not fetch ${o.key}`);
-      }
-    });
-
-    const M = day.slice(0, 7);
-    const Y = day.slice(0, 4);
-    let touched;
-    if (yearlyNames.has(`yearly/${Y}.zip`)) {
-      touched = await intoFold(work, newMail, day, [`yearly/${Y}.zip`, `${M}.zip`]);
-    } else if (monthlyNames.has(`monthly/${M}.zip`)) {
-      touched = await intoFold(work, newMail, day, [`monthly/${M}.zip`]);
-    } else {
-      touched = await intoExtra(work, newMail, day, dailyNames);
-    }
-    archives.add(touched);
-    log(`  -> ${touched}`);
-
-    for (const o of objs) index.add(o.key);
-    await saveIndex(index);
-    objects += objs.length;
-    bytes += dayBytes;
-    rmrf(work);
+  let size = 0;
+  let k = 0;
+  const archives = [];
+  for (const target of targets) {
+    const objs = groups.get(target);
+    k++;
+    log(`[${k}/${targets.length}] ${target}: ${objs.length} message(s), ${(objs.reduce((n, o) => n + o.size, 0) / 1048576).toFixed(1)} MB`);
+    const r = await fileInto(target, objs, index);
+    if (!r) continue;
+    objects += r.added;
+    bytes += r.bytes;
+    size += r.size;
+    archives.push(target);
   }
-  return { days: days.size, objects, bytes, archives: [...archives] };
+  return { objects, bytes, size, archives };
+}
+
+// ---------------------------------------------------------------------------
+// Folds
+// ---------------------------------------------------------------------------
+
+/** Move every file under src into dst, directories merged. Renames, not copies: the pieces of a
+ *  fold are on the same disk, and a month of mail is worth not writing twice. */
+function mergeMove(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, e.name);
+    const d = path.join(dst, e.name);
+    if (e.isDirectory()) mergeMove(s, d);
+    else fs.renameSync(s, d);
+  }
 }
 
 /**
- * Fold a set of finished archives into one. Stored, never recompressed: the members are already
- * 7z, and running a compressor over compressed bytes spends minutes to make the file bigger.
+ * Fold finished archives into one coarser one: open every member, tip the mail out flat, keep the
+ * newest of their database snapshots, and compress the lot as a single archive. The members are
+ * deleted only after the fold is safely uploaded. If a catch-up already created the fold's own
+ * file -- filing old mail creates coarse archives directly -- its contents join the rest and the
+ * file is replaced, never deleted.
  */
-async function fold(kind, name, srcPrefix, members) {
+async function fold(kind, name, members) {
   if (!members.length) {
     log(`${name}: nothing to fold, skipping`);
     return null;
   }
-  const work = path.join(WORK, name);
+  const ownKey = `${kind}/${name}.7z`;
+  const work = path.join(WORK, 'fold-' + name);
   rmrf(work);
-  await fs.promises.mkdir(work, { recursive: true });
-  for (const m of members) {
-    log(`  fetching ${m.key}`);
-    if (!(await getToFile(BK_BUCKET, m.key, path.join(work, path.basename(m.key))))) {
-      fail(`could not fetch ${m.key}; stopping the fold with nothing deleted`);
-    }
-  }
-  await fs.promises.writeFile(path.join(work, 'manifest.json'), JSON.stringify({
-    name, kind, at: Date.now(),
-    members: members.map((m) => path.basename(m.key)),
-    note: 'A stored zip: its members are already-compressed archives, taken in as they are.',
-  }, null, 2));
+  const dir = path.join(work, 'a');
+  await fs.promises.mkdir(path.join(dir, 'mail'), { recursive: true });
 
-  const out = path.join(WORK, `${name}.zip`);
-  rmrf(out);
-  log('packing (zip -0, stored)...');
-  run('zip', ['-0', '-r', '-q', out, '.'], work);
-  // Read the size before anything deletes the file -- asking afterwards reports zero, which then
-  // travels all the way to the console as "0 MB" for an archive that is fine.
+  const best = { at: 0, file: null };
+  const takeIn = async (key) => {
+    const f = path.join(work, 'member.7z');
+    if (!(await getToFile(BK_BUCKET, key, f))) return false;
+    const x = path.join(work, 'x');
+    rmrf(x);
+    run('7z', ['x', f, '-o' + x, '-y']);
+    rmrf(f);
+    const man = readManifest(x);
+    const at = man?.db_at || man?.at || 0;
+    const db = path.join(x, 'database.sql');
+    if (fs.existsSync(db) && at >= best.at) {
+      const keep = path.join(work, 'db.sql');
+      fs.renameSync(db, keep);
+      best.at = at;
+      best.file = keep;
+    }
+    if (fs.existsSync(path.join(x, 'mail'))) mergeMove(path.join(x, 'mail'), path.join(dir, 'mail'));
+    rmrf(x);
+    return true;
+  };
+
+  await takeIn(ownKey);
+  for (const m of members) {
+    log(`  taking in ${m.key}`);
+    if (!(await takeIn(m.key))) fail(`could not fetch ${m.key}; stopping the fold with nothing deleted`);
+  }
+  if (best.file) fs.renameSync(best.file, path.join(dir, 'database.sql'));
+  writeManifest(dir, kind, name, best.at);
+
+  const out = path.join(work, 'out.7z');
+  await sevenZipProgress(['a', '-t7z', `-mx=${LEVEL}`, '-mmt=on', out, '.'], dir,
+    (p) => log(`compressing ${ownKey}: ${p}%`));
   const size = (await fs.promises.stat(out)).size;
-  await putFile(BK_BUCKET, `${kind}/${name}.zip`, out, 'application/zip', IA);
-  log(`wrote ${kind}/${name}.zip (${(size / 1048576).toFixed(1)} MB)`);
+  log(`uploading ${ownKey} (${(size / 1048576).toFixed(1)} MB)...`);
+  await putFile(BK_BUCKET, ownKey, out, 'application/x-7z-compressed', IA);
+  log(`wrote ${ownKey} (${(size / 1048576).toFixed(1)} MB)`);
 
   // Only now, with the fold safely uploaded, do the members go.
   for (const m of members) {
@@ -661,9 +683,12 @@ async function fold(kind, name, srcPrefix, members) {
     log(`  deleted ${m.key}`);
   }
   rmrf(work);
-  rmrf(out);
   return { members: members.length, size };
 }
+
+// ---------------------------------------------------------------------------
+// Modes
+// ---------------------------------------------------------------------------
 
 async function main() {
   const mode = process.argv[2] || env.BACKUP_MODE || 'daily';
@@ -672,10 +697,7 @@ async function main() {
 
   if (mode === 'catchup') {
     log(`starting: catchup${process.argv[3] ? ' ' + process.argv[3] : ''}`);
-    const result = { mode };
-    // The optional day argument narrows the run to one day -- an operator's tool, not part of
-    // the normal flow, where the control plane sends no day at all.
-    Object.assign(result, await catchup(process.argv[3] || ''));
+    const result = { mode, ...(await sweep({ imports: true, onlyDay: process.argv[3] || '' })) };
     log('done: ' + JSON.stringify(result));
     console.log('CFMAIL_BACKUP_RESULT ' + JSON.stringify({ ok: true, ...result }));
     return;
@@ -684,7 +706,7 @@ async function main() {
   log(`starting: ${mode} ${day}`);
   const result = { mode, day };
   if (mode === 'daily' || mode === 'all') {
-    Object.assign(result, await dailyBackup(day));
+    Object.assign(result, await sweep({ imports: false, ensureDay: day }));
   }
 
   // The folds follow the calendar of the day the run happens on, which is the day after the one
@@ -695,13 +717,13 @@ async function main() {
       const m = day.slice(0, 7);
       const members = (await listAll(BK_BUCKET, `daily/${m}-`)).filter((o) => o.key.endsWith('.7z'));
       members.sort((a, b) => (a.key < b.key ? -1 : 1));
-      result.monthly = await fold('monthly', m, 'daily/', members);
+      result.monthly = await fold('monthly', m, members);
     }
     if (runDay.getUTCMonth() === 0 && runDay.getUTCDate() === 2) {
       const y = String(runDay.getUTCFullYear() - 1);
-      const members = (await listAll(BK_BUCKET, `monthly/${y}-`)).filter((o) => o.key.endsWith('.zip'));
+      const members = (await listAll(BK_BUCKET, `monthly/${y}-`)).filter((o) => o.key.endsWith('.7z'));
       members.sort((a, b) => (a.key < b.key ? -1 : 1));
-      result.yearly = await fold('yearly', y, 'monthly/', members);
+      result.yearly = await fold('yearly', y, members);
     }
   }
 

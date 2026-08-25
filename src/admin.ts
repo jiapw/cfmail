@@ -998,7 +998,7 @@ adminApp.get('/backup/file/*', async (c) => {
   requireGlobalAdmin(c);
   if (!c.env.BACKUP) throw new HttpError(400, 'e_backup_no_bucket');
   const key = decodeURIComponent(new URL(c.req.url).pathname.split('/backup/file/')[1] || '');
-  if (!key || key.includes('..') || !/^(daily\/[\d-]+(?:\.extra)?\.7z|monthly\/[\d-]+\.zip|yearly\/\d+\.zip)$/.test(key)) {
+  if (!key || key.includes('..') || !/^(daily\/[\d-]+\.7z|monthly\/[\d-]+\.7z|yearly\/\d+\.7z)$/.test(key)) {
     throw new HttpError(400, 'e_bad_request');
   }
   const obj = await c.env.BACKUP.get(key);

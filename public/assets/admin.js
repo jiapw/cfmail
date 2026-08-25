@@ -707,9 +707,13 @@ async function tabBackup(body) {
       </div>
       <div class="form-row">
         <label>${esc(t('bk_last'))}</label>
-        <span>${esc(st.finished_day || '—')}</span>
+        <span>${st.finished_at ? esc(st.result?.mode === 'catchup' ? t('bk_catchup') : t('bk_enable')) : '—'}</span>
         <span class="dim">${st.finished_at ? esc(fmtDateTime(st.finished_at)) : ''}</span>
-        ${st.result ? `<span class="dim">${esc(t('bk_last_result', st.result.objects ?? 0, fmtSize(st.result.size || 0)))}</span>` : ''}
+        ${st.result ? `<span class="dim">${esc(t('bk_last_result', st.result.objects ?? 0, fmtSize(st.result.size || st.result.bytes || 0)))}</span>` : ''}
+      </div>
+      <div class="form-row">
+        <label>${esc(t('bk_covered'))}</label>
+        <span>${esc(st.finished_day || '—')}</span>
       </div>
       ${st.last_error ? `<div class="form-row"><label>${esc(t('bk_error'))}</label><span class="dim">${esc(st.last_error)}</span></div>` : ''}
     </section>
@@ -790,11 +794,11 @@ async function tabBackup(body) {
     box.innerHTML = `
       <p style="margin:4px 0 8px">${esc(t('bk_pending_total', p.count, fmtSize(p.bytes)))}</p>
       <div class="bk-pend-rows">
-        ${p.days.map((d) => `
+        ${p.targets.map((x) => `
           <div class="bk-pend-row">
-            <span class="bk-name">${esc(d.day)}</span>
-            <span>${esc(t('bk_last_result', d.count, fmtSize(d.bytes)))}</span>
-            <span class="dim">${esc(t(d.action === 'create' ? 'bk_act_create' : 'bk_act_add', d.target))}</span>
+            <span class="bk-name">${esc(x.target)}</span>
+            <span>${esc(t('bk_last_result', x.count, fmtSize(x.bytes)))}</span>
+            <span class="dim">${esc(t(x.action === 'create' ? 'bk_act_new' : 'bk_act_merge'))}</span>
           </div>`).join('')}
       </div>
       <wa-button variant="brand" id="bk-catchup-go" ${st.ready && !running ? '' : 'disabled'}>${esc(t('bk_start_catchup'))}</wa-button>`;

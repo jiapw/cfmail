@@ -3,19 +3,17 @@
 //
 //   node scripts/restore.mjs --token <API token> --from daily/2026-08-24 [--dry-run]
 //
-// An archive holds two things: database.sql, a dump of the tables, and mail/, the message files
-// laid out under the storage keys they had. Rows go back first, then the message files, then one
-// statement rebuilds the search index -- which is not in the backup because it is derived, and
-// because D1 refuses to export a database containing a virtual table at all.
+// Every archive -- daily, monthly, yearly -- has the same shape: database.sql, a dump of the
+// tables, and mail/, the message files laid out under the storage keys they had. So every archive
+// restores the same way: rows go back first, then the message files, then one statement rebuilds
+// the search index -- which is not in the backup because it is derived, and because D1 refuses to
+// export a database containing a virtual table at all.
 //
 // WHAT IT DOES NOT DO
 // It does not recreate the deployment: no Worker, no DNS, no mail routing, no secrets. Point it at
 // a deployment that already exists and works. It also never deletes: rows are written with INSERT
 // OR REPLACE, so running it over a live database repairs what is missing and overwrites what
 // collides, and leaves anything newer alone.
-//
-// A monthly or yearly archive is a stored zip holding the dailies. Unpack one level first and
-// restore whichever day you want -- each daily stands on its own.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -37,15 +35,15 @@ const CONFIG = args.config ? path.resolve(args.config) : null;
 const SEVENZ = args['7z'] || process.env.SEVENZ_BIN || '7z';
 
 /** daily/2026-08-24 and daily/2026-08-24.7z both name the same archive */
-const FROM = String(args.from).replace(/\.7z$|\.zip$/, '');
-const EXT = FROM.startsWith('daily/') ? '.7z' : '.zip';
+const FROM = String(args.from).replace(/\.7z$/, '');
+const EXT = '.7z';
 
 function usage(code) {
   console.log(`
 Usage:
   node scripts/restore.mjs --token <API token> --from <archive> [options]
 
-  --from <p>     Which archive to restore, e.g. daily/2026-08-24
+  --from <p>     Which archive to restore, e.g. daily/2026-08-24 or yearly/2025
   --token <t>    Cloudflare API token; may also be the CLOUDFLARE_API_TOKEN environment variable
   --config <f>   Which wrangler configuration to use (wrangler.acct-<id>.jsonc for a second account)
   --skip-mail    Restore the database and leave the message files alone
@@ -56,8 +54,8 @@ Usage:
   Start with --dry-run: it fetches the archive, opens it, and says what is inside without
   writing anything back.
 
-  A monthly or yearly archive is a stored zip of dailies. Unpack it and restore a day out of
-  it -- each daily archive stands on its own.
+  Every archive has the same shape inside, so a monthly or yearly one restores exactly like a
+  daily -- it just carries more mail.
 `);
   process.exit(code);
 }
@@ -145,18 +143,12 @@ const mailDir = path.join(unpacked, 'mail');
 const manifest = path.join(unpacked, 'manifest.json');
 if (fs.existsSync(manifest)) {
   const m = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-  // A folded archive is a container of other archives, and restoring it directly means nothing.
-  // Saying which days are inside is more use than a complaint about the wrong file.
-  if (m.members) {
-    die('this is a monthly or yearly archive, which holds daily archives:\n'
-      + m.members.map((x) => '    ' + x).join('\n')
-      + '\n\n  Unpack it and restore one of those days.');
-  }
-  log(`archive for ${m.day || '?'}, made ${new Date(m.at || 0).toISOString()}`);
+  log(`archive for ${m.period || m.day || '?'}, made ${new Date(m.at || 0).toISOString()}`);
 }
-// A catch-up archive carries mail only; the database snapshots live in the automatic dailies.
+// Every archive carries a database snapshot; tolerating its absence costs nothing and keeps
+// archives made by older versions restorable.
 const hasDb = fs.existsSync(sql);
-if (!hasDb) log('no database.sql here (a catch-up archive holds mail only); skipping the database');
+if (!hasDb) log('no database.sql in this archive; restoring the mail only');
 const files = fs.existsSync(mailDir) ? walk(mailDir) : [];
 log(`${hasDb ? `database.sql ${(fs.statSync(sql).size / 1048576).toFixed(1)} MB, ` : ''}${files.length} message file(s)`);
 

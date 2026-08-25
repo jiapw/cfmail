@@ -379,26 +379,32 @@ the mail side of the deployment is packed into one file you can download and kee
 ### What is in an archive / 包里有什么
 
 ```
-daily/2026-08-23.7z        整库 SQL(22 张表)+ 当天新到的邮件原件(含附件)
-daily/2026-08-19.extra.7z  补档:导入的邮件,以及自动备份错过的日子(仅邮件,无 SQL)
-monthly/2026-08.zip        当月各份日包,原样收进来(zip store,不重压)
-yearly/2026.zip            当年各份月包,同上
+daily/2026-08-23.7z   本月中的一天:整库 SQL(22 张表)+ 属于这一天的邮件原件(含附件)
+monthly/2026-07.7z    本年中一个已结束的月份,内部形状与日包完全相同
+yearly/2025.7z        一个已结束的年份,同上
 ```
 
-Each message appears in exactly one archive -- the one for the day it arrived -- so nothing is
-stored twice. A monthly is a container of that month's dailies and a yearly a container of that
-year's monthlies, so restoring any given day means opening at most three nested files. On the
-first of a month last month's dailies are folded and deleted; on 2 January the same fold makes a
-year. All archives are written to R2's Infrequent Access storage class.
+Every archive has the same shape inside -- `database.sql`, `manifest.json`, and `mail/` holding
+the message files flat -- so any archive restores the same way. Mail is filed by the date each
+message itself shows (the one on it in the mail interface), not by when its bytes arrived: an
+import of ten years of mail files into ten years of archives, not into one giant file named after
+an afternoon. Each message appears in exactly one archive. On the first of a month last month's
+dailies are opened, tipped out flat and recompressed as one monthly; on 2 January the same fold
+makes a year. All archives are written to R2's Infrequent Access storage class.
 
-Imported mail never enters the archives on its own: an import drops thousands of historical
-messages into the store in one afternoon, and none of them belong to "the day that just ended".
-The Backup tab's **catch-up** shows what is in no archive yet -- imports, and mail from any days
-the automatic backup missed -- and files it into the archives for the days it arrived.
+每个包内部形状一致 —— `database.sql`、`manifest.json`,加上摊平放着邮件原件的 `mail/` ——
+所以任何一个包的恢复方式都一样。邮件按它自己显示的时间归档(就是邮件界面上那个时间),
+而不是字节落地的日子:导入十年的邮件,归进十年的包,而不是一个以某个下午命名的巨型文件。
+每封信只出现在一个包里。每月 1 号把上月各日包解开摊平、重新压成一个月包;
+每年 1 月 2 号同样折出年包。所有存档都写入 R2 的低频访问(Infrequent Access)存储类别。
 
-导入的邮件不会自动进包:一次导入会在一个下午塞进几千封历史邮件,它们不属于"刚结束的那一天"。
-备份页的**补档**会列出还不在任何包里的邮件 —— 导入的,以及自动备份错过的日子 ——
-并按到达日期补进各自的包。所有存档都写入 R2 的低频访问(Infrequent Access)存储类别。
+Imported mail never enters the archives on its own: it waits for the Backup tab's **catch-up**,
+which shows what is in no archive yet -- imports, and mail from any days the automatic backup
+missed -- and files it into the archives its own dates place it in, merging into existing
+archives where they already exist.
+
+导入的邮件不会自动进包:它等着备份页的**补档**。补档会列出还不在任何包里的邮件 ——
+导入的,以及自动备份错过的日子 —— 按每封信自己的时间归入所属的包;包已存在就并进去。
 
 每封信只出现在它到达那一天的日包里,所以没有任何东西被存两次。月包是当月日包的容器,
 年包是当年月包的容器,于是要恢复某一天,最多打开三层文件。每月 1 号折叠并删除上月日包,
