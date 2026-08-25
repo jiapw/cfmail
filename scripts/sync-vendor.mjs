@@ -115,7 +115,6 @@ const SPECS = [
  * not the other thirty.
  *
  *
- *
  */
 async function buildCodeMirror() {
   const entry = path.join(ROOT, 'scripts', 'codemirror.entry.js');
@@ -167,7 +166,6 @@ async function buildCodeMirror() {
  * something a build can check about itself.
  *
  *
- *
  */
 function assertNothingLeftBare(out, files) {
   const bare = [];
@@ -197,7 +195,6 @@ function assertNothingLeftBare(out, files) {
  * The list comes from the metafile rather than from package.json, because package.json says what
  * may be reached and the metafile says what was actually reached. A grammar dropped from the entry
  * would otherwise go on being credited here forever, and one added would never be.
- *
  *
  *
  */
@@ -244,7 +241,6 @@ function writeBundleLicense(out, metafile) {
  * Whether it is required is not stated here; it is asked of the application. While nothing imports
  * it, a missing build is worth mentioning and not worth stopping for. The moment something does,
  * the same absence becomes a broken deployment, and this says so.
- *
  *
  *
  */
