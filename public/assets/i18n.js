@@ -6233,15 +6233,6 @@ Object.assign(DICTS.fr, { e_backup_no_bucket: "Ce déploiement n'a pas de bucket
 Object.assign(DICTS.es, { e_backup_no_bucket: "Este despliegue no tiene bucket de copias; vuelva a desplegar para crearlo." });
 Object.assign(DICTS.ru, { e_backup_no_bucket: "В этой установке нет бакета для копий; разверните ещё раз, чтобы создать." });
 
-Object.assign(DICTS['zh-CN'], { bk_note: "每天把邮件一侧的全部数据打成一个包:整库 SQL,加上当天新到与当天导入的邮件原件(含附件)。日包用 7z 高压缩,每月 1 号把上月各日包收进一个 zip(store,不重压)并删掉日包,每年 1 月 2 号同样把上年各月包收进一个 zip。每封信只出现在它到达那天的包里,不重复存放。不含网盘与 AI 助手,也不含登录态和短期令牌。" });
-Object.assign(DICTS['zh-TW'], { bk_note: "每天把郵件一側的全部資料打成一個包:整庫 SQL,加上當天新到與當天匯入的郵件原件(含附件)。日包用 7z 高壓縮,每月 1 號把上月各日包收進一個 zip(store,不重壓)並刪掉日包,每年 1 月 2 號同樣把上年各月包收進一個 zip。每封信只出現在它到達那天的包裡,不重複存放。不含雲端硬碟與 AI 助理,也不含登入狀態與短期權杖。" });
-Object.assign(DICTS.en, { bk_note: "Packs the whole mail side into one file a day: the database as SQL, plus the messages that arrived or were imported that day, attachments included. Dailies use 7-Zip; on the first of each month last month’s dailies go into one stored zip and the dailies are deleted, and on 2 January the same fold makes a year. Each message appears in the archive for the day it arrived and nowhere else. Drive and the assistant are not included, nor are live logins and short-lived tokens." });
-Object.assign(DICTS.ja, { bk_note: "メール側のデータ一式を毎日ひとつのファイルにまとめます:データベースの SQL と、その日に届いた・取り込んだメール本体(添付を含む)。日次は 7-Zip、毎月 1 日に前月の日次をひとつの zip(無圧縮)へ収めて日次を削除し、1 月 2 日には同じ要領で年次を作ります。各メールは届いた日の書庫にのみ現れ、重複しません。ドライブと AI アシスタント、ログイン状態や短期トークンは含みません。" });
-Object.assign(DICTS.ko, { bk_note: "메일 쪽 데이터 전체를 매일 파일 하나로 묶습니다: 데이터베이스 SQL과 그날 도착하거나 가져온 메일 원본(첨부 포함). 일간은 7-Zip으로 압축하고, 매월 1일에 지난달 일간들을 zip 하나(무압축)에 담고 일간을 삭제하며, 1월 2일에는 같은 방식으로 연간을 만듭니다. 각 메일은 도착한 날의 보관 파일에만 들어가며 중복되지 않습니다. 드라이브와 AI 어시스턴트, 로그인 상태와 단기 토큰은 제외됩니다." });
-Object.assign(DICTS.de, { bk_note: "Packt die gesamte Mail-Seite täglich in eine Datei: die Datenbank als SQL, dazu die an dem Tag eingegangenen oder importierten Nachrichten samt Anhängen. Tageskopien nutzen 7-Zip; am Monatsersten wandern die Tage des Vormonats in ein gespeichertes Zip und werden gelöscht, am 2. Januar ebenso für das Jahr. Jede Nachricht liegt nur im Archiv ihres Eingangstags. Drive und der Assistent sind nicht dabei, ebenso wenig aktive Anmeldungen und kurzlebige Token." });
-Object.assign(DICTS.fr, { bk_note: "Emballe chaque jour toute la partie messagerie dans un seul fichier : la base en SQL, plus les messages arrivés ou importés ce jour-là, pièces jointes comprises. Les quotidiennes utilisent 7-Zip ; le 1er de chaque mois, celles du mois passé entrent dans un zip non compressé et sont supprimées, et le 2 janvier le même pliage donne l'année. Chaque message ne figure que dans l'archive de son jour d'arrivée. Le Drive et l'assistant en sont exclus, de même que les sessions et les jetons éphémères." });
-Object.assign(DICTS.es, { bk_note: "Empaqueta a diario todo el lado del correo en un solo archivo: la base como SQL, más los mensajes que llegaron o se importaron ese día, adjuntos incluidos. Las diarias usan 7-Zip; el día 1 de cada mes las del mes anterior pasan a un zip sin comprimir y se borran, y el 2 de enero el mismo plegado da el año. Cada mensaje figura solo en el archivo de su día de llegada. No incluye el Drive ni el asistente, ni las sesiones ni los tokens efímeros." });
-Object.assign(DICTS.ru, { bk_note: "Каждый день собирает всю почтовую часть в один файл: база в виде SQL плюс письма, пришедшие или импортированные в тот день, вместе с вложениями. Ежедневные сжимаются 7-Zip; 1-го числа прошлый месяц складывается в один zip без сжатия, а 2 января так же собирается год. Каждое письмо есть только в архиве своего дня. Диск и ассистент не входят, как и активные сеансы и краткоживущие токены." });
 
 Object.assign(DICTS['zh-CN'], { bk_hour: "每天" });
 Object.assign(DICTS['zh-TW'], { bk_hour: "每天" });
@@ -6394,12 +6385,22 @@ Object.assign(DICTS.fr, { e_backup_no_credentials: "Le conteneur de sauvegarde n
 Object.assign(DICTS.es, { e_backup_no_credentials: "El contenedor de copias no tiene credenciales. El script de despliegue crea el token y lo guarda; vuelva a desplegar." });
 Object.assign(DICTS.ru, { e_backup_no_credentials: "У контейнера нет учётных данных. Скрипт развёртывания создаёт токен и сохраняет его; разверните снова." });
 
-Object.assign(DICTS['zh-CN'], { bk_hour_note: "你的本地时间({0})。备份的是刚结束的那一天,按 UTC+0 切分。" });
-Object.assign(DICTS['zh-TW'], { bk_hour_note: "你的本地時間({0})。備份的是剛結束的那一天,按 UTC+0 切分。" });
-Object.assign(DICTS.en, { bk_hour_note: "Your local time ({0}). What is backed up is the day that has just ended, cut at UTC+0." });
-Object.assign(DICTS.ja, { bk_hour_note: "お使いの端末の時刻({0})。バックアップ対象は、UTC+0 で区切った「終わったばかりの一日」です。" });
-Object.assign(DICTS.ko, { bk_hour_note: "사용 중인 기기의 시간({0}). 백업 대상은 UTC+0으로 끊은 \"방금 끝난 하루\"입니다." });
-Object.assign(DICTS.de, { bk_hour_note: "Ihre lokale Zeit ({0}). Gesichert wird der Tag, der gerade zu Ende ging, geschnitten bei UTC+0." });
-Object.assign(DICTS.fr, { bk_hour_note: "Votre heure locale ({0}). Ce qui est sauvegardé, c'est la journée qui vient de s'achever, découpée à UTC+0." });
-Object.assign(DICTS.es, { bk_hour_note: "Su hora local ({0}). Se copia el día que acaba de terminar, cortado en UTC+0." });
-Object.assign(DICTS.ru, { bk_hour_note: "Ваше местное время ({0}). Сохраняется только что закончившийся день, отсчёт по UTC+0." });
+Object.assign(DICTS['zh-CN'], { bk_hour_note: "这里选的是你的本地时间({0})。备份的是刚结束的那一天,按 UTC+0 切分。" });
+Object.assign(DICTS['zh-TW'], { bk_hour_note: "這裡選的是你的本地時間({0})。備份的是剛結束的那一天,按 UTC+0 切分。" });
+Object.assign(DICTS.en, { bk_hour_note: "This picker is in your local time ({0}). What is backed up is the day that has just ended, cut at UTC+0." });
+Object.assign(DICTS.ja, { bk_hour_note: "ここで選ぶのはお使いの端末の時刻({0})です。バックアップ対象は、UTC+0 で区切った「終わったばかりの一日」です。" });
+Object.assign(DICTS.ko, { bk_hour_note: "여기서 고르는 것은 사용 중인 기기의 시간({0})입니다. 백업 대상은 UTC+0으로 끊은 \"방금 끝난 하루\"입니다." });
+Object.assign(DICTS.de, { bk_hour_note: "Diese Auswahl steht in Ihrer Ortszeit ({0}). Gesichert wird der Tag, der gerade zu Ende ging, geschnitten bei UTC+0." });
+Object.assign(DICTS.fr, { bk_hour_note: "Ce sélecteur est à votre heure locale ({0}). Ce qui est sauvegardé, c'est la journée qui vient de s'achever, découpée à UTC+0." });
+Object.assign(DICTS.es, { bk_hour_note: "Este selector va en su hora local ({0}). Se copia el día que acaba de terminar, cortado en UTC+0." });
+Object.assign(DICTS.ru, { bk_hour_note: "Здесь выбирается ваше местное время ({0}). Сохраняется только что закончившийся день, отсчёт по UTC+0." });
+
+Object.assign(DICTS['zh-CN'], { bk_note: "每天把邮件一侧的全部数据打成一个包:整库 SQL,加上当天新到与当天导入的邮件原件(含附件)。每封信只出现在它到达那天的包里,不重复存放。不含网盘与 AI 助手,也不含登录态和短期令牌。" });
+Object.assign(DICTS['zh-TW'], { bk_note: "每天把郵件一側的全部資料打成一個包:整庫 SQL,加上當天新到與當天匯入的郵件原件(含附件)。每封信只出現在它到達那天的包裡,不重複存放。不含雲端硬碟與 AI 助理,也不含登入狀態與短期權杖。" });
+Object.assign(DICTS.en, { bk_note: "Packs the whole mail side into one file a day: the database as SQL, plus the messages that arrived or were imported that day, attachments included. Each message appears in the archive for the day it arrived and nowhere else. Drive and the assistant are not included, nor are live logins and short-lived tokens." });
+Object.assign(DICTS.ja, { bk_note: "メール側のデータ一式を毎日ひとつのファイルにまとめます:データベースの SQL と、その日に届いた・取り込んだメール本体(添付を含む)。各メールは届いた日の書庫にのみ現れ、重複しません。ドライブと AI アシスタント、ログイン状態や短期トークンは含みません。" });
+Object.assign(DICTS.ko, { bk_note: "메일 쪽 데이터 전체를 매일 파일 하나로 묶습니다: 데이터베이스 SQL과 그날 도착하거나 가져온 메일 원본(첨부 포함). 각 메일은 도착한 날의 보관 파일에만 들어가며 중복되지 않습니다. 드라이브와 AI 어시스턴트, 로그인 상태와 단기 토큰은 제외됩니다." });
+Object.assign(DICTS.de, { bk_note: "Packt die gesamte Mail-Seite täglich in eine Datei: die Datenbank als SQL, dazu die an dem Tag eingegangenen oder importierten Nachrichten samt Anhängen. Jede Nachricht liegt nur im Archiv ihres Eingangstags. Drive und der Assistent sind nicht dabei, ebenso wenig aktive Anmeldungen und kurzlebige Token." });
+Object.assign(DICTS.fr, { bk_note: "Emballe chaque jour toute la partie messagerie dans un seul fichier : la base en SQL, plus les messages arrivés ou importés ce jour-là, pièces jointes comprises. Chaque message ne figure que dans l'archive de son jour d'arrivée. Le Drive et l'assistant en sont exclus, de même que les sessions et les jetons éphémères." });
+Object.assign(DICTS.es, { bk_note: "Empaqueta a diario todo el lado del correo en un solo archivo: la base como SQL, más los mensajes que llegaron o se importaron ese día, adjuntos incluidos. Cada mensaje figura solo en el archivo de su día de llegada. No incluye el Drive ni el asistente, ni las sesiones ni los tokens efímeros." });
+Object.assign(DICTS.ru, { bk_note: "Каждый день собирает всю почтовую часть в один файл: база в виде SQL плюс письма, пришедшие или импортированные в тот день, вместе с вложениями. Каждое письмо есть только в архиве своего дня. Диск и ассистент не входят, как и активные сеансы и краткоживущие токены." });

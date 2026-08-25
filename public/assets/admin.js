@@ -693,7 +693,7 @@ async function tabBackup(body) {
         <label>${esc(t('bk_enable'))}</label>
         <wa-switch id="bk-on" ${st.enabled ? 'checked' : ''} ${st.ready ? '' : 'disabled'}></wa-switch>
         <label style="margin-left:18px">${esc(t('bk_hour'))}</label>
-        <wa-select id="bk-hour" value="${st.hour}" style="width:150px">
+        <wa-select id="bk-hour" value="${st.hour}" style="width:110px">
           ${hours.map((h) => `<wa-option value="${h.utc}">${esc(h.label)}</wa-option>`).join('')}
         </wa-select>
         <span class="dim">${esc(t('bk_hour_note', tzName()))}</span>
