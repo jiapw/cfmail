@@ -717,6 +717,22 @@ function drawGrid(grid) {
 
 const ascii = (u8, p, n) => String.fromCharCode(...u8.subarray(p, p + n));
 
+/** The picture in the front of a song, wherever this format put it.
+ *
+ *  Four formats, four places, one question. Exported because the preview asks it too and there is
+ *  no reason for two answers: the parsers read a header, cost a few kilobytes of the file, and
+ *  need no decoder -- where the alternative is three and a half megabytes of WebAssembly opened to
+ *  read a JPEG that was sitting in plain sight.
+ *
+ *  一首歌开头的那张图,不论这种格式把它放在了哪里。
+ *
+ *  四种格式、四个地方、一个问题。导出它,是因为预览也要问同一个问题,而没有理由有两个答案:
+ *  这些解析器读的是一段头部,代价是文件的几千字节,而且不需要任何解码器 ——
+ *  另一条路则是打开三兆半的 WebAssembly,去读一张本来就摆在明面上的 JPEG。 */
+export function coverIn(u8) {
+  return id3Cover(u8) || mp4Cover(u8) || flacCover(u8) || asfCover(u8);
+}
+
 /** ID3v2 APIC / PIC frame (mp3, and aac files carrying an ID3 prefix)
  *  ID3v2 的 APIC/PIC 帧。mp3 与带 ID3 前缀的 aac 都走这里 */
 function id3Cover(u8) {
@@ -807,6 +823,104 @@ function mp4Cover(u8) {
 }
 
 /** FLAC METADATA_BLOCK_PICTURE (block type 6) / FLAC 的图片元数据块 */
+/**
+ * The picture in a Windows Media file: WM/Picture, in one of the two objects that can hold it.
+ *
+ * A folder from those years is where this matters -- seventy songs, three of them with a cover,
+ * and none of the three reachable by any of the parsers above. The header is a list of objects,
+ * each naming itself with a GUID and stating its own length, so it is walked rather than searched:
+ * a scan for the name would also find it inside the audio, on the file where somebody happened to
+ * sing about pictures.
+ *
+ * The two objects differ only in how their records are laid out, and both carry the same value: a
+ * type, a length, a MIME string and a description in UTF-16, and then the image file as it was
+ * put in.
+ *
+ * Windows Media 文件里的那张图:WM/Picture,在两个装得下它的对象之一里。
+ *
+ * 一个那些年代的文件夹正是这件事要紧的地方 —— 七十首歌,其中三首有封面,
+ * 而这三首用上面任何一个解析器都够不到。头部是一串对象,每个用 GUID 报出自己是谁、
+ * 自己有多长,所以这里是"走"过去而不是"搜"过去:按名字去搜,也会在音频里搜到它 ——
+ * 在那个恰好有人唱到"图片"的文件上。
+ *
+ * 那两个对象只在记录的排布上不同,装的是同一样东西:一个类型、一个长度、
+ * 一个 UTF-16 的 MIME 串和一段说明,然后是那个图像文件,原样。
+ */
+const ASF_HEADER = [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11, 0xa6, 0xd9, 0x00, 0xaa, 0x00, 0x62, 0xce, 0x6c];
+const ASF_EXTENDED = [0x40, 0xa4, 0xd0, 0xd2, 0x07, 0xe3, 0xd2, 0x11, 0x97, 0xf0, 0x00, 0xa0, 0xc9, 0x5e, 0xa8, 0x50];
+const ASF_LIBRARY = [0x94, 0x1c, 0x23, 0x44, 0x98, 0x94, 0xd1, 0x49, 0xa1, 0x41, 0x1d, 0x13, 0x4e, 0x45, 0x70, 0x54];
+
+function asfCover(u8) {
+  const is = (at, want) => want.every((b, i) => u8[at + i] === b);
+  const n16 = (at) => u8[at] | (u8[at + 1] << 8);
+  const n32 = (at) => (u8[at] | (u8[at + 1] << 8) | (u8[at + 2] << 16) | (u8[at + 3] << 24)) >>> 0;
+  // Lengths are eight bytes wide. Nothing here is four gigabytes, but the high half is read all
+  // the same, so that a file which claims to be says something impossible rather than something
+  // small. 长度是八个字节宽。这里没有四吉字节的东西,但高的那一半照读 ——
+  // 好让一个声称自己有那么大的文件说出一件不可能的事,而不是说出一件小事。
+  const n64 = (at) => n32(at) + n32(at + 4) * 4294967296;
+  const utf16 = (at, len) => {
+    let out = '';
+    for (let i = 0; i + 1 < len; i += 2) {
+      const c = n16(at + i);
+      if (!c) break;
+      out += String.fromCharCode(c);
+    }
+    return out;
+  };
+  const value = (at, len) => {
+    if (len < 9) return null;
+    const size = n32(at + 1);
+    const end = at + len;
+    let q = at + 5;
+    const past = () => { while (q + 1 < end && n16(q)) q += 2; q += 2; };
+    const from = q;
+    past();
+    const mime = utf16(from, q - from);
+    past();
+    if (size <= 64 || q + size > end) return null;
+    return new Blob([u8.slice(q, q + size)], { type: /png/i.test(mime) ? 'image/png' : 'image/jpeg' });
+  };
+
+  if (u8.length < 30 || !is(0, ASF_HEADER)) return null;
+  const objects = n32(24);
+  let p = 30;
+  for (let i = 0; i < objects && p + 24 <= u8.length; i++) {
+    const size = n64(p + 16);
+    if (size < 24 || p + size > u8.length) break;
+    const body = p + 24;
+    if (is(p, ASF_EXTENDED)) {
+      let q = body + 2;
+      for (let k = n16(body); k > 0 && q + 6 <= u8.length; k--) {
+        const nameLen = n16(q);
+        const type = n16(q + 2 + nameLen);
+        const valLen = n16(q + 4 + nameLen);
+        const val = q + 6 + nameLen;
+        if (type === 1 && utf16(q + 2, nameLen) === 'WM/Picture') {
+          const hit = value(val, valLen);
+          if (hit) return hit;
+        }
+        q = val + valLen;
+      }
+    } else if (is(p, ASF_LIBRARY)) {
+      let q = body + 2;
+      for (let k = n16(body); k > 0 && q + 12 <= u8.length; k--) {
+        const nameLen = n16(q + 4);
+        const type = n16(q + 6);
+        const dataLen = n32(q + 8);
+        const val = q + 12 + nameLen;
+        if (type === 1 && utf16(q + 12, nameLen) === 'WM/Picture') {
+          const hit = value(val, dataLen);
+          if (hit) return hit;
+        }
+        q = val + dataLen;
+      }
+    }
+    p += size;
+  }
+  return null;
+}
+
 function flacCover(u8) {
   if (u8.length < 8 || ascii(u8, 0, 4) !== 'fLaC') return null;
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
@@ -883,7 +997,7 @@ async function fromAudio(file) {
   // 封面一般在文件开头。罕见的 moov 在尾部的 mp4 除外。读取量设上限
   const buf = await (file.size <= 48 * 1024 * 1024 ? file : file.slice(0, 8 * 1024 * 1024)).arrayBuffer();
   const u8 = new Uint8Array(buf);
-  const cover = id3Cover(u8) || mp4Cover(u8) || flacCover(u8);
+  const cover = coverIn(u8);
   if (cover) {
     try {
       const bmp = await createImageBitmap(cover);

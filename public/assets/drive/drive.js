@@ -2983,19 +2983,71 @@ function paintPvShell(n, body) {
 async function playSong(n, src, mime) {
   const here = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
   const tune = hearing(n.name, mime);
+  // A song the browser is already playing, whose cover was read once and kept, has nothing left
+  // to ask of the file. The first look pays for every one after it.
+  // 一首浏览器已经在放、而封面早就读过并存下来的歌,对这个文件已经没什么可问的了。
+  // 第一次看的那次,替之后每一次都付过账了。
+  if (tune !== 'remux' && n.thumb) return;
+
+  // The picture first, and without a decoder. Every format that carries a cover puts it in the
+  // header, so this is a few kilobytes off the front of the file and four parsers that read
+  // bytes -- against opening three and a half megabytes of WebAssembly, which for an ordinary
+  // .mp3 this build cannot even do: it has the decoder for MP3 and not the demuxer, because
+  // browsers play MP3 and nothing here ever needed to take one apart.
+  // 先取那张图,而且不动解码器。每一种带封面的格式都把它放在头里,
+  // 所以这是"文件开头的几千字节,加四个只读字节的解析器" ——
+  // 对面则是打开三兆半的 WebAssembly;而对一个普通的 .mp3,这份构建根本做不到:
+  // 它有 MP3 的解码器,没有 MP3 的解复用器 —— 因为浏览器会放 MP3,这里从没需要拆开过一个。
+  let art = null;
+  try {
+    const mod = await loadThumbMod();
+    const head = await frontOf(n, src);
+    if (head) art = mod.coverIn(head);
+  } catch { /* no picture is not a failure / 没有图不是失败 */ }
+  if (art) await showCover(n, here(), art);
+  if (tune !== 'remux') {
+    // The list of boxes a browser opens is a guess about somebody else's software, and the guess
+    // is wrong the first time an .m4a turns out to hold Apple Lossless. So the guess is not
+    // relied on: the element is given the file, and if it says it cannot, the rebuild happens
+    // then. Nobody has to have thought of the format in advance.
+    // "浏览器打得开哪些盒子"这份名单,是对别人家软件的一次猜测,
+    // 而这个猜测在第一个装着 Apple Lossless 的 .m4a 出现时就错了。所以这里不依赖那个猜测:
+    // 把文件交给那个元素,它说它不行的时候,重建就在那时发生 —— 不需要有人事先想到过这种格式。
+    const au = here()?.querySelector('.drv-audio audio');
+    au?.addEventListener('error', () => {
+      if (!here() || pvBlob) return;
+      const veil = here()?.querySelector('.drv-pvwait');
+      if (veil && !veil.querySelector('.drv-conv')) {
+        const note = document.createElement('div');
+        note.className = 'drv-conv';
+        note.textContent = t('drv_vid_converting');
+        veil.appendChild(note);
+        veil.style.display = '';
+      }
+      void rebuildSong(n, src, art);
+    }, { once: true });
+    return;
+  }
+  await rebuildSong(n, src, art);
+}
+
+/** The half that opens a decoder: for a box no browser reads, and for the one that turned out to
+ *  hold something this browser will not.
+ *  动用解码器的那一半:给"没有浏览器读得懂的盒子",以及那个"结果里面装着这台浏览器不肯收的东西"的。 */
+async function rebuildSong(n, src, art) {
+  const here = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
   let out = null;
   try {
     const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
     const source = /^blob:/.test(src)
       ? await (await fetch(src)).blob()
       : { url: src, size: n.size || 0 };
-    out = await mod.song(source, { convert: tune === 'remux' });
+    out = await mod.song(source, { convert: true });
   } catch (e) {
     // A song that plays by itself and only failed to give up its picture has lost nothing worth
     // saying. One that had to be rebuilt and could not, has.
     // 一首自己就能放、只是没交出封面的歌,没有损失什么值得一说的东西。
     // 一首必须被重建而没能重建的,有。
-    if (tune !== 'remux') return;
     const el = here();
     const box = el?.querySelector('.drv-view-body');
     // Which encoding it was is worth carrying out: "this needs another program" is a different
@@ -3008,6 +3060,7 @@ async function playSong(n, src, mime) {
   const el = here();
   if (!el) return;
   if (out.blob) {
+    if (pvBlob) URL.revokeObjectURL(pvBlob);
     pvBlob = URL.createObjectURL(out.blob);
     const au = el.querySelector('.drv-audio audio');
     if (au) {
@@ -3015,7 +3068,26 @@ async function playSong(n, src, mime) {
       au.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
     }
   }
-  if (out.cover) await showCover(n, el, out.cover);
+  // Only if the parsers came up empty: a rebuild has already read the whole file, so what it
+  // noticed on the way through costs nothing and covers the formats they do not know.
+  // 只在解析器空手而归时才用:一次重建已经把整个文件读过了,
+  // 于是它路过时注意到的东西不花什么代价,而且覆盖了它们不认识的那些格式。
+  if (!art && out.cover) await showCover(n, el, out.cover);
+}
+
+/** The front of a file, which is where a cover is. Read from the drive in one range request
+ *  rather than by downloading a song to look at its header.
+ *  一个文件的开头,封面就在那里。用一次区间请求从网盘取,
+ *  而不是为了看一眼头部就把一首歌整个下下来。 */
+async function frontOf(n, src) {
+  const want = Math.min(n.size || FRONT, FRONT);
+  if (/^blob:/.test(src)) {
+    const b = await (await fetch(src)).blob();
+    return new Uint8Array(await b.slice(0, want).arrayBuffer());
+  }
+  const res = await fetch(src, { headers: { Range: `bytes=0-${want - 1}` } });
+  if (!res.ok) return null;
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 /** The picture out of a song, on the card -- and kept, so the folder shows it too.
@@ -3031,6 +3103,7 @@ async function playSong(n, src, mime) {
  *  一张本来就是 JPEG 的封面,原样 POST 上去也行,那样就会有两种缩略图,
  *  而其中一种会是没人记得住的那个例外。 */
 async function showCover(n, el, blob) {
+  if (!el) return;
   const url = URL.createObjectURL(blob);
   const card = el.querySelector('.drv-audio');
   if (!card) { URL.revokeObjectURL(url); return; }
@@ -3067,6 +3140,12 @@ async function showCover(n, el, blob) {
  *  一次一部。片子持有一个解复用器、一个 muxer 和一个 WebAssembly 实例,而只要还有人向它取,
  *  它就一直在转 —— 所以换到下一个预览时必须把它放掉,
  *  否则两次转换会同时压在同一个库上,而其中没有一个在看着屏幕。 */
+/** How much of a song to read looking for its cover. Every format that carries one puts it in
+ *  the header; a file that has not shown one by here does not have one.
+ *  为找封面愿意读一首歌的多少。每一种带封面的格式都把它放在头里;
+ *  到这里还没露面的文件,就是没有。 */
+const FRONT = 8 * 1024 * 1024;
+
 let pvBlob = null;
 let pvArt = null;
 let pvFilm = null;
