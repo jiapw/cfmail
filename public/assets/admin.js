@@ -88,7 +88,7 @@ async function tabOverview(body) {
       <td><b>${esc(d.name)}</b></td>
       <td>${d.mailbox_count}</td>
       <td>${d.member_count}</td>
-      <td>${d.msg_count}<span class="dim">${esc(t('in_out', d.msg_in, d.msg_out))}</span></td>
+      <td>${d.msg_count} <span class="dim">${esc(t('in_out', d.msg_in, d.msg_out))}</span></td>
       <td>${fmtSize(d.bytes)}</td>
       <td>${d.last_activity ? fmtDateTime(d.last_activity) : '—'}</td>
     </tr>`
@@ -98,10 +98,6 @@ async function tabOverview(body) {
     (a, d) => ({ mb: a.mb + d.mailbox_count, msg: a.msg + d.msg_count, bytes: a.bytes + d.bytes }),
     { mb: 0, msg: 0, bytes: 0 }
   );
-  const stName = { queued: t('st_queued'), sending: t('st_sending'), sent: t('st_sent'), failed: t('st_failed') };
-  const outboxHtml = (data.outbox || [])
-    .map((o) => `<span class="chip ${o.status === 'failed' ? 'chip-err' : o.status === 'queued' ? 'chip-warn' : 'chip-ok'}">${esc(stName[o.status] || o.status)} ${o.n}</span>`)
-    .join(' ');
   body.innerHTML = `
     <section class="card">
       <h3>${esc(t('by_domain'))}</h3>
@@ -110,10 +106,6 @@ async function tabOverview(body) {
         <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('no_domains'))}</td></tr>`}</tbody>
         <tfoot><tr><td>${esc(t('sum_domains', data.domains.length))}</td><td>${total.mb}</td><td></td><td>${total.msg}</td><td>${fmtSize(total.bytes)}</td><td></td></tr></tfoot>
       </table>
-    </section>
-    <section class="card">
-      <h3>${esc(t('outbox_title'))}</h3>
-      <div>${outboxHtml || `<span class="dim">${esc(t('no_send_records'))}</span>`}</div>
     </section>`;
 }
 
@@ -349,11 +341,29 @@ async function renderDomainInfo(domainId) {
 // ---------- 邮箱 ----------
 
 async function tabMailboxes(body) {
-  const { domains } = await api('GET', '/api/admin/domains');
+  const isGlobal = !!store.me.user.is_admin;
+  const [{ domains }, ob] = await Promise.all([
+    api('GET', '/api/admin/domains'),
+    // The send queue is site-wide, not per domain, so it sits outside the per-domain detail --
+    // and only a global administrator gets to see cross-domain send volumes.
+    // 发件队列是全站的,不分域名,所以放在按域详情之外 -- 而且跨域发件量只给全局管理员看。
+    isGlobal ? api('GET', '/api/admin/outbox').catch(() => null) : Promise.resolve(null),
+  ]);
   const sel = pickDomain(domains);
+  const stName = { queued: t('st_queued'), sending: t('st_sending'), sent: t('st_sent'), failed: t('st_failed') };
+  const outboxHtml = ob
+    ? (ob.outbox || [])
+      .map((o) => `<span class="chip ${o.status === 'failed' ? 'chip-err' : o.status === 'queued' ? 'chip-warn' : 'chip-ok'}">${esc(stName[o.status] || o.status)} ${o.n}</span>`)
+      .join(' ')
+    : '';
   body.innerHTML = `
     ${domainPickerCard(domains, sel, false, false)}
-    <div id="mb-detail"><div class="loading">${esc(t('loading'))}</div></div>`;
+    <div id="mb-detail"><div class="loading">${esc(t('loading'))}</div></div>
+    ${ob ? `
+    <section class="card">
+      <h3>${esc(t('outbox_title'))}</h3>
+      <div>${outboxHtml || `<span class="dim">${esc(t('no_send_records'))}</span>`}</div>
+    </section>` : ''}`;
   qs('#dom-sel')?.addEventListener('change', (e) => {
     domPick = e.target.value;
     renderMailboxDetail(domPick);

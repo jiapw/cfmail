@@ -109,12 +109,21 @@ adminApp.get('/overview', async (c) => {
   ).all<any>();
   let domains = rows.results || [];
   if (scope) domains = domains.filter((d: any) => scope.has(d.id));
-  // The outbox is a site-wide send queue with no domain dimension, so it is shown to global admins only -- a domain admin should not see cross-domain send volumes
-  // outbox 是全站发件队列聚合,没有域维度;只给全局管理员看,不泄露跨域发件总量给域管理员
-  const outbox = scope
-    ? { results: [] }
-    : await c.env.DB.prepare('SELECT status, COUNT(*) AS n FROM outbox GROUP BY status').all<any>();
-  return c.json({ domains, outbox: outbox.results || [], is_global_admin: !!c.get('user').is_admin });
+  return c.json({ domains, is_global_admin: !!c.get('user').is_admin });
+});
+
+/**
+ * The send queue, grouped by status. It is a site-wide aggregate with no domain dimension, so it
+ * is for global administrators only -- a domain admin should not see cross-domain send volumes.
+ * The console shows it on the Mailboxes page.
+ *
+ * 发件队列,按状态聚合。它是全站的、没有域维度,所以只给全局管理员 --
+ * 域管理员不该看到跨域的发件总量。后台在「邮箱」页展示它。
+ */
+adminApp.get('/outbox', async (c) => {
+  requireGlobalAdmin(c);
+  const r = await c.env.DB.prepare('SELECT status, COUNT(*) AS n FROM outbox GROUP BY status').all<any>();
+  return c.json({ outbox: r.results || [] });
 });
 
 // ---------- Domains ----------
