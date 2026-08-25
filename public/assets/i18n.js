@@ -60,7 +60,7 @@ const zhCN = {
   sys_status: '系统状态', send_channel: '发信通道', ch_connected: '{0}(已接入)', ch_dev: 'dev(未接入,外部邮件不会真实发出,站内互发正常)', my_mailboxes: '我的邮箱', none: '无', alias_prefix: '别名: ',
   language: '界面语言', t_lang_saved: '语言已切换',
   role_owner: '所有者', role_member: '成员', role_readonly: '只读',
-  a_overview: '总览', a_domains: '域名与邮箱', a_users: '成员', a_invites: '邀请', back_mail: '返回邮箱',
+  a_overview: '总览', a_domains: '域名', a_users: '成员', a_invites: '邀请', back_mail: '返回邮箱',
   by_domain: '按域名统计', th_domain: '域名', th_mb_count: '邮箱数', th_member_count: '成员数', th_msg_count: '邮件数', th_storage: '存储', th_last_active: '最近活动',
   sum_domains: '合计 {0} 个域名', in_out: '(收 {0} / 发 {1})', outbox_title: '发件队列',
   st_queued: '排队中', st_sending: '发送中', st_sent: '已投递', st_failed: '失败', no_domains: '还没有域名', no_send_records: '暂无发送记录',
@@ -195,7 +195,7 @@ const zhTW = {
   sys_status: '系統狀態', send_channel: '寄信通道', ch_connected: '{0}(已接入)', ch_dev: 'dev(未接入,外部郵件不會真實寄出,站內互寄正常)', my_mailboxes: '我的信箱', none: '無', alias_prefix: '別名: ',
   language: '介面語言', t_lang_saved: '語言已切換',
   role_owner: '擁有者', role_member: '成員', role_readonly: '唯讀',
-  a_overview: '總覽', a_domains: '網域與信箱', a_users: '成員', a_invites: '邀請', back_mail: '返回信箱',
+  a_overview: '總覽', a_domains: '網域', a_users: '成員', a_invites: '邀請', back_mail: '返回信箱',
   by_domain: '按網域統計', th_domain: '網域', th_mb_count: '信箱數', th_member_count: '成員數', th_msg_count: '郵件數', th_storage: '儲存', th_last_active: '最近活動',
   sum_domains: '合計 {0} 個網域', in_out: '(收 {0} / 寄 {1})', outbox_title: '寄件佇列',
   st_queued: '排隊中', st_sending: '傳送中', st_sent: '已投遞', st_failed: '失敗', no_domains: '還沒有網域', no_send_records: '暫無傳送紀錄',
@@ -330,7 +330,7 @@ const en = {
   sys_status: 'System status', send_channel: 'Sending channel', ch_connected: '{0} (connected)', ch_dev: 'dev (not connected; external mail not actually sent)', my_mailboxes: 'My mailboxes', none: 'None', alias_prefix: 'aliases: ',
   language: 'Language', t_lang_saved: 'Language changed',
   role_owner: 'Owner', role_member: 'Member', role_readonly: 'Read-only',
-  a_overview: 'Overview', a_domains: 'Domains & mailboxes', a_users: 'Members', a_invites: 'Invitations', back_mail: 'Back to mail',
+  a_overview: 'Overview', a_domains: 'Domains', a_users: 'Members', a_invites: 'Invitations', back_mail: 'Back to mail',
   by_domain: 'By domain', th_domain: 'Domain', th_mb_count: 'Mailboxes', th_member_count: 'Members', th_msg_count: 'Messages', th_storage: 'Storage', th_last_active: 'Last activity',
   sum_domains: 'Total {0} domains', in_out: '(in {0} / out {1})', outbox_title: 'Outbox queue',
   st_queued: 'Queued', st_sending: 'Sending', st_sent: 'Delivered', st_failed: 'Failed', no_domains: 'No domains yet', no_send_records: 'No sending records',
@@ -465,7 +465,7 @@ const ja = {
   sys_status: 'システム状態', send_channel: '送信チャネル', ch_connected: '{0}(接続済み)', ch_dev: 'dev(未接続。外部メールは実送信されません)', my_mailboxes: 'マイメールボックス', none: 'なし', alias_prefix: 'エイリアス: ',
   language: '表示言語', t_lang_saved: '言語を切り替えました',
   role_owner: 'オーナー', role_member: 'メンバー', role_readonly: '閲覧のみ',
-  a_overview: '概要', a_domains: 'ドメインとメールボックス', a_users: 'メンバー', a_invites: '招待', back_mail: 'メールに戻る',
+  a_overview: '概要', a_domains: 'ドメイン', a_users: 'メンバー', a_invites: '招待', back_mail: 'メールに戻る',
   by_domain: 'ドメイン別統計', th_domain: 'ドメイン', th_mb_count: 'メールボックス数', th_member_count: 'メンバー数', th_msg_count: 'メール数', th_storage: 'ストレージ', th_last_active: '最終アクティビティ',
   sum_domains: '合計 {0} ドメイン', in_out: '(受 {0} / 送 {1})', outbox_title: '送信キュー',
   st_queued: '待機中', st_sending: '送信中', st_sent: '配信済み', st_failed: '失敗', no_domains: 'ドメインがありません', no_send_records: '送信記録なし',
@@ -600,7 +600,7 @@ const ko = {
   sys_status: '시스템 상태', send_channel: '발신 채널', ch_connected: '{0}(연결됨)', ch_dev: 'dev(미연결, 외부 메일은 실제 발송되지 않음)', my_mailboxes: '내 사서함', none: '없음', alias_prefix: '별칭: ',
   language: '표시 언어', t_lang_saved: '언어를 변경했습니다',
   role_owner: '소유자', role_member: '멤버', role_readonly: '읽기전용',
-  a_overview: '개요', a_domains: '도메인·사서함', a_users: '멤버', a_invites: '초대', back_mail: '메일로 돌아가기',
+  a_overview: '개요', a_domains: '도메인', a_users: '멤버', a_invites: '초대', back_mail: '메일로 돌아가기',
   by_domain: '도메인별 통계', th_domain: '도메인', th_mb_count: '사서함 수', th_member_count: '멤버 수', th_msg_count: '메일 수', th_storage: '저장용량', th_last_active: '최근 활동',
   sum_domains: '총 {0}개 도메인', in_out: '(수신 {0} / 발신 {1})', outbox_title: '발신 대기열',
   st_queued: '대기 중', st_sending: '보내는 중', st_sent: '전송됨', st_failed: '실패', no_domains: '도메인이 없습니다', no_send_records: '발송 기록 없음',
@@ -735,7 +735,7 @@ const de = {
   sys_status: 'Systemstatus', send_channel: 'Versandkanal', ch_connected: '{0} (verbunden)', ch_dev: 'dev (nicht verbunden; externe Mails werden nicht gesendet)', my_mailboxes: 'Meine Postfächer', none: 'Keine', alias_prefix: 'Aliasse: ',
   language: 'Sprache', t_lang_saved: 'Sprache geändert',
   role_owner: 'Inhaber', role_member: 'Mitglied', role_readonly: 'Nur Lesen',
-  a_overview: 'Übersicht', a_domains: 'Domains & Postfächer', a_users: 'Mitglieder', a_invites: 'Einladungen', back_mail: 'Zurück zu E-Mail',
+  a_overview: 'Übersicht', a_domains: 'Domains', a_users: 'Mitglieder', a_invites: 'Einladungen', back_mail: 'Zurück zu E-Mail',
   by_domain: 'Nach Domain', th_domain: 'Domain', th_mb_count: 'Postfächer', th_member_count: 'Mitglieder', th_msg_count: 'Nachrichten', th_storage: 'Speicher', th_last_active: 'Letzte Aktivität',
   sum_domains: 'Gesamt {0} Domains', in_out: '(ein {0} / aus {1})', outbox_title: 'Ausgangswarteschlange',
   st_queued: 'Wartend', st_sending: 'Wird gesendet', st_sent: 'Zugestellt', st_failed: 'Fehlgeschlagen', no_domains: 'Noch keine Domains', no_send_records: 'Keine Versanddaten',
@@ -870,7 +870,7 @@ const fr = {
   sys_status: 'État du système', send_channel: 'Canal d’envoi', ch_connected: '{0} (connecté)', ch_dev: 'dev (non connecté ; envois externes désactivés)', my_mailboxes: 'Mes boîtes', none: 'Aucune', alias_prefix: 'alias : ',
   language: 'Langue', t_lang_saved: 'Langue modifiée',
   role_owner: 'Propriétaire', role_member: 'Membre', role_readonly: 'Lecture seule',
-  a_overview: 'Vue d’ensemble', a_domains: 'Domaines & boîtes', a_users: 'Membres', a_invites: 'Invitations', back_mail: 'Retour au courrier',
+  a_overview: 'Vue d’ensemble', a_domains: 'Domaines', a_users: 'Membres', a_invites: 'Invitations', back_mail: 'Retour au courrier',
   by_domain: 'Par domaine', th_domain: 'Domaine', th_mb_count: 'Boîtes', th_member_count: 'Membres', th_msg_count: 'Messages', th_storage: 'Stockage', th_last_active: 'Dernière activité',
   sum_domains: 'Total {0} domaines', in_out: '(reçus {0} / envoyés {1})', outbox_title: 'File d’envoi',
   st_queued: 'En attente', st_sending: 'Envoi', st_sent: 'Distribué', st_failed: 'Échec', no_domains: 'Aucun domaine', no_send_records: 'Aucun envoi',
@@ -1005,7 +1005,7 @@ const es = {
   sys_status: 'Estado del sistema', send_channel: 'Canal de envío', ch_connected: '{0} (conectado)', ch_dev: 'dev (sin conectar; el correo externo no sale)', my_mailboxes: 'Mis buzones', none: 'Ninguno', alias_prefix: 'alias: ',
   language: 'Idioma', t_lang_saved: 'Idioma cambiado',
   role_owner: 'Propietario', role_member: 'Miembro', role_readonly: 'Solo lectura',
-  a_overview: 'Resumen', a_domains: 'Dominios y buzones', a_users: 'Miembros', a_invites: 'Invitaciones', back_mail: 'Volver al correo',
+  a_overview: 'Resumen', a_domains: 'Dominios', a_users: 'Miembros', a_invites: 'Invitaciones', back_mail: 'Volver al correo',
   by_domain: 'Por dominio', th_domain: 'Dominio', th_mb_count: 'Buzones', th_member_count: 'Miembros', th_msg_count: 'Mensajes', th_storage: 'Almacenamiento', th_last_active: 'Última actividad',
   sum_domains: 'Total {0} dominios', in_out: '(entra {0} / sale {1})', outbox_title: 'Cola de salida',
   st_queued: 'En cola', st_sending: 'Enviando', st_sent: 'Entregado', st_failed: 'Falló', no_domains: 'Sin dominios', no_send_records: 'Sin registros de envío',
@@ -1140,7 +1140,7 @@ const ru = {
   sys_status: 'Состояние системы', send_channel: 'Канал отправки', ch_connected: '{0} (подключён)', ch_dev: 'dev (не подключён; внешняя почта не отправляется)', my_mailboxes: 'Мои ящики', none: 'Нет', alias_prefix: 'алиасы: ',
   language: 'Язык интерфейса', t_lang_saved: 'Язык изменён',
   role_owner: 'Владелец', role_member: 'Участник', role_readonly: 'Только чтение',
-  a_overview: 'Обзор', a_domains: 'Домены и ящики', a_users: 'Участники', a_invites: 'Приглашения', back_mail: 'К почте',
+  a_overview: 'Обзор', a_domains: 'Домены', a_users: 'Участники', a_invites: 'Приглашения', back_mail: 'К почте',
   by_domain: 'По доменам', th_domain: 'Домен', th_mb_count: 'Ящиков', th_member_count: 'Участников', th_msg_count: 'Писем', th_storage: 'Хранилище', th_last_active: 'Активность',
   sum_domains: 'Всего доменов: {0}', in_out: '(вход. {0} / исход. {1})', outbox_title: 'Очередь отправки',
   st_queued: 'В очереди', st_sending: 'Отправка', st_sent: 'Доставлено', st_failed: 'Ошибка', no_domains: 'Доменов пока нет', no_send_records: 'Отправок нет',
@@ -1316,7 +1316,7 @@ Object.assign(DICTS['zh-CN'], {
   c_too_many_files: '一条消息最多 8 个附件',
   c_mem_title: '长期记忆', c_mem_note: '对话中的重要信息会自动记住，跨对话生效；可随时删除。',
   c_mem_empty: '还没有记忆。对话中提到的重要信息会自动收集到这里。', c_mem_clear: '清空全部', c_mem_clear_confirm: '清空所有记忆？',
-  a_ai: 'AI 助手', ai_global_only: '仅全局管理员可配置', ai_enable: '启用 AI 助手',
+  a_ai: 'AI 助手(实验)', ai_global_only: '仅全局管理员可配置', ai_enable: '启用 AI 助手',
   ai_enable_note: '开启后所有用户的顶栏会出现 AI 助手入口。默认关闭。',
   ai_default_model: '默认模型', ai_search_key: 'Brave Search Key',
   ai_key_set: '已配置，输入新值可替换', ai_key_ph: '可选，留空用 DuckDuckGo',
@@ -1337,7 +1337,7 @@ Object.assign(DICTS['zh-TW'], {
   c_too_many_files: '一則訊息最多 8 個附件',
   c_mem_title: '長期記憶', c_mem_note: '對話中的重要資訊會自動記住，跨對話生效；可隨時刪除。',
   c_mem_empty: '還沒有記憶。對話中提到的重要資訊會自動收集到這裡。', c_mem_clear: '清空全部', c_mem_clear_confirm: '清空所有記憶？',
-  a_ai: 'AI 助手', ai_global_only: '僅全域管理員可設定', ai_enable: '啟用 AI 助手',
+  a_ai: 'AI 助手(實驗)', ai_global_only: '僅全域管理員可設定', ai_enable: '啟用 AI 助手',
   ai_enable_note: '開啟後所有使用者的頂欄會出現 AI 助手入口。預設關閉。',
   ai_default_model: '預設模型', ai_search_key: 'Brave Search Key',
   ai_key_set: '已設定，輸入新值可取代', ai_key_ph: '可選，留空用 DuckDuckGo',
@@ -1358,7 +1358,7 @@ Object.assign(DICTS.en, {
   c_too_many_files: 'Up to 8 attachments per message',
   c_mem_title: 'Memory', c_mem_note: 'Important facts from chats are remembered across conversations. Delete anytime.',
   c_mem_empty: 'No memories yet. Important information from your chats will be collected here.', c_mem_clear: 'Clear all', c_mem_clear_confirm: 'Clear all memories?',
-  a_ai: 'AI Assistant', ai_global_only: 'Global admins only', ai_enable: 'Enable AI Assistant',
+  a_ai: 'AI Assistant (experimental)', ai_global_only: 'Global admins only', ai_enable: 'Enable AI Assistant',
   ai_enable_note: 'When enabled, an AI Assistant entry appears in the top bar for all users. Off by default.',
   ai_default_model: 'Default model', ai_search_key: 'Brave Search Key',
   ai_key_set: 'Configured. Enter a new value to replace', ai_key_ph: 'Optional, DuckDuckGo used if empty',
@@ -1379,7 +1379,7 @@ Object.assign(DICTS.ja, {
   c_too_many_files: '1 メッセージに添付できるのは 8 件まで',
   c_mem_title: '長期メモリ', c_mem_note: '会話中の重要な情報を自動的に記憶し、会話をまたいで有効です。いつでも削除できます。',
   c_mem_empty: 'まだメモリはありません。会話の重要な情報がここに集まります。', c_mem_clear: 'すべて消去', c_mem_clear_confirm: 'すべてのメモリを消去しますか？',
-  a_ai: 'AI アシスタント', ai_global_only: 'グローバル管理者のみ', ai_enable: 'AI アシスタントを有効化',
+  a_ai: 'AI アシスタント(実験的)', ai_global_only: 'グローバル管理者のみ', ai_enable: 'AI アシスタントを有効化',
   ai_enable_note: '有効にすると全ユーザーのトップバーに AI アシスタントの入口が表示されます。既定ではオフ。',
   ai_default_model: '既定モデル', ai_search_key: 'Brave Search Key',
   ai_key_set: '設定済み。新しい値で置き換え', ai_key_ph: '任意。空欄なら DuckDuckGo',
@@ -1400,7 +1400,7 @@ Object.assign(DICTS.ko, {
   c_too_many_files: '메시지당 첨부는 최대 8개',
   c_mem_title: '장기 메모리', c_mem_note: '대화의 중요한 정보를 자동으로 기억하며 대화 간에 유지됩니다. 언제든 삭제할 수 있습니다.',
   c_mem_empty: '아직 메모리가 없습니다. 대화의 중요한 정보가 여기에 수집됩니다.', c_mem_clear: '모두 지우기', c_mem_clear_confirm: '모든 메모리를 지울까요?',
-  a_ai: 'AI 어시스턴트', ai_global_only: '전역 관리자 전용', ai_enable: 'AI 어시스턴트 사용',
+  a_ai: 'AI 어시스턴트(실험)', ai_global_only: '전역 관리자 전용', ai_enable: 'AI 어시스턴트 사용',
   ai_enable_note: '켜면 모든 사용자의 상단 바에 AI 어시스턴트 입구가 나타납니다. 기본은 꺼짐.',
   ai_default_model: '기본 모델', ai_search_key: 'Brave Search Key',
   ai_key_set: '설정됨. 새 값을 입력하면 교체', ai_key_ph: '선택 사항, 비우면 DuckDuckGo',
@@ -1421,7 +1421,7 @@ Object.assign(DICTS.de, {
   c_too_many_files: 'Höchstens 8 Anhänge pro Nachricht',
   c_mem_title: 'Langzeitgedächtnis', c_mem_note: 'Wichtige Fakten aus Chats werden über Gespräche hinweg gemerkt. Jederzeit löschbar.',
   c_mem_empty: 'Noch keine Einträge. Wichtige Informationen aus Ihren Chats werden hier gesammelt.', c_mem_clear: 'Alle löschen', c_mem_clear_confirm: 'Alle Einträge löschen?',
-  a_ai: 'KI-Assistent', ai_global_only: 'Nur globale Administratoren', ai_enable: 'KI-Assistent aktivieren',
+  a_ai: 'KI-Assistent (experimentell)', ai_global_only: 'Nur globale Administratoren', ai_enable: 'KI-Assistent aktivieren',
   ai_enable_note: 'Wenn aktiviert, erscheint für alle Nutzer ein Eintrag in der Leiste. Standard: aus.',
   ai_default_model: 'Standardmodell', ai_search_key: 'Brave Search Key',
   ai_key_set: 'Konfiguriert. Neuen Wert eingeben zum Ersetzen', ai_key_ph: 'Optional, sonst DuckDuckGo',
@@ -1442,7 +1442,7 @@ Object.assign(DICTS.fr, {
   c_too_many_files: '8 pieces jointes maximum par message',
   c_mem_title: 'Memoire', c_mem_note: 'Les informations importantes sont memorisees entre les discussions. Supprimables a tout moment.',
   c_mem_empty: 'Aucun souvenir pour le moment. Les informations importantes de vos discussions seront collectees ici.', c_mem_clear: 'Tout effacer', c_mem_clear_confirm: 'Effacer toute la memoire ?',
-  a_ai: 'Assistant IA', ai_global_only: 'Administrateurs globaux uniquement', ai_enable: 'Activer l assistant IA',
+  a_ai: 'Assistant IA (expérimental)', ai_global_only: 'Administrateurs globaux uniquement', ai_enable: "Activer l'assistant IA",
   ai_enable_note: 'Une entree Assistant IA apparait dans la barre pour tous les utilisateurs. Desactive par defaut.',
   ai_default_model: 'Modele par defaut', ai_search_key: 'Brave Search Key',
   ai_key_set: 'Configure. Saisissez une nouvelle valeur pour remplacer', ai_key_ph: 'Facultatif, sinon DuckDuckGo',
@@ -1484,7 +1484,7 @@ Object.assign(DICTS.es, {
   c_too_many_files: 'Máximo 8 adjuntos por mensaje',
   c_mem_title: 'Memoria', c_mem_note: 'La información importante se recuerda entre conversaciones. Puedes borrarla cuando quieras.',
   c_mem_empty: 'Aún no hay recuerdos. La información importante de tus chats se recopilará aquí.', c_mem_clear: 'Borrar todo', c_mem_clear_confirm: '¿Borrar toda la memoria?',
-  a_ai: 'Asistente IA', ai_global_only: 'Solo administradores globales', ai_enable: 'Activar Asistente IA',
+  a_ai: 'Asistente IA (experimental)', ai_global_only: 'Solo administradores globales', ai_enable: 'Activar Asistente IA',
   ai_enable_note: 'Al activarlo, aparece una entrada en la barra superior para todos los usuarios. Desactivado por defecto.',
   ai_default_model: 'Modelo predeterminado', ai_search_key: 'Brave Search Key',
   ai_key_set: 'Configurado. Escribe un nuevo valor para reemplazar', ai_key_ph: 'Opcional, si no DuckDuckGo',
@@ -1505,7 +1505,7 @@ Object.assign(DICTS.ru, {
   c_too_many_files: 'Не более 8 вложений в сообщении',
   c_mem_title: 'Долгая память', c_mem_note: 'Важные факты из чатов запоминаются между беседами. Можно удалить в любой момент.',
   c_mem_empty: 'Пока пусто. Важная информация из ваших чатов будет собираться здесь.', c_mem_clear: 'Очистить всё', c_mem_clear_confirm: 'Очистить всю память?',
-  a_ai: 'ИИ-ассистент', ai_global_only: 'Только глобальные администраторы', ai_enable: 'Включить ИИ-ассистента',
+  a_ai: 'ИИ-ассистент (эксперимент)', ai_global_only: 'Только глобальные администраторы', ai_enable: 'Включить ИИ-ассистента',
   ai_enable_note: 'После включения у всех пользователей появится вход в ассистента в верхней панели. По умолчанию выключено.',
   ai_default_model: 'Модель по умолчанию', ai_search_key: 'Brave Search Key',
   ai_key_set: 'Настроено. Введите новое значение для замены', ai_key_ph: 'Необязательно, иначе DuckDuckGo',
@@ -1850,7 +1850,7 @@ Object.assign(DICTS.ru, {
 // 导出 / 清空注销 / 审计日志
 Object.assign(DICTS['zh-CN'], {
   a_export: '导出工具',
-  a_audit: '审计日志',
+  a_audit: '审计',
   exp_title: '导出邮件到本地',
   exp_note: '选中邮箱后指定一个本地目录,浏览器会逐封拉取原始邮件写成 .eml,按「邮箱地址/文件夹」建子目录。全程在你自己的机器上落盘,服务端不打包。',
   exp_unsupported: '当前浏览器不支持写入本地目录,请用 Chrome 或 Edge。',
@@ -1894,7 +1894,7 @@ Object.assign(DICTS['zh-CN'], {
 });
 Object.assign(DICTS['zh-TW'], {
   a_export: '匯出工具',
-  a_audit: '稽核日誌',
+  a_audit: '審計',
   exp_title: '匯出郵件到本機',
   exp_note: '選取信箱後指定一個本機目錄,瀏覽器會逐封拉取原始郵件寫成 .eml,按「信箱位址/資料夾」建子目錄。全程在你自己的機器上落檔,伺服端不打包。',
   exp_unsupported: '目前瀏覽器不支援寫入本機目錄,請用 Chrome 或 Edge。',
@@ -1938,7 +1938,7 @@ Object.assign(DICTS['zh-TW'], {
 });
 Object.assign(DICTS.en, {
   a_export: 'Export',
-  a_audit: 'Audit log',
+  a_audit: 'Audit',
   exp_title: 'Export mail to a local folder',
   exp_note: 'Pick mailboxes, then choose a local folder. The browser fetches each message and writes it as .eml into per-mailbox and per-folder subdirectories. Everything lands on your own machine; the server never builds an archive.',
   exp_unsupported: 'This browser cannot write to a local folder. Use Chrome or Edge.',
@@ -1982,7 +1982,7 @@ Object.assign(DICTS.en, {
 });
 Object.assign(DICTS.ja, {
   a_export: 'エクスポート',
-  a_audit: '監査ログ',
+  a_audit: '監査',
   exp_title: 'メールをローカルに書き出す',
   exp_note: 'メールボックスを選び、ローカルフォルダーを指定します。ブラウザーが一通ずつ取得して .eml として「メールアドレス/フォルダー」構成で保存します。保存先はあなたの端末で、サーバー側でアーカイブは作りません。',
   exp_unsupported: 'このブラウザーはローカルフォルダーへの書き込みに対応していません。Chrome か Edge をお使いください。',
@@ -2026,7 +2026,7 @@ Object.assign(DICTS.ja, {
 });
 Object.assign(DICTS.ko, {
   a_export: '내보내기',
-  a_audit: '감사 로그',
+  a_audit: '감사',
   exp_title: '메일을 로컬로 내보내기',
   exp_note: '사서함을 고른 뒤 로컬 폴더를 지정하세요. 브라우저가 한 통씩 받아 .eml로 저장하며 "메일주소/폴더" 구조로 하위 폴더를 만듭니다. 저장은 전부 사용자 기기에서 이뤄지고 서버는 압축본을 만들지 않습니다.',
   exp_unsupported: '이 브라우저는 로컬 폴더 쓰기를 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.',
@@ -2070,7 +2070,7 @@ Object.assign(DICTS.ko, {
 });
 Object.assign(DICTS.de, {
   a_export: 'Export',
-  a_audit: 'Audit-Protokoll',
+  a_audit: 'Audit',
   exp_title: 'E-Mails lokal exportieren',
   exp_note: 'Postfächer auswählen, dann einen lokalen Ordner wählen. Der Browser holt jede Nachricht einzeln und schreibt sie als .eml in Unterordner nach Adresse und Ordner. Alles landet auf Ihrem Rechner; der Server erzeugt kein Archiv.',
   exp_unsupported: 'Dieser Browser kann nicht in lokale Ordner schreiben. Bitte Chrome oder Edge verwenden.',
@@ -2114,7 +2114,7 @@ Object.assign(DICTS.de, {
 });
 Object.assign(DICTS.fr, {
   a_export: 'Export',
-  a_audit: 'Journal d\'audit',
+  a_audit: 'Audit',
   exp_title: 'Exporter les messages en local',
   exp_note: 'Sélectionnez des boîtes, puis un dossier local. Le navigateur récupère chaque message et l\'écrit en .eml dans des sous-dossiers par adresse et par dossier. Tout arrive sur votre machine ; le serveur ne fabrique aucune archive.',
   exp_unsupported: 'Ce navigateur ne peut pas écrire dans un dossier local. Utilisez Chrome ou Edge.',
@@ -2158,7 +2158,7 @@ Object.assign(DICTS.fr, {
 });
 Object.assign(DICTS.es, {
   a_export: 'Exportar',
-  a_audit: 'Registro de auditoría',
+  a_audit: 'Auditoría',
   exp_title: 'Exportar el correo a una carpeta local',
   exp_note: 'Elige buzones y luego una carpeta local. El navegador descarga cada mensaje y lo escribe como .eml en subcarpetas por dirección y por carpeta. Todo queda en tu equipo; el servidor no genera ningún archivo comprimido.',
   exp_unsupported: 'Este navegador no puede escribir en carpetas locales. Usa Chrome o Edge.',
@@ -2202,7 +2202,7 @@ Object.assign(DICTS.es, {
 });
 Object.assign(DICTS.ru, {
   a_export: 'Экспорт',
-  a_audit: 'Журнал аудита',
+  a_audit: 'Аудит',
   exp_title: 'Выгрузка почты в локальную папку',
   exp_note: 'Выберите ящики, затем локальную папку. Браузер скачивает каждое письмо и сохраняет его как .eml во вложенных папках по адресу и по папке. Всё сохраняется на вашей машине, сервер архивов не собирает.',
   exp_unsupported: 'Этот браузер не умеет писать в локальные папки. Используйте Chrome или Edge.',
@@ -6091,15 +6091,6 @@ Object.assign(DICTS.fr, { drv_subs: 'Sous-titres', drv_pl_play: 'Lire', drv_pl_p
 Object.assign(DICTS.es, { drv_subs: 'Subtítulos', drv_pl_play: 'Reproducir', drv_pl_pause: 'Pausa', drv_pl_mute: 'Silenciar', drv_pl_volume: 'Volumen', drv_pl_unmute: 'Activar sonido', drv_pl_fullscreen: 'Pantalla completa', drv_pl_windowed: 'Salir de pantalla completa', drv_subs_off: 'Sin subtítulos', drv_subs_track: 'Subtítulos {0}', drv_subs_none: 'No se han encontrado subtítulos. Ponga un .srt o .ass -- o un par .idx y .sub -- en la misma carpeta que la película, con el mismo nombre.', drv_subs_reading: 'Leyendo subtítulos…', e_drive_subs_bitmap: 'Esos subtítulos son imágenes y falta el .idx junto a ellos; sin él no se pueden leer.', e_drive_subs_empty: 'No hay nada legible en ese archivo de subtítulos' });
 Object.assign(DICTS.ru, { drv_subs: 'Субтитры', drv_pl_play: 'Воспроизвести', drv_pl_pause: 'Пауза', drv_pl_mute: 'Выключить звук', drv_pl_volume: 'Громкость', drv_pl_unmute: 'Включить звук', drv_pl_fullscreen: 'Полный экран', drv_pl_windowed: 'Выйти из полноэкранного режима', drv_subs_off: 'Без субтитров', drv_subs_track: 'Субтитры {0}', drv_subs_none: 'Субтитры не найдены. Положите .srt или .ass -- либо пару .idx и .sub -- в ту же папку, что и фильм, с тем же именем.', drv_subs_reading: 'Чтение субтитров…', e_drive_subs_bitmap: 'Эти субтитры — картинки, а рядом нет .idx; без него их не прочитать.', e_drive_subs_empty: 'В этом файле субтитров нечего читать' });
 
-Object.assign(DICTS['zh-CN'], { a_backup: "备份" });
-Object.assign(DICTS['zh-TW'], { a_backup: "備份" });
-Object.assign(DICTS.en, { a_backup: "Backup" });
-Object.assign(DICTS.ja, { a_backup: "バックアップ" });
-Object.assign(DICTS.ko, { a_backup: "백업" });
-Object.assign(DICTS.de, { a_backup: "Sicherung" });
-Object.assign(DICTS.fr, { a_backup: "Sauvegarde" });
-Object.assign(DICTS.es, { a_backup: "Copia de seguridad" });
-Object.assign(DICTS.ru, { a_backup: "Резервные копии" });
 
 
 Object.assign(DICTS['zh-CN'], { bk_enable: "自动备份" });
@@ -6532,3 +6523,23 @@ Object.assign(DICTS.de, { bk_yearly: "Jahressicherungen" });
 Object.assign(DICTS.fr, { bk_yearly: "Sauvegardes annuelles" });
 Object.assign(DICTS.es, { bk_yearly: "Copias anuales" });
 Object.assign(DICTS.ru, { bk_yearly: "Годовые копии" });
+
+Object.assign(DICTS['zh-CN'], { a_backup: "邮件备份" });
+Object.assign(DICTS['zh-TW'], { a_backup: "郵件備份" });
+Object.assign(DICTS.en, { a_backup: "Mail backup" });
+Object.assign(DICTS.ja, { a_backup: "メールバックアップ" });
+Object.assign(DICTS.ko, { a_backup: "메일 백업" });
+Object.assign(DICTS.de, { a_backup: "Mail-Sicherung" });
+Object.assign(DICTS.fr, { a_backup: "Sauvegarde du courrier" });
+Object.assign(DICTS.es, { a_backup: "Copia del correo" });
+Object.assign(DICTS.ru, { a_backup: "Копии почты" });
+
+Object.assign(DICTS['zh-CN'], { a_mailboxes: "邮箱" });
+Object.assign(DICTS['zh-TW'], { a_mailboxes: "信箱" });
+Object.assign(DICTS.en, { a_mailboxes: "Mailboxes" });
+Object.assign(DICTS.ja, { a_mailboxes: "メールボックス" });
+Object.assign(DICTS.ko, { a_mailboxes: "사서함" });
+Object.assign(DICTS.de, { a_mailboxes: "Postfächer" });
+Object.assign(DICTS.fr, { a_mailboxes: "Boîtes aux lettres" });
+Object.assign(DICTS.es, { a_mailboxes: "Buzones" });
+Object.assign(DICTS.ru, { a_mailboxes: "Ящики" });

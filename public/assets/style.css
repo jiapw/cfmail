@@ -1008,3 +1008,6 @@ body.impersonating .boot-loading { min-height: calc(100vh - 34px); }
 }
 .bk-hint wa-icon { flex: none; }
 .bk-hint a { color: inherit; font-weight: 600; text-decoration: underline; margin-left: auto; white-space: nowrap; }
+
+/* 后台导航分组分隔线 / separators between the console's tab groups */
+.tab-sep { width: 1px; align-self: stretch; background: var(--border); margin: 6px 8px; }
