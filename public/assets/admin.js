@@ -21,16 +21,21 @@ function currentDomainId(domains) {
 
 const TABS = () => [
   { key: 'overview', name: t('a_overview') },
-  { key: 'domains', name: t('a_domains') },
+  { sep: true },
   { key: 'users', name: t('a_users') },
   { key: 'invites', name: t('a_invites') },
+  { key: 'domains', name: t('a_domains') },
+  { key: 'audit', name: t('a_audit') },
+  { sep: true },
+  { key: 'mailboxes', name: t('a_mailboxes') },
+  { key: 'drive', name: t('a_drive') },
+  { sep: true },
   { key: 'unrouted', name: t('a_unrouted') },
+  { key: 'backup', name: t('a_backup'), globalOnly: true },
   { key: 'import', name: t('a_import') },
   { key: 'export', name: t('a_export') },
-  { key: 'audit', name: t('a_audit') },
+  { sep: true },
   { key: 'ai', name: t('a_ai') },
-  { key: 'drive', name: t('a_drive') },
-  { key: 'backup', name: t('a_backup'), globalOnly: true },
 ];
 
 export async function renderAdmin(tab) {
@@ -40,8 +45,8 @@ export async function renderAdmin(tab) {
     return;
   }
   const tabsHtml = TABS()
-    .filter((x) => !x.globalOnly || me.user.is_admin)
-    .map((x) => `<a class="tab ${x.key === tab ? 'active' : ''}" href="#/admin/${x.key}">${esc(x.name)}</a>`)
+    .filter((x) => x.sep || !x.globalOnly || me.user.is_admin)
+    .map((x) => (x.sep ? '<span class="tab-sep"></span>' : `<a class="tab ${x.key === tab ? 'active' : ''}" href="#/admin/${x.key}">${esc(x.name)}</a>`))
     .join('');
   show(`
   <div class="page">
@@ -56,6 +61,7 @@ export async function renderAdmin(tab) {
   try {
     if (tab === 'overview') await tabOverview(body);
     else if (tab === 'domains') await tabDomains(body);
+    else if (tab === 'mailboxes') await tabMailboxes(body);
     else if (tab === 'users') await tabUsers(body);
     else if (tab === 'invites') await tabInvites(body);
     else if (tab === 'unrouted') await tabUnrouted(body);
@@ -111,32 +117,50 @@ async function tabOverview(body) {
     </section>`;
 }
 
-// ---------- Domains and mailboxes ----------
-// ---------- 域名与邮箱 ----------
+// ---------- Domains ----------
+// ---------- 域名 ----------
 
-async function tabDomains(body) {
-  const me = store.me;
-  const { domains } = await api('GET', '/api/admin/domains');
-  const sel = currentDomainId(domains);
+/** The domain chosen in the console, shared by the Domains and Mailboxes pages so switching
+ *  between them keeps the context. Starts at the entry host's own domain.
+ *  后台当前选中的域名,「域名」与「邮箱」两页共用,切页不丢上下文。初始取当前入口对应的域名。 */
+let domPick = '';
+
+function pickDomain(domains) {
+  if (domPick && domains.some((d) => d.id === domPick)) return domPick;
+  return currentDomainId(domains);
+}
+
+function domainPickerCard(domains, sel, withAdd, withNote) {
   const domOptions = domains
     .map((d) => `<option value="${esc(d.id)}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`)
     .join('');
-  body.innerHTML = `
+  return `
     <section class="card">
       <div class="form-row">
         <label>${esc(t('domain_label'))}</label>
         <select id="dom-sel" style="width:260px">${domOptions}</select>
       </div>
-      ${me.user.is_admin ? `
+      ${withAdd ? `
       <form id="f-dom" class="form-row">
         <label>${esc(t('add_domain'))}</label>
         <input name="name" type="text" placeholder="${esc(t('new_domain_ph'))}" style="width:260px">
         <wa-button appearance="outlined" type="submit">${icon('plus', 16)} ${esc(t('add_domain'))}</wa-button>
       </form>` : ''}
-      <p class="dim" style="margin:8px 0 0">${esc(t('domain_note'))}</p>
-    </section>
+      ${withNote ? `<p class="dim" style="margin:8px 0 0">${esc(t('domain_note'))}</p>` : ''}
+    </section>`;
+}
+
+async function tabDomains(body) {
+  const me = store.me;
+  const { domains } = await api('GET', '/api/admin/domains');
+  const sel = pickDomain(domains);
+  body.innerHTML = `
+    ${domainPickerCard(domains, sel, !!me.user.is_admin, true)}
     <div id="dom-detail"><div class="loading">${esc(t('loading'))}</div></div>`;
-  qs('#dom-sel')?.addEventListener('change', (e) => renderDomainDetail(e.target.value));
+  qs('#dom-sel')?.addEventListener('change', (e) => {
+    domPick = e.target.value;
+    renderDomainInfo(domPick);
+  });
   qs('#f-dom')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = new FormData(e.target).get('name').trim();
@@ -149,18 +173,18 @@ async function tabDomains(body) {
       toast(err.message, true);
     }
   });
-  if (sel) await renderDomainDetail(sel);
+  if (sel) await renderDomainInfo(sel);
   else qs('#dom-detail').innerHTML = `<div class="empty">${esc(t('pick_domain_first'))}</div>`;
 }
 
-async function renderDomainDetail(domainId) {
+/** The domain itself: brand and administrators. Mailboxes live on their own page.
+ *  域名本身的事:品牌与管理员。邮箱在自己的页面上。 */
+async function renderDomainInfo(domainId) {
   const box = qs('#dom-detail');
   box.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
-  const [{ mailboxes }, { admins }, aliasData, optData, brand] = await Promise.all([
+  const [{ mailboxes }, { admins }, brand] = await Promise.all([
     api('GET', `/api/admin/domains/${domainId}/mailboxes`),
     api('GET', `/api/admin/domains/${domainId}/admins`),
-    api('GET', `/api/admin/domains/${domainId}/aliases`),
-    api('GET', '/api/admin/mailbox-options'),
     api('GET', `/api/admin/domains/${domainId}/brand`),
   ]);
   // Who may appoint a domain admin is decided on the server; the interface only stops offering
@@ -183,59 +207,10 @@ async function renderDomainDetail(domainId) {
     }
   }
   candidates.sort((a, b) => a.email.localeCompare(b.email));
-  const rows = mailboxes
-    .map(
-      (m) => `
-    <tr class="${m.disabled ? 'disabled-row' : ''}">
-      <td><b>${esc(m.local_part)}</b>${m.disabled ? ` <span class="chip chip-err">${esc(t('chip_disabled'))}</span>` : ''}</td>
-      <td>${esc(m.display_name || '')}</td>
-      <td>${m.members.map((g) => `<span class="chip" title="${esc(g.email)}">${esc(g.name || g.email)}·${roleName(g.role)}<span class="chip-x" role="button" tabindex="0" data-ungrant="${esc(m.id)}:${esc(g.user_id)}">×</span></span>`).join(' ') || `<span class="dim">${esc(t('unassigned'))}</span>`}</td>
-      <td>${m.msg_count}</td>
-      <td>${fmtSize(m.bytes)}</td>
-      <td class="nowrap">
-        <wa-button appearance="plain" size="small" data-grant="${esc(m.id)}">${esc(t('grant_member'))}</wa-button>
-        <wa-button appearance="plain" size="small" data-toggle="${esc(m.id)}:${m.disabled ? 0 : 1}">${esc(m.disabled ? t('enable') : t('disable'))}</wa-button>
-        <wa-button appearance="plain" size="small" class="danger-btn" data-purge="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_purge'))}</wa-button>
-        <wa-button appearance="plain" size="small" class="danger-btn" data-dropmb="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_drop'))}</wa-button>
-      </td>
-    </tr>`
-    )
-    .join('');
   const logoPreview = brand.has_logo
     ? `<img class="brand-logo" data-logo-mode="${esc(brand.logo_mode || 'light')}" src="/api/brand/logo?d=${encodeURIComponent(brand.domain)}&ts=${Date.now()}" style="height:40px;border-radius:8px;border:1px solid var(--border);padding:2px">`
     : `<span class="dim">${esc(t('none'))}</span>`;
   box.innerHTML = `
-    <section class="card">
-      <h3>${esc(t('mailboxes_title'))}</h3>
-      <table class="table">
-        <thead><tr><th>${esc(t('th_addr'))}</th><th>${esc(t('th_display'))}</th><th>${esc(t('th_members'))}</th><th>${esc(t('th_msg_count'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('no_mb_admin'))}</td></tr>`}</tbody>
-      </table>
-      <form id="f-mb" class="form-row" style="margin-top:12px">
-        <label>${esc(t('new_mailbox'))}</label>
-        <input name="local" type="text" placeholder="${esc(t('local_ph'))}" required style="width:200px">
-        <input name="dn" type="text" placeholder="${esc(t('display_ph'))}" style="width:200px">
-        <wa-button variant="brand" type="submit">${icon('plus', 16)} ${esc(t('new_mailbox'))}</wa-button>
-      </form>
-    </section>
-    <section class="card">
-      <h3>${esc(t('alias_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('alias_note'))}</span></h3>
-      <table class="table">
-        <thead><tr><th>${esc(t('th_alias'))}</th><th>${esc(t('th_target'))}</th><th></th></tr></thead>
-        <tbody>${(aliasData.aliases || [])
-          .map((a) => `<tr><td><b>${esc(a.address)}</b></td><td>${esc(a.target)}</td><td><wa-button appearance="plain" size="small" class="danger" data-unalias="${esc(a.id)}">${esc(t('delete'))}</wa-button></td></tr>`)
-          .join('') || `<tr><td colspan="3" class="dim">${esc(t('no_alias'))}</td></tr>`}</tbody>
-      </table>
-      <form id="f-alias" class="form-row" style="margin-top:12px">
-        <label>${esc(t('add_alias'))}</label>
-        <input name="local" type="text" placeholder="${esc(t('alias_ph'))}" required style="width:200px">
-        <span class="dim">→</span>
-        <select name="target" style="width:240px">${(optData.mailboxes || [])
-          .map((m) => `<option value="${esc(m.id)}">${esc(m.address)}</option>`)
-          .join('')}</select>
-        <wa-button appearance="outlined" type="submit">${icon('plus', 16)} ${esc(t('add_alias'))}</wa-button>
-      </form>
-    </section>
     <section class="card">
       <h3>${esc(t('brand_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('brand_note', brand.domain))}</span></h3>
       <form id="f-brand" class="form-row">
@@ -283,28 +258,6 @@ async function renderDomainDetail(domainId) {
       : `<p class="dim" style="margin-top:12px">${esc(t('da_global_only'))}</p>`}
     </section>`;
 
-  qs('#f-mb').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      await api('POST', `/api/admin/domains/${domainId}/mailboxes`, { local_part: fd.get('local'), display_name: fd.get('dn') });
-      toast(t('t_mb_created'));
-      renderDomainDetail(domainId);
-    } catch (err) {
-      toast(err.message, true);
-    }
-  });
-  qs('#f-alias').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      await api('POST', `/api/admin/domains/${domainId}/aliases`, { local_part: fd.get('local'), mailbox_id: fd.get('target') });
-      toast(t('t_alias_added'));
-      renderDomainDetail(domainId);
-    } catch (err) {
-      toast(err.message, true);
-    }
-  });
   qs('#f-brand').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -345,7 +298,7 @@ async function renderDomainDetail(domainId) {
         applyFonts();
       }
       toast(t('t_font_saved'));
-      renderDomainDetail(domainId);
+      renderDomainInfo(domainId);
     } catch (err) {
       toast(err.message, true);
     }
@@ -362,7 +315,7 @@ async function renderDomainDetail(domainId) {
     try {
       await api('POST', `/api/admin/domains/${domainId}/brand/logo`, fd);
       toast(t('t_logo_saved'));
-      renderDomainDetail(domainId);
+      renderDomainInfo(domainId);
     } catch (err) {
       toast(err.message, true);
     }
@@ -370,14 +323,122 @@ async function renderDomainDetail(domainId) {
   qs('#btn-logo-rm')?.addEventListener('click', async () => {
     await api('DELETE', `/api/admin/domains/${domainId}/brand/logo`);
     toast(t('t_logo_removed'));
-    renderDomainDetail(domainId);
+    renderDomainInfo(domainId);
   });
   qs('#f-da')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
       await api('POST', `/api/admin/domains/${domainId}/admins`, { email: new FormData(e.target).get('email') });
       toast(t('t_added'));
-      renderDomainDetail(domainId);
+      renderDomainInfo(domainId);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+  box.addEventListener('click', async (e) => {
+    const ua = e.target.closest('[data-unadmin]');
+    if (!ua) return;
+    if (await confirmDialog(t('da_del_confirm'))) {
+      await api('DELETE', `/api/admin/domains/${domainId}/admins/${ua.dataset.unadmin}`);
+      renderDomainInfo(domainId);
+    }
+  });
+}
+
+// ---------- Mailboxes ----------
+// ---------- 邮箱 ----------
+
+async function tabMailboxes(body) {
+  const { domains } = await api('GET', '/api/admin/domains');
+  const sel = pickDomain(domains);
+  body.innerHTML = `
+    ${domainPickerCard(domains, sel, false, false)}
+    <div id="mb-detail"><div class="loading">${esc(t('loading'))}</div></div>`;
+  qs('#dom-sel')?.addEventListener('change', (e) => {
+    domPick = e.target.value;
+    renderMailboxDetail(domPick);
+  });
+  if (sel) await renderMailboxDetail(sel);
+  else qs('#mb-detail').innerHTML = `<div class="empty">${esc(t('pick_domain_first'))}</div>`;
+}
+
+async function renderMailboxDetail(domainId) {
+  const box = qs('#mb-detail');
+  box.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
+  const [{ mailboxes }, aliasData, optData] = await Promise.all([
+    api('GET', `/api/admin/domains/${domainId}/mailboxes`),
+    api('GET', `/api/admin/domains/${domainId}/aliases`),
+    api('GET', '/api/admin/mailbox-options'),
+  ]);
+  const rows = mailboxes
+    .map(
+      (m) => `
+    <tr class="${m.disabled ? 'disabled-row' : ''}">
+      <td><b>${esc(m.local_part)}</b>${m.disabled ? ` <span class="chip chip-err">${esc(t('chip_disabled'))}</span>` : ''}</td>
+      <td>${esc(m.display_name || '')}</td>
+      <td>${m.members.map((g) => `<span class="chip" title="${esc(g.email)}">${esc(g.name || g.email)}·${roleName(g.role)}<span class="chip-x" role="button" tabindex="0" data-ungrant="${esc(m.id)}:${esc(g.user_id)}">×</span></span>`).join(' ') || `<span class="dim">${esc(t('unassigned'))}</span>`}</td>
+      <td>${m.msg_count}</td>
+      <td>${fmtSize(m.bytes)}</td>
+      <td class="nowrap">
+        <wa-button appearance="plain" size="small" data-grant="${esc(m.id)}">${esc(t('grant_member'))}</wa-button>
+        <wa-button appearance="plain" size="small" data-toggle="${esc(m.id)}:${m.disabled ? 0 : 1}">${esc(m.disabled ? t('enable') : t('disable'))}</wa-button>
+        <wa-button appearance="plain" size="small" class="danger-btn" data-purge="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_purge'))}</wa-button>
+        <wa-button appearance="plain" size="small" class="danger-btn" data-dropmb="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_drop'))}</wa-button>
+      </td>
+    </tr>`
+    )
+    .join('');
+  box.innerHTML = `
+    <section class="card">
+      <h3>${esc(t('mailboxes_title'))}</h3>
+      <table class="table">
+        <thead><tr><th>${esc(t('th_addr'))}</th><th>${esc(t('th_display'))}</th><th>${esc(t('th_members'))}</th><th>${esc(t('th_msg_count'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('no_mb_admin'))}</td></tr>`}</tbody>
+      </table>
+      <form id="f-mb" class="form-row" style="margin-top:12px">
+        <label>${esc(t('new_mailbox'))}</label>
+        <input name="local" type="text" placeholder="${esc(t('local_ph'))}" required style="width:200px">
+        <input name="dn" type="text" placeholder="${esc(t('display_ph'))}" style="width:200px">
+        <wa-button variant="brand" type="submit">${icon('plus', 16)} ${esc(t('new_mailbox'))}</wa-button>
+      </form>
+    </section>
+    <section class="card">
+      <h3>${esc(t('alias_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('alias_note'))}</span></h3>
+      <table class="table">
+        <thead><tr><th>${esc(t('th_alias'))}</th><th>${esc(t('th_target'))}</th><th></th></tr></thead>
+        <tbody>${(aliasData.aliases || [])
+          .map((a) => `<tr><td><b>${esc(a.address)}</b></td><td>${esc(a.target)}</td><td><wa-button appearance="plain" size="small" class="danger" data-unalias="${esc(a.id)}">${esc(t('delete'))}</wa-button></td></tr>`)
+          .join('') || `<tr><td colspan="3" class="dim">${esc(t('no_alias'))}</td></tr>`}</tbody>
+      </table>
+      <form id="f-alias" class="form-row" style="margin-top:12px">
+        <label>${esc(t('add_alias'))}</label>
+        <input name="local" type="text" placeholder="${esc(t('alias_ph'))}" required style="width:200px">
+        <span class="dim">→</span>
+        <select name="target" style="width:240px">${(optData.mailboxes || [])
+          .map((m) => `<option value="${esc(m.id)}">${esc(m.address)}</option>`)
+          .join('')}</select>
+        <wa-button appearance="outlined" type="submit">${icon('plus', 16)} ${esc(t('add_alias'))}</wa-button>
+      </form>
+    </section>`;
+
+  qs('#f-mb').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api('POST', `/api/admin/domains/${domainId}/mailboxes`, { local_part: fd.get('local'), display_name: fd.get('dn') });
+      toast(t('t_mb_created'));
+      renderMailboxDetail(domainId);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+  qs('#f-alias').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api('POST', `/api/admin/domains/${domainId}/aliases`, { local_part: fd.get('local'), mailbox_id: fd.get('target') });
+      toast(t('t_alias_added'));
+      renderMailboxDetail(domainId);
     } catch (err) {
       toast(err.message, true);
     }
@@ -389,19 +450,19 @@ async function renderDomainDetail(domainId) {
     if (tg) {
       const [id, dis] = tg.dataset.toggle.split(':');
       await api('POST', `/api/admin/mailboxes/${id}`, { disabled: dis === '1' });
-      renderDomainDetail(domainId);
+      renderMailboxDetail(domainId);
       return;
     }
     const pg = e.target.closest('[data-purge]');
     if (pg) {
       const [id, name] = pg.dataset.purge.split(':');
-      await purgeMailbox(id, name, () => renderDomainDetail(domainId));
+      await purgeMailbox(id, name, () => renderMailboxDetail(domainId));
       return;
     }
     const dp = e.target.closest('[data-dropmb]');
     if (dp) {
       const [id, name] = dp.dataset.dropmb.split(':');
-      await dropMailbox(id, name, () => renderDomainDetail(domainId));
+      await dropMailbox(id, name, () => renderMailboxDetail(domainId));
       return;
     }
     const ug = e.target.closest('[data-ungrant]');
@@ -409,15 +470,7 @@ async function renderDomainDetail(domainId) {
       const [mbId, userId] = ug.dataset.ungrant.split(':');
       if (await confirmDialog(t('ungrant_confirm'))) {
         await api('DELETE', `/api/admin/mailboxes/${mbId}/grants/${userId}`);
-        renderDomainDetail(domainId);
-      }
-      return;
-    }
-    const ua = e.target.closest('[data-unadmin]');
-    if (ua) {
-      if (await confirmDialog(t('da_del_confirm'))) {
-        await api('DELETE', `/api/admin/domains/${domainId}/admins/${ua.dataset.unadmin}`);
-        renderDomainDetail(domainId);
+        renderMailboxDetail(domainId);
       }
       return;
     }
@@ -425,7 +478,7 @@ async function renderDomainDetail(domainId) {
     if (al) {
       if (await confirmDialog(t('alias_del_confirm'))) {
         await api('DELETE', `/api/admin/aliases/${al.dataset.unalias}`);
-        renderDomainDetail(domainId);
+        renderMailboxDetail(domainId);
       }
     }
   });
@@ -454,7 +507,7 @@ function grantModal(mailboxId, domainId) {
       await api('POST', `/api/admin/mailboxes/${mailboxId}/grants`, { email: fd.get('email'), role: fd.get('role') });
       closeModal();
       toast(t('t_granted'));
-      renderDomainDetail(domainId);
+      renderMailboxDetail(domainId);
     } catch (err) {
       toast(err.message, true);
     }
