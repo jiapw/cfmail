@@ -1715,6 +1715,9 @@ export async function song(source) {
     let eof = false;
     let started = false;
     let ended = false;
+    /** The turn of the handle that is happening right now, if one is.
+     *  此刻正在摇的那一圈把手 —— 如果确实有一圈正在摇的话。 */
+    let busy = null;
     // How much of the source to take in one turn, starting small and growing.
     //
     // A megabyte is a fraction of a second of film and two minutes of a song at sixty-four
@@ -1794,17 +1797,29 @@ export async function song(source) {
        *  下一块;而当不会再有下一块时,什么都不给。 */
       async pull() {
         if (first) { const piece = first; first = null; return piece; }
-        for (;;) {
-          if (shut) return null;
-          const piece = ended ? out.rest() : out.take();
-          if (piece?.length) return piece;
-          if (ended) return null;
-          await turn();
-        }
+        busy = (async () => {
+          for (;;) {
+            if (shut) return null;
+            const piece = ended ? out.rest() : out.take();
+            if (piece?.length) return piece;
+            if (ended) return null;
+            await turn();
+          }
+        })();
+        try { return await busy; } finally { busy = null; }
       },
       async close() {
         if (shut) return;
         shut = true;
+        // Whatever is in flight finishes first. Closing frees a demuxer, a muxer, an encoder and
+        // the buffers they read and write through, and a turn of the handle still holding those
+        // does not find out that they are gone -- it walks into the memory where they were.
+        // Clicking past a song while it converts is the ordinary way to arrive here.
+        // 先让手上飞着的那一件事做完。关闭会释放一个解复用器、一个 muxer、一个编码器,
+        // 以及它们读写所经的那些缓冲区;而一圈仍攥着这些东西的把手不会得知它们没了 ——
+        // 它会一头走进它们曾经所在的那块内存。有人在一首歌还在转换时点到了下一首 ——
+        // 这就是走到这里来的寻常方式。
+        await busy?.catch(() => {});
         await drop();
       },
     };
