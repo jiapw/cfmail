@@ -700,7 +700,7 @@ async function tabBackup(body) {
       </div>
       <div class="form-row">
         <label>${esc(t('bk_status'))}</label>
-        <span>${esc(running ? t('bk_running', st.day) : t('bk_idle'))}</span>
+        <span>${esc(running ? (st.mode === 'catchup' ? t('bk_catchup_running') : t('bk_running', st.day)) : t('bk_idle'))}</span>
         ${running && st.line ? `<span class="dim">${esc(st.line)}</span>` : ''}
         <span class="flex1"></span>
         <wa-button appearance="outlined" size="small" id="bk-run" ${st.ready && !running ? '' : 'disabled'}>${esc(t('bk_run_now'))}</wa-button>
@@ -712,6 +712,15 @@ async function tabBackup(body) {
         ${st.result ? `<span class="dim">${esc(t('bk_last_result', st.result.objects ?? 0, fmtSize(st.result.size || 0)))}</span>` : ''}
       </div>
       ${st.last_error ? `<div class="form-row"><label>${esc(t('bk_error'))}</label><span class="dim">${esc(st.last_error)}</span></div>` : ''}
+    </section>
+    <section class="card">
+      <h3>${esc(t('bk_catchup'))}</h3>
+      <p class="dim" style="margin:0 0 10px">${esc(t('bk_catchup_note'))}</p>
+      <div class="form-row">
+        <wa-button appearance="outlined" size="small" id="bk-pending-btn">${esc(t('bk_catchup'))}</wa-button>
+        <span class="dim" id="bk-pending-msg"></span>
+      </div>
+      <div id="bk-pending-box" hidden></div>
     </section>
     <section class="card">
       <h3>${esc(t('bk_files'))}</h3>
@@ -754,6 +763,51 @@ async function tabBackup(body) {
   qs('#bk-sync')?.addEventListener('click', () => {
     if (!window.showDirectoryPicker) return toast(t('bk_sync_unsupported'), true);
     syncBackups(st, qs('#bk-sync-status'));
+  });
+
+  // The catch-up preview loads on demand: it walks the whole mail bucket against the archive
+  // index, and that walk belongs behind a click, not on every visit to this tab.
+  // 补档预览按需加载:它要拿整个邮件桶对着归档索引过一遍,这一遍该在点击之后,
+  // 而不是每次打开页签都来一次。
+  qs('#bk-pending-btn')?.addEventListener('click', async () => {
+    const box = qs('#bk-pending-box');
+    const msg = qs('#bk-pending-msg');
+    msg.textContent = t('bk_pending_loading');
+    box.hidden = true;
+    let p;
+    try {
+      p = await api('GET', '/api/admin/backup/pending');
+    } catch (err) {
+      msg.textContent = err.message;
+      return;
+    }
+    msg.textContent = '';
+    if (!p.count) {
+      box.innerHTML = `<p class="dim" style="margin:4px 0 0">${esc(t('bk_pending_none'))}</p>`;
+      box.hidden = false;
+      return;
+    }
+    box.innerHTML = `
+      <p style="margin:4px 0 8px">${esc(t('bk_pending_total', p.count, fmtSize(p.bytes)))}</p>
+      <div class="bk-pend-rows">
+        ${p.days.map((d) => `
+          <div class="bk-pend-row">
+            <span class="bk-name">${esc(d.day)}</span>
+            <span>${esc(t('bk_last_result', d.count, fmtSize(d.bytes)))}</span>
+            <span class="dim">${esc(t(d.action === 'create' ? 'bk_act_create' : 'bk_act_add', d.target))}</span>
+          </div>`).join('')}
+      </div>
+      <wa-button variant="brand" id="bk-catchup-go" ${st.ready && !running ? '' : 'disabled'}>${esc(t('bk_start_catchup'))}</wa-button>`;
+    box.hidden = false;
+    qs('#bk-catchup-go')?.addEventListener('click', async () => {
+      try {
+        await api('POST', '/api/admin/backup/catchup', {});
+        toast(t('bk_started'));
+        tabBackup(body);
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
   });
 
   // While something is running, the page follows it. It stops asking the moment it is over, so an

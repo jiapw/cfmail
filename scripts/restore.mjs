@@ -154,11 +154,13 @@ if (fs.existsSync(manifest)) {
   }
   log(`archive for ${m.day || '?'}, made ${new Date(m.at || 0).toISOString()}`);
 }
-if (!fs.existsSync(sql)) die('no database.sql in this archive');
+// A catch-up archive carries mail only; the database snapshots live in the automatic dailies.
+const hasDb = fs.existsSync(sql);
+if (!hasDb) log('no database.sql here (a catch-up archive holds mail only); skipping the database');
 const files = fs.existsSync(mailDir) ? walk(mailDir) : [];
-log(`database.sql ${(fs.statSync(sql).size / 1048576).toFixed(1)} MB, ${files.length} message file(s)`);
+log(`${hasDb ? `database.sql ${(fs.statSync(sql).size / 1048576).toFixed(1)} MB, ` : ''}${files.length} message file(s)`);
 
-if (!args['skip-db']) {
+if (!args['skip-db'] && hasDb) {
   step('Database');
   if (DRY) {
     log(`would run: wrangler d1 execute ${D1_NAME} --remote --file database.sql`);
@@ -190,7 +192,7 @@ if (!args['skip-mail'] && files.length) {
   }
 }
 
-if (!DRY && !args['skip-db']) {
+if (!DRY && !args['skip-db'] && hasDb) {
   step('Rebuilding the search index');
   const r = wrangler(['d1', 'execute', D1_NAME, '--remote', '-y', '--command',
     "INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"], { capture: true });

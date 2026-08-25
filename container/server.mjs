@@ -26,7 +26,7 @@ function start(body) {
     env: { ...process.env, ...(body.env || {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  job = { state: 'running', mode, day, startedAt: Date.now(), line: '', result: null, error: null, code: null };
+  job = { state: 'running', mode, day, startedAt: Date.now(), line: '', tail: [], result: null, error: null, code: null };
 
   // Keep the last line, not the whole log: the Worker wants to show progress, and a container
   // holding an hour of output in memory to answer that is a container doing the wrong job.
@@ -45,7 +45,10 @@ function start(body) {
         } else {
           job.line = l.replace(/^\[[^\]]*\]\s*/, '').slice(0, 200);
         }
-        if (isErr) job.error = l.slice(0, 300);
+        // The last stretch of output, kept for the failure report. One line was not enough: a
+        // crash ends with Node's version banner, and a report that says "Node.js v22" says nothing.
+        job.tail.push((isErr ? '! ' : '  ') + l.slice(0, 300));
+        if (job.tail.length > 40) job.tail.shift();
       }
     });
   };
@@ -81,7 +84,7 @@ http.createServer((req, res) => {
       ? {
           state: job.state, mode: job.mode, day: job.day, line: job.line,
           started_at: job.startedAt, finished_at: job.finishedAt || null,
-          result: job.result, error: job.state === 'failed' ? job.error : null, code: job.code,
+          result: job.result, error: job.state === 'failed' ? job.tail.slice(-25).join('\n') : null, code: job.code,
         }
       : { state: 'idle' });
     return;

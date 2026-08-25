@@ -106,6 +106,24 @@ const norm = (s) => utf8(s).trim();
 // 在讲它自己的归档方式,标签的含义是后面那个词。表里仍然显示原名,不用猜这个建议是哪来的。
 const suggestName = (s) => s.replace(/^Category\s+/i, '').trim() || s;
 
+/**
+ * Imported mail is deliberately left out of the automatic nightly backup, so a finished import
+ * leaves messages that are in no archive. When the backup is switched on, the operator is told
+ * so, here, at the moment the import ends -- the catch-up itself lives in the Backup tab.
+ * 导入的邮件被有意排除在每晚的自动备份之外,所以一次导入结束时,这批信不在任何备份包里。
+ * 备份开着的话,就在导入结束的这一刻告诉操作者 —— 补档本身在「备份」页签里。
+ */
+export async function backupCatchupHint() {
+  try {
+    const st = await api('GET', '/api/admin/backup');
+    if (!st.enabled) return '';
+  } catch {
+    return '';   // 域管理员看不到备份状态,也就不提示
+  }
+  return `<div class="bk-hint">${icon('spam', 15)}<span>${esc(t('imp_backup_hint'))}</span>` +
+    `<a href="#/admin/backup">${esc(t('imp_backup_hint_go'))}</a></div>`;
+}
+
 /** One pass over an mbox, remembering where every message starts and what Gmail said about it.
  *
  *  Nothing is kept but offsets and labels -- a few dozen bytes per message -- so a 930 MB file
@@ -663,6 +681,11 @@ export async function tabGmail(body, opts = {}) {
     qs('#gm-fails').innerHTML = fails.length
       ? `<pre class="dim" style="white-space:pre-wrap;font-size:12px">${esc(fails.join('\n'))}</pre>`
       : '';
+    if (stat.ok > 0) {
+      const hint = await backupCatchupHint();
+      document.querySelector('.bk-hint')?.remove();
+      if (hint) qs('#gm-fails').insertAdjacentHTML('beforebegin', hint);
+    }
   }
 
   qs('#gm-cancel').addEventListener('click', () => {

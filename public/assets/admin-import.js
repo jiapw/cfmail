@@ -4,7 +4,7 @@
 // 流程:选目录 → 扫描表头,统计收件人和子目录 → 管理员确认目标邮箱和每个子目录的去向 → 逐封上传。
 import { api } from './api.js';
 import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
-import { tabGmail } from './admin-gmail.js';
+import { tabGmail, backupCatchupHint } from './admin-gmail.js';
 import { t } from './i18n.js';
 // Same parser, same version as the Worker: the attachment order must match, because downloads locate parts by part_index in the original
 // 和 Worker 用同一个解析器同一版本:附件顺序必须一致,下载时是按 part_index 回原文里定位的
@@ -423,6 +423,11 @@ async function emlImport(body) {
       await api('POST', `/api/admin/mailboxes/${mailboxId}/import-done`, {
         ok: stat.ok, duplicate: stat.dup, failed: stat.fail, cancelled,
       }).catch(() => {});
+    }
+    if (stat.ok > 0) {
+      const hint = await backupCatchupHint();
+      document.querySelector('.bk-hint')?.remove();
+      if (hint) qs('#imp-result').insertAdjacentHTML('afterend', hint);
     }
     qs('#imp-result').textContent = cancelled
       ? t('imp_cancelled', stat.ok, stat.dup, stat.fail)
