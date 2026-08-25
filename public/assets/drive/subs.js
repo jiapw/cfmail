@@ -172,11 +172,29 @@ export function readText(bytes, hint = '') {
  *  bytes say so. 这是位图而不是字吗:一张 DVD 的字幕是一条 MPEG 流,它开头几个字节就说明了。 */
 export function looksBinary(bytes) {
   if (bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1) return true;
-  // A run of zero bytes is not something any text encoding produces.
-  // 一串零字节,不是任何一种文本编码会产出的东西。
+  // Text written two bytes to a character puts a zero beside every Latin letter, so counting
+  // zeros calls a UTF-16 subtitle file a picture -- which is what an .ass saved by a Windows
+  // editor is, and there are two of them beside every episode of the disc rip this was found on.
+  // What tells the two apart is not how many zeros there are but where they fall: in UTF-16 they
+  // sit on one side of every pair and nowhere else, and a byte order mark says so outright. In a
+  // picture they land wherever they land.
+  //
+  // 每个字符占两个字节的文本,会在每一个拉丁字母旁边放一个零 ——
+  // 于是"数零的个数"会把一个 UTF-16 的字幕文件判成图画;而一个由 Windows 上的编辑器存出来的
+  // .ass 正是这样,并且在发现这件事的那份碟版片源里,每一集旁边都躺着两个。
+  // 区分这两者的不是零有多少,而是零落在哪里:在 UTF-16 里它们只落在每一对的同一侧、别处没有,
+  // 而一个字节序标记会把这件事直接说出来。在一张图画里,它们爱落哪儿落哪儿。
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) return false;
   let zeros = 0;
-  for (let i = 0; i < Math.min(bytes.length, 4096); i++) if (!bytes[i]) zeros++;
-  return zeros > 16;
+  let even = 0;
+  const look = Math.min(bytes.length, 4096);
+  for (let i = 0; i < look; i++) {
+    if (bytes[i]) continue;
+    zeros++;
+    if (!(i & 1)) even++;
+  }
+  if (zeros <= 16) return false;
+  return even !== zeros && even !== 0;
 }
 
 const clock = (s) => {
