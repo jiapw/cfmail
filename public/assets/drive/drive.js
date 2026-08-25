@@ -12,7 +12,7 @@ import {
 import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
-import { verdict } from './remux.js';
+import { hearing, verdict } from './remux.js';
 import { codeOf, cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
 import { decodeSpu, readIndex, spuAt } from './vobsub.js';
 import { mountPlayer, pictureOf } from './player.js';
@@ -2955,6 +2955,107 @@ function paintPvShell(n, body) {
   };
 }
 
+/**
+ * A song, and the picture that was inside it.
+ *
+ * Two things happen here and only one of them is about playing. A .wma is a box no browser opens
+ * -- several of the ones here hold an ordinary MP3 stream, and it makes no difference, because
+ * what cannot be read is the wrapper -- so the sound comes out and goes into an MP4, which every
+ * browser plays. The whole song at once rather than a piece at a time: streaming exists for films
+ * because a film is gigabytes; a song is three megabytes and is finished before somebody has
+ * decided whether they want it, and one blob at the end buys back seeking, a known length, and no
+ * machinery.
+ *
+ * The picture is read either way. A file that plays by itself still has a cover in it, and the
+ * card was showing a grey note icon over an album nobody could see.
+ *
+ * 一首歌,以及它里面的那张图。
+ *
+ * 这里发生两件事,而其中只有一件关于播放。.wma 是一个没有浏览器打得开的盒子 ——
+ * 这里好几个装的是普普通通的 MP3 流,而那不起作用,因为读不懂的是那层包装 ——
+ * 所以声音从里面出来,装进一个 MP4,那个每个浏览器都放得了。一次整首,而不是一块一块:
+ * 流式是为片子存在的,因为片子有几吉字节;而一首歌只有三兆字节,
+ * 在人还没决定要不要听它之前就做完了,最后交一个 blob 换回定位、已知的时长,以及一台机器都不用。
+ *
+ * 那张图两种情况都读。一个自己就能放的文件,里面一样有一张封面 ——
+ * 而那张卡片一直在一张没人看得见的专辑上,显示着一个灰色的音符。
+ */
+async function playSong(n, src, mime) {
+  const here = () => (pv && pv.list[pv.idx] === n ? pv.el : null);
+  const tune = hearing(n.name, mime);
+  let out = null;
+  try {
+    const mod = await import('./remux.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    const source = /^blob:/.test(src)
+      ? await (await fetch(src)).blob()
+      : { url: src, size: n.size || 0 };
+    out = await mod.song(source, { convert: tune === 'remux' });
+  } catch (e) {
+    // A song that plays by itself and only failed to give up its picture has lost nothing worth
+    // saying. One that had to be rebuilt and could not, has.
+    // 一首自己就能放、只是没交出封面的歌,没有损失什么值得一说的东西。
+    // 一首必须被重建而没能重建的,有。
+    if (tune !== 'remux') return;
+    const el = here();
+    const box = el?.querySelector('.drv-view-body');
+    // Which encoding it was is worth carrying out: "this needs another program" is a different
+    // sentence from "something went wrong", and only one of them tells somebody what to do.
+    // 是哪一种编码,值得带出去:"这个需要另一个程序"和"出了点问题"不是同一句话,
+    // 而其中只有一句告诉了人下一步该做什么。
+    if (box) box.innerHTML = noprevHtml(n, e?.codec ? tErr('e_drive_audio_codec', [e.codec]) : tErr(e?.message));
+    return;
+  }
+  const el = here();
+  if (!el) return;
+  if (out.blob) {
+    pvBlob = URL.createObjectURL(out.blob);
+    const au = el.querySelector('.drv-audio audio');
+    if (au) {
+      au.src = pvBlob;
+      au.play?.().catch(() => { /* autoplay may be refused; the controls are there / 自动播放可能被拒,控件在那儿 */ });
+    }
+  }
+  if (out.cover) await showCover(n, el, out.cover);
+}
+
+/** The picture out of a song, on the card -- and kept, so the folder shows it too.
+ *
+ *  Kept by the same road every other thumbnail travels: drawn into a canvas and encoded as WebP,
+ *  because that is the only thing the server takes. A cover that is already a JPEG could have been
+ *  posted as it is, and then there would be two kinds of thumbnail and one of them would be the
+ *  exception nobody remembers.
+ *
+ *  一张从歌里出来的图,放上卡片 —— 并且留下来,好让文件夹里也看得见。
+ *
+ *  留下来的路,和其余每一张缩略图走的是同一条:画进画布、编码成 WebP,因为服务端只收这个。
+ *  一张本来就是 JPEG 的封面,原样 POST 上去也行,那样就会有两种缩略图,
+ *  而其中一种会是没人记得住的那个例外。 */
+async function showCover(n, el, blob) {
+  const url = URL.createObjectURL(blob);
+  const card = el.querySelector('.drv-audio');
+  if (!card) { URL.revokeObjectURL(url); return; }
+  const img = document.createElement('img');
+  img.className = 'art';
+  img.alt = '';
+  await new Promise((go) => {
+    img.addEventListener('load', go, { once: true });
+    img.addEventListener('error', go, { once: true });
+    img.src = url;
+  });
+  if (!img.naturalWidth || !pv || pv.list[pv.idx] !== n) { URL.revokeObjectURL(url); return; }
+  if (pvArt) URL.revokeObjectURL(pvArt);
+  pvArt = url;
+  card.querySelector('.art')?.replaceWith(img);
+  if (n.thumb || dst.access === 'viewer' || isPub()) return;
+  try {
+    const mod = await loadThumbMod();
+    const small = await mod.thumbFromImgEl(img);
+    if (!small) return;
+    await fetch(`/api/drive/files/${n.id}/thumb`, { method: 'POST', body: small });
+    n.thumb = true;
+  } catch { /* a thumbnail is a nicety / 缩略图是锦上添花 */ }
+}
+
 /** The film being watched, and the handle the browser watches it through.
  *
  *  One at a time. The film owns a demuxer, a muxer and a WebAssembly instance, and it goes on
@@ -2967,11 +3068,14 @@ function paintPvShell(n, body) {
  *  它就一直在转 —— 所以换到下一个预览时必须把它放掉,
  *  否则两次转换会同时压在同一个库上,而其中没有一个在看着屏幕。 */
 let pvBlob = null;
+let pvArt = null;
 let pvFilm = null;
 function dropPvBlob() {
   dropSubs();
   if (pvBlob) URL.revokeObjectURL(pvBlob);
   pvBlob = null;
+  if (pvArt) URL.revokeObjectURL(pvArt);
+  pvArt = null;
   const film = pvFilm;
   pvFilm = null;
   if (film) void film.close().catch(() => {});
@@ -3714,17 +3818,21 @@ async function paintPreview() {
     body = noprevHtml(n, t('drv_vid_no_codec'));
   }
   else if (isAudio) {
-    // Cover-art card: the stored thumbnail doubles as the artwork
-    // 封面卡片。存好的缩略图直接当专辑封面用
+    // Cover-art card: the stored thumbnail doubles as the artwork, and the one inside the file
+    // replaces it when there is one. A song in a box no browser opens gets no source yet -- it
+    // gets one when there is something to give it.
+    // 封面卡片。存好的缩略图直接当封面用,而文件内部那张一旦读出来就顶替它。
+    // 一首装在"没有浏览器打得开的盒子"里的歌,此刻还拿不到 src —— 等有东西可给它的时候再给。
+    const tune = hearing(n.name, mime);
     body = `
     <div class="drv-audio">
       ${n.thumb
         ? `<img class="art" src="${esc(thumbUrl(n.id, verTag(n)))}" alt="">`
         : `<div class="art fallback">${icon('fileAudio', 72)}</div>`}
       <div class="anm">${esc(n.name)}</div>
-      <audio controls autoplay src="${esc(src)}"></audio>
+      <audio controls ${tune === 'remux' ? '' : `autoplay src="${esc(src)}"`}></audio>
     </div>
-    <div class="drv-pvwait">${spinnerHtml()}</div>`;
+    <div class="drv-pvwait">${spinnerHtml()}${tune === 'remux' ? `<div class="drv-conv">${esc(t('drv_vid_converting'))}</div>` : ''}</div>`;
   } else if (isPdf) body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-pdf drv-docwin">${spinnerHtml()}</div></div></div>`;
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
@@ -3751,6 +3859,9 @@ async function paintPreview() {
   else if (film === 'native' && !n.arc) {
     void offerSubs(n, pv.el.querySelector('.drv-view-body video'), null);
   }
+  // A song is opened, rebuilt if it has to be, and asked what picture it was carrying.
+  // 一首歌:打开它,必要时重建它,并问它带着的是哪一张图。
+  else if (isAudio) void playSong(n, src, mime);
   // Media inside archives: sequential playback only, no seeking (compressed entries would
   // have to re-decode from the start on every jump).
   // 压缩包内媒体只允许顺序播放,禁止 seek(压缩条目每跳一次都得从头重解)。
