@@ -445,6 +445,11 @@ export function pageObjects(ops, res = {}, base = IDENTITY) {
     const run = {
       at: i, op: o.op, from: o.from, to: o.to,
       font: fontName, size, mode, codes,
+      // Where the pen stood when this run began, and the text state it stood in. Enough to lay
+      // the run down again somewhere else, or to lay different words down in its place.
+      // 这一段开始时笔停在哪里,以及它当时所处的文本状态。
+      // 足够把这一段重新放置到别处,或者把别的字放到它原来的位置上。
+      tm: at, charSp, wordSp, hscale, rise,
       trm: mul(mul([size * hscale, 0, 0, size, 0, rise], at), ctm),
       box: realBox(box),
     };
@@ -600,34 +605,50 @@ export function pageObjects(ops, res = {}, base = IDENTITY) {
 }
 
 /**
- * The stream with those byte ranges gone.
+ * The stream with a list of edits applied: each one replaces a byte range with whatever should
+ * stand there instead, and an empty replacement is a deletion.
  *
- * They are blanked rather than spliced out: every other offset in the caller's model stays
- * valid, so a second delete does not need the first one's arithmetic, and a page can be edited
- * repeatedly without reparsing. Whitespace is what a content stream reads between operations
- * anyway, so the result is a stream that says nothing there rather than a stream with a hole.
+ * Every edit is measured against the *original* stream, never against the result of the edits
+ * before it, and they are all applied in one pass. That is what makes an edit list a document
+ * model rather than a sequence of mutations: the offsets in it never go stale, so an edit can be
+ * dropped from the middle of the list and the rest still mean what they meant. Undo is that
+ * removal, and costs nothing to implement.
  *
- * 把那些字节范围拿掉之后的流。
+ * Overlapping edits are resolved by taking the first and skipping what the later one would have
+ * touched, because two edits to the same bytes is a question about intent and this is not the
+ * place to guess at one.
  *
- * 是抹白而不是剪接:调用方模型里其余的偏移全部照旧有效,于是第二次删除不必做第一次的算术,
- * 一页也可以被反复编辑而无须重新解析。反正内容流在操作之间读到的本来就是空白,
- * 所以结果是一条"那里什么也没说"的流,而不是一条带窟窿的流。
+ * 一条流,应用了一串编辑之后的样子:每一条把一段字节换成应当站在那儿的东西,
+ * 换成空的就是删除。
+ *
+ * 每一条编辑都是相对*原始*那条流来量的,绝不相对它之前那些编辑的结果,而且一次过全部应用。
+ * 正是这一点让"一张编辑表"成为一个文档模型,而不是一串改动:表里的偏移永不过期,
+ * 于是可以从中间抽掉一条,其余的仍然还是原来的意思。撤销就是那次抽掉,实现起来不花一分钱。
+ *
+ * 相互重叠的编辑,取先来的那条,后来那条要碰的部分跳过 ——
+ * 两条编辑动同一段字节,那是一个关于意图的问题,而这里不是猜测意图的地方。
  */
-export function cutRanges(src, ranges) {
-  if (!ranges.length) return src;
-  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+export function applyEdits(src, edits) {
+  if (!edits || !edits.length) return src;
+  const sorted = [...edits].sort((a, b) => a.from - b.from || a.to - b.to);
   const parts = [];
   let at = 0;
-  for (const [from, to] of sorted) {
-    if (to <= at) continue;                            // already inside a previous cut
-    const start = Math.max(from, at);
-    parts.push(src.slice(at, start));
-    parts.push(' '.repeat(to - start));
-    at = to;
+  for (const e of sorted) {
+    // Wholly inside a previous edit. An insertion -- a range of no length -- is not inside
+    // anything, so several of them at the same point all land, in the order they were made.
+    // 完全落在前一条编辑里面。而插入 —— 一段长度为零的范围 —— 不在任何东西里面,
+    // 所以同一个点上的好几次插入会全部落下,按它们被做出来的顺序。
+    if (e.to < at || (e.to === at && e.from < at)) continue;
+    if (e.from > at) parts.push(src.slice(at, e.from));
+    parts.push(e.text || '');
+    at = Math.max(at, e.to);
   }
   parts.push(src.slice(at));
   return parts.join('');
 }
+
+/** Deleting is replacing with nothing. / 删除就是换成空的。 */
+export const cutRanges = (src, ranges) => applyEdits(src, ranges.map(([from, to]) => ({ from, to, text: '' })));
 
 /** Latin-1 both ways: the only encoding under which a content stream's bytes survive a round
  *  trip through a JavaScript string.
