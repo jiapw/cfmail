@@ -3,7 +3,7 @@
 // 管理后台「导入工具」:把旧邮箱(Zoho / Outlook 等)导出的 .eml 目录搬进来。
 // 流程:选目录 → 扫描表头,统计收件人和子目录 → 管理员确认目标邮箱和每个子目录的去向 → 逐封上传。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
+import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog, CAP, needsBrowser } from './ui.js';
 import { tabGmail, backupCatchupHint } from './admin-gmail.js';
 import { t } from './i18n.js';
 // Same parser, same version as the Worker: the attachment order must match, because downloads locate parts by part_index in the original
@@ -215,10 +215,10 @@ async function emlImport(body) {
         <span class="dim" id="imp-guess"></span>
       </div>
       <p class="dim" style="margin:14px 0 6px">${esc(t('imp_map_note'))}</p>
-      <table class="table" id="imp-map">
+      <div class="tblwrap"><table class="table" id="imp-map">
         <thead><tr><th>${esc(t('imp_th_dir'))}</th><th>${esc(t('imp_th_count'))}</th><th>${esc(t('imp_th_folder'))}</th></tr></thead>
         <tbody></tbody>
-      </table>
+      </table></div>
       <div class="form-row" style="margin-top:14px" id="imp-go-row">
         <label></label>
         <wa-button variant="brand" id="imp-go">${esc(t('imp_start'))}</wa-button>
@@ -243,11 +243,21 @@ async function emlImport(body) {
 
   // Prefer File System Access: once the directory is authorised, walk it lazily instead of pulling the whole
   // tree of file objects into memory at once.
-  // Browsers without it (Firefox, Safari) fall back to a webkitdirectory input.
+  // Browsers without it (Firefox, Safari) fall back to a webkitdirectory input -- a substitute
+  // that costs more memory and asks nothing of the reader, so it is taken silently.
+  // A tablet has neither, and there is nothing left to fall back to: its file picker hands over
+  // files and never a directory. That one is said out loud, because the alternative is a button
+  // that does nothing at all.
   // 优先用 File System Access:拿到目录授权后惰性遍历,不把整棵树的文件对象一次性塞进内存。
-  // 不支持的浏览器(Firefox/Safari)回落到 webkitdirectory 输入框。
+  // 不支持的浏览器(Firefox/Safari)回落到 webkitdirectory 输入框 —— 这个替代品多花些内存,
+  // 但对读者一无所求,所以悄悄换掉就是。
+  // 平板两样都没有,也没有下一层可退:那里的文件选择器交出来的是文件,从来不是目录。
+  // 这一种要说出来,因为另一条路是一个按下去什么也不发生的按钮。
   qs('#imp-pick').addEventListener('click', async () => {
-    if (!window.showDirectoryPicker) return qs('#imp-dir').click();
+    if (!CAP.dirHandle) {
+      if (!CAP.dirPick) return needsBrowser('cap_no_dir_pick');
+      return qs('#imp-dir').click();
+    }
     let handle;
     try {
       handle = await window.showDirectoryPicker({ mode: 'read' });

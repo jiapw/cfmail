@@ -185,6 +185,12 @@ interface Access {
    *  共享成员可见范围的顶点 —— 他们的一切操作都被圈在这棵子树里。 */
   shareRoot: string | null;
   chain: NodeRow[];
+  /** Whether some share along the way carries the meeting pen. It is not a level of access to the
+   *  file -- see migration 0035 -- so it rides beside `level` rather than inside it, and every
+   *  existing test of `level` goes on meaning exactly what it meant.
+   *  沿途是否有某条共享带着那支会议的笔。它不是对文件的权限档次(见 0035 迁移),
+   *  所以它与 level 并列而不住在里面 —— 现有每一处对 level 的判断,含义分毫未变。 */
+  meet: boolean;
 }
 
 /** Resolve what the current user may do with a node. Owners always pass (even in the trash);
@@ -197,7 +203,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   const chain = await chainOf(c.env, nodeId);
   if (!chain.length) throw new HttpError(404, 'e_drive_not_found');
   const node = chain[0];
-  if (node.owner_id === user.id) return { node, level: 'owner', shareRoot: null, chain };
+  if (node.owner_id === user.id) return { node, level: 'owner', shareRoot: null, chain, meet: true };
   if (need === 'owner') throw new HttpError(404, 'e_drive_not_found');
   if (chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
   const ids = chain.map((n) => n.id);
@@ -222,7 +228,8 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   // 单独一行写错也绝无可能发出写权限。
   const rows = await c.env.DB.prepare(
     `SELECT si.node_id,
-            CASE WHEN s.audience='public' THEN 'viewer' ELSE s.role END AS role
+            CASE WHEN s.audience='public' THEN 'viewer' ELSE s.role END AS role,
+            s.meet AS meet
        FROM drive_shares s
        JOIN drive_share_items si ON si.share_id = s.id
        JOIN drive_share_members m ON m.share_id = s.id
@@ -233,7 +240,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
           WHERE g.user_id=?1 AND mb.domain_id = s.domain_id))
        AND si.node_id IN (${ids.map((_, i) => '?' + (i + 3)).join(',')})`
   ).bind(user.id, now(), ...ids).all();
-  const hits = (rows.results || []) as { node_id: string; role: string }[];
+  const hits = (rows.results || []) as { node_id: string; role: string; meet: number }[];
   if (!hits.length) throw new HttpError(404, 'e_drive_not_found');
   const level = hits.some((h) => h.role === 'editor') ? 'editor' : 'viewer';
   if (need === 'edit' && level !== 'editor') throw new HttpError(403, 'e_drive_forbidden');
@@ -242,7 +249,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   const best = hits
     .filter((h) => level === 'viewer' || h.role === 'editor')
     .sort((a, b) => ids.indexOf(b.node_id) - ids.indexOf(a.node_id))[0];
-  return { node, level, shareRoot: best.node_id, chain };
+  return { node, level, shareRoot: best.node_id, chain, meet: hits.some((h) => !!h.meet) };
 }
 
 function cleanName(v: unknown): string {
@@ -1659,6 +1666,15 @@ driveApp.post('/shares', async (c) => {
   if (!ids.length || ids.length > SHARE_MAX_ITEMS) throw new HttpError(400, 'e_bad_request');
   const audience = SHARE_AUDIENCES.includes(body.audience) ? body.audience : 'internal';
   const role = audience === 'public' ? 'viewer' : (SHARE_ROLES.includes(body.role) ? body.role : 'viewer');
+  // The meeting pen, which a public link is allowed to carry. It looks like an exception to the
+  // rule above and is not: that rule is about writing the file, and this is about drawing on a
+  // screen for five seconds. The people who most need the pen are the ones in the call who were
+  // handed a link and no account, and withholding it from exactly them would leave it useful to
+  // nobody.
+  // 那支会议的笔,公开链接也可以带。它看着像是上面那条规则的例外,其实不是:
+  // 那条管的是写文件,这支管的是在屏幕上画五秒钟。最需要这支笔的,
+  // 正是通话里那些只拿到一条链接、没有账号的人 —— 偏偏不给他们,这支笔就对谁都没用了。
+  const meet = body.meet ? 1 : 0;
   let domainId: string | null = null;
   if (audience === 'internal' && body.domain_id) {
     const mine = await myDomains(c.env, user.id);
@@ -1726,10 +1742,10 @@ driveApp.post('/shares', async (c) => {
       WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
   ).bind(user.id).first();
   const stmts = [c.env.DB.prepare(
-    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, created_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)`
+    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, meet, created_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`
   ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, showOwner ? 1 : 0,
-    audience === 'agent' ? agentMode : null, t)];
+    audience === 'agent' ? agentMode : null, meet, t)];
   for (const n of nodes) {
     stmts.push(c.env.DB.prepare('INSERT INTO drive_share_items (share_id, node_id) VALUES (?1,?2)')
       .bind(shareId, n.id));
@@ -1737,7 +1753,7 @@ driveApp.post('/shares', async (c) => {
   await c.env.DB.batch(stmts);
   return c.json({
     id: shareId, token, role, audience, agent_mode: audience === 'agent' ? agentMode : null,
-    domain_id: domainId, expires_at: expires, created_at: t,
+    domain_id: domainId, expires_at: expires, meet, created_at: t,
   });
 });
 
@@ -1782,7 +1798,7 @@ driveApp.get('/shares', async (c) => {
          JOIN users u ON u.id = m.user_id WHERE m.share_id = ?1 ORDER BY m.joined_at`
     ).bind(s.id).all();
     out.push({
-      id: s.id, token: s.token, role: s.role, audience: s.audience,
+      id: s.id, token: s.token, role: s.role, audience: s.audience, meet: s.meet ? 1 : 0,
       agent_mode: s.agent_mode || 'http',
       domain_id: s.domain_id, domain_name: s.domain_name || null,
       expires_at: s.expires_at, revoked_at: s.revoked_at, note: s.note, created_at: s.created_at,
@@ -1805,6 +1821,14 @@ driveApp.put('/shares/:id', async (c) => {
     if (s.audience === 'public' && body.role !== 'viewer') throw new HttpError(400, 'e_drive_share_public_readonly');
     sets.push(`role=?${sets.length + 1}`);
     args.push(body.role);
+  }
+  // The pen can be handed over or taken back without reissuing the link, because it says nothing
+  // about the file: a meeting ends, and the link that outlives it should stop carrying a pen.
+  // 那支笔可以随时交出或收回,无需重发链接 —— 因为它对文件什么也没说:
+  // 会议会结束,而活过会议的那条链接,不该继续带着一支笔。
+  if (body.meet !== undefined) {
+    sets.push(`meet=?${sets.length + 1}`);
+    args.push(body.meet ? 1 : 0);
   }
   // Same rule on update: a duration from the caller, an instant from this clock.
   // 更新时同理:调用方给时长,时刻由本机时钟决定。
@@ -1990,6 +2014,12 @@ drivePubApp.get('/:token', async (c) => {
   // 管理员或分享者事后改什么都不会动它 —— 想让一条已经发出去的链接不再显示地址,请撤销它。
   return c.json({
     role: 'viewer',
+    // Whether this link came with the meeting pen. The visitor's own page needs the answer in
+    // order to decide whether to offer a pen at all -- and the answer is asked again, of the
+    // server, before a single stroke reaches anybody.
+    // 这条链接是否带着那支会议的笔。访问者自己的页面需要这个答案,才知道要不要提供一支笔 ——
+    // 而在任何一笔真的到达别人之前,这个问题会再向服务端问一次。
+    meet: s.meet ? 1 : 0,
     note: s.note,
     expires_at: s.expires_at,
     owner_name: owner?.name || '',
@@ -3163,4 +3193,74 @@ export async function driveCronDaily(env: Env): Promise<void> {
     if (!row) break;
     await purgeSubtree(env, row.id, PURGE_BATCH);
   }
+}
+
+// ---------- Presenting ----------
+// ---------- 演示 ----------
+
+/** What one person may do inside a presentation of one document.
+ *
+ *  Settled here, before any socket is accepted, because the room itself has no way to ask: it
+ *  holds no database and knows nothing about shares. Two ways in, and they are genuinely
+ *  different -- a signed-in person is judged by what they may do with the file, a link holder by
+ *  what the link says -- so neither answer is ever derived from the other.
+ *
+ *  一个人在一份文档的演示里能做什么。
+ *
+ *  在此了结,在任何 socket 被接受之前 —— 因为房间自己无从问起:它不持有数据库,
+ *  也不知道共享是什么。两条入口,而且是真的不同:登录的人按他对这个文件能做什么判定,
+ *  持链接的人按链接怎么说判定 —— 因此任何一边的答案都绝不从另一边推得。 */
+export interface PresentSeat {
+  user: string;
+  name: string;
+  canEdit: boolean;
+  canInk: boolean;
+  /** Nobody signed in, so the name is self-declared. The interface says so next to it: in a room
+   *  where one name came from an account and another came from a text box, not marking which is
+   *  which would be the more misleading of the two choices.
+   *  没有人登录,所以名字是自报的。界面会在旁边标明这一点:
+   *  一个房间里,一个名字来自账号、另一个来自输入框 —— 不标出哪个是哪个,
+   *  才是两种做法里更误导人的那一种。 */
+  guest: boolean;
+}
+
+export async function presentSeat(c: any, nodeId: string, token: string, wantName: string): Promise<PresentSeat> {
+  if (token) {
+    // Only public links come in this way. An internal share is reached by its member being signed
+    // in, which is the branch below -- and that branch already knows how to read the pen off it.
+    // 只有公开链接走这条路。内部共享是靠它的成员登录进来的 ——
+    // 那是下面那条分支,而它已经知道怎么从共享上读出那支笔。
+    const s: any = await c.env.DB.prepare("SELECT * FROM drive_shares WHERE token=?1 AND audience='public'")
+      .bind(token).first();
+    const bad = shareLiveness(s);
+    if (bad) throw new HttpError(bad === 'e_drive_share_not_found' ? 404 : 403, bad);
+    const chain = await chainOf(c.env, nodeId);
+    if (!chain.length || chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
+    const items = await shareItems(c.env, s.id);
+    const roots = new Set(items.map((n) => n.id));
+    if (!chain.some((n) => roots.has(n.id))) throw new HttpError(404, 'e_drive_not_found');
+    return {
+      user: '',
+      // Control characters would travel intact and land in somebody's roster as a broken line.
+      // 控制字符会一路完好地抵达,然后以一行断掉的名册落在别人屏幕上。
+      name: String(wantName || '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 32),
+      // A public link is read-only and stays read-only. The pen changes nothing about that.
+      // 公开链接只读,并且继续只读。那支笔不改变这一点分毫。
+      canEdit: false,
+      canInk: !!s.meet,
+      guest: true,
+    };
+  }
+  const user: User | undefined = c.get('user');
+  if (!user) throw new HttpError(401, 'e_unauthorized');
+  const a = await accessNode(c, nodeId, 'view');
+  if (a.node.kind !== 'file') throw new HttpError(400, 'e_drive_not_file');
+  const writable = a.level === 'owner' || a.level === 'editor';
+  return {
+    user: user.id,
+    name: user.name || user.email || '',
+    canEdit: writable,
+    canInk: writable || a.meet,
+    guest: false,
+  };
 }

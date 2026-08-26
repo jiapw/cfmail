@@ -1,0 +1,203 @@
+/* Presenting: the row of who is here, and the ink drawn over the document.
+   演示:谁在这儿的那一排,以及画在文档上的墨水。 */
+
+/* The palette people are told apart by.
+
+   These are absolute colours and deliberately not theme variables. Everybody in the room picked
+   their own theme out of the thirty this app ships, and a stroke that took its colour from the
+   reader's theme would land a different colour on every screen -- which would destroy the one
+   thing the colour is there for, which is knowing who drew it. Only light and dark move these,
+   and only far enough to stay legible against the paper.
+
+   区分人的那份调色板。
+
+   这些是绝对颜色,并且刻意不是主题变量。屋里每个人都从本站三十套主题里挑了自己那套,
+   而一笔从读者主题取色的笔迹,会在每块屏幕上落成不同的颜色 ——
+   那会毁掉这个颜色唯一的用途:知道是谁画的。
+   只有明暗会移动它们,且只移动到"在纸上仍然看得清"为止。 */
+:root {
+  /* The one who is presenting, always the same colour whoever they are: which person is talking
+     matters less than the fact that this is the one driving.
+     正在演示的那个人。不管他是谁都是同一个颜色:是谁在讲,不如"这是掌舵的那个"来得重要。 */
+  --peer-lead: #e08c00;
+  --peer-0: #0090ff;
+  --peer-1: #46a758;
+  --peer-2: #6e56cf;
+  --peer-3: #00a2c7;
+  --peer-4: #d6409f;
+  --peer-5: #12a594;
+  --peer-6: #3e63dd;
+  --peer-7: #8e4ec6;
+}
+
+html.wa-dark {
+  /* Lifted just enough to carry on dark paper; the hues are unchanged, so somebody who is blue
+     in one person's window is the same blue in everybody else's.
+     只提亮到能在深色纸上站得住;色相不变 ——
+     于是在某人窗口里是蓝色的人,在其他每个人的窗口里都是同一个蓝。 */
+  --peer-lead: #ffc53d;
+  --peer-0: #52a9ff;
+  --peer-1: #63c174;
+  --peer-2: #9e8cfc;
+  --peer-3: #3ec9e0;
+  --peer-4: #f76dbb;
+  --peer-5: #2ebdaf;
+  --peer-6: #7a92ff;
+  --peer-7: #bd8cea;
+}
+
+/* ---------- Who is here ---------- */
+/* ---------- 谁在这儿 ---------- */
+
+.pr-row { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+
+.pr-peer {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--text-2);
+  max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pr-peer.lead { color: var(--text); font-weight: 600; }
+/* Somebody with no pen gets no colour, and says so by being quiet rather than by being labelled.
+   没有笔的人不给颜色,并且是以"安静"来说明这件事,而不是以一个标签。 */
+.pr-peer.mute { opacity: .55; }
+
+.pr-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--dot, var(--text-3));
+  flex: none;
+}
+/* The one presenting wears a ring, so the row reads at a glance even in a screenshot with no
+   colour: one of these is not like the others.
+   演示的那位戴一个环,于是这一排即使在没有颜色的截图里也一眼可读:这里有一个和其余的不一样。 */
+.pr-peer.lead .pr-dot { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--dot, var(--text-3)); }
+
+/* ---------- The ink ---------- */
+/* ---------- 墨水 ---------- */
+
+/* Sticky rather than absolute: this is a sheet held still over a scrolling document, and an
+   absolutely positioned layer inside a scroll container scrolls away with the content. Its height
+   and the negative margin that cancels its footprint are set from script, because both depend on
+   the size of the box it is covering.
+   用 sticky 而不是 absolute:这是一张按在滚动文档之上的、不动的膜,
+   而滚动容器内绝对定位的层会随内容一起滚走。
+   它的高度、以及抵消它占位的那个负 margin,都由脚本设置 —— 两者都取决于它所覆盖的那个盒子的大小。 */
+.pr-ink {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  display: block;
+  pointer-events: none;
+}
+/* Only while a pen is chosen. The rest of the time clicks belong to the document -- links,
+   selection, everything -- and a layer that swallowed them would break reading to enable pointing.
+   只在选了笔的时候。其余时间点击属于文档 —— 链接、选中,一切 ——
+   而一个把它们吞掉的层,会为了"能指"而毁掉"能读"。 */
+.pr-ink.on { pointer-events: auto; cursor: crosshair; touch-action: none; }
+
+/* ---------- The presenter's selection ---------- */
+/* ---------- 演示者的选区 ---------- */
+
+/* A wash rather than the browser's own selection colour, because it is not this reader's
+   selection -- they can still select things themselves, and the two must not look alike.
+   用一层底色而不是浏览器自己的选中色,因为它不是这位读者的选区 ——
+   他自己仍然可以选东西,而两者绝不能长得一样。 */
+:root { --sel-wash: rgba(224, 140, 0, .30); }
+html.wa-dark { --sel-wash: rgba(255, 197, 61, .26); }
+
+::highlight(pr-sel) { background-color: var(--sel-wash); }
+
+/* Where the words could not be found again -- or the browser has no Highlight API -- the block
+   is marked instead. Coarser, and still true.
+   在那些词找不回来的时候 —— 或者浏览器没有 Highlight API —— 就标记整个块。
+   粗一些,但仍然是真的。 */
+.pr-selblock {
+  background-color: var(--sel-wash);
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px var(--sel-wash);
+}
+
+/* ---------- Controls ---------- */
+/* ---------- 控件 ---------- */
+
+/* Controls that only make sense once there is a room, carrying the class from the start so that
+   none of them flashes into view during the moment before the first roster arrives. Hidden rather
+   than removed, so the head does not reflow every time somebody joins or leaves.
+   只有房间存在时才说得通的控件。它们从一开始就带着这个 class,
+   于是在第一份名册到达之前的那一瞬,没有哪一个会闪出来。
+   用隐藏而不是移除,免得每有人进出一次,头部就重排一次。 */
+.pr-hide { display: none !important; }
+
+/* The pen currently in hand. / 此刻拿在手上的那支笔。 */
+#md-pen.on, #md-rect.on { color: var(--peer-lead); background: var(--hover); }
+
+/* The way back when the document has moved somewhere you did not ask it to go. Sits over the
+   document rather than in the toolbar: it is about where you are looking, so it belongs where
+   you are looking.
+   当文档跑到了你没让它去的地方时,回来的那条路。它压在文档上而不是待在工具栏里:
+   它说的是"你在看哪儿"这件事,所以它属于你正在看的地方。 */
+/* The panes box is what "over the document" is measured against. Position only -- it changes
+   nothing about the flex layout inside it.
+   面板盒是"压在文档上"所参照的那个东西。只给定位 —— 它不改变里面 flex 布局的任何一点。 */
+.md-panes { position: relative; }
+
+.pr-back {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 7;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .16);
+}
+.pr-back.on { display: inline-flex; }
+.pr-back:hover { background: var(--hover); }
+
+/* A watcher's editor is not a broken editor -- it is one whose text is somebody else's to change.
+   Dimming the source pane says that without a banner having to.
+   旁观者的编辑器不是一个坏掉的编辑器 —— 它只是"文本归别人改"的那种。
+   把源码面板压暗,不必挂横幅就说清了这件事。 */
+.md-app.watching .md-srcpane { opacity: .72; }
+.md-app.watching #md-ta { cursor: default; }
+
+/* ---------- Watching from a link ---------- */
+/* ---------- 从一条链接观看 ---------- */
+
+/* Laid out like the editor and for the same reason: it is a place you sit in, not a panel you
+   glance into. There is no source pane because there is nothing here anybody may type into.
+   与编辑器同样的排布,理由也相同:它是你坐进去的地方,不是你瞥一眼的面板。
+   这里没有源码面板,因为这里没有任何人可以往里打字的东西。 */
+body.pw-open { overflow: hidden; }
+
+.pw {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text);
+}
+
+.pw-head {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.pw-head .pw-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-head .pw-sp { flex: 1; }
+
+/* Somebody with no account still has a name; this is where they say it. Narrow on purpose --
+   it is a label, not a field anybody should feel invited to write an essay in.
+   没有账号的人也有名字;这里就是他说出来的地方。刻意做窄 ——
+   它是一个标签,不是一个会让人觉得可以写篇文章进去的输入框。 */
+.pw-me {
+  width: 10ch; flex: none; font: inherit; font-size: 12.5px;
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text);
+}
+.pw-me:focus { outline: none; border-color: var(--primary); }
+
+.pw-body { flex: 1; min-height: 0; overflow: auto; position: relative; }

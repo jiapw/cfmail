@@ -6,6 +6,9 @@ export { ChatAgent } from './chat/agent';
 // entry module must actually export.
 // 容器那个 Durable Object 类同理 —— 绑定点的名字,入口模块必须真的导出。
 export { BackupContainer } from './backup';
+// The room a document is presented in, likewise.
+// 一份文档被演示时所在的那个房间,同理。
+export { PresentRoom } from './present';
 import { backfillContacts, backfillSubjectNorm, findMailboxByAddress, ingestEml, insertFailedPlaceholder, logUnrouted, purgeOldUnrouted, retryFailedParses, deleteMessageDerived } from './parse';
 import { driveCronDaily, driveCronHourly } from './drive';
 import { processOutbox } from './send';

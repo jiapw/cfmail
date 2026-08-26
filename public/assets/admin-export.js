@@ -8,7 +8,7 @@
 // 服务端只给清单和单封原文,打包/落盘全在浏览器做 —— 几 GB 的邮箱在 Worker 里打 zip
 // 既超内存也超 CPU,而且用户还得先下一个大文件再解压。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize, fmtDuration } from './ui.js';
+import { esc, qs, qsa, toast, fmtSize, fmtDuration, CAP } from './ui.js';
 import { t } from './i18n.js';
 
 const FOLDER_DIRS = {
@@ -36,7 +36,7 @@ export async function tabExport(body) {
   }
   boxes.sort((a, b) => b.count - a.count);
 
-  const supported = !!window.showDirectoryPicker;
+  const supported = CAP.dirHandle;
 
   body.innerHTML = `
     <section class="card">
@@ -44,7 +44,7 @@ export async function tabExport(body) {
       <p class="dim">${esc(t('exp_note'))}</p>
       ${supported ? '' : `<p class="dim" style="color:var(--wa-color-warning-on-quiet)">${esc(t('exp_unsupported'))}</p>`}
       ${boxes.length ? `
-      <table class="table" id="exp-list">
+      <div class="tblwrap"><table class="table" id="exp-list">
         <thead><tr>
           <th style="width:36px"><input type="checkbox" id="exp-all"></th>
           <th>${esc(t('exp_th_mailbox'))}</th>
@@ -60,7 +60,7 @@ export async function tabExport(body) {
             <td>${esc(fmtSize(b.bytes))}</td>
           </tr>`).join('')}
         </tbody>
-      </table>
+      </table></div>
       <div class="form-row" style="margin-top:14px;padding-left:10px" id="exp-go-row">
         <wa-button variant="brand" id="exp-go" ${supported ? '' : 'disabled'}>${esc(t('exp_start'))}</wa-button>
         <span class="dim" id="exp-picked"></span>

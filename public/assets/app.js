@@ -1,10 +1,8 @@
 import { api } from './api.js';
 import { esc, icon, qs, avatar } from './ui.js';
-import { t, setLang, lang } from './i18n.js';
+import { t, setLang, lang, dictReady } from './i18n.js';
 import { renderList, renderThread, renderContacts } from './mail.js';
-import { openCompose } from './compose.js';
 import { renderLogin, renderSetup, renderInvite, renderSettings, renderNoMailbox, renderForgot, renderReset } from './auth.js';
-import { renderAdmin } from './admin.js';
 import { ensureFont, fontStack } from './fontpicker.js';
 import { loadLabels, allLabels, labelName, labelMark, openLabelManager } from './labels.js';
 
@@ -17,7 +15,14 @@ export const store = {
   folders: null,
   labels: [],
   labelId: '',          // 当前正在看哪个标签(空 = 不按标签过滤)
-  sidebarHidden: false,
+  // Below 900px the sidebar stops taking a column of its own and lies over the list instead. Open
+  // is the right first state for a rail that costs nothing to have out, and the wrong one for a
+  // sheet that covers what you came to read -- so the first state is decided by which of the two
+  // it is going to be.
+  // 900px 以下,侧栏不再自占一栏,而是覆盖在列表上面。
+  // 对一条摆在那儿也不碍事的导轨来说,展开是对的第一状态;
+  // 对一张盖住你本来要读的东西的浮层来说,那就是错的 —— 所以第一状态由它将会是哪一种来决定。
+  sidebarHidden: matchMedia('(max-width: 900px)').matches,
   routeKey: '',
 };
 
@@ -33,6 +38,27 @@ export const setLabelsOpen = (v) => localStorage.setItem(LB_OPEN_KEY, v ? '1' : 
 export function navigate(hash) {
   if (location.hash === hash) route();
   else location.hash = hash;
+}
+
+// ---------------------------------------------------------------------------------------------
+// What the first paint does not pay for
+//
+// Two subsystems used to ride in on the first screen's module graph and neither belongs there.
+// The composer brings an editor and everything for turning rich text into mail; the admin
+// console brings four modules and a whole MIME parser, to serve the one person in the company
+// who opens it. Both now load when reached for. The version query is the same one every dynamic
+// import here carries, so a deploy is picked up rather than served stale from cache.
+//
+// 第一屏不为之付费的东西。
+//
+// 过去有两个子系统搭着首屏的模块图进来,而哪个都不属于那里。写信窗带着一个编辑器和
+// 把富文本变成邮件的全套东西;管理后台带着四个模块和一整个 MIME 解析器,
+// 服务的是全公司只有一个会打开它的人。现在都改为伸手要时才来。
+// 版本参数与这里每个动态 import 带的是同一个,于是一次部署会被取到,而不是从缓存里端出旧的。
+const fresh = (p) => import(`${p}?v=${encodeURIComponent(store.brand?.version || '')}`);
+
+export async function openCompose(opts) {
+  return (await fresh('./compose.js')).openCompose(opts);
 }
 
 /**
@@ -108,9 +134,44 @@ export function applyTheme(theme) {
   const h = document.documentElement;
   h.dataset.theme = theme || 'blue';
   localStorage.setItem('cfmail_theme', h.dataset.theme);
+  syncThemeColor();
   // The panel colour changed, so already-open message bodies need their background realigned
   // 面板色变了,已打开的邮件正文底色需要重新对齐
   window.dispatchEvent(new CustomEvent('cfmail:mode'));
+}
+
+/**
+ * Tell the phone what colour this page is.
+ *
+ * A mobile browser paints the strip above and below the page -- the address bar, the gesture
+ * area -- and without being told it picks white, which under a dark theme leaves two bright
+ * bands framing a dark page. The value is read back from the stylesheet rather than written
+ * here, so a theme is defined in exactly one place and the thirty of them stay in step; the
+ * meta tag is created on first use because index.html cannot know which theme will win.
+ *
+ * 告诉手机这一页是什么颜色。
+ *
+ * 手机浏览器会给页面上下那两条 —— 地址栏、手势区 —— 上色,没人告诉它就取白色,
+ * 于是深色主题下,一个深色页面被两条亮边框着。这个值是从样式表里读回来的而不是写在这里,
+ * 于是一套主题只在一个地方定义,三十套才不会走散;meta 标签在第一次用到时才建,
+ * 因为 index.html 无从知道最后是哪套主题胜出。
+ */
+function syncThemeColor() {
+  // Read the painted colour off <body>, not the custom property behind it. --bg is defined as
+  // var(--x-a2) and a theme swaps the layer underneath; asking for the property can hand back
+  // that reference rather than a colour, while a resolved background is always rgb().
+  // 从 <body> 上读那个真正画出来的颜色,而不是它背后的自定义属性。--bg 的定义是 var(--x-a2),
+  // 换主题换的是底下那一层;去问那个属性,拿回来的可能是那个引用而不是一个颜色,
+  // 而一个已解析的背景色永远是 rgb()。
+  const c = getComputedStyle(document.body).backgroundColor;
+  if (!c || c === 'transparent' || /rgba\(0,\s*0,\s*0,\s*0\)/.test(c)) return;
+  let m = document.querySelector('meta[name="theme-color"]');
+  if (!m) {
+    m = document.createElement('meta');
+    m.name = 'theme-color';
+    document.head.appendChild(m);
+  }
+  m.content = c;
 }
 
 const darkMedia = matchMedia('(prefers-color-scheme: dark)');
@@ -123,6 +184,7 @@ export function applyMode(mode) {
   const h = document.documentElement;
   h.classList.toggle('wa-dark', dark);
   h.classList.toggle('wa-light', !dark);
+  syncThemeColor();
   window.dispatchEvent(new CustomEvent('cfmail:mode', { detail: { dark } }));
 }
 darkMedia.addEventListener('change', () => {
@@ -216,7 +278,10 @@ export async function refreshMe() {
   try {
     store.me = await api('GET', '/api/me');
     const ul = store.me?.user?.lang;
-    if (ul && ul !== lang()) setLang(ul);
+    // The words for the account's language have to be in hand before anything is drawn with
+    // them, and this runs before the first render.
+    // 这个账号所选语言的那套词,必须在有人用它画东西之前就位,而这里跑在第一次渲染之前。
+    if (ul && ul !== lang()) { setLang(ul); await dictReady(); }
     const ap = store.me?.user?.appearance;
     if (ap && ap !== currentMode()) applyMode(ap);
     applyFonts();
@@ -406,8 +471,8 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
         ${page === 'mail' && !me.send_enabled ? `<span class="chip chip-warn" title="${esc(t('no_channel_tip'))}">${esc(t('no_channel_chip'))}</span>` : ''}
         ${cross}
         ${me.chat_enabled ? `<wa-button class="icon" appearance="plain" href="#/chat" aria-label="${esc(t('c_title'))}" title="${esc(t('c_title'))}">${icon('sparkle', 20)}</wa-button>` : ''}
-        ${canAdmin ? `<wa-button class="icon" appearance="plain" href="#/admin" aria-label="${esc(t('admin'))}" title="${esc(t('admin'))}">${icon('shield', 20)}</wa-button>` : ''}
-        <wa-button class="icon" appearance="plain" href="#/settings" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">${icon('gear', 20)}</wa-button>
+        ${canAdmin ? `<wa-button class="icon nav-extra" appearance="plain" href="#/admin" aria-label="${esc(t('admin'))}" title="${esc(t('admin'))}">${icon('shield', 20)}</wa-button>` : ''}
+        <wa-button class="icon nav-extra" appearance="plain" href="#/settings" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">${icon('gear', 20)}</wa-button>
         <wa-dropdown id="user-dd" placement="bottom-end">
           <wa-button slot="trigger" class="icon" appearance="plain" aria-label="${esc(me.user.email)}">${avatar(me.user.name || me.user.email, 32)}</wa-button>
           <div class="um-head">
@@ -428,14 +493,73 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
  * own search form, since what a search means differs.
  * 两个顶栏共用的接线:侧栏开关与账号菜单。搜索表单各自绑定 —— 搜什么本来就不一样。
  */
+const NARROW = '(max-width: 900px)';
+
+/**
+ * Put the sidebar where the state says, and give it a backdrop when it needs one.
+ *
+ * Two different objects wear the same class. Above 900px it is a column: it pushes the list
+ * aside, closing it is a preference, and there is nothing to dismiss. Below, it is a sheet lying
+ * over the list -- and a sheet with no way out but the one small button that opened it is a trap,
+ * particularly on a screen where that button is the width of a thumb. So the backdrop exists only
+ * in the second case, and it is built here rather than in a template because both shells would
+ * otherwise have to carry it, and the two shells belong to different subsystems.
+ *
+ * 把侧栏摆到状态所说的位置,并在它需要时给它一层背景。
+ *
+ * 同一个类名底下是两样不同的东西。900px 以上它是一栏:它把列表推开,关掉它是一种偏好,
+ * 没有什么需要被"打发走"。以下,它是一张盖在列表上的浮层 —— 而一张除了"打开它的那个小按钮"
+ * 之外无路可退的浮层是个陷阱,在那个按钮只有拇指宽的屏幕上尤其如此。
+ * 所以背景只在第二种情形下存在;它在这里造而不是写进模板,是因为否则两个外壳都得各带一份,
+ * 而那两个外壳分属不同的子系统。
+ */
+function syncSidebar() {
+  const sheet = qs('.sidebar');
+  const rail = qs('.drv-nav');
+  // The Drive's rail is not the same object. Narrow, it shrinks to a column of icons rather than
+  // lying over anything, so it costs nothing to leave out and there is no reason to close it on
+  // arrival. Its template draws it open every time, and that -- not a state left behind by the
+  // mail page -- is what it is.
+  // 网盘那条不是同一样东西。窄屏时它缩成一列图标,并不压在任何东西上面,
+  // 摆着也不碍事,没有理由一进来就把它关掉。它的模板每次都画成展开的,
+  // 而那才是它的状态 —— 不是邮件页留下的那个。
+  if (rail && !sheet) store.sidebarHidden = rail.classList.contains('hidden');
+  sheet?.classList.toggle('hidden', store.sidebarHidden);
+  const wanted = !!sheet && !store.sidebarHidden && matchMedia(NARROW).matches;
+  const had = qs('#side-backdrop');
+  if (wanted && !had) {
+    const bd = document.createElement('div');
+    bd.id = 'side-backdrop';
+    bd.className = 'side-backdrop';
+    bd.addEventListener('click', () => setSidebar(true));
+    document.body.appendChild(bd);
+  } else if (!wanted && had) {
+    had.remove();
+  }
+}
+
+function setSidebar(hidden) {
+  store.sidebarHidden = hidden;
+  qs('.drv-nav')?.classList.toggle('hidden', hidden);
+  syncSidebar();
+}
+
+/** Narrow, the sidebar is a sheet over the list, and every link in it leads somewhere behind
+ *  itself -- so following one closes it. Wide it is a column and stays exactly where it was.
+ *  窄屏时侧栏是盖在列表上的一张浮层,而它里面的每一条链接都通向它自己背后的地方 ——
+ *  所以跟着一条走,就把它关上。宽屏时它是一栏,原地不动。 */
+export function closeSidebarOnNavigate() {
+  if (matchMedia(NARROW).matches) store.sidebarHidden = true;
+}
+
+// Dragging a window across the breakpoint turns one of those two objects into the other. The rail
+// somebody closed stays closed; what changes is only whether a backdrop belongs to it now.
+// 把窗口拖过这个断点,那两样东西之中的一个就变成了另一个。
+// 谁关掉的导轨仍旧关着;变的只是"现在它该不该有一层背景"。
+matchMedia(NARROW).addEventListener('change', syncSidebar);
 export function bindTopbar() {
-  qs('#btn-menu')?.addEventListener('click', () => {
-    store.sidebarHidden = !store.sidebarHidden;
-    // Mail calls it .sidebar, Drive calls it .drv-nav; toggle whichever this page has
-    // 邮件叫 .sidebar,网盘叫 .drv-nav,页面上有哪个就切哪个
-    qs('.sidebar')?.classList.toggle('hidden', store.sidebarHidden);
-    qs('.drv-nav')?.classList.toggle('hidden', store.sidebarHidden);
-  });
+  qs('#btn-menu')?.addEventListener('click', () => setSidebar(!store.sidebarHidden));
+  syncSidebar();
   qs('#user-dd')?.addEventListener('wa-select', async (e) => {
     const v = e.detail?.item?.value;
     if (v === 'settings') navigate('#/settings');
@@ -473,8 +597,14 @@ export function bindShell() {
 // ---------- 路由 ----------
 
 async function route() {
+  // Nothing is drawn before the words are here. The fetch began when this module loaded, so on
+  // every route after the first this is already settled and costs a microtask.
+  // 词到齐之前不画任何东西。取词在本模块加载时就出发了,所以除第一次之外的每一次路由,
+  // 它早已落定,代价是一个微任务。
+  await dictReady();
   const seg = location.hash.replace(/^#\/?/, '').split('/').map((s) => decodeURIComponent(s));
   store.routeKey = location.hash;
+  closeSidebarOnNavigate();
 
   if (!store.brand) await loadBrand();
   setTitle(routeTitle(seg));
@@ -494,8 +624,17 @@ async function route() {
 
   if (!store.me) await refreshMe();
   if (!store.me) {
-    const b = await api('GET', '/api/bootstrap').catch(() => ({ needs_setup: false }));
-    if (b.needs_setup) return renderSetup();
+    // A rejected request is not the only way this comes back without an answer: api() resolves
+    // to null for a response that carried no JSON, which is what a request cut short by a
+    // navigation looks like -- Safari finishes it as an empty 200 where Chrome rejects it. The
+    // catch alone therefore leaves a null here, and reading a field off it throws before the
+    // login form is ever drawn, which is a blank page rather than a failed request.
+    // 拿不到答案的方式不止"请求被拒"一种:响应里没有 JSON 时 api() 解析为 null,
+    // 而一个被导航打断的请求正是这个样子 —— Safari 把它收尾成一个空的 200,Chrome 则拒绝它。
+    // 所以光有 catch,这里仍会留下一个 null,而从它上面取一个字段会在登录表单画出来之前抛出,
+    // 那是一张白页,不是一次失败的请求。
+    const b = await api('GET', '/api/bootstrap').catch(() => null);
+    if (b?.needs_setup) return renderSetup();
     return renderLogin();
   }
 
@@ -507,7 +646,7 @@ async function route() {
     return renderNoMailbox();
   }
   if (seg[0] === 'settings') return renderSettings();
-  if (seg[0] === 'admin') return renderAdmin(seg[1] || 'overview');
+  if (seg[0] === 'admin') return (await fresh('./admin.js')).renderAdmin(seg[1] || 'overview');
   if (seg[0] === 'chat') {
     // The AI assistant is loaded on demand (never entered when the admin switch is off); the version query defeats stale browser caches of the module
     // AI 助手按需加载(后台开关未开时不进入);带版本号防浏览器缓存旧模块
@@ -603,5 +742,14 @@ window.addEventListener('DOMContentLoaded', () => {
 // 防止文件拖到非投放区时被浏览器直接打开
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => e.preventDefault());
+
+// Safari's page pinch travels through its own GestureEvent, which touch-action does not govern
+// on every version that is still out there -- so the belt gets braces. Nothing here fires on a
+// mouse, and nothing inside the page uses these events for anything else.
+// Safari 的整页捏合走它自家的 GestureEvent,而市面上仍在跑的版本里,touch-action 并不都管得住它 ——
+// 所以系了腰带再加背带。鼠标上这些事件根本不会响,页面里面也没有任何东西拿它们另作他用。
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+  window.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+}
 
 export { route };
