@@ -82,6 +82,14 @@ export async function open() {
   } catch {
     return false;                                  // refused, or asked outside a gesture
   }
+  // A refusal does not always arrive as one. Chromium answers a denied permission with an empty
+  // list rather than an error, and an empty font library is not a thing that exists -- every
+  // machine has fonts. Reporting success here would tell the reader the door is open while
+  // leaving them on the wrong side of it, and take away the button that would ask again.
+  // 一次拒绝并不总是以拒绝的样子到来。权限被拒时 Chromium 给的是一个空列表而不是一个错误,
+  // 而空的字体库这种东西是不存在的 —— 每台机器都有字体。
+  // 在这里报告成功,等于告诉读者门开着,却把他留在门的另一边,还顺手撤掉了那个能再问一次的按钮。
+  if (!list?.length) return false;
   index = new Map();
   for (const f of list) {
     // A face answers to several names, and a document may have recorded any of them. The
