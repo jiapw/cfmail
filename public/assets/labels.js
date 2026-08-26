@@ -19,7 +19,7 @@
 // 它的名字不存在任何地方 —— 在这里按语言翻译,和错误码一个路子。
 
 import { api } from './api.js';
-import { esc, icon, toast, showModal, closeModal, confirmDialog } from './ui.js';
+import { esc, icon, toast, showModal, closeModal, confirmDialog, phoneSheet, asSheet, cleanupSheet } from './ui.js';
 import { t } from './i18n.js';
 import { store } from './app.js';
 
@@ -104,6 +104,7 @@ let closer = null;
 
 export function closeLabelMenu() {
   if (menuEl) { menuEl.remove(); menuEl = null; }
+  cleanupSheet();
   if (closer) { document.removeEventListener('mousedown', closer, true); document.removeEventListener('keydown', closer, true); closer = null; }
 }
 
@@ -136,12 +137,18 @@ export function openLabelMenu(x, y, { has, toggle, onDone } = {}) {
     `<button class="ctx-item" data-lb-manage="1">${icon('gear', 18)}<span>${esc(t('lbl_manage'))}</span></button>`;
   document.body.appendChild(menuEl);
 
-  // Keep it on screen: opened from a row near the bottom, a menu that runs off the viewport is
-  // a menu whose last item cannot be clicked.
-  // 保证它在屏幕内:从底部的行打开时,溢出视口的菜单等于最后几项点不到。
-  const r = menuEl.getBoundingClientRect();
-  menuEl.style.left = Math.min(x, window.innerWidth - r.width - 8) + 'px';
-  menuEl.style.top = Math.min(y, window.innerHeight - r.height - 8) + 'px';
+  // On a phone this is a sheet at the foot of the screen. Anywhere else, keep it on screen:
+  // opened from a row near the bottom, a menu that runs off the viewport is a menu whose last
+  // item cannot be clicked.
+  // 手机上这是屏幕脚下的一张动作单。其余地方,保证它在屏幕内:
+  // 从底部的行打开时,溢出视口的菜单等于最后几项点不到。
+  if (phoneSheet()) {
+    asSheet(menuEl);
+  } else {
+    const r = menuEl.getBoundingClientRect();
+    menuEl.style.left = Math.min(x, window.innerWidth - r.width - 8) + 'px';
+    menuEl.style.top = Math.min(y, window.innerHeight - r.height - 8) + 'px';
+  }
 
   menuEl.addEventListener('click', async (e) => {
     const nu = e.target.closest('[data-lb-new]');

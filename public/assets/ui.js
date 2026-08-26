@@ -278,3 +278,134 @@ function fallbackCopy(text) {
   ta.remove();
   return true;
 }
+
+// ---------------------------------------------------------------------------------------------
+// What this browser can and cannot do
+//
+// Everything here is a fact about the browser the page is running in, established once at load
+// and never changing afterwards -- an API either exists or it does not. Two rules govern how it
+// is used, and they divide the whole product between them.
+//
+// A capability that has a substitute is never mentioned. The archive cache falls back to memory,
+// the highlighter falls back to a wrapped span, the folder import falls back to a file input --
+// in each of those the person gets what they asked for and no announcement is owed to them.
+//
+// A capability that has no substitute is said out loud, at the moment of asking rather than at
+// the moment of loading. Nothing is hidden merely because it will not work here: a menu entry
+// that quietly disappears teaches the reader that the feature does not exist, when the truth is
+// that it exists and this browser cannot reach it. So the entry stays, and pressing it says
+// which browser can.
+//
+// Note what is NOT here. Whether a pointer can hover, whether a screen is narrow -- those change
+// while the page is open, when a tablet is put in a keyboard case or a window is dragged wider.
+// A constant would be wrong for them and CSS answers them better anyway, so they are decided in
+// the stylesheet by media query and, where JavaScript must ask, by isTouch() below, which asks
+// again every time.
+//
+// 这个浏览器做得到什么、做不到什么。
+//
+// 这里的每一条都是关于"页面正跑在其中的那个浏览器"的事实,加载时确定一次,此后不再变化 ——
+// 一个 API 要么在,要么不在。使用它们的规矩有两条,而这两条把整个产品一分为二。
+//
+// 有替代品的能力,一个字都不提。压缩包缓存退回内存、高亮退回包一层 span、目录导入退回文件输入框 ——
+// 这几处里,人要的东西他都拿到了,不欠他一句通告。
+//
+// 没有替代品的能力,要说出来,而且是在他动手要的那一刻说,不是在加载的那一刻说。
+// 不因为"在这里跑不起来"就把东西藏掉:一个悄悄消失的菜单项,教给读者的是"没有这个功能",
+// 而事实是它有,只是这个浏览器够不着。所以那一项留在原处,按下去时告诉他哪个浏览器够得着。
+//
+// 注意这里没有什么。指针能不能悬停、屏幕窄不窄 —— 那些在页面开着的时候就会变,
+// 平板被插进键盘壳、窗口被拖宽的时候。用常量表达它们是错的,而且 CSS 本来就答得更好,
+// 所以它们交给样式表里的媒体查询;JavaScript 非问不可的地方,问下面的 isTouch(),它每次都重新问。
+// ---------------------------------------------------------------------------------------------
+
+export const CAP = {
+  /** Writing files into a folder on the machine. Chromium desktop only -- neither Firefox nor
+   *  Safari has ever shipped it, and no browser on a tablet or a phone has either.
+   *  往本机目录里写文件。只有桌面 Chromium 有 —— Firefox 与 Safari 从未实现,平板和手机上也没有。 */
+  dirHandle: typeof window.showDirectoryPicker === 'function',
+
+  /** Choosing a whole folder through a file input. The attribute is honoured by every desktop
+   *  browser; on a tablet it is accepted and then ignored, because the system file picker there
+   *  has no way to hand over a directory. So the attribute alone is not the answer -- a pointer
+   *  that cannot hover means a touch file picker, and a touch file picker means no folders.
+   *  用文件输入框选整个目录。桌面浏览器都认这个属性;平板上它被接受然后被忽略,
+   *  因为那里的系统文件选择器根本给不出一个目录。所以光看属性不算数 ——
+   *  一个不能悬停的指针意味着触摸式选择器,而触摸式选择器给不了目录。 */
+  dirPick: typeof HTMLInputElement !== 'undefined'
+    && 'webkitdirectory' in HTMLInputElement.prototype
+    && !matchMedia('(pointer: coarse)').matches,
+
+  /** Handing a player the pieces of a film as they are made. Everything that changes a container
+   *  in the browser goes through it. Present everywhere except on the iPhone.
+   *  一边做一边把片子的碎块交给播放器。一切在浏览器里换容器的事都要经过它。除 iPhone 外处处都有。 */
+  mse: typeof window.MediaSource !== 'undefined',
+
+  /** The origin's own private disk. Reading it is widely supported; writing to it through a
+   *  stream arrived later, so both halves are asked for rather than just the first.
+   *  本源自己的那块私有磁盘。读它支持得很广;用流写它来得晚些,所以两半都要问,而不是只问前一半。 */
+  opfsWrite: typeof navigator !== 'undefined'
+    && !!navigator.storage?.getDirectory
+    && typeof FileSystemFileHandle !== 'undefined'
+    && typeof FileSystemFileHandle.prototype.createWritable === 'function',
+};
+
+/** Whether the pointer in use right now cannot rest on a thing without pressing it. Asked fresh
+ *  every time, because a tablet answers differently the moment a trackpad is attached.
+ *  此刻正在用的指针,是不是那种"不按下去就没法停在东西上"的指针。每次都重新问,
+ *  因为一块触控板插上去的那一刻,平板给的答案就变了。 */
+export const isTouch = () => matchMedia('(hover: none)').matches;
+
+/**
+ * Whether a menu should rise from the foot of the screen instead of opening at the point asked.
+ *
+ * A context menu is built around where the pointer already is: the entries appear under a cursor
+ * that is a few pixels from all of them. A phone inverts every part of that -- the finger is on
+ * the row, the row is anywhere on the screen, and a floating box of 32px lines next to it is a
+ * target nobody hits twice. At the foot of the screen the entries are full-width, thumb-height,
+ * and in the one place a thumb already rests. A tablet keeps the floating menu: the screen is
+ * big enough that a sheet would mean a hand travelling further, not less.
+ *
+ * 一个菜单该不该从屏幕脚下升起来,而不是在被要求的那个点上打开。
+ *
+ * 右键菜单是围绕"指针已经在哪儿"设计的:条目出现在光标底下,距离每一条都只有几个像素。
+ * 手机把这里的每一环都反了过来 —— 手指在行上,行在屏幕任何地方,
+ * 而旁边浮着的一盒 32px 高的行,是没人能连续按中两次的靶子。在屏幕脚下,
+ * 条目是整宽的、拇指高的,并且就在拇指本来歇着的地方。平板保留浮动菜单:
+ * 屏幕大到一张动作单反而意味着手要走更远,而不是更近。
+ */
+export const phoneSheet = () => matchMedia('(hover: none)').matches && matchMedia('(max-width: 700px)').matches;
+
+/**
+ * Turn a positioned menu into that sheet, backdrop included.
+ *
+ * The caller keeps ownership of the menu and of closing it; what is borrowed here is only the
+ * shape. The backdrop closes by clicking, which reaches the caller through the document-level
+ * close handler every menu already has -- so there is nothing to unteach. `cleanupSheet` is
+ * called from the caller's own close path and is safe to call when there is no sheet.
+ *
+ * 把一个定点菜单变成那张动作单,连同它的背景。
+ *
+ * 菜单以及"关掉它"仍归调用方所有;这里借走的只是形状。背景靠点击关闭,
+ * 而这一下会经由每个菜单本来就有的 document 级关闭监听传回调用方 —— 所以没有什么要反着教的。
+ * `cleanupSheet` 由调用方自己的关闭路径来调,没有动作单时调它也无妨。
+ */
+export function asSheet(menuEl) {
+  menuEl.classList.add('menu-sheet');
+  const bd = document.createElement('div');
+  bd.className = 'sheet-backdrop';
+  menuEl.parentElement.insertBefore(bd, menuEl);
+  return true;
+}
+export function cleanupSheet() {
+  qsa('.sheet-backdrop').forEach((el) => el.remove());
+}
+
+/** Said when somebody reaches for a capability this browser does not have and nothing else here
+ *  can stand in for it. One sentence, naming a browser that can -- an apology explains nothing.
+ *  当有人伸手去够一样这个浏览器没有、而这里也没有东西能替它站的能力时说的话。
+ *  一句话,并且点名一个够得着的浏览器 —— 道歉什么也说明不了。 */
+export function needsBrowser(msgKey = 'exp_unsupported') {
+  toast(t(msgKey), true);
+  return false;
+}

@@ -7,9 +7,9 @@ import { api, ApiError } from '../api.js';
 import { t, tErr, lang } from '../i18n.js';
 import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
-  copyText, fileIcon, avatar, debounce,
+  copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, phoneSheet, asSheet, cleanupSheet,
 } from '../ui.js';
-import { bindTopbar, store, navigate, show, topbarHtml } from '../app.js';
+import { bindTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
 import { hearing, verdict } from './remux.js';
@@ -62,6 +62,15 @@ const dst = {
   layout: localStorage.getItem('cf_drive_layout') || 'list',
   sel: new Set(),
   lastIdx: -1,
+  // Picking more than one thing without a modifier key. A mouse holds ctrl or sweeps a marquee;
+  // a finger can do neither, and the batch bar only appears once two things are picked -- so
+  // without this there is no way to reach it at all from a touch screen. Off by default and
+  // reset by every navigation, because a list that toggles instead of opening is a surprise
+  // unless it was asked for.
+  // 不按修饰键就选中不止一样东西。鼠标可以按住 ctrl,也可以扫一个框;手指两样都做不到,
+  // 而批量操作栏要选中两样才出现 —— 于是没有这个东西,触摸屏根本够不到它。
+  // 默认关闭,每次导航都归零,因为一个"点了不打开反而打勾"的列表,不是被要来的就是个意外。
+  selMode: false,
 };
 
 // ---------- Entry ----------
@@ -106,6 +115,7 @@ export async function renderDrive(seg) {
   }
   dst.sel.clear();
   dst.lastIdx = -1;
+  dst.selMode = false;
   show(frame());
   bindFrame();
   refreshState();
@@ -224,7 +234,7 @@ function bindFrame() {
     else if (v === 'md') newMarkdownDialog();
     else if (v === 'txt') newTextDialog();
     else if (v === 'files') qs('#drv-file-input')?.click();
-    else if (v === 'dir') qs('#drv-dir-input')?.click();
+    else if (v === 'dir') pickFolder();
   });
   qs('#drv-file-input')?.addEventListener('change', (e) => {
     enqueueFiles([...e.target.files].map((f) => ({ file: f, rel: '' })));
@@ -234,6 +244,27 @@ function bindFrame() {
     enqueueFiles([...e.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || '' })));
     e.target.value = '';
   });
+}
+
+/**
+ * Asking for a whole folder.
+ *
+ * The entry is offered everywhere, on every browser, because the feature exists and hiding it
+ * would teach the reader that it does not. What differs is the answer: where a folder can be
+ * chosen, the picker opens; where it cannot -- every tablet, because the system file picker
+ * there hands over files and never a directory -- it says so, and says it at the moment of
+ * asking rather than by having quietly not been there.
+ *
+ * 要一整个文件夹。
+ *
+ * 这一项在每个浏览器上都提供,因为这个功能是存在的,而藏起来会教给读者"它不存在"。
+ * 不同的是回答:能选目录的地方,选择器就打开;不能的地方 —— 所有平板,
+ * 因为那里的系统文件选择器交出来的是文件、从来不是目录 —— 就把这件事说出来,
+ * 并且是在他动手要的那一刻说,而不是靠"它悄悄地本来就不在那儿"。
+ */
+function pickFolder() {
+  if (!CAP.dirPick) return needsBrowser('cap_no_dir_pick');
+  qs('#drv-dir-input')?.click();
 }
 
 function currentSeg() {
@@ -312,6 +343,7 @@ async function loadView() {
       dst.inTrash = dst.view === 'trash';
       renderFolderView(main);
     }
+    setTitle(driveTitle());
   } catch (e) {
     main.innerHTML = `<div class="drv-empty">${icon('spam', 40)}<div>${esc(e.message)}</div></div>`;
   }
@@ -334,6 +366,25 @@ function sortNodes(nodes) {
     if (!r) r = String(a.name).localeCompare(String(b.name), undefined, { numeric: true, sensitivity: 'base' });
     return r * dir;
   });
+}
+
+/**
+ * Where in the Drive this is, written as a path: "My Drive/Projects/2026". The crumb bar says the
+ * same thing with room to spare; a tab has none, so a deep path keeps only its last few names --
+ * which are the ones that answer where you are. The other views have no path and are just called
+ * what they are called.
+ *
+ * 网盘里的位置,写成一条路径:「我的网盘/项目/2026」。面包屑说的是同一件事,但它有地方可铺;
+ * 标签页没有,所以深路径只留最后几段 —— 回答"你在哪儿"的正是那几段。
+ * 其余视图没有路径,就叫它们本来的名字。
+ */
+function driveTitle() {
+  if (dst.view === 'search') return t('search_title', dst.q);
+  if (['shared', 'recent', 'starred', 'trash', 'links', 'agents'].includes(dst.view)) {
+    return t('drv_' + dst.view);
+  }
+  if (dst.view !== 'my' && dst.view !== 'folder') return t('a_drive');
+  return pathTitle([dst.access === 'owner' ? t('drv_my') : t('drv_shared'), ...dst.path.map((p) => p.name)]);
 }
 
 function crumbsHtml() {
@@ -416,11 +467,16 @@ function barHtml() {
 /** The buttons that sit at the right end of the path bar: view mode, then refresh.
  *  路径栏右端的按钮:视图切换,然后刷新。 */
 function barToolsHtml() {
-  return `<wa-button class="icon" appearance="plain" id="drv-layout" aria-label="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}" title="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">${icon(dst.layout === 'list' ? 'grid' : 'view-list', 18)}</wa-button>
+  return `<wa-button class="icon drv-selmode ${dst.selMode ? 'on' : ''}" appearance="plain" id="drv-selmode" aria-label="${esc(t('multi_select'))}" title="${esc(t('multi_select'))}" aria-pressed="${dst.selMode ? 'true' : 'false'}">${icon('select', 18)}</wa-button>
+      <wa-button class="icon" appearance="plain" id="drv-layout" aria-label="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}" title="${esc(dst.layout === 'list' ? t('drv_view_grid') : t('drv_view_list'))}">${icon(dst.layout === 'list' ? 'grid' : 'view-list', 18)}</wa-button>
       <wa-button class="icon" appearance="plain" id="drv-refresh" aria-label="${esc(t('refresh'))}" title="${esc(t('refresh'))}">${icon('refresh', 18)}</wa-button>`;
 }
 
 function bindBar(main) {
+  // On a phone the crumbs scroll sideways; where you ARE is the far end, so start there.
+  // 手机上面包屑横着滚;"你在哪儿"是最末端,所以从那里开始。
+  const crumbs = qs('#drv-bar .drv-crumbs', main);
+  if (crumbs && crumbs.scrollWidth > crumbs.clientWidth) crumbs.scrollLeft = crumbs.scrollWidth;
   qsa('#drv-bar .drv-crumb[data-nav]', main).forEach((el) =>
     el.addEventListener('click', () => navigate(el.dataset.nav)));
   qs('#drv-refresh', main)?.addEventListener('click', reload);
@@ -430,6 +486,16 @@ function bindBar(main) {
     dst.layout = dst.layout === 'list' ? 'grid' : 'list';
     localStorage.setItem('cf_drive_layout', dst.layout);
     renderDrive(currentSeg());
+  });
+  // Turning it off drops what was picked with it. Leaving a selection behind would mean the
+  // batch bar stays up over a list that has gone back to opening things on a tap, which is the
+  // one combination guaranteed to lose somebody's place.
+  // 关掉它,就把用它选中的东西一并放掉。留着选区意味着批量栏还架在一个"点一下就打开"的列表上,
+  // 而这正是那种保证会让人找不着北的组合。
+  qs('#drv-selmode', main)?.addEventListener('click', () => {
+    dst.selMode = !dst.selMode;
+    if (!dst.selMode) dst.sel.clear();
+    applySelection(main);
   });
   qs('#drv-sel-clear', main)?.addEventListener('click', () => {
     dst.sel.clear();
@@ -964,7 +1030,20 @@ function bindFolderView(main) {
     }
     const id = row.dataset.id;
     const i = parseInt(row.dataset.i, 10);
-    if (e.ctrlKey || e.metaKey) {
+    // A tap opens. Select-then-double-click is a mouse's grammar: the first click is cheap
+    // because the second is right there under the same finger. A touch screen has no double tap
+    // worth the name, so a tap does what the thing is for -- a folder opens, a file shows itself
+    // -- and picking things is what select mode and the row's own menu are for.
+    // 点一下就是打开。"先选中、再双击"是鼠标的语法:第一下便宜,因为第二下就在同一根手指底下。
+    // 触摸屏没有称得上双击的东西,所以点一下就做这样东西本来的事 —— 文件夹打开,文件亮出来 ——
+    // 而"选中"这件事,交给选择模式和行自己的菜单。
+    if (isTouch() && !dst.selMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      const n = dst.shown.find((x) => x.id === id);
+      if (n) return openNode(n);
+    }
+    // Select mode is a held-down ctrl that nobody has to hold down.
+    // 选择模式就是一个"按住的 ctrl",只是不用谁去按住它。
+    if (e.ctrlKey || e.metaKey || dst.selMode) {
       dst.sel.has(id) ? dst.sel.delete(id) : dst.sel.add(id);
       dst.lastIdx = i;
     } else if (e.shiftKey && dst.sel.size) {
@@ -1172,6 +1251,7 @@ let menuEl = null;
 function closeMenu() {
   menuEl?.remove();
   menuEl = null;
+  cleanupSheet();
 }
 document.addEventListener('click', () => closeMenu());
 document.addEventListener('scroll', () => closeMenu(), true);
@@ -1186,6 +1266,7 @@ window.addEventListener('hashchange', () => closeMenu());
 // 进入或退出全屏,会把菜单脚下那块地挪走 —— 它归"正在铺满屏幕的东西"所有,而那件事刚刚变了。
 // 让它就此收起,由人再打开一次,那时它会落在新的归属里。
 document.addEventListener('fullscreenchange', () => closeMenu());
+document.addEventListener('webkitfullscreenchange', () => closeMenu());
 window.addEventListener('keydown', (e) => {
   if (!qs('.drv-body')) return;
   if (e.key === 'Escape') closeMenu();
@@ -1233,18 +1314,24 @@ function openMenu(x, y, nodes, own, above) {
   // 不管它的 z-index 写着什么。所以菜单要挂进"正在铺满屏幕的那个东西"里面,
   // 否则它会开在一个谁也看不见的地方。位置不受影响 —— fixed 仍然是相对视口量的 ——
   // 所以变的只有父节点。
-  (document.fullscreenElement || document.body).appendChild(menuEl);
-  const r = menuEl.getBoundingClientRect();
-  // A control at the foot of the player has no room below it. Asked to open above, the menu hangs
-  // its bottom-right corner off the point it was given instead of its top-left.
-  // 一个待在播放器底部的控件,下面没有地方。要它向上开时,
-  // 菜单把右下角挂在给定的那个点上,而不是左上角。
-  menuEl.style.left = (above
-    ? Math.max(8, Math.min(x - r.width, innerWidth - r.width - 8))
-    : Math.min(x, innerWidth - r.width - 8)) + 'px';
-  menuEl.style.top = (above
-    ? Math.max(8, y - r.height)
-    : Math.min(y, innerHeight - r.height - 8)) + 'px';
+  (document.fullscreenElement || document.webkitFullscreenElement || document.body).appendChild(menuEl);
+  if (phoneSheet()) {
+    // A sheet at the foot of the screen, on a phone -- the geometry lives in the class.
+    // 手机上是屏幕脚下的一张动作单 —— 几何都在那个类里。
+    asSheet(menuEl);
+  } else {
+    const r = menuEl.getBoundingClientRect();
+    // A control at the foot of the player has no room below it. Asked to open above, the menu hangs
+    // its bottom-right corner off the point it was given instead of its top-left.
+    // 一个待在播放器底部的控件,下面没有地方。要它向上开时,
+    // 菜单把右下角挂在给定的那个点上,而不是左上角。
+    menuEl.style.left = (above
+      ? Math.max(8, Math.min(x - r.width, innerWidth - r.width - 8))
+      : Math.min(x, innerWidth - r.width - 8)) + 'px';
+    menuEl.style.top = (above
+      ? Math.max(8, y - r.height)
+      : Math.min(y, innerHeight - r.height - 8)) + 'px';
+  }
   menuEl.addEventListener('click', (e) => {
     e.stopPropagation();
     const el = e.target.closest('[data-mi]');
@@ -1269,7 +1356,7 @@ function emptyMenuItems() {
     { ic: 'fileText', label: t('drv_new_md'), fn: () => newMarkdownDialog() },
     { ic: 'fileText', label: t('drv_new_txt'), fn: () => newTextDialog() },
     { ic: 'upload', label: t('drv_upload_files'), fn: () => qs('#drv-file-input')?.click() },
-    { ic: 'upload', label: t('drv_upload_folder'), fn: () => qs('#drv-dir-input')?.click() },
+    { ic: 'upload', label: t('drv_upload_folder'), fn: () => pickFolder() },
   ];
 }
 
@@ -2170,6 +2257,11 @@ async function shareDialog(nodes) {
       </div>
     </div>
 
+    <div class="f" id="f-meet" style="margin-top:14px">
+      <wa-switch id="sh-meet">${esc(t('share_meet'))}</wa-switch>
+      <p class="drv-dim" style="margin:6px 0 0;font-size:12.5px">${esc(t('share_meet_hint'))}</p>
+    </div>
+
     <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
 
   // Public links are read-only, full stop: nobody is authenticated on the other end, so there
@@ -2207,6 +2299,11 @@ async function shareDialog(nodes) {
       nodes: list.map((n) => n.id),
       audience,
       role: audience === 'public' ? 'viewer' : segGet(d, 'sh-role'),
+      // The meeting pen, which is not a role and so is not forced to anything by the audience.
+      // A public link may carry it: drawing on a screen for five seconds is not writing a file.
+      // 那支会议的笔。它不是一种角色,所以不会被受众强制成任何值。
+      // 公开链接也可以带着它:在屏幕上画五秒钟,不是写一个文件。
+      meet: qs('#sh-meet', d)?.checked ? 1 : 0,
       domain_id: audience === 'internal' ? (qs('#sh-dom', d).value || null) : null,
       expires_days: parseInt(qs('#sh-exp', d).value, 10) || 0,
       // Carry the look along with the link. The palette is a company setting the public page can

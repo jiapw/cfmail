@@ -29,7 +29,7 @@
 // 也正是"导八千封信几乎不花账号 CPU"的原因。
 
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog, CAP } from './ui.js';
 import { t } from './i18n.js';
 import { LABEL_COLORS, LABEL_ICONS, openLookPicker } from './labels.js';
 import PostalMime from '../vendor/postal-mime/postal-mime.js';
@@ -285,7 +285,7 @@ export async function tabGmail(body, opts = {}) {
   let index = null;       // scanMbox 的结果
   let cancelled = false;
 
-  const supported = !!window.showDirectoryPicker;
+  const supported = CAP.dirHandle;
 
   body.innerHTML = `
     <section class="card" id="gm-pick-card">
@@ -401,9 +401,9 @@ export async function tabGmail(body, opts = {}) {
       </div>
       <h3>${esc(t('gm_map_folders'))}</h3>
       <p class="dim">${esc(t('gm_map_folders_note'))}</p>
-      <table class="table"><thead><tr>
+      <div class="tblwrap"><table class="table"><thead><tr>
         <th>${esc(t('gm_gmail_label'))}</th><th>${esc(t('gm_count'))}</th><th>${esc(t('gm_target_folder'))}</th>
-      </tr></thead><tbody>${folderRows || `<tr><td colspan="3" class="dim">${esc(t('gm_none_system'))}</td></tr>`}</tbody></table>
+      </tr></thead><tbody>${folderRows || `<tr><td colspan="3" class="dim">${esc(t('gm_none_system'))}</td></tr>`}</tbody></table></div>
       <div class="form-row">
         <label>${esc(t('gm_default_folder'))}</label>
         <wa-select id="gm-default" value="archive" style="width:150px">
@@ -413,10 +413,10 @@ export async function tabGmail(body, opts = {}) {
 
       <h3 style="margin-top:20px">${esc(t('gm_map_labels'))}</h3>
       <p class="dim">${esc(t('gm_map_labels_note'))}</p>
-      <table class="table"><thead><tr>
+      <div class="tblwrap"><table class="table"><thead><tr>
         <th></th><th>${esc(t('gm_gmail_label'))}</th><th>${esc(t('gm_count'))}</th>
         <th>${esc(t('gm_target_label'))}</th><th>${esc(t('gm_look'))}</th>
-      </tr></thead><tbody>${labelRows || `<tr><td colspan="5" class="dim">${esc(t('gm_none_labels'))}</td></tr>`}</tbody></table>
+      </tr></thead><tbody>${labelRows || `<tr><td colspan="5" class="dim">${esc(t('gm_none_labels'))}</td></tr>`}</tbody></table></div>
       <p class="dim">${esc(t('gm_state_note'))}</p>
 
       <div class="form-row" style="margin-top:16px">

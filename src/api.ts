@@ -25,6 +25,7 @@ import { fontsApp, isKnownFont, isMonoFont } from './fonts';
 import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
 import { driveAgentApp, driveApp, drivePubApp } from './drive';
+import { presentApp } from './present';
 import { VERSION } from './version';
 import { ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
 import { FLAGGED, pickColor, pickIcon } from './labels';
@@ -1692,6 +1693,13 @@ app.route('/api/drive', driveApp);
 // 公开共享链接:刻意不挂在 requireAuth 之后 —— 它的意义就在于没有账号的接收方也能打开。
 // 按构造即只读(见 drive.ts)。
 app.route('/api/pub', drivePubApp);
+
+// Presenting a document. Likewise not behind requireAuth: a link holder with the meeting pen has
+// no account either, and the question of what they may do is asked inside, per visitor, against
+// the link they actually hold.
+// 演示一份文档。同样不挂在 requireAuth 之后:持有带会议笔的链接的人同样没有账号,
+// 而"他能做什么"这个问题在里面按访问者逐一提问,对着他真正持有的那条链接。
+app.route('/api/present', presentApp);
 
 // Agent access links: no session, no Origin check, no /api prefix. The caller is a program that
 // was handed one URL and nothing else, and everything it may do is expressed in that URL --

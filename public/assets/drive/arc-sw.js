@@ -245,6 +245,27 @@ async function cacheDir() {
   return root.getDirectoryHandle('arc-cache', { create: true });
 }
 
+/** Whether this browser will let anything be written to that disk.
+ *
+ *  Reading the origin's own private storage shipped years before writing to it through a stream
+ *  did, so both halves are asked for rather than just the first. A browser with only the first
+ *  half answers yes to the directory and then throws on the opening write -- which lands a few
+ *  seconds into a film, where it reads as the film being broken rather than as the cache being
+ *  unavailable. Answering no here instead sends the same entry down the per-request decode path,
+ *  which is slower and works everywhere, and says nothing to anybody: there is a substitute, so
+ *  there is nothing to announce.
+ *
+ *  这个浏览器让不让往那块盘上写任何东西。
+ *
+ *  读本源自己的私有存储,比"用流写它"早了好几年,所以两半都要问,而不是只问前一半。
+ *  只有前一半的浏览器会对"给我个目录"点头,然后在第一次写入时抛出 —— 而那时片子已经放了几秒,
+ *  于是读起来像是这部片子坏了,而不是这个缓存用不了。在这里回答"不",
+ *  就把同一个条目送上"按请求解码"那条路 —— 慢一些,但哪里都能走 —— 并且不对任何人说一个字:
+ *  有替代品,就没有什么要通告的。 */
+const canCacheToDisk = () => !!navigator.storage?.getDirectory
+  && typeof FileSystemFileHandle !== 'undefined'
+  && typeof FileSystemFileHandle.prototype.createWritable === 'function';
+
 /** 64-bit-ish name so two different entries never share a cache directory
  *  近 64 位的目录名,不同条目绝不会共用同一个缓存目录 */
 function hashStr(s) {
@@ -615,7 +636,7 @@ async function handle(req, url) {
   // 7z 固实块:多个文件共用一个压缩块,读取其中任意一个都要从块首解起。把解好的整块缓存一次
   // (落盘),块内所有文件都从缓存供给 —— 于是浏览固实档案里一整个文件夹的图,块只解一次,
   // 而不是每张图都解一遍。直存(Copy)块跳过(第一档直接供给);块太大无法缓存的退回下方逐条解码。
-  if (arcExt === '7z' && navigator.storage?.getDirectory && reader.blockOf) {
+  if (arcExt === '7z' && canCacheToDisk() && reader.blockOf) {
     const blk = reader.blockOf(entry);
     if (blk && !reader.copySpan(entry) && blk.blockSize <= BLOCK_CAP) {
       const key = `${id}:blk:${blk.index}`;
@@ -638,7 +659,7 @@ async function handle(req, url) {
   // 加密 ZIP 条目从第 0 字节链式(ZipCrypto),无法直接按段供给 —— 但可以边到边增量解密,
   // 灌进单飞磁盘缓存。这样实时百分比和速率显示对它也照常有效。(7z 加密已由上面的块缓存处理。)
   const isEnc = arcExt === '7z' ? false : !!entry.encrypted;
-  if (isEnc && navigator.storage?.getDirectory) {
+  if (isEnc && canCacheToDisk()) {
     if (entry.size > FILL_CAP) return new Response('too big', { status: 502 });
     const key = `${id}:${arcSize}:${entryPath}`;
     const pump = arcExt === '7z'
@@ -702,7 +723,7 @@ async function handle(req, url) {
   // Compressed media goes through the single-flight disk cache: containers seek internally
   // (MP4 tail moov etc.), and re-decoding the block per range request would loop forever.
   // 压缩媒体走单飞磁盘缓存:容器格式内部要随机访问(MP4 尾部 moov 等),按请求重解会没完没了。
-  if (MEDIA_EXTS.has(extOf(entry.name)) && navigator.storage?.getDirectory) {
+  if (MEDIA_EXTS.has(extOf(entry.name)) && canCacheToDisk()) {
     if (entry.size > FILL_CAP) return new Response('too big', { status: 502 });
     const key = `${id}:${arcSize}:${entryPath}`;
     const pump = arcExt === '7z'

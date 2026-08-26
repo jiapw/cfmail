@@ -68,12 +68,17 @@
   "durable_objects": {
     "bindings": [
       { "name": "BACKUP_CONTAINER", "class_name": "BackupContainer" },
-      { "name": "CHAT_AGENT", "class_name": "ChatAgent" }
+      { "name": "CHAT_AGENT", "class_name": "ChatAgent" },
+      // 每份正在被演示的文档一个房间。它什么都不存,最后一个人离开就销毁自己。
+      // One room per document being presented. It stores nothing, and destroys itself
+      // the moment the last person leaves.
+      { "name": "PRESENT_ROOM", "class_name": "PresentRoom" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] },
-    { "tag": "v2", "new_sqlite_classes": ["BackupContainer"] }
+    { "tag": "v2", "new_sqlite_classes": ["BackupContainer"] },
+    { "tag": "v3", "new_sqlite_classes": ["PresentRoom"] }
   ],
 
   // 备份跑在容器里:那儿有 7-Zip、有磁盘、想跑多久跑多久,而 Worker 三样都没有。

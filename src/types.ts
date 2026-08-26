@@ -20,6 +20,12 @@ export interface Env {
   ASSETS: Fetcher;
   AI: Ai;
   CHAT_AGENT: DurableObjectNamespace;
+  /** One room per document being presented. Optional because a deployment made before this
+   *  feature has no such binding, and a missing room should mean "presenting is off here"
+   *  rather than a Worker that refuses to start.
+   *  每份正在被演示的文档一个房间。可选,因为早于这个功能的部署没有这个绑定 ——
+   *  而"没有房间"该意味着"这里没开演示",不该意味着一个起不来的 Worker。 */
+  PRESENT_ROOM?: DurableObjectNamespace<import('./present').PresentRoom>;
   EMAIL?: { send(message: unknown): Promise<unknown> }; // Cloudflare Email Sending binding
   MAIL_PROVIDER: string; // dev | cf | ses | resend
   APP_ORIGIN: string;

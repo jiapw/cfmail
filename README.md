@@ -660,6 +660,47 @@ See [PRIVACY.md](PRIVACY.md) for exactly what data lives where and what can leav
 
 ---
 
+## Browser support / 浏览器支持
+
+Desktop **Chrome, Edge, Firefox and Safari**; tablets running **iPadOS or Android**; and phones,
+which get a layout of their own rather than a squeezed desktop. Every browser on iOS and iPadOS
+is the system WebKit whatever its name says, so an iPad is tested once and that covers Safari,
+Chrome, Edge and Firefox there.
+
+桌面 **Chrome、Edge、Firefox、Safari**;平板 **iPadOS 与 Android**;手机有自己的版式,
+不是把桌面挤小。iOS/iPadOS 上无论叫什么名字都是系统的 WebKit,所以 iPad 测一次,
+Safari / Chrome / Edge / Firefox 就都覆盖了。
+
+Two capabilities are not everywhere, and the interface says which is which rather than leaving a
+button that does nothing:
+
+有两项能力并非处处都有,界面会说明是哪一种,而不是留下一个按下去没反应的按钮:
+
+- **Writing into a folder you choose** (File System Access) exists only in desktop Chromium.
+  Exporting mailboxes, backup sync and the Gmail import say so and name a browser that can;
+  downloading several files falls back to one download each, and importing `.eml` falls back to a
+  file picker. Choosing a whole folder is unavailable on any tablet or phone at all.
+  **写入你指定的目录**(File System Access)只有桌面 Chromium 有。导出邮箱、备份同步、Gmail
+  导入会说明并点名可用的浏览器;多文件下载退化为逐个下载,导入 `.eml` 退化为文件选择框。
+  选择整个文件夹在任何平板与手机上都做不到。
+- **Rebuilding a video's container in the browser** (MediaSource) is absent on iPhone — iPad has
+  it. An `.mkv` or `.avi` there reports that the format cannot be played rather than spinning;
+  formats the browser opens by itself are unaffected.
+  **在浏览器里重建视频容器**(MediaSource)在 iPhone 上没有 —— iPad 有。那里的 `.mkv` / `.avi`
+  会明确报"这个格式放不了",而不是一直转圈;浏览器自己就能打开的格式不受影响。
+
+Anything that had a substitute is substituted silently: the archive cache falls back to decoding
+per request where the browser cannot write to its private storage, and the text highlighter falls
+back to a wrapped span. Actions that a mouse reaches by hovering or right-clicking are reachable
+on a touch screen too — every row carries a menu button, and the Drive has a select mode that
+makes a tap add to the selection.
+
+凡是有替代品的一律静默替换:浏览器写不了私有存储时,压缩包缓存退回按请求解码;
+文本高亮退回包一层 span。鼠标靠悬停和右键够到的动作,触摸屏上同样够得到 ——
+每一行都带一个菜单按钮,网盘还有一个"选择模式",让点一下变成加选。
+
+---
+
 ## Interface and themes / 界面与主题
 
 - Components are Web Awesome v3.11 (Web Components), self-hosted in `public/vendor/wa/` and synced by `scripts/sync-vendor.mjs`. Icons are a hand-built set in `public/assets/icons.js` — no Font Awesome icon assets are involved.

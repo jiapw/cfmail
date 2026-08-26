@@ -17,9 +17,9 @@
 // 在接收方那里的行为与在分享者那里完全一致。属于本页自己的是它们外面的框:
 // 品牌组合、这条分享的条款,以及一个没有选择、没有菜单、无处可写的列表。
 
-import { t, tErr, setLang } from '../i18n.js';
+import { t, tErr, setLang, dictReady } from '../i18n.js';
 import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon, toast } from '../ui.js';
-import { store, navigate } from '../app.js';
+import { store, navigate, setTitle, pathTitle } from '../app.js';
 import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './fsrc.js';
 
 let cssDone = false;
@@ -48,6 +48,14 @@ const loadArc = () => import('./arc.js?v=' + v());
 const effSize = (n) => (n.kind === 'file' ? n.size || 0 : n.tree_bytes || 0);
 const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
 const ARC_EXTS = new Set(['zip', 'jar', 'apk', 'epub', '7z']);
+const MD_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd']);
+/** The address of one document opened to be watched. A route of its own rather than a mode of
+ *  the preview, for the same reason the editor is a tab rather than an overlay: it is somewhere
+ *  you stay, and somewhere you should be able to send somebody straight to.
+ *  一份"打开来看演示"的文档的地址。它是一条自己的路由,而不是预览的一种模式 ——
+ *  与编辑器是标签页而不是浮层同一个理由:它是你会待下去的地方,
+ *  也是应该能把人直接送到的地方。 */
+const watchHash = (token, id) => `#/p/${encodeURIComponent(token)}/watch/${encodeURIComponent(id)}`;
 const IMG_RE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/;
 
 // ---------- Look and feel ----------
@@ -62,7 +70,7 @@ const IMG_RE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/;
 // 也能解析;另外两项则是个人的,随分享记录传来。三者一律不写 localStorage:
 // 否则一个在本处也有账号的访问者,会发现自己的应用被一条陌生人的链接重新粉刷、还改了语言。
 let lookGuard = null;
-function applyShareLook(head) {
+async function applyShareLook(head) {
   const h = document.documentElement;
   if (!lookGuard) {
     // Remember what this browser looked like before the link touched it, and put it back the
@@ -88,6 +96,9 @@ function applyShareLook(head) {
   }
   if (head.lang) {
     const prev = setLang(head.lang, false);
+    // The sharer's language has to be in hand before this page is drawn in it.
+    // 分享者的那套词,必须在这一页用它画出来之前就位。
+    await dictReady();
     // Keep the FIRST language seen -- walking deeper into the share calls this again, and
     // overwriting would record the borrowed language as the one to restore.
     // 保留"最先见到的"那个语言 —— 在分享里往深处走会再次调到这里,
@@ -288,17 +299,32 @@ export async function renderPubShare(token, rest) {
   let data;
   try {
     head = await shareHead(token);
+    // The watching view is its own page and does not want a listing behind it, so the share is
+    // read first and the listing only if we are staying here.
+    // 观看视图是它自己的一页,不需要背后垫着一份列表,
+    // 所以先读分享本身,只有确定要留在这一页时才去取列表。
+    if (segs[0] === 'watch' && segs[1]) {
+      await applyShareLook(head);
+      const mod = await import(`./watch.js?v=${v()}`);
+      return mod.renderPubWatch(token, segs[1], head);
+    }
     data = await api(`/api/pub/${encodeURIComponent(token)}/list${parent ? '?parent=' + encodeURIComponent(parent) : ''}`);
   } catch (e) {
     return errorPage(app, head, e);
   }
-  applyShareLook(head);
+  await applyShareLook(head);
 
   const crumbs = [`<span class="drv-crumb" data-go="">${esc(t('drv_share_root'))}</span>`]
     .concat((data.path || []).map((p, i, arr) => `
       <span class="drv-crumb-sep">${icon('next', 14)}</span>
       <span class="drv-crumb ${i === arr.length - 1 ? 'here' : ''}" data-go="${esc(p.id)}">${esc(p.name)}</span>`))
     .join('');
+
+  // The recipient has a tab open on somebody else's folder, quite possibly several of them from
+  // several companies. Saying which folder, and whose, is the whole of what a tab can do here.
+  // 接收方的标签页开在别人家的某个文件夹上,而且很可能同时开着好几家的好几个。
+  // 说清是哪个文件夹、谁家的 —— 标签页能做的就是这些。
+  setTitle(pathTitle([t('drv_share_root'), ...(data.path || []).map((p) => p.name)]));
 
   const nodes = data.nodes || [];
   app.innerHTML = frame(head, `
@@ -323,6 +349,11 @@ export async function renderPubShare(token, rest) {
     // browser a /meta round-trip and gives it the breadcrumb it should show above the zip.
     // 压缩包像在网盘里一样以目录形式打开。种子省掉一次 /meta 往返,
     // 并把该显示在 zip 之上的面包屑交给它。
+    // A link made for a meeting opens its documents into the meeting. Without the pen the same
+    // file is just a file, and the preview -- which is what a reader wants from a file -- is right.
+    // 为一场会议而做的链接,把它的文档打开到那场会议里。没有那支笔,同一个文件就只是个文件,
+    // 而预览 —— 读者从一个文件那里想要的正是它 —— 才是对的。
+    if (head.meet && MD_EXTS.has(extOf(n.name))) return navigate(watchHash(token, n.id));
     if (ARC_EXTS.has(extOf(n.name))) {
       arcSeed.set(n.id, {
         name: n.name, size: n.size, access: 'viewer',
@@ -365,7 +396,7 @@ async function renderPubArc(token, id, path) {
   } catch (e) {
     return errorPage(app, null, e);
   }
-  applyShareLook(head);
+  await applyShareLook(head);
   // Rebuild the frame only when arriving from elsewhere; walking around inside the archive
   // must not throw away the container arc.js is painting into.
   // 只有从别处过来时才重建外框;在压缩包内部走动不能把 arc.js 正在渲染的容器扔掉。

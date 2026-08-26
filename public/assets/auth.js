@@ -1,6 +1,6 @@
 import { api } from './api.js';
 import { esc, icon, qs, toast } from './ui.js';
-import { t, setLang, lang, LANG_OPTIONS } from './i18n.js';
+import { t, setLang, lang, LANG_OPTIONS, dictReady } from './i18n.js';
 import { store, navigate, refreshMe, show, applyMode, currentMode, setTitle, applyFonts } from './app.js';
 import { pickFont } from './fontpicker.js';
 import { mountTurnstile } from './turnstile.js';
@@ -482,6 +482,7 @@ export function renderSettings() {
   qs('#sel-lang').addEventListener('change', async (e) => {
     const l = e.target.value;
     setLang(l);
+    await dictReady();
     await api('POST', '/api/me/lang', { lang: l }).catch(() => {});
     toast(t('t_lang_saved'));
     renderSettings();

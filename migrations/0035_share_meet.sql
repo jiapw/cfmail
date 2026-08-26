@@ -1,0 +1,16 @@
+-- Meeting annotation, which is deliberately not a level of access to the file.
+--
+-- A share that carries it lets its holder draw on the document while somebody else presents it.
+-- That is a power over the session, not over the file: an annotator may not write a byte, and
+-- every check that asks "may this person edit" must go on answering no. Making it a third role
+-- would have put both questions into one word, and every place that reads `role` would then have
+-- had to decide, forever, whether an annotator counts as a viewer. It does. It just also has a pen.
+--
+-- 会议标注权。它刻意不是"对文件的权限"的一个档次。
+--
+-- 带着它的分享链接,允许持有者在别人演示这份文档时在上面画。
+-- 那是对这场会话的权力,不是对这个文件的权力:标注者写不了一个字节,
+-- 而所有"这个人能不能编辑"的判断都必须继续回答不能。
+-- 把它做成第三种 role,等于把两个问题塞进一个词里 —— 此后每一处读 role 的代码,
+-- 都要永远地再判断一次"标注者算不算查看者"。它算。它只是还多一支笔。
+ALTER TABLE drive_shares ADD COLUMN meet INTEGER NOT NULL DEFAULT 0;

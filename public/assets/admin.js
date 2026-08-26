@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showModal, closeModal, copyText } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser } from './ui.js';
 import { t } from './i18n.js';
 import { tabImport } from './admin-import.js';
 import { tabExport } from './admin-export.js';
@@ -107,11 +107,11 @@ async function tabOverview(body) {
   body.innerHTML = `
     <section class="card">
       <h3>${esc(t('by_domain'))}</h3>
-      <table class="table">
+      <div class="tblwrap"><table class="table">
         <thead><tr><th>${esc(t('th_domain'))}</th><th>${esc(t('th_mb_count'))}</th><th>${esc(t('th_member_count'))}</th><th>${esc(t('th_msg_count'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_last_active'))}</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('no_domains'))}</td></tr>`}</tbody>
         <tfoot><tr><td>${esc(t('sum_domains', data.domains.length))}</td><td>${total.mb}</td><td></td><td>${total.msg}</td><td>${fmtSize(total.bytes)}</td><td></td></tr></tfoot>
-      </table>
+      </table></div>
     </section>`;
 }
 
@@ -407,10 +407,10 @@ async function renderMailboxDetail(domainId) {
   box.innerHTML = `
     <section class="card">
       <h3>${esc(t('mailboxes_title'))}</h3>
-      <table class="table">
+      <div class="tblwrap"><table class="table">
         <thead><tr><th>${esc(t('th_addr'))}</th><th>${esc(t('th_display'))}</th><th>${esc(t('th_members'))}</th><th>${esc(t('th_msg_count'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('no_mb_admin'))}</td></tr>`}</tbody>
-      </table>
+      </table></div>
       <form id="f-mb" class="form-row" style="margin-top:12px">
         <label>${esc(t('new_mailbox'))}</label>
         <input name="local" type="text" placeholder="${esc(t('local_ph'))}" required style="width:200px">
@@ -420,12 +420,12 @@ async function renderMailboxDetail(domainId) {
     </section>
     <section class="card">
       <h3>${esc(t('alias_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('alias_note'))}</span></h3>
-      <table class="table">
+      <div class="tblwrap"><table class="table">
         <thead><tr><th>${esc(t('th_alias'))}</th><th>${esc(t('th_target'))}</th><th></th></tr></thead>
         <tbody>${(aliasData.aliases || [])
           .map((a) => `<tr><td><b>${esc(a.address)}</b></td><td>${esc(a.target)}</td><td><wa-button appearance="plain" size="small" class="danger" data-unalias="${esc(a.id)}">${esc(t('delete'))}</wa-button></td></tr>`)
           .join('') || `<tr><td colspan="3" class="dim">${esc(t('no_alias'))}</td></tr>`}</tbody>
-      </table>
+      </table></div>
       <form id="f-alias" class="form-row" style="margin-top:12px">
         <label>${esc(t('add_alias'))}</label>
         <input name="local" type="text" placeholder="${esc(t('alias_ph'))}" required style="width:200px">
@@ -571,10 +571,10 @@ async function tabUsers(body) {
     ${pendHtml}
     <section class="card">
       <h3>${esc(t('members_title', users.length))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('usage_note'))}</span></h3>
-      <table class="table members-table">
+      <div class="tblwrap"><table class="table members-table">
         <thead><tr><th>${esc(t('th_user'))}</th><th>${esc(t('th_status'))}</th><th class="col-mailboxes">${esc(t('th_mailboxes'))}</th><th>${esc(t('th_msg_count'))}</th><th>${esc(t('th_storage'))}</th><th class="col-lastlogin">${esc(t('th_last_login'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>
+      </table></div>
     </section>`;
   body.addEventListener('click', async (e) => {
     // Revoking one grant is the domain-scoped way to remove somebody: an account can hold
@@ -834,7 +834,7 @@ async function tabBackup(body) {
     }
   });
   qs('#bk-sync')?.addEventListener('click', () => {
-    if (!window.showDirectoryPicker) return toast(t('bk_sync_unsupported'), true);
+    if (!CAP.dirHandle) return needsBrowser('bk_sync_unsupported');
     syncBackups(st, qs('#bk-sync-status'));
   });
 
@@ -923,10 +923,10 @@ async function tabUnrouted(body) {
   body.innerHTML = `
     <section class="card">
       <h3>${esc(t('a_unrouted'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('unrouted_note'))}</span></h3>
-      <table class="table">
+      <div class="tblwrap"><table class="table">
         <thead><tr><th>${esc(t('th_rcpt'))}</th><th>${esc(t('fwd_from'))}</th><th>${esc(t('fwd_subject'))}</th><th>${esc(t('th_created'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('unrouted_empty'))}</td></tr>`}</tbody>
-      </table>
+      </table></div>
       <div class="row-flex" style="margin-top:12px">
         <wa-button appearance="outlined" size="small" id="un-prev" ${unroutedPage === 0 ? 'disabled' : ''}>${esc(t('prev_page'))}</wa-button>
         <span class="dim">${esc(t('page_n', unroutedPage + 1))}</span>
@@ -1078,10 +1078,10 @@ async function tabInvites(body) {
     </section>
     <section class="card">
       <h3>${esc(t('records_title'))}</h3>
-      <table class="table invites-table">
+      <div class="tblwrap"><table class="table invites-table">
         <thead><tr><th>${esc(t('th_limit'))}</th><th class="col-grants">${esc(t('th_grants'))}</th><th>${esc(t('th_status'))}</th><th>${esc(t('th_used_by'))}</th><th>${esc(t('th_created'))}</th><th></th></tr></thead>
         <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('no_invites'))}</td></tr>`}</tbody>
-      </table>
+      </table></div>
     </section>`;
 
   // Domain changed -> update the address suffix
@@ -1410,13 +1410,13 @@ async function tabAudit(body) {
           <wa-button appearance="outlined" size="small" id="au-csv">${icon('download', 16)} CSV</wa-button>
           <wa-button appearance="outlined" size="small" id="au-jsonl">${icon('download', 16)} JSONL</wa-button>
         </div>
-        <table class="table">
+        <div class="tblwrap"><table class="table">
           <thead><tr>
             <th>${esc(t('au_th_time'))}</th><th>${esc(t('au_th_actor'))}</th><th>${esc(t('au_th_domain'))}</th>
             <th>${esc(t('au_th_action'))}</th><th>${esc(t('au_th_target'))}</th><th>${esc(t('au_th_detail'))}</th>
           </tr></thead>
           <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('au_empty'))}</td></tr>`}</tbody>
-        </table>
+        </table></div>
         <div class="imp-status" style="margin-top:10px">
           <span class="dim">${esc(t('page_n', page + 1, d.pages || 1))}</span>
           <span class="flex1"></span>
@@ -1558,10 +1558,10 @@ async function tabDrive(body) {
           <td><wa-button size="small" appearance="outlined" data-uid="${esc(u.id)}" data-uname="${esc(u.name || u.email)}" data-umb="${u.quota_mb ?? ''}">${esc(t('drv_a_set_quota'))}</wa-button></td>
         </tr>`).join('');
       box.innerHTML = `
-      <table class="table">
+      <div class="tblwrap"><table class="table">
         <thead><tr><th>${esc(t('drv_a_th_user'))}</th><th>${esc(t('drv_a_th_used'))}</th><th>${esc(t('drv_a_th_files'))}</th><th>${esc(t('drv_a_th_quota'))}</th><th></th></tr></thead>
         <tbody>${rows || `<tr><td colspan="5" class="dim">—</td></tr>`}</tbody>
-      </table>`;
+      </table></div>`;
       qsa('[data-uid]', box).forEach((b) => b.addEventListener('click', () => quotaDialog(b.dataset)));
     } catch (e) {
       box.innerHTML = `<div class="empty">${esc(e.message)}</div>`;

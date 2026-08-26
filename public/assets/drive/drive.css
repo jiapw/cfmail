@@ -6,7 +6,7 @@
    itself never grows a scrollbar that would poke into the preview overlay.
    把页面钉在视口高度。滚动全部发生在 .drv-scroll 内部,文档自身永远不长出滚动条,
    预览层打开时也就不会有一条页面滚动条戳在旁边。 */
-.drv-page { height: 100vh; }
+.drv-page { height: 100vh; height: 100dvh; }
 .drv-body { display: flex; flex: 1; min-height: 0; }
 
 /* ---------- Left rail ---------- */
@@ -69,6 +69,21 @@
 .drv-crumbbar .sp { flex: 1; }
 .drv-selbar { display: flex; align-items: center; gap: 4px; min-height: 42px; padding: 2px 8px; margin-top: 8px; }
 .drv-selbar .cnt { font-size: 14px; margin: 0 10px 0 4px; }
+
+/* The switch that lets a tap add to the selection instead of replacing it.
+   A mouse already has three ways to pick several things -- ctrl, shift, and a marquee swept
+   across the list -- so on a mouse this button would be a fourth road to a place already
+   reachable, and it is not shown. A finger has none of the three.
+   It stays lit while it is on, because a list that answers a tap differently has to say so.
+   那个让"点一下"变成"加进选区"而不是"换掉选区"的开关。
+   鼠标本来就有三种方式选中多样东西 —— ctrl、shift,以及在列表上扫出来的一个框 ——
+   所以在鼠标那边,这个按钮是通往一个已经到得了的地方的第四条路,不显示它。手指三样都没有。
+   它开着的时候一直亮着,因为一个"对点击给出不同回答"的列表,必须把这件事说出来。 */
+.drv-selmode { display: none; }
+@media (hover: none) {
+  .drv-selmode { display: inline-flex; }
+}
+.drv-selmode.on::part(base) { background: var(--selected); color: var(--primary); }
 
 /* Shared-context banner (viewing someone else's folder) / 共享上下文提示条 */
 .drv-ctx {
@@ -194,6 +209,15 @@
 .drv-dim { color: var(--text-2); }
 .drv-row .rowbtn { visibility: hidden; }
 .drv-row:hover .rowbtn, .drv-row.sel .rowbtn { visibility: visible; }
+/* Where nothing hovers, this button is the only door left: the right-click menu it opens is the
+   same one, and a tablet's browser never fires that click. The card view has always shown it;
+   the list view hid it behind a hover, which on a touch screen means behind nothing at all.
+   在没有悬停的地方,这个按钮是仅存的那扇门:它打开的右键菜单是同一个,
+   而平板上的浏览器根本不会发出那一次点击。卡片视图一直是显示它的;
+   列表视图把它藏在悬停后面,而在触摸屏上,那等于藏在了"什么都没有"后面。 */
+@media (hover: none) {
+  .drv-row .rowbtn { visibility: visible; }
+}
 /* Archive breadcrumbs: the package crumb wears a tinted chip so the boundary into the
    read-only zone reads at a glance; inner crumbs inherit a soft tint.
    压缩包面包屑:包名做成着色小片,只读区的边界一眼可辨;包内层级淡淡着色。 */
@@ -749,7 +773,7 @@
   position: fixed; inset: 0; z-index: 960; background: rgba(10, 10, 12, .93);
   display: flex; align-items: center; justify-content: center; cursor: zoom-out;
 }
-.drv-piclb img { max-width: calc(100vw - 96px); max-height: calc(100vh - 64px); object-fit: contain; }
+.drv-piclb img { max-width: calc(100vw - 96px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); object-fit: contain; }
 .drv-piclb .nav {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 44px; height: 44px; border: 0; border-radius: 50%; cursor: pointer;
@@ -990,6 +1014,18 @@
   .drv-nav-item { justify-content: center; padding: 10px; border-radius: 12px; }
   .drv-table col.c-time { width: 0; }
   .drv-table .c-time, .drv-row td.c-time { display: none; }
+}
+
+/* Portrait phone: a path four folders deep is wider than the screen, and wrapping it stacks the
+   bar three rows tall over the listing it is supposed to head. One row, sliding sideways under
+   the thumb, ending where you are -- so it opens scrolled to its own end.
+   竖屏手机:四层深的路径比屏幕还宽,折行则让这条栏叠成三行,压在它本该领起的列表上。
+   一行,在拇指下横着滑,结尾就是你所在之处 —— 所以它打开时就滚到自己的末端。 */
+@media (max-width: 640px) {
+  .drv-crumbs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .drv-crumbs::-webkit-scrollbar { display: none; }
+  .drv-crumb { max-width: 180px; flex: none; }
+  .drv-table col.c-size { width: 74px; }
 }
 
 /* ---------- Share links: management list + public landing ---------- */

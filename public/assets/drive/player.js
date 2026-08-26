@@ -140,7 +140,7 @@ export function mountPlayer(video, box, opts = {}) {
     bMute.title = t(off ? 'drv_pl_unmute' : 'drv_pl_mute');
     bMute.setAttribute('aria-label', bMute.title);
     volCur.style.height = pct(off ? 0 : video.volume);
-    const full = document.fullscreenElement === box;
+    const full = fsEl() === box;
     bFull.innerHTML = icon(full ? 'windowed' : 'fullscreen', 20);
     bFull.title = t(full ? 'drv_pl_windowed' : 'drv_pl_fullscreen');
     bFull.setAttribute('aria-label', bFull.title);
@@ -275,9 +275,25 @@ export function mountPlayer(video, box, opts = {}) {
     paint();
     wake();
   };
+  // Three generations of the same API, oldest reachable last. iPadOS spells it with the webkit
+  // prefix and nothing else -- the optional call on the unprefixed name resolved to undefined
+  // and did NOTHING, which is exactly a button that ignores being pressed. The iPhone has no
+  // element fullscreen under either name; what it has is the video's own native fullscreen,
+  // which loses these controls but plays the film large, and that is what the button is for.
+  // 同一个 API 的三代拼法,最老的那个放最后够。iPadOS 只认带 webkit 前缀的写法 ——
+  // 无前缀名字上的可选调用解析成 undefined,于是什么也不做,而这恰恰就是"按了没反应的按钮"。
+  // iPhone 上两种拼法的元素全屏都没有;它有的是视频自己的原生全屏 ——
+  // 这套控件会丢,但片子放大了,而那才是这个按钮存在的目的。
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
   const fullscreen = () => {
-    if (document.fullscreenElement === box) document.exitFullscreen?.();
-    else box.requestFullscreen?.().catch(() => {});
+    if (fsEl() === box) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+      return;
+    }
+    const native = () => video.webkitEnterFullscreen?.();
+    if (box.requestFullscreen) box.requestFullscreen().catch(native);
+    else if (box.webkitRequestFullscreen) { try { box.webkitRequestFullscreen(); } catch { native(); } }
+    else native();
   };
   const openVol = (on) => {
     const now = on === undefined ? !vol.classList.contains('open') : !!on;
@@ -372,6 +388,7 @@ export function mountPlayer(video, box, opts = {}) {
     on(video, 'resize', place),
     on(box, 'mousemove', wake), on(box, 'mouseenter', wake),
     on(document, 'fullscreenchange', () => { paint(); place(); wake(); }),
+    on(document, 'webkitfullscreenchange', () => { paint(); place(); wake(); }),
     on(document, 'pointerdown', (e) => { if (!vol.contains(e.target)) openVol(false); }),
     on(window, 'resize', place),
   ];

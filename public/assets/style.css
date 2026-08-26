@@ -13,6 +13,27 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
+
+/* The page itself does not move.
+   The shells are viewport-height boxes whose insides scroll, so any give in the page itself is
+   slack: rubber-banding at the top reads as pull-to-refresh about to fire, and a pinch zooms a
+   layout that was computed for exactly this width. Both off -- panning stays, inside the panes
+   that scroll. Long-pressing a row is how a finger opens a menu, so the callout and the text
+   selection it fights with are off on rows too; text anyone would quote -- a message body, a
+   preview -- is in an iframe or its own pane and keeps its selection.
+   页面本身不动。
+   外壳是视口高的盒子,滚动发生在它们内部,于是页面自己的任何"松动"都是空行程:
+   顶部的橡皮筋看起来像下拉刷新要触发,一次捏合缩放的是恰好为这个宽度算出来的版式。
+   两样都关 —— 平移保留,在真正滚动的窗格里面。长按一行是手指打开菜单的方式,
+   所以行上的呼出气泡、以及与之打架的文本选择也一并关掉;
+   人会想引用的文字 —— 正文、预览 —— 都在 iframe 或自己的窗格里,选择照旧。 */
+html, body { overscroll-behavior: none; }
+@media (hover: none) {
+  html { touch-action: pan-x pan-y; }
+  .row, .drv-row, .drv-card, .side-item, .drv-nav-item, .list-toolbar, .topbar, .tabs {
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  }
+}
 /* Web Awesome paints html with its surface color, and body is only one screen tall -- on any
    longer page a strip of that surface showed below where body ended. Paint the canvas ourselves.
    WA 会给 html 涂它的 surface 色,而 body 只有一屏高 -- 更长的页面在 body 之下会露出一条那个颜色。
@@ -63,7 +84,7 @@ a { color: var(--link); text-decoration: none; }
   flex: 1; margin: auto; min-height: 160px;
 }
 /* The app's first frame belongs to the company, so it fills the viewport / 应用的第一帧属于企业,占满视口 */
-.boot-loading { min-height: 100vh; }
+.boot-loading { min-height: 100vh; min-height: 100dvh; }
 /* Spinner above the word for a list, below the lockup for the boot screen: in both, the moving
    part sits between the reader and what they are waiting for.
    列表里动画在文字之上,启动屏里在品牌组合之下:两处都让"动着的那个"处在
@@ -157,7 +178,7 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 }
 
 /* ---------- 顶栏 ---------- */
-.shell { display: flex; flex-direction: column; height: 100vh; }
+.shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 /* 上留白比下多 8px:下方还有"写邮件"按钮自己的 margin,这样两侧看起来才一样宽 */
 .topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px 6px; height: 60px; flex: none; }
 .logo { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 20px; margin-right: 24px; user-select: none; }
@@ -253,6 +274,31 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 .rows.sel-mode .row .row-actions { display: none !important; }
 .row.selected { background: var(--selected-2); }
 
+/* A positioned menu, worn as a sheet.
+   Same element, same entries, same close path -- only the geometry changes: pinned across the
+   foot of the screen, rows grown to the height of a thumb, a scrim behind it so the list it
+   covers reads as waiting rather than broken. The !important pair is deliberate: the callers set
+   left and top inline, and this class exists precisely to overrule where they put it.
+   一个定点菜单,穿成动作单的样子。同一个元素、同样的条目、同一条关闭路径 —— 变的只有几何:
+   钉在屏幕脚下横贯整宽,行高长到一根拇指,身后垫一层纱,好让被它盖住的列表读作"在等",
+   而不是"坏了"。那对 !important 是故意的:调用方会内联设置 left 和 top,
+   而这个类存在的目的恰恰就是推翻它们把它放的地方。 */
+.menu-sheet {
+  left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important;
+  width: auto; min-width: 0; max-width: none;
+  border-radius: 16px 16px 0 0;
+  max-height: 70vh; max-height: 70dvh; overflow-y: auto;
+  padding: 10px 10px calc(12px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 32px color-mix(in srgb, #000 32%, transparent);
+  animation: sheet-up .16s ease-out;
+}
+@keyframes sheet-up { from { transform: translateY(28px); opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .menu-sheet { animation: none; } }
+.menu-sheet .ctx-item, .menu-sheet .mi { min-height: 46px; font-size: 15px; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 999; background: color-mix(in srgb, #000 30%, transparent); }
+/* The sheet stands over its own scrim / 动作单站在自己那层纱之上 */
+.ctx-menu.menu-sheet, .drv-menu.menu-sheet { z-index: 1000; }
+
 /* 右键上下文菜单 */
 .ctx-menu {
   position: fixed; z-index: 400; min-width: 190px; padding: 6px;
@@ -305,6 +351,25 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 }
 .row:hover .row-actions { display: flex; }
 .row:hover .row-date { visibility: hidden; }
+
+/* The same actions, for a pointer that cannot hover.
+   A finger has no way to ask a row to show its buttons, and no way to right-click it either, so
+   both doors are shut at once. Here the strip is always out and holds a single menu button --
+   the four actions live inside it, together with everything else the right-click menu offers.
+   It stands in the flow rather than over the row, so the date beside it survives.
+   Nothing in this block can reach a mouse: the query is false wherever hovering works.
+   同样那些动作,给一个不会悬停的指针。
+   手指没法要求一行把按钮显示出来,也没法右键它,于是两扇门同时关上。
+   在这里那一条始终露在外面,里面是一个菜单按钮 —— 四个动作都在它里头,
+   连同右键菜单提供的其余一切。它站在文档流里而不是压在行上,于是旁边的日期得以幸存。
+   这一段够不到鼠标:凡是悬停有效的地方,这条查询都为假。 */
+.row-actions .row-menu { display: none; }
+@media (hover: none) {
+  .row-actions { display: flex; position: static; padding-left: 4px; }
+  .row-actions .hover-act { display: none; }
+  .row-actions .row-menu { display: inline-flex; }
+  .row:hover .row-date { visibility: visible; }
+}
 .draft-red { color: var(--wa-color-danger-on-quiet); }
 .disabled-row { opacity: .55; }
 
@@ -371,7 +436,7 @@ wa-dialog.attprev-dlg { --width: min(1100px, 94vw); }
    正文高度 = 视口 - (上下 padding 10x2 + 头部 32 + 间距 12),留几像素余量免得溢出 */
 wa-dialog.attprev-dlg.full { --width: 100vw; --spacing: 10px; }
 wa-dialog.attprev-dlg.full::part(dialog) { max-width: 100%; max-height: 100%; border-radius: 0; }
-wa-dialog.attprev-dlg.full .attprev-body { height: calc(100vh - 72px); border-radius: 0; }
+wa-dialog.attprev-dlg.full .attprev-body { height: calc(100vh - 72px); height: calc(100dvh - 72px); border-radius: 0; }
 wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 /* 附件类型标记:统一的圆角小正方形,认识的放图标,不认识的写扩展名 */
 .fileicon {
@@ -607,7 +672,7 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 }
 
 /* ---------- 登录/邀请 ---------- */
-.auth-wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+.auth-wrap { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
 .auth-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 24px;
   width: min(420px, 100%); padding: 40px 40px 32px;
@@ -628,7 +693,7 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 }
 
 /* ---------- 独立页面(设置/管理) ---------- */
-.page { min-height: 100vh; display: flex; flex-direction: column; }
+.page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 .page-head {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
@@ -636,6 +701,20 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 }
 .page-head h1 { font-size: 20px; font-weight: 500; margin: 0; }
 .tabs { display: flex; gap: 4px; margin-left: 24px; }
+/* Nine tabs come to eleven hundred pixels, which no phone has. They scroll sideways as a strip
+   rather than wrapping into three rows or pushing the page along with them -- a row of tabs that
+   moves under the thumb is a familiar thing, and three rows of them is a different navigation.
+   The rule is narrow-only: above the breakpoint they fit, and a scroll container there would
+   only clip whatever a tab wants to open.
+   九个页签加起来一千一百像素,没有哪台手机有这么宽。它们作为一条横向滚动,
+   而不是折成三行、也不是把整页一起推走 —— 一排能在拇指下移动的页签是件熟悉的东西,
+   三排页签则是另一种导航。这条规则只在窄屏:断点以上它们放得下,
+   而在那里放一个滚动容器,只会裁掉某个页签想打开的东西。 */
+@media (max-width: 900px) {
+  .tabs { margin-left: 8px; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; }
+}
 .tab { padding: 8px 16px; border-radius: 999px; color: var(--text-2); font-size: 14px; }
 .tab:hover { background: var(--hover); }
 .tab.active { background: var(--selected); color: var(--accent-text); font-weight: 500; }
@@ -649,6 +728,18 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
   padding: 20px 24px; margin-bottom: 16px;
 }
 .card h3 { margin: 0 0 14px; font-size: 16px; font-weight: 500; }
+/* A table that is wider than the screen has to scroll inside its own box, or it pushes the whole
+   page sideways and takes the navigation with it. Only narrow, and only horizontally -- a
+   scroll container clips in both directions whatever the stylesheet asks for, and above the
+   breakpoint these tables fit anyway, so there is nothing to buy and a menu to lose.
+   比屏幕宽的表格必须在自己的盒子里滚动,否则它会把整页往旁边推,连导航一起推走。
+   只在窄屏,也只在水平方向 —— 一个滚动容器无论样式表怎么要求都会两个方向一起裁,
+   而在断点以上这些表格本来就放得下,那就没什么可换的,只会丢掉一个菜单。 */
+.tblwrap { min-width: 0; }
+@media (max-width: 900px) {
+  .tblwrap { overflow-x: auto; }
+}
+
 .table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .table th { text-align: left; color: var(--text-2); font-weight: 500; font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 /* 单元格内容垂直居中:纯文字与 34px 高的按钮才能对齐到同一中线 */
@@ -781,6 +872,13 @@ wa-button:not(.icon):not(.compose-btn)::part(base) { font-size: 13.5px; min-heig
   background: var(--panel-2); border: 1px solid var(--border);
 }
 .fp-item:hover .fp-act { display: inline-flex; }
+/* Adding a face to the shortlist is the only thing this button does, and a finger has no way to
+   ask for it. Out where it can be pressed, then, on any pointer that cannot hover.
+   把一款字体加进预选,是这个按钮唯一做的事,而手指没有办法把它请出来。
+   那么就在任何不会悬停的指针上,让它露在外面、按得到。 */
+@media (hover: none) {
+  .fp-item .fp-act { display: inline-flex; }
+}
 .fp-act:hover { color: var(--accent-text); border-color: var(--primary); }
 .fp-item:hover { background: var(--hover); }
 .fp-item.sel { background: var(--selected); }
@@ -816,6 +914,19 @@ wa-dialog.unrouted-dlg { --width: min(900px, 94vw); }
 .font-btn .fb-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- 响应式 ---------- */
+/* The way out of an open sidebar on a narrow screen. It sits under the sheet and over
+   everything else, and a press anywhere on it closes -- the gesture people already expect from
+   every drawer they have ever used. Built by app.js only while it is needed, so nothing on a
+   wide screen ever has a transparent sheet lying across it.
+   窄屏上,展开的侧栏的那条出路。它压在浮层之下、其余一切之上,按在它任何地方都会关闭 ——
+   这是人们从用过的每一个抽屉那里就已经预期的动作。由 app.js 只在需要时创建,
+   所以宽屏上任何东西都不会被一层透明的浮层横盖着。 */
+.side-backdrop {
+  position: fixed; inset: 60px 0 0 0; z-index: 149;
+  background: color-mix(in srgb, #000 26%, transparent);
+}
+body.impersonating .side-backdrop { inset: 94px 0 0 0; }
+
 @media (max-width: 900px) {
   .sidebar {
     position: fixed; left: 0; top: 60px; bottom: 0; z-index: 150;
@@ -833,6 +944,66 @@ wa-dialog.unrouted-dlg { --width: min(900px, 94vw); }
   .compose { right: 0; }
   .t-subject { margin-left: 8px; }
   .msg-collapsed, .msg-bodywrap { margin-left: 0; }
+
+  /* Two lines, because one will not do.
+     Sender, date and the label cell all have fixed widths, and on a phone they take the width
+     between them and leave the subject about forty pixels -- the one field that says what the
+     message is. So the subject drops to a line of its own and gets the whole of it, and the row
+     grows by the height of a line rather than losing its point.
+     两行,因为一行不够。
+     发件人、日期、标签位都是定宽,在手机上它们把宽度瓜分完,给主题剩下约四十像素 ——
+     而主题恰恰是那个说出"这封信是什么"的字段。所以主题落到自己一行上、占满它,
+     行高多出一行的高度,而不是失去它存在的意义。 */
+  .row { flex-wrap: wrap; height: auto; min-height: 54px; padding: 7px 12px 7px 8px; row-gap: 1px; }
+  .row-from { width: auto; flex: 1 1 auto; min-width: 0; margin-right: 8px; font-weight: 500; }
+  .row-date { flex: none; margin-left: auto; }
+  .row-main { order: 10; flex: 1 0 100%; }
+  /* The strip stands at the end of the first line, beside the date, rather than under it. */
+  /* 那一条站在第一行末尾、日期旁边,而不是落到日期下面。 */
+  .row-actions { order: 5; }
+
+  /* Writing a message stops being a window and becomes the page.
+     A floating window is a way of writing one thing without losing sight of another, and a
+     phone has no second thing in view to lose -- what it has instead is a keyboard that takes
+     half the screen, against which 448px of window leaves a writing area three lines tall.
+     So it fills the screen, and the one thing a window was for is kept: minimised is still a
+     bar at the foot, because a draft you have stepped away from must stay somewhere visible.
+     写信不再是一扇窗,而成为这一页。
+     浮动窗口的意义,是写一样东西时不必失去另一样的视野,而手机上根本没有第二样东西在视野里
+     可失 —— 它有的是一个占掉半块屏幕的键盘;在它面前,448px 高的窗口留下的书写区只有三行。
+     所以它铺满屏幕;而窗口本来唯一的用处仍旧保留:最小化仍是脚下的一条 ——
+     一份被你暂时搁下的草稿,必须还待在看得见的地方。 */
+  /* The top bar runs out of room before the phone does.
+     Five icons at forty pixels each, a brand and a search field do not fit across 393px, and
+     what gives way first is the search -- the one thing on that bar somebody actually types
+     into. So the two icons that lead somewhere already reachable from the account menu stand
+     down. Nothing is lost: settings and the admin console are entries in that menu, one press
+     away, on the same bar.
+     顶栏比手机先没地方。
+     五个四十像素的图标、一个品牌、一个搜索框,在 393px 上排不开,而最先让位的是搜索 ——
+     那条栏上唯一真会有人往里打字的东西。于是那两个"通往账号菜单里已经到得了的地方"的图标退下。
+     什么也没丢:设置与管理后台就是那个菜单里的两条,一按即到,还在同一条栏上。 */
+  .topbar { padding-left: 8px; padding-right: 8px; gap: 4px; }
+  .topbar-right > .nav-extra { display: none; }
+  .logo { margin-right: 8px; }
+  .searchbar { width: auto; flex: 1 1 90px; min-width: 0; }
+
+  /* left and right rather than a width: a percentage here is resolved against a containing
+     block that mobile WebKit measures as the layout viewport, which is narrower than the visual
+     one -- 375px where the screen is 393. Stretching between two edges asks no such question.
+     用 left 与 right 而不是宽度:这里的百分比是相对包含块算的,而移动版 WebKit 把那个包含块
+     量成布局视口 —— 屏幕 393px 时它是 375px。在两条边之间拉开,则根本不问这个问题。 */
+  .compose:not(.minimized) {
+    inset: 0;
+    width: auto; max-width: none;
+    max-height: none; height: auto;
+    border-radius: 0;
+  }
+  .compose:not(.minimized) .compose-head { border-radius: 0; }
+  .compose:not(.minimized) .cp-editor.ql-container { min-height: 0; }
+  /* Minimised keeps the old shape, at the foot of the screen and the full width of it. */
+  /* 最小化保持原来的形状,在屏幕脚下,占满宽度。 */
+  .compose.minimized { width: 100%; right: 0; border-radius: 0; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -974,11 +1145,11 @@ html[data-webawesome].wa-dark {
 }
 .actas-bar wa-button::part(base):hover { background: color-mix(in srgb, #000 30%, transparent); }
 body.impersonating { padding-top: 34px; }
-body.impersonating .shell { height: calc(100vh - 34px); }
+body.impersonating .shell { height: calc(100vh - 34px); height: calc(100dvh - 34px); }
 body.impersonating .chat-shell { height: calc(100vh - 34px); height: calc(100dvh - 34px); }
 body.impersonating .page,
 body.impersonating .auth-wrap,
-body.impersonating .boot-loading { min-height: calc(100vh - 34px); }
+body.impersonating .boot-loading { min-height: calc(100vh - 34px); min-height: calc(100dvh - 34px); }
 @media (max-width: 900px) {
   body.impersonating .sidebar { top: 94px; }
 }

@@ -1,8 +1,8 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, fmtDate, fmtDateTime, fmtSize, fileIcon, avatar, confirmDialog, cleanSnippet, showModal, closeModal } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtDate, fmtDateTime, fmtSize, fileIcon, avatar, confirmDialog, cleanSnippet, showModal, closeModal, phoneSheet, asSheet, cleanupSheet } from './ui.js';
 import { t, tStored } from './i18n.js';
-import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName, setTitle } from './app.js';
-import { openCompose } from './compose.js';
+import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName, setTitle, openCompose } from './app.js';
+
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
 
 // The three things a mailbox can say about a correspondent. Kept in step with Trust in
@@ -78,9 +78,12 @@ export async function renderList(folder, q, page = 0) {
       <label class="sel-all-wrap"><input type="checkbox" id="sel-all"> <span class="list-title">${esc(t('selected_n', sel.ids.size))}</span></label>
       <span class="flex1"></span>
       ${folder !== 'archive' && folder !== 'trash' && folder !== 'spam' ? `<wa-button class="icon" appearance="plain" data-batch="archive" aria-label="${esc(t('archive'))}">${icon('archive', 20)}</wa-button>` : ''}
-      ${folder === 'trash' || folder === 'spam' ? `<wa-button class="icon" appearance="plain" data-batch="inbox" aria-label="${esc(t('restore_inbox'))}">${icon('inbox', 20)}</wa-button>` : `<wa-button class="icon" appearance="plain" data-batch="spam" aria-label="${esc(t('report_spam'))}">${icon('spam', 20)}</wa-button><wa-button class="icon" appearance="plain" data-batch="trash" aria-label="${esc(t('delete'))}">${icon('trash', 20)}</wa-button>`}
+      ${folder === 'trash' || folder === 'spam'
+        ? `<wa-button class="icon" appearance="plain" data-batch="inbox" aria-label="${esc(t('restore_inbox'))}">${icon('inbox', 20)}</wa-button><wa-button class="icon" appearance="plain" id="btn-sel-purge" aria-label="${esc(t('purge_forever'))}">${icon('close', 20)}</wa-button>`
+        : `<wa-button class="icon" appearance="plain" data-batch="spam" aria-label="${esc(t('report_spam'))}">${icon('spam', 20)}</wa-button><wa-button class="icon" appearance="plain" data-batch="trash" aria-label="${esc(t('delete'))}">${icon('trash', 20)}</wa-button>`}
       <wa-button class="icon" appearance="plain" data-batch="read" aria-label="${esc(t('mark_read'))}">${icon('markRead', 20)}</wa-button>
       <wa-button class="icon" appearance="plain" data-batch="unread" aria-label="${esc(t('mark_unread'))}">${icon('mail', 20)}</wa-button>
+      <wa-button class="icon" appearance="plain" id="btn-sel-forward" aria-label="${esc(t('forward'))}">${icon('forward', 20)}</wa-button>
       <wa-button class="icon" appearance="plain" id="btn-sel-label" aria-label="${esc(t('lbl_title'))}">${icon('tag', 20)}</wa-button>
     </div>`;
 
@@ -159,10 +162,11 @@ function rowHtml(th, folder) {
     ${th.hasatt ? `<span class="row-clip">${icon('attach', 16)}</span>` : ''}
     <span class="row-date">${fmtDate(th.last_date)}</span>
     <span class="row-actions">
-      ${folder !== 'archive' && folder !== 'trash' && folder !== 'spam' ? `<wa-button class="icon sm" appearance="plain" data-act="archive" aria-label="${esc(t('archive'))}">${icon('archive', 18)}</wa-button>` : ''}
-      ${folder === 'trash' || folder === 'spam' ? `<wa-button class="icon sm" appearance="plain" data-act="inbox" aria-label="${esc(t('restore_inbox'))}">${icon('inbox', 18)}</wa-button>` : `<wa-button class="icon sm" appearance="plain" data-act="trash" aria-label="${esc(t('delete'))}">${icon('trash', 18)}</wa-button>`}
-      <wa-button class="icon sm" appearance="plain" data-act="forward" aria-label="${esc(t('forward'))}">${icon('forward', 18)}</wa-button>
-      <wa-button class="icon sm" appearance="plain" data-act="${unread ? 'read' : 'unread'}" aria-label="${esc(unread ? t('mark_read') : t('mark_unread'))}">${icon(unread ? 'markRead' : 'mail', 18)}</wa-button>
+      ${folder !== 'archive' && folder !== 'trash' && folder !== 'spam' ? `<wa-button class="icon sm hover-act" appearance="plain" data-act="archive" aria-label="${esc(t('archive'))}">${icon('archive', 18)}</wa-button>` : ''}
+      ${folder === 'trash' || folder === 'spam' ? `<wa-button class="icon sm hover-act" appearance="plain" data-act="inbox" aria-label="${esc(t('restore_inbox'))}">${icon('inbox', 18)}</wa-button>` : `<wa-button class="icon sm hover-act" appearance="plain" data-act="trash" aria-label="${esc(t('delete'))}">${icon('trash', 18)}</wa-button>`}
+      <wa-button class="icon sm hover-act" appearance="plain" data-act="forward" aria-label="${esc(t('forward'))}">${icon('forward', 18)}</wa-button>
+      <wa-button class="icon sm hover-act" appearance="plain" data-act="${unread ? 'read' : 'unread'}" aria-label="${esc(unread ? t('mark_read') : t('mark_unread'))}">${icon(unread ? 'markRead' : 'mail', 18)}</wa-button>
+      <wa-button class="icon sm row-menu" appearance="plain" data-rowmenu aria-label="${esc(t('more_actions'))}">${icon('dots-v', 18)}</wa-button>
     </span>
   </div>`;
 }
@@ -191,6 +195,30 @@ function bindList(folder, q) {
     if (!ids.length) return toast(t('selected_n', 0), true);
     const r = e.currentTarget.getBoundingClientRect();
     openThreadLabelMenu(r.left, r.bottom + 4, ids, folder, q);
+  });
+  // Forwarding is the one action here that answers for a single conversation only -- a forward
+  // is a message being written, and there is one composer. It sits on the bar all the same,
+  // because on a touch screen this bar is the only place the action can be reached at all.
+  // 转发是这条栏上唯一只对单封作答的动作 —— 一次转发就是一封正在写的信,而写信窗只有一个。
+  // 它照样待在这条栏上,因为在触摸屏上,这条栏是这个动作唯一够得着的地方。
+  qs('#btn-sel-forward')?.addEventListener('click', () => {
+    const ids = [...sel.ids];
+    if (!ids.length) return toast(t('selected_n', 0), true);
+    if (ids.length > 1) return toast(t('fwd_one_only'), true);
+    forwardThread(ids[0]);
+  });
+  // Emptying one conversation out of the bin for good. Asked about first, the same way the
+  // right-click menu asks -- this is the one action in the folder that cannot be undone.
+  // 把一封会话从回收站里彻底清掉。先问一句,和右键菜单问的是同一句 ——
+  // 这是这个文件夹里唯一收不回来的动作。
+  qs('#btn-sel-purge')?.addEventListener('click', async () => {
+    const ids = [...sel.ids];
+    if (!ids.length) return toast(t('selected_n', 0), true);
+    if (!(await confirmDialog(t('purge_confirm'), t('purge_forever')))) return;
+    for (const tid of ids) await threadAction(tid, 'delete_forever');
+    toast(t('action_done'));
+    sel = { active: false, ids: new Set() };
+    reRender(folder, q);
   });
   qsa('[data-batch]').forEach((b) =>
     b.addEventListener('click', async () => {
@@ -238,6 +266,31 @@ function bindList(folder, q) {
   };
 
   qsa('.row').forEach((row) => {
+    // The same menu, opened by a button instead of by a right click.
+    //
+    // A touch screen has no right click and no hover, so both of the ways this row offers its
+    // actions are shut at once. The button is the third way in, it stands where the hover
+    // buttons stand, and the stylesheet decides which of the two is on -- so a mouse sees
+    // exactly what it saw before and a finger sees something it can press.
+    //
+    // 同一个菜单,改由一个按钮打开,而不是由右键打开。
+    //
+    // 触摸屏既没有右键也没有悬停,于是这一行提供动作的两条路同时关上。
+    // 这个按钮是第三条路,它站在悬停按钮站的地方,而由样式表决定两者哪一个开着 ——
+    // 于是鼠标看到的与从前分毫不差,手指看到的是一个按得下去的东西。
+    const rowMenuBtn = row.querySelector('[data-rowmenu]');
+    if (rowMenuBtn && row.dataset.tid) {
+      rowMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tid = row.dataset.tid;
+        if (sel.active && !sel.ids.has(tid)) {
+          sel.ids.add(tid);
+          setRowSelected(row, true);
+        }
+        const r = rowMenuBtn.getBoundingClientRect();
+        showRowMenu(r.left, r.bottom + 4, tid, folder, q);
+      });
+    }
     // Context menu (works in both modes)
     // 右键菜单(两种模式都支持)
     if (row.dataset.tid) {
@@ -384,14 +437,20 @@ function showRowMenu(x, y, tid, folder, q) {
     })
     .join('');
   menu.hidden = false;
-  // Positioning (keep it inside the viewport)
-  // 定位(避免超出视口)
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const rect = menu.getBoundingClientRect();
-  menu.style.left = Math.min(x, vw - rect.width - 8) + 'px';
-  menu.style.top = Math.min(y, vh - rect.height - 8) + 'px';
+  // On a phone the menu is a sheet at the foot of the screen; anywhere else it opens where
+  // asked and is kept inside the viewport.
+  // 手机上菜单是屏幕脚下的一张动作单;其余地方它在被要求的位置打开,并保持在视口之内。
+  menu.classList.remove('menu-sheet');
+  if (phoneSheet()) {
+    asSheet(menu);
+  } else {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = Math.min(x, vw - rect.width - 8) + 'px';
+    menu.style.top = Math.min(y, vh - rect.height - 8) + 'px';
+  }
 
-  const close = () => { menu.hidden = true; document.removeEventListener('click', close); document.removeEventListener('scroll', close, true); };
+  const close = () => { menu.hidden = true; cleanupSheet(); document.removeEventListener('click', close); document.removeEventListener('scroll', close, true); };
   menu.querySelectorAll('.ctx-item').forEach((b) =>
     b.addEventListener('click', async (ev) => {
       ev.stopPropagation();

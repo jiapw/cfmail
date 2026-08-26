@@ -88,6 +88,13 @@
 }
 .chat-sess .sess-menu { opacity: 0; flex: 0 0 auto; }
 .chat-sess:hover .sess-menu, .chat-sess.active .sess-menu { opacity: 1; }
+/* Renaming and deleting a conversation live behind these two, and behind nothing else. A pointer
+   that cannot hover would never bring them out -- so where there is no hover, they stay out.
+   给一段对话改名、把它删掉,都住在这两个后面,而且只住在这两个后面。
+   一个不会悬停的指针永远请不出它们 —— 所以在没有悬停的地方,它们就一直待在外面。 */
+@media (hover: none) {
+  .chat-group-head .grp-menu, .chat-sess .sess-menu { opacity: 1; }
+}
 
 /* ---------- 右侧:消息区 ---------- */
 
