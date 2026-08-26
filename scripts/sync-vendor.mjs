@@ -154,6 +154,76 @@ async function buildCodeMirror() {
 }
 
 /**
+ * pdf-lib and fontkit, for editing a PDF rather than only drawing one.
+ *
+ * pdf-lib alone ships browser-ready ESM and would have been a copy like the others. fontkit does
+ * not: its browser build opens with ten bare imports into its own dependency tree, and a browser
+ * cannot follow those. So the two are bundled together from one entry, which is also where the
+ * adapter between them lives -- see scripts/pdfedit.entry.js for why fontkit 2 rather than the
+ * fork pdf-lib expects.
+ *
+ * Flat rather than split: there is one entry and everything in it is reached the moment the
+ * editor opens, so chunking would buy an extra request and no laziness.
+ *
+ * pdf-lib 与 fontkit —— 用来编辑一份 PDF,而不只是画一份出来。
+ *
+ * 单独的 pdf-lib 本身就发浏览器可用的 ESM,本可以像其他库一样直接拷。fontkit 不行:
+ * 它的浏览器构建开头就是十个指向自身依赖树的裸导入,而浏览器跟不过去。
+ * 所以两者从同一个入口一起打包,而两者之间的适配器也住在那里 ——
+ * 为什么用 fontkit 2 而不是 pdf-lib 期待的那个分支,见 scripts/pdfedit.entry.js。
+ *
+ * 打平而不拆分:只有一个入口,里面的东西在编辑器打开的那一刻全都要用上,
+ * 拆块只会多换来一次请求,换不来任何惰性。
+ */
+async function buildPdfEdit() {
+  const entry = path.join(ROOT, 'scripts', 'pdfedit.entry.js');
+  const out = path.join(VENDOR, 'pdfedit');
+  if (CHECK_ONLY) {
+    if (!fs.existsSync(path.join(out, 'pdfedit.entry.js'))) {
+      missing++;
+      console.error('  missing: vendor/pdfedit/ (run npm run vendor to build it)');
+    }
+    return;
+  }
+  const esbuild = await import('esbuild');
+  fs.rmSync(out, { recursive: true, force: true });
+  const r = await esbuild.build({
+    entryPoints: [entry],
+    outdir: out,
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    minify: true,
+    sourcemap: false,
+    target: ['es2022'],
+    legalComments: 'none',
+    metafile: true,
+    logLevel: 'silent',
+    plugins: [{
+      // fontkit reaches for brotli only to open WOFF2, which nothing here produces or consumes.
+      // Dropping it takes a dependency out of the bundle and a licence question with it.
+      // fontkit 找 brotli 只为打开 WOFF2,而这里既不产生也不消费这种东西。
+      // 去掉它,既从包里拿走一个依赖,也带走了一个许可证问题。
+      name: 'no-woff2',
+      setup(build) {
+        const stub = path.join(ROOT, 'scripts', 'pdfedit.nowoff2.js');
+        build.onResolve({ filter: /^brotli(\/|$)/ }, () => ({ path: stub }));
+      },
+    }],
+  });
+  if (r.errors?.length) {
+    console.error('✗ bundling pdf-lib + fontkit failed');
+    for (const e of r.errors) console.error('  ' + e.text);
+    process.exit(1);
+  }
+  writeBundleLicense(out, r.metafile);
+  const files = collect(out, '', null);
+  assertNothingLeftBare(out, files, 'pdfedit');
+  const bytes = files.reduce((n2, rel) => n2 + fs.statSync(path.join(out, rel)).size, 0);
+  console.log(`  pdf edit    ${String(files.length).padStart(3)} files  (bundled, ${Math.round(bytes / 1024)} KB)`);
+}
+
+/**
  * The bundle must not still be asking for anything by npm name.
  *
  * A bundler resolves the imports it can read. Handed a computed one -- `import(base + name)` -- it
@@ -167,7 +237,7 @@ async function buildCodeMirror() {
  *
  *
  */
-function assertNothingLeftBare(out, files) {
+function assertNothingLeftBare(out, files, label = 'CodeMirror') {
   const bare = [];
   for (const rel of files) {
     if (!rel.endsWith('.js')) continue;
@@ -178,7 +248,7 @@ function assertNothingLeftBare(out, files) {
     if (/import\(\s*[^)'"`]/.test(s)) bare.push(`${rel}: a computed import(), which no bundler can follow`);
   }
   if (bare.length) {
-    console.error('✗ the CodeMirror bundle still has module references that cannot be resolved:');
+    console.error(`✗ the ${label} bundle still has module references that cannot be resolved:`);
     for (const b of [...new Set(bare)].slice(0, 10)) console.error('  ' + b);
     process.exit(1);
   }
@@ -220,9 +290,30 @@ function writeBundleLicense(out, metafile) {
     for (const f of ['LICENSE', 'LICENSE.md', 'LICENCE', 'license']) {
       try { text = fs.readFileSync(path.join(dir, f), 'utf8').trim(); break; } catch { /* try the next name */ }
     }
+    // A few small packages declare a licence and ship no text for it. The notice cannot then be
+    // reproduced, because upstream never wrote one down -- and inventing a copyright line to fill
+    // the gap would be worse than the gap. What can be recorded truthfully is recorded: what the
+    // package says its licence is, which version went in, and where it came from.
+    // 有几个小包声明了许可证却不发正文。那份声明无法被复述,
+    // 因为上游从未写下过 —— 而编一行版权声明来填这个缺口,比缺口本身更糟。
+    // 能如实记下的就如实记下:包自称的许可证、进去的是哪个版本、以及它从哪里来。
     if (!text) {
-      console.error(`✗ ${name} has no licence text that can be shipped with it`);
-      process.exit(1);
+      let declared = '';
+      let repo = '';
+      try {
+        const pj = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+        declared = typeof pj.license === 'string' ? pj.license : '';
+        repo = typeof pj.repository === 'string' ? pj.repository : (pj.repository?.url || '');
+      } catch { /* nothing further to say about it */ }
+      if (!declared) {
+        console.error(`✗ ${name} states no licence at all and cannot be shipped`);
+        process.exit(1);
+      }
+      text = `${declared}
+
+The author ships no licence text with this package; this records what it`
+        + ` declares.${repo ? `
+Source: ${repo.replace(/^git\+|\.git$/g, '')}` : ''}`;
     }
     parts.push('='.repeat(76), `${name}${version ? ' ' + version : ''}`, '', text, '');
   }
@@ -372,6 +463,7 @@ function readVersion(from) {
 }
 
 await buildCodeMirror();
+await buildPdfEdit();
 checkLibavFull();
 
 if (CHECK_ONLY) {
