@@ -37,7 +37,14 @@ const arr = (x) => x?.asArray?.();
 export function contentOf(page) {
   const c = page.node.Contents();
   if (!c) return '';
-  const list = c.constructor?.name === 'PDFArray'
+  // Asked what it is by what it can do, not by what its class is called. The library arrives here
+  // minified, where every class is named by one letter and no two builds agree on which -- a
+  // check against a class name passes in a test run and fails in the shipped one, which is the
+  // worst way for a check to be wrong.
+  // 靠"它会做什么"来问它是什么,而不是靠"它的类叫什么"。这个库到这里时是压缩过的,
+  // 每个类都只剩一个字母的名字,而且没有哪两次构建会在"是哪个字母"上取得一致 ——
+  // 一个照类名去比的判断,在测试里通过、在发出去的那份里失败,而这是一个判断能错的最坏方式。
+  const list = typeof c.asArray === 'function'
     ? c.asArray().map((r) => page.node.context.lookup(r))
     : [c];
   return list.filter(Boolean)
@@ -132,7 +139,7 @@ function cidWidths(w, dw) {
 function heights(desc) {
   const bbox = arr(desc?.lookup(PDFName.of('FontBBox')))?.map(num);
   if (bbox && bbox.length === 4 && bbox[3] > bbox[1]) {
-    return { ascent: bbox[3] / 1000, descent: bbox[1] / 1000 };
+    return capped(bbox[3] / 1000, bbox[1] / 1000);
   }
   const a = num(desc?.lookup(PDFName.of('Ascent')));
   const d = num(desc?.lookup(PDFName.of('Descent')));
@@ -216,7 +223,7 @@ function glyphChar(name) {
 function simpleEncoding(ctx, encEntry) {
   let baseName = 'StandardEncoding';
   let diffs = null;
-  const e = encEntry?.constructor?.name === 'PDFRef' ? ctx.lookup(encEntry) : encEntry;
+  const e = ctx.lookup(encEntry);       // a lookup of something that is not a reference is that thing
   if (e?.lookup) {
     baseName = String(e.lookup(PDFName.of('BaseEncoding')) || '').replace(/^\//, '') || baseName;
     diffs = arr(e.lookup(PDFName.of('Differences')));
@@ -272,6 +279,28 @@ function simpleEncoding(ctx, encEntry) {
  * 若按普通字体去读,这六十个会齐齐退回一个照拉丁字形状来的猜测,
  * 而这一页上每一个选择框的顶部,都会短掉"拉丁字母上伸部比一个全角字矮的那一截"。
  */
+/**
+ * A bounding box is the box every glyph in the font fits in, which is not the box the glyphs on
+ * this page fit in. A large CJK family reaches nearly three em from top to bottom to make room
+ * for arrows, boxed numerals and combining marks -- none of which appear in a line of prose, and
+ * a selection three times the height of its own letters swallows the lines above and below it.
+ *
+ * So the box is taken but not followed off the edge. The limits are set past every real face
+ * measured here -- Arial reaches 1.04, Microsoft YaHei 1.06, Deng Xian 0.80 -- and well short of
+ * what a font claims when it is describing its rarities.
+ *
+ * 一个包围盒是这个字体里每一个字形都装得下的框,而不是这一页上的这些字形装得下的框。
+ * 一款大的中日韩字体从上到下能有将近三个 em,那是为箭头、带框数字和组合符号留的地方 ——
+ * 这些都不会出现在一行散文里,而一个有自身字母三倍高的选区,会把上下两行一并吞掉。
+ *
+ * 所以框照取,但不跟着它冲出边界。这两个上限设在此处量过的每一张真实字面之外 ——
+ * Arial 到 1.04,微软雅黑 1.06,等线 0.80 —— 又远不到一个字体在描述它那些稀罕货时所声称的地方。
+ */
+const capped = (ascent, descent) => ({
+  ascent: Math.min(ascent, 1.25),
+  descent: Math.max(descent, -0.5),
+});
+
 function type3Heights(dict, fm) {
   const bbox = arr(dict.lookup(PDFName.of('FontBBox')))?.map(num);
   if (!bbox || bbox.length !== 4 || !fm || fm.length < 6) return heights(null);
@@ -280,7 +309,7 @@ function type3Heights(dict, fm) {
   for (const [x, y] of [[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]]) {
     ys.push(fm[1] * x + fm[3] * y + fm[5]);
   }
-  return { ascent: Math.max(...ys), descent: Math.min(...ys) };
+  return capped(Math.max(...ys), Math.min(...ys));
 }
 
 /**
@@ -364,7 +393,7 @@ function readFont(ctx, dict) {
  * 是为一个没人有的用途搭一大堆机器。
  */
 export function readToUnicode(ctx, stream) {
-  const st = stream?.constructor?.name === 'PDFRef' ? ctx.lookup(stream) : stream;
+  const st = ctx.lookup(stream);        // likewise
   if (!st) return null;
   let text;
   try {

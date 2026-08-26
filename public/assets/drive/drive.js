@@ -3,7 +3,7 @@
 // sharing and a trash. All data comes from /api/drive/*; texts come from i18n keys drv_*.
 // 网盘界面。Google Drive 风格。同一套文件夹视图支持列表/网格两种布局、多选、右键菜单、
 // 拖拽上传加进度面板、媒体预览层、文件夹共享与回收站。数据全部走 /api/drive/*。
-import { api } from '../api.js';
+import { api, ApiError } from '../api.js';
 import { t, tErr, lang } from '../i18n.js';
 import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
@@ -2638,10 +2638,14 @@ async function richPreview(n) {
 // canvas 上,滚动容器就是我们的,全局主题滚动条规则直接生效。页面滚到可视区才渲染。
 
 let pvPdf = null; // { task, io, gen } 当前预览中的 PDF 加载任务与懒渲染观察器
+let pvPdfEdit = null; // 正在进行的一次 PDF 编辑会话
 
 function destroyPdfPreview() {
   if (!pvPdf) return;
+  pvPdfEdit?.destroy();
+  pvPdfEdit = null;
   pvPdf.gen++;
+  pvPdf.swapTask?.destroy?.().catch?.(() => {});
   pvPdf.pager?.destroy();
   // v6: cleanup goes through the loading task (PDFDocumentProxy lost its destroy())
   // v6 的清理走 loading task(PDFDocumentProxy 已没有 destroy())
@@ -2687,6 +2691,9 @@ async function renderPdfPreview(node, box) {
     const task = lib.getDocument(opts);
     my.task = task;
     const doc = await task.promise;
+    my.lib = lib;
+    my.mod = mod;
+    my.doc = doc;
     // The user may have moved on while we were loading
     // 加载期间用户可能已经翻走了
     if (pvPdf !== my || my.gen !== gen || !box.isConnected) {
@@ -2715,7 +2722,7 @@ async function renderPdfPreview(node, box) {
       if (holder.dataset.done || pvPdf !== my) return;
       holder.dataset.done = '1';
       try {
-        const page = await doc.getPage(parseInt(holder.dataset.page, 10));
+        const page = await my.doc.getPage(parseInt(holder.dataset.page, 10));
         if (pvPdf !== my) return;
         const scale = width / page.getViewport({ scale: 1 }).width;
         const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -2732,7 +2739,38 @@ async function renderPdfPreview(node, box) {
         holder.style.height = 'auto';
         holder.classList.remove('pending');
         holder.replaceChildren(c);
+        // A page that has just been drawn is a page the editor can be pointed at. It rebuilds
+        // its layer rather than keeping one, because a redraw may have happened at a new width.
+        // 一页刚画完,就是编辑器可以指着的一页。它重建自己那一层而不是留用旧的,
+        // 因为一次重画可能是按新的宽度画的。
+        if (pvPdfEdit) await pvPdfEdit.attach(holder, page, scale);
       } catch {}
+    };
+    my.renderPage = renderPage;
+    // Draw one page again, from whatever document is current. The editor asks for this after a
+    // change, having first handed over a document that contains the change.
+    // 从当前那份文档重画某一页。编辑器在一次改动之后来要这个 ——
+    // 在那之前它已经先交过一份含有那次改动的文档了。
+    my.repaint = async (pageNo) => {
+      const holder = [...box.children].find((d) => +d.dataset.page === pageNo);
+      if (!holder) return;
+      delete holder.dataset.done;
+      await renderPage(holder);
+    };
+    // Take an edited document in place of the one being shown. Every page drawn from the old one
+    // is now out of date, but only the ones asked for are drawn again -- the rest are marked
+    // undrawn and will be done when they are scrolled to.
+    // 用一份编辑过的文档顶替正在显示的这份。凡是照旧文档画出来的页面此刻都过期了,
+    // 但只有被点名的那些会立刻重画 —— 其余的标记为未画,等滚到它们的时候再说。
+    my.swapDoc = async (edited) => {
+      const t2 = lib.getDocument(mod.pdfDocOpts(edited.buffer ? edited.buffer.slice(edited.byteOffset, edited.byteOffset + edited.byteLength) : edited));
+      const nd = await t2.promise;
+      if (pvPdf !== my) { t2.destroy().catch(() => {}); return; }
+      const old = my.swapTask;
+      my.swapTask = t2;
+      my.doc = nd;
+      old?.destroy?.().catch?.(() => {});
+      for (const d of box.children) if (d.dataset.done) delete d.dataset.done;
     };
     // Which page to rasterise next is a decision, not a queue: during a fast scroll the pages
     // that swept past are dropped and the one the reader stopped on is taken first.
@@ -2748,6 +2786,132 @@ async function renderPdfPreview(node, box) {
   }
 }
 
+/**
+ * Whether this file can be edited here, which needs three things to be true at once: it is a PDF,
+ * the reader may write to it, and they are looking at the version that would be written -- editing
+ * an old version and saving it would quietly make the old one current again, which is not what
+ * opening a history entry means.
+ *
+ * 这个文件能不能在这里编辑。需要三件事同时成立:它是一份 PDF、读者对它有写权限,
+ * 而且他此刻看的正是那个会被写回去的版本 —— 编辑一个旧版本再保存,
+ * 等于悄悄把旧的那个又变成当前的,而那不是"打开一条历史记录"的含义。
+ */
+function pvCanEditPdf(n) {
+  const mime = (verView(n).mime || '').toLowerCase();
+  const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(n.name);
+  return isPdf && dst.access !== 'viewer' && !pv?.verSel;
+}
+
+/**
+ * Begin editing the PDF on screen.
+ *
+ * The whole file is fetched first, even when the viewer was reading it by ranges. Editing writes
+ * a document, and a document cannot be written from the parts of itself somebody happened to
+ * look at.
+ *
+ * 开始编辑屏幕上这份 PDF。
+ *
+ * 先把整个文件取回来,即使查看器一直是按 Range 在读它。编辑要写出一份文档,
+ * 而一份文档没法用"某人碰巧看过的那几块"写出来。
+ */
+async function startPdfEdit(n) {
+  if (pvPdfEdit || !pvPdf) return;
+  const head = pv.el.querySelector('.drv-view-head');
+  head?.classList.add('busy');
+  try {
+    const r = await fetch(n.arcUrl || dlUrl(n.id, true, verTag(n)));
+    if (!r.ok) throw new Error('fetch');
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    const box = pv.el.querySelector('.drv-pdf');
+    if (!box || !pvPdf) return;
+    const { editSession } = await import('./pdfui.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    pvPdfEdit = await editSession({
+      box,
+      bytes,
+      viewer: { repaint: (no) => pvPdf.repaint(no), swapDoc: (b) => pvPdf.swapDoc(b) },
+      ui: {
+        t,
+        icon,
+        exit: () => stopPdfEdit(n),
+        saveAs: (out) => savePdfEdit(n, out),
+      },
+    });
+    box.classList.add('editing');
+    // Pages already on screen were drawn before there was an editor; they get their layer now.
+    // 屏幕上已经画好的那些页,是在还没有编辑器的时候画的;它们现在拿到自己那一层。
+    for (const d of box.children) {
+      if (!d.dataset.done) continue;
+      delete d.dataset.done;
+      await pvPdf.renderPage(d);
+    }
+  } catch (e) {
+    toast(tErr(e), 'danger');
+    pvPdfEdit = null;
+  } finally {
+    head?.classList.remove('busy');
+  }
+}
+
+/**
+ * Leave editing.
+ *
+ * Asking first, because changes live only in this page and closing is how they are lost -- except
+ * straight after a save, where the same changes are now in the file and asking whether to discard
+ * them would be asking about something that no longer exists.
+ *
+ * 离开编辑。
+ *
+ * 先问一句,因为那些改动只活在这一页里,而关掉正是它们消失的方式 ——
+ * 只有刚保存完那一次除外:那些改动此刻已经在文件里了,再问要不要放弃它们
+ * 等于在问一件已经不存在的事。
+ */
+async function stopPdfEdit(n, ask = true) {
+  if (!pvPdfEdit) return;
+  if (ask && pvPdfEdit.changeCount && !(await confirmDialog(t('pdfe_discard'), t('pdfe_discard_ok')))) return;
+  if (!pvPdfEdit) return;
+  pvPdfEdit.destroy();
+  pvPdfEdit = null;
+  pv?.el?.querySelector('.drv-pdf')?.classList.remove('editing');
+  // Back to the file as it stands, which after a save is the file as it now stands.
+  // 回到这个文件此刻的样子 —— 保存过之后,那就是它现在的样子。
+  if (pv?.list[pv.idx] === n) openPreview(n);
+}
+
+/**
+ * Write the edited document back as a new version of the same file.
+ *
+ * To the same node, not to a new file beside it: what was edited was this document, and a reader
+ * who edits and saves expects to have edited the thing they opened. The old bytes survive as a
+ * version where the file keeps history, and are replaced where it does not -- which is the same
+ * rule every other way of writing to this file follows.
+ *
+ * 把编辑后的文档作为同一个文件的新版本写回去。
+ *
+ * 写回同一个节点,而不是在它旁边新建一个文件:被编辑的就是这份文档,
+ * 而一个编辑完又保存的读者,期望自己编辑的正是他打开的那个东西。
+ * 旧字节在保留历史的文件上留作一个版本,在不保留的文件上被替换掉 ——
+ * 这与写入这个文件的其他每一条路所遵循的规矩相同。
+ */
+async function savePdfEdit(n, out) {
+  const blob = new Blob([out], { type: 'application/pdf' });
+  const hash = await sha256Hex(blob);
+  const q = `node=${encodeURIComponent(n.id)}&mime=application%2Fpdf` + (hash ? `&hash=${hash}` : '');
+  const res = await fetch(`/api/drive/upload?${q}`, { method: 'POST', body: blob });
+  if (!res.ok) {
+    const j = await res.json().catch(() => null);
+    throw new ApiError(res.status, j?.error || 'e_request_failed', j?.args || [res.status]);
+  }
+  const saved = await res.json().catch(() => null);
+  if (saved) {
+    // The list behind the preview holds the same node object, so it learns the new size and
+    // version from the same assignment.
+    // 预览背后那张列表持有的是同一个节点对象,于是它从同一次赋值里得知新的大小与新的版本。
+    Object.assign(n, saved);
+  }
+  toast(t('pdfe_saved'), 'success');
+  await stopPdfEdit(n, false);
+}
+
 function pvKeys(e) {
   if (!pv) return;
   // A film answers to most of these itself -- space, the arrows, m, f -- and only what it does
@@ -2755,6 +2919,14 @@ function pvKeys(e) {
   // 一部片子自己就听得懂这里的大部分按键 —— 空格、方向键、m、f ——
   // 只有它没接下的那些,才继续表示"下一个文件"。
   if (e.key !== 'Escape' && pvPlayer?.keys(e)) return;
+  // While editing, the arrow keys must not walk to the next file and Escape must not close the
+  // preview out from under unsaved changes.
+  // 编辑期间,方向键不能走到下一个文件,Escape 也不能在改动还没保存时把预览关掉。
+  if (pvPdfEdit) {
+    if (pvPdfEdit.keys(e)) { e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') return;
+    if (e.key === 'Escape') { stopPdfEdit(pv.list[pv.idx]); return; }
+  }
   if (e.key === 'Escape') closePreview();
   else if (e.key === 'ArrowLeft') pvStep(-1);
   else if (e.key === 'ArrowRight') pvStep(1);
@@ -2927,6 +3099,7 @@ function paintPvShell(n, body) {
       <wa-button class="icon" appearance="plain" data-close aria-label="${esc(t('close'))}">${icon('close', 20)}</wa-button>
       ${fileIcon(n.name, 20)}<span class="nm">${esc(n.name)}</span>
       <span class="drv-dim" style="color:#aaa;font-size:12.5px">${fmtSize(vn.size)}</span>
+      ${pvCanEditPdf(n) ? `<wa-button class="icon" appearance="plain" data-pdfedit aria-label="${esc(t('pdfe_open'))}">${icon('pencil', 20)}</wa-button>` : ''}
       <wa-button class="icon" appearance="plain" data-dl aria-label="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>
     </div>
     <div class="drv-view-body">
@@ -2942,6 +3115,7 @@ function paintPvShell(n, body) {
     // not whichever one happens to be current.
     // 你正在看的就是你会拿到的 —— 这个按钮下载的是选中的那一版,而不是碰巧最新的那一版。
     else if (e.target.closest('[data-dl]')) downloadFile(n, pv?.verSel || '');
+    else if (e.target.closest('[data-pdfedit]')) startPdfEdit(n);
     else if (vrow) pickVersion(vrow.dataset.ver);
     else if (e.target.closest('[data-nav]')) pvStep(parseInt(e.target.closest('[data-nav]').dataset.nav, 10));
     // A picture is left by clicking away from it, which is how every viewer works. A film is
