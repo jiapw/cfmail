@@ -259,6 +259,63 @@ fontsApp.get('/css/:family', async (c) => {
   return c.body(rewritten, 200, { 'Content-Type': 'text/css', 'Cache-Control': 'public, max-age=604800' });
 });
 
+/**
+ * The faces the PDF editor falls back to when a document's own font cannot write what somebody
+ * typed, and the face it was made with is nowhere to be found.
+ *
+ * These are not the Google Fonts above and cannot be: those arrive as woff2 cut into a hundred
+ * unicode ranges, which is the right shape for a web page and the wrong shape for embedding --
+ * a PDF wants one complete font program, and the subsetting happens afterwards, against the
+ * handful of characters actually typed. So this is a separate door for a small, fixed list of
+ * complete files.
+ *
+ * Same self-hosting as the door beside it: fetched once from a pinned upstream, kept in R2,
+ * served from there ever after, so no reader's browser ever talks to a font host.
+ *
+ * PDF 编辑器的兜底字体 —— 当文档自己的字体写不出刚打进去的字、而它原本那款字又无处可寻时用。
+ *
+ * 它们不是上面那些 Google Fonts,也不可能是:那些以 woff2 形式、按上百个 unicode 区段切开送来,
+ * 这对网页是对的形状,对嵌入是错的 —— 一份 PDF 要的是一个完整的字体程序,
+ * 子集化发生在之后,针对真正被打出来的那几个字。所以这是另一扇门,通向一份小而固定的完整文件清单。
+ *
+ * 自托管方式与旁边那扇门相同:从钉死的上游取一次、存进 R2、此后一律从 R2 供给,
+ * 于是没有任何读者的浏览器需要去和某个字体主机说话。
+ */
+const EDITOR_FONTS: Record<string, { url: string; type: string; note: string }> = {
+  // Noto Sans SC covers the Simplified Chinese a document is likely to want and, being an OFL
+  // face, may be redistributed with the bytes it is embedded into. The static OTF rather than the
+  // variable TTF beside it: a variable font has to be pinned to a weight before it can be cut
+  // down, and neither of the subsetters here can do that -- handed one, they fail inside.
+  // 思源黑体覆盖一份文档大概率会用到的简体中文;它是 OFL 字体,可以随它被嵌入的那些字节一同分发。
+  // 用静态 OTF 而不是旁边那个可变 TTF:可变字体必须先钉死到某个字重才能裁剪,
+  // 而这里两个子集器都做不到 —— 递给它们,它们会在内部出错。
+  'noto-sans-sc': {
+    url: 'https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf',
+    type: 'font/otf',
+    note: 'Noto Sans SC Regular, SIL Open Font License 1.1',
+  },
+};
+
+/** The list, so the editor can ask what it may fall back to rather than being told.
+ *  这份清单,好让编辑器可以问"有什么可退",而不是被告知。 */
+fontsApp.get('/editor', (c) => c.json({
+  fonts: Object.entries(EDITOR_FONTS).map(([id, f]) => ({ id, note: f.note })),
+}));
+
+fontsApp.get('/editor/:id', async (c) => {
+  const def = EDITOR_FONTS[c.req.param('id')];
+  if (!def) return c.text('no such font', 404);
+  const key = `fonts/editor/${c.req.param('id')}`;
+  const headers = { 'Content-Type': def.type, 'Cache-Control': 'public, max-age=31536000, immutable' };
+  const hit = await c.env.RAW.get(key);
+  if (hit) return c.body(hit.body as any, 200, headers);
+  const res = await fetch(def.url, { headers: { 'User-Agent': UA_MODERN } });
+  if (!res.ok) return c.text('upstream error', 502);
+  const buf = await res.arrayBuffer();
+  await c.env.RAW.put(key, buf, { httpMetadata: { contentType: def.type } });
+  return c.body(buf, 200, headers);
+});
+
 /** Font file: served straight from R2 when present, otherwise downloaded from gstatic and stored (self-hosted)
  *  字体文件:R2 里有就直接给,没有则回源 gstatic 下载后存起来(自托管) */
 fontsApp.get('/f/:ref', async (c) => {
