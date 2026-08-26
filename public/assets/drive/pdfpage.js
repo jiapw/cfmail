@@ -463,6 +463,43 @@ export function gsOf(page) {
  *  三个查询一起给,形状照 pageObjects 的要求。 */
 export const resourcesOf = (page) => ({ xobj: xobjOf(page), font: fontsOf(page), gs: gsOf(page) });
 
+/**
+ * The font program a document carries inside itself, if it carries one.
+ *
+ * This is the only copy of the document's actual typeface that exists anywhere for certain, and
+ * it is usually a subset -- the characters this document happened to use and no others. It is
+ * wanted for two opposite reasons: to ask whether it can already write something, and, when it
+ * cannot, to hold a candidate face up against it and see whether the outlines match. A name is
+ * not evidence; two files can agree on a name and disagree on every curve.
+ *
+ * A font that is not embedded returns nothing, which is the honest answer -- the document is
+ * relying on the reader's machine to supply that typeface, and what it supplies is not knowable
+ * from the file.
+ *
+ * 文档随身带着的那个字体程序,如果它带了的话。
+ *
+ * 这是"文档真正那款字面"在任何地方唯一确定存在的一份副本,而且通常是一个子集 ——
+ * 这份文档恰好用到的那些字符,别的一个也没有。想要它有两个相反的理由:
+ * 问它是不是已经写得出某样东西;以及在它写不出的时候,把一个候选字面举到它旁边,
+ * 看轮廓对不对得上。名字不算证据 —— 两个文件可以在名字上一致而在每一条曲线上都不一致。
+ *
+ * 没有嵌入的字体返回空,这是诚实的答案 —— 文档指望读者的机器来提供那款字面,
+ * 而它会提供什么,从文件里是看不出来的。
+ */
+export function fontProgram(font) {
+  const dict = font?.subtype?.includes('Type0') ? font.descendant : font?.dict;
+  const desc = dict?.lookup?.(PDFName.of('FontDescriptor'));
+  if (!desc?.lookup) return null;
+  for (const key of ['FontFile2', 'FontFile3', 'FontFile']) {
+    const st = desc.lookup(PDFName.of(key));
+    if (!st) continue;
+    try {
+      return st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents();
+    } catch { return null; }
+  }
+  return null;
+}
+
 /** What a run of glyph codes says, as far as the file is willing to tell.
  *  一段字形码说的是什么 —— 以文件肯说的为限。 */
 export function runText(run, font) {
