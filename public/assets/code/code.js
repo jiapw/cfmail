@@ -22,7 +22,7 @@
 // 而没有文法时缺席的也只有颜色。
 import { t, tErr } from '../i18n.js';
 import { esc, icon, qs, toast, confirmDialog, fmtDateTime } from '../ui.js';
-import { store } from '../app.js';
+import { store, setTitle } from '../app.js';
 import { openDoc, saveDoc, mergeDoc, draft, refreshThumb, MAX_BYTES } from '../edit/session.js';
 import { extOf } from '../edit/kinds.js';
 import { ensureCss, langFor, loadCm, themeStyle } from './view.js';
@@ -223,7 +223,7 @@ export async function renderCodeEditor(id) {
     ed.doc = await openDoc(id);
     ed.mime = mimeFor(ed.doc.name);
     qs('#code-name').textContent = ed.doc.name;
-    document.title = ed.doc.name;
+    setTitle(ed.doc.name);
     qs('#code-wrap').classList.toggle('on', ed.wrap);
 
     let text = ed.doc.base;

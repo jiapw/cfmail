@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { esc, icon, qs, qsa, toast, fmtDate, fmtDateTime, fmtSize, fileIcon, avatar, confirmDialog, cleanSnippet, showModal, closeModal } from './ui.js';
 import { t, tStored } from './i18n.js';
-import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName } from './app.js';
+import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName, setTitle } from './app.js';
 import { openCompose } from './compose.js';
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
 
@@ -58,6 +58,7 @@ export async function renderList(folder, q, page = 0) {
   const title = folder === 'label'
     ? labelName(labelById(store.labelId)) || t('lbl_title')
     : q ? t('search_title', q) : folderName(folder);
+  setTitle(title);
   const rows = data.threads.map((th) => rowHtml(th, folder)).join('');
 
   const normalBar = `
@@ -469,6 +470,7 @@ export async function renderThread(tid) {
   }
   const msgs = data.messages;
   currentMsgs = msgs;
+  setTitle(data.subject || t('no_subject'));
   const anyUnread = msgs.some((m) => !m.flag_seen);
   const roles = new Set(msgs.map((m) => m.folder_role));
   const inTrash = roles.has('trash') || roles.has('spam');

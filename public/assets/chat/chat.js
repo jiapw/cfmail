@@ -5,7 +5,7 @@
 import { api } from '../api.js';
 import { esc, icon, qs, toast, confirmDialog, showModal, closeModal, fmtDate, fileIcon, copyText } from '../ui.js';
 import { t, tErr, lang } from '../i18n.js';
-import { store, navigate, show } from '../app.js';
+import { store, navigate, show, setTitle } from '../app.js';
 import { renderMarkdown } from './markdown.js';
 
 const cs = {
@@ -87,7 +87,7 @@ export async function renderChat(sid) {
 // ---------- 页面骨架 ----------
 
 function renderPage() {
-  document.title = `${t('c_title')} - ${store.brand?.name || 'CFMail'}`;
+  setTitle(t('c_title'));
   show(`
   <div class="chat-shell">
     <aside class="chat-side" id="chat-side">
@@ -313,7 +313,13 @@ function promptModal(label, value, onOk, { datalist = null, placeholder = '', al
 function renderTitle() {
   const sess = cs.sessions.find((s) => s.id === cs.sid);
   const el = qs('#chat-title');
-  if (el) el.textContent = sess ? (sess.title || t('c_untitled')) : t('c_new');
+  const name = sess ? (sess.title || t('c_untitled')) : t('c_new');
+  if (el) el.textContent = name;
+  // A conversation gets its name a turn or two in, from what it turned out to be about. The tab
+  // follows it, which is what makes several of them tellable apart.
+  // 一段对话是聊了一两轮之后、才从"它原来是在说什么"里得到名字的。标签页跟着走 ——
+  // 开着好几段时,能分得清彼此靠的就是这个。
+  setTitle(name === t('c_new') ? t('c_title') : name);
 }
 
 function fileUrl(id) {
