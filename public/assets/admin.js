@@ -3,7 +3,7 @@ import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showMod
 import { t } from './i18n.js';
 import { tabImport } from './admin-import.js';
 import { tabExport } from './admin-export.js';
-import { store, navigate, show, applyTheme, applyFonts, refreshMe } from './app.js';
+import { store, navigate, show, applyTheme, applyFonts, refreshMe, setTitle } from './app.js';
 import { pickFont, ensureFont } from './fontpicker.js';
 import { roleName } from './auth.js';
 import { THEMES } from './themes-meta.js';
@@ -44,6 +44,12 @@ export async function renderAdmin(tab) {
     navigate('#/');
     return;
   }
+  // "Members - Admin", not a bare "Members": the console's page names are short words that also
+  // name things out in the mail, and a tab that only says one of them says the wrong thing.
+  // 「成员 · 管理后台」,而不是光一个「成员」:后台的页名都是些短词,
+  // 而这些短词在邮件那边也各有所指 —— 只写其中一个的标签页,说的是另一件事。
+  const here = TABS().find((x) => x.key === tab);
+  setTitle(here ? `${here.name} · ${t('admin')}` : t('admin'));
   const tabsHtml = TABS()
     .filter((x) => x.sep || !x.globalOnly || me.user.is_admin)
     .map((x) => (x.sep ? '<span class="tab-sep"></span>' : `<a class="tab ${x.key === tab ? 'active' : ''}" href="#/admin/${x.key}">${esc(x.name)}</a>`))

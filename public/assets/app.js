@@ -35,11 +35,70 @@ export function navigate(hash) {
   else location.hash = hash;
 }
 
-/** Page title: with a brand name it reads "Company - CFMail"
- *  标题:有品牌名时显示「公司名 - CFMail」 */
-export function pageTitle() {
-  const n = store.brand?.name;
-  return n ? `${n} - CFMail` : 'CFMail';
+/**
+ * The tab's title: where you are, then whose installation this is -- "Inbox - Acme - CFMail".
+ * A tab is read out of the corner of an eye, from a row of a dozen others, and the row keeps
+ * getting narrower, so what changes goes first and what never changes goes last.
+ *
+ * 标签页标题:先是你在哪儿,再是这是谁家的 —— 「收件箱 - Acme - CFMail」。
+ * 标签页是在一排十几个里面用眼角余光扫的,而那一排只会越挤越窄,
+ * 所以会变的部分排在前面,不变的排在最后。
+ */
+export function pageTitle(where) {
+  return [where, store.brand?.name, 'CFMail'].filter(Boolean).join(' - ');
+}
+
+/** Say where the page has arrived. A renderer calls this again with a better answer once it has
+ *  one -- a thread's subject, a Drive path, a file name -- so the title keeps up with the page.
+ *  说出页面到了哪里。渲染器一旦拿到更确切的答案(邮件主题、网盘路径、文件名)会再叫一次,
+ *  于是标题跟得上页面。 */
+export function setTitle(where) {
+  document.title = pageTitle(where);
+}
+
+/** A path written for a tab: deeper than three names and it keeps the last three, because those
+ *  are the ones that answer where you are. "…/Projects/2026/Budget"
+ *  写给标签页看的路径:超过三段就只留最后三段 —— 回答"你在哪儿"的正是那几段。 */
+export function pathTitle(names) {
+  const clean = names.filter(Boolean);
+  return (clean.length > 3 ? ['…', ...clean.slice(-3)] : clean).join('/');
+}
+
+/**
+ * What an address calls itself, as far as the address alone can say. It is the title that shows
+ * while the page is still fetching: instant, never wrong, and replaced the moment a renderer
+ * knows better. Without it, walking into a thread would leave the previous folder's name sitting
+ * in the tab for as long as the request takes.
+ *
+ * 仅凭地址能说出的位置名。它是页面还在取数据时挂着的那个标题:立刻就有、不会说错,
+ * 等渲染器知道得更准时即被替换。没有它,点进一封邮件时,上一个文件夹的名字
+ * 会在标签页上一直挂到请求回来为止。
+ */
+function routeTitle(seg) {
+  switch (seg[0]) {
+    case 'settings': return t('settings');
+    case 'admin': return t('admin');
+    case 'chat': return t('c_title');
+    case 'drive': {
+      const v = seg[1];
+      if (!v || v === 'folder') return t('drv_my');
+      if (v === 'search' && seg[2]) return t('search_title', seg[2]);
+      if (['shared', 'recent', 'starred', 'trash', 'links', 'agents'].includes(v)) return t('drv_' + v);
+      return t('a_drive');
+    }
+    case 'mb': {
+      if (seg[2] === 'thread') return '';
+      if (seg[2] === 'search' && seg[3]) return t('search_title', seg[3]);
+      if (seg[2] === 'label') return t('lbl_title');
+      if (seg[2] === 'contacts') return t('f_contacts');
+      return folderName(FOLDERS.find((f) => f.key === seg[2]) ? seg[2] : 'inbox');
+    }
+    // The editors and the signed-out pages name themselves: a file the moment it opens, and a
+    // sign-in screen not at all -- it is nobody's location.
+    // 编辑器和未登录的页面自己报名字:文件一打开就有名字,而登录页什么都不报 ——
+    // 它不是谁的"位置"。
+    default: return '';
+  }
 }
 
 // ---------- Theme and appearance ----------
@@ -418,6 +477,7 @@ async function route() {
   store.routeKey = location.hash;
 
   if (!store.brand) await loadBrand();
+  setTitle(routeTitle(seg));
   if (seg[0] === 'invite' && seg[1]) return renderInvite(seg[1]);
   // The two routes that must work while signed out
   // 未登录也要能走的两条路

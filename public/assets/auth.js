@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { esc, icon, qs, toast } from './ui.js';
 import { t, setLang, lang, LANG_OPTIONS } from './i18n.js';
-import { store, navigate, refreshMe, show, applyMode, currentMode, pageTitle, applyFonts } from './app.js';
+import { store, navigate, refreshMe, show, applyMode, currentMode, setTitle, applyFonts } from './app.js';
 import { pickFont } from './fontpicker.js';
 import { mountTurnstile } from './turnstile.js';
 
@@ -399,6 +399,7 @@ export function renderNoMailbox() {
 
 export function renderSettings() {
   const me = store.me;
+  setTitle(t('settings'));
   const langOptions = LANG_OPTIONS.map(
     ([code, label]) => `<wa-option value="${code}">${esc(label)}</wa-option>`
   ).join('');
@@ -483,7 +484,6 @@ export function renderSettings() {
     setLang(l);
     await api('POST', '/api/me/lang', { lang: l }).catch(() => {});
     toast(t('t_lang_saved'));
-    document.title = pageTitle();
     renderSettings();
   });
   qs('#sel-mode').addEventListener('change', async (e) => {
