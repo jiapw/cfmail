@@ -333,9 +333,46 @@ function bindList(folder, q) {
       });
       return;
     }
+    // On touch, the first tap opens -- guaranteed at the pointer level. Mobile browsers run tap
+    // heuristics between the finger and the click event (hover simulation, double-tap windows),
+    // and a mail list is the worst place to lose to one: opening the message is the whole page.
+    // So a clean touch tap -- little movement, not on a button, not on the label cell --
+    // navigates from pointerup directly, and the synthetic click that may follow finds the flag
+    // and stands down. A long-press that opened the context menu cancels the pointer first, so
+    // it never arrives here. Mice never enter: their click path below is untouched.
+    // 触摸端,第一击就打开 —— 在指针层面保证。移动浏览器会在手指与 click 事件之间跑各种
+    // 判定(悬停模拟、双击窗口),而邮件列表是最输不起的地方:打开这封信就是这一页的全部。
+    // 所以一次干净的触碰 —— 位移小、不在按钮上、不在标签位上 —— 直接从 pointerup 导航,
+    // 随后可能补来的合成 click 看到旗子就退下。长按呼出菜单的路径会先 cancel 掉指针,
+    // 根本到不了这里。鼠标从不进这条路:它下面那条 click 路径原封未动。
+    let tapFrom = null;
+    let tapOpened = false;
+    if (row.dataset.tid || row.dataset.draft) {
+      row.addEventListener('pointerdown', (e) => {
+        tapFrom = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY } : null;
+      });
+      row.addEventListener('pointercancel', () => { tapFrom = null; });
+      row.addEventListener('pointerup', async (e) => {
+        if (!tapFrom || e.pointerType !== 'touch' || sel.active) return;
+        const moved = Math.abs(e.clientX - tapFrom.x) > 12 || Math.abs(e.clientY - tapFrom.y) > 12;
+        tapFrom = null;
+        if (moved) return;
+        if (e.target.closest('[data-act], [data-rowmenu], .row-labels')) return;
+        tapOpened = true;
+        setTimeout(() => { tapOpened = false; }, 600);
+        const draftId = row.dataset.draft;
+        if (draftId) {
+          const d = await api('GET', `/api/mailboxes/${store.mbId}/drafts/${draftId}`);
+          openCompose({ mbId: store.mbId, draftId, ...d.payload });
+          return;
+        }
+        navigate(`#/mb/${store.mbId}/thread/${row.dataset.tid}`);
+      });
+    }
     // Ordinary click
     // 普通点击
     row.addEventListener('click', async (e) => {
+      if (tapOpened) return;
       const btn = e.target.closest('[data-act]');
       const draftId = row.dataset.draft;
       if (btn) {

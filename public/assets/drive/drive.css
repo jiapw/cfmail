@@ -1047,6 +1047,18 @@
   .drv-nav-item .lbl, .drv-quota { display: block; }
   .drv-new span { display: inline; }
   .drv-nav-item { justify-content: flex-start; padding: 0 12px 0 14px; border-radius: 0 999px 999px 0; }
+
+  /* The listing runs wall to wall: the rail floats now, so the pane's left gutter separates it
+     from nothing, and the right one only shortens every file's name. Both gutters go -- the
+     pane's and the scroll container's own.
+     列表通到两墙:导轨已经浮起来了,窗格的左留白不再隔开任何东西,右留白只会截短每个文件的名字。
+     两层留白一起去掉 —— 窗格的,和滚动容器自己的。 */
+  .drv-main { padding: 0; }
+  .drv-scroll { padding-left: 0; padding-right: 0; }
+
+  /* The arrows leave the preview; the finger that would have pressed them flicks instead.
+     箭头退出预览;本来要按它们的那根手指,改为一甩。 */
+  .drv-view-nav { display: none; }
 }
 
 /* ---------- Share links: management list + public landing ---------- */
