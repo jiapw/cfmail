@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "Dominio no encontrado",
   e_draft_not_found: "Borrador no encontrado",
   e_draft_too_big: "El borrador es demasiado grande: redúcelo antes de guardar",
+  e_drive_no_mse: "Este navegador no puede reconstruir flujos multimedia; este formato no se reproducirá aquí. Descárguelo y ábralo en un reproductor local.",
   e_drive_audio_codec: "Aquí no se puede reproducir sonido {0}",
   e_drive_bad_name: "Nombre no válido",
   e_drive_bad_quota: "Cuota no válida (1 MB - 10 TB)",

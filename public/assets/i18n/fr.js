@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "Domaine introuvable",
   e_draft_not_found: "Brouillon introuvable",
   e_draft_too_big: "Le brouillon est trop volumineux — réduisez-le avant d'enregistrer",
+  e_drive_no_mse: "Ce navigateur ne sait pas reconstruire les flux média ; ce format ne se lira pas ici. Téléchargez le fichier et ouvrez-le dans un lecteur local.",
   e_drive_audio_codec: "Le son {0} ne peut pas être lu ici",
   e_drive_bad_name: "Nom non valide",
   e_drive_bad_quota: "Quota non valide (1 Mo - 10 To)",

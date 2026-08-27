@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "도메인을 찾을 수 없습니다",
   e_draft_not_found: "임시보관 메일을 찾을 수 없습니다",
   e_draft_too_big: "임시보관 내용이 너무 큽니다. 줄인 뒤 저장하세요",
+  e_drive_no_mse: "이 브라우저는 스트림 재구성을 지원하지 않아 이 형식은 여기서 재생할 수 없습니다. 다운로드한 뒤 기기의 플레이어로 여세요.",
   e_drive_audio_codec: "{0} 오디오는 여기서 재생할 수 없습니다",
   e_drive_bad_name: "이름이 올바르지 않습니다",
   e_drive_bad_quota: "용량 값이 올바르지 않습니다 (1 MB - 10 TB)",
