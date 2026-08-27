@@ -423,6 +423,7 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 .msg-right { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--text-2); flex: none; }
 .msg-right > wa-icon { font-size: 16px; }
 .msg-date { font-size: 12.5px; }
+.msg-date .dt-short { display: none; }
 .msg-collapsed { color: var(--text-2); margin: 4px 0 0 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .msg.open .msg-collapsed { display: none; }
 .msg-bodywrap { display: none; margin: 12px 0 0 52px; }
@@ -1034,6 +1035,23 @@ body.impersonating .side-backdrop { inset: 94px 0 0 0; }
      设置行允许折行,标签和它的控件改为上下排,而不是冲出右缘;任何控件无论生来多宽,
      都不得比屏幕宽。表格单元格各守一行:一张比手机宽的表在它的盒子里滑动 ——
      盒子就是为此而在的 —— 而不是把每个数字折成一座塔。 */
+  /* The sender's column gets its width back.
+     The right-hand block -- a full date down to the minute, the star -- refuses to shrink, and
+     on this screen it was taking half the row: the sender wrapped onto three lines and the
+     recipients were cut to a sliver. So the date wears its short face (the long one is a tap
+     away on the open message), the bare address hides behind the name it duplicates, and the
+     name itself keeps to one ellipsized line. Same DOM, two dates drawn, one shown per width.
+     发件人那一列把宽度拿回来。
+     右边那一块 —— 精确到分的完整日期、星标 —— 是不肯收缩的,在这块屏幕上它占掉了半行:
+     发件人折成三行,收件人被削成一条缝。所以日期换上短脸(长的那张,点开的信里一步就到),
+     裸地址躲进它所重复的名字后面,名字自己守住一行省略。同一份 DOM,画两个日期,按宽度亮一个。 */
+  .msg-date .dt-long { display: none; }
+  .msg-date .dt-short { display: inline; }
+  .msg-line1 { flex-wrap: nowrap; min-width: 0; }
+  .msg-line1 .msg-from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .msg-line1 .msg-addr { display: none; }
+  .msg-right { gap: 4px; }
+
   .page-head { flex-wrap: wrap; padding: 10px 12px; row-gap: 2px; }
   .page-head h1 { white-space: nowrap; }
   .page-head .tabs { flex: 1 0 100%; margin-left: 0; }

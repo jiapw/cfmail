@@ -639,7 +639,7 @@ function msgHtml(m, expanded) {
       </div>
       <div class="msg-right">
         ${m.has_attachments ? icon('attach', 16) : ''}
-        <span class="msg-date">${fmtDateTime(m.date)}</span>
+        <span class="msg-date"><span class="dt-long">${fmtDateTime(m.date)}</span><span class="dt-short">${fmtDate(m.date)}</span></span>
         <span class="row-labels" data-act="msglabels" style="width:auto">${msgLabelsHtml(m)}</span>
       </div>
     </div>
