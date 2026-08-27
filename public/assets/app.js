@@ -635,19 +635,23 @@ const NARROW = '(max-width: 900px)';
  * 所以背景只在第二种情形下存在;它在这里造而不是写进模板,是因为否则两个外壳都得各带一份,
  * 而那两个外壳分属不同的子系统。
  */
-function syncSidebar() {
+export function syncSidebar() {
   const sheet = qs('.sidebar');
   const rail = qs('.drv-nav');
-  // The Drive's rail is not the same object. Narrow, it shrinks to a column of icons rather than
-  // lying over anything, so it costs nothing to leave out and there is no reason to close it on
-  // arrival. Its template draws it open every time, and that -- not a state left behind by the
-  // mail page -- is what it is.
-  // 网盘那条不是同一样东西。窄屏时它缩成一列图标,并不压在任何东西上面,
-  // 摆着也不碍事,没有理由一进来就把它关掉。它的模板每次都画成展开的,
-  // 而那才是它的状态 —— 不是邮件页留下的那个。
-  if (rail && !sheet) store.sidebarHidden = rail.classList.contains('hidden');
+  // The Drive's rail is two different objects at two widths. On a tablet it is a 68px column of
+  // icons that pushes the listing aside and covers nothing -- there it keeps its own state, read
+  // back from the DOM, and arriving never closes it. On a phone the stylesheet floats it over
+  // the listing at full width, which makes it the mail sidebar's twin: it obeys the shared
+  // state, starts closed, wears the backdrop, and follows links shut.
+  // 网盘那条导轨在两种宽度下是两样东西。平板上它是一条 68px 的图标柱,把列表推开、不盖住任何
+  // 东西 —— 在那里它保管自己的状态,从 DOM 读回来,进入页面从不把它关上。手机上样式表让它
+  // 以全宽浮在列表上面,于是它成了邮件侧栏的孪生:听共享状态的,默认关着,披着遮罩,跟着链接收起。
+  const railFloats = !!rail && matchMedia('(max-width: 640px)').matches;
+  if (rail && !sheet && !railFloats) store.sidebarHidden = rail.classList.contains('hidden');
   sheet?.classList.toggle('hidden', store.sidebarHidden);
-  const wanted = !!sheet && !store.sidebarHidden && matchMedia(NARROW).matches;
+  if (railFloats) rail.classList.toggle('hidden', store.sidebarHidden);
+  const overlay = sheet || (railFloats ? rail : null);
+  const wanted = !!overlay && !store.sidebarHidden && matchMedia(NARROW).matches;
   const had = qs('#side-backdrop');
   if (wanted && !had) {
     const bd = document.createElement('div');
