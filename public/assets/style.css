@@ -1020,6 +1020,30 @@ body.impersonating .side-backdrop { inset: 94px 0 0 0; }
   .content, .sidebar.hidden + .content { margin: 0; border-radius: 0; }
   .thread { padding: 0 10px 24px; }
 
+  /* The console was laid out for a metre of desk.
+     Four fixes make it phone-shaped without redesigning a thing. The title refuses to stack
+     one character per line -- CJK breaks anywhere, so 管理后台 four rows tall was a column,
+     not a heading -- and the tab strip takes the next line whole. Settings rows are allowed
+     to wrap, so a label and its field stack instead of running off the right edge, and no
+     control may be wider than the screen whatever width it was born with. Table cells hold
+     one line each: a table too wide for the phone slides inside its box -- that is what the
+     box is for -- rather than folding every number into a tower.
+     后台是按一米宽的桌面排的。
+     四处修正让它装进手机,而不重排任何东西。标题拒绝一行一个字地摞 —— CJK 在任何字间
+     都能断行,于是「管理后台」摞成四行,那是一根柱子,不是一个标题 —— 页签条整条另起一行。
+     设置行允许折行,标签和它的控件改为上下排,而不是冲出右缘;任何控件无论生来多宽,
+     都不得比屏幕宽。表格单元格各守一行:一张比手机宽的表在它的盒子里滑动 ——
+     盒子就是为此而在的 —— 而不是把每个数字折成一座塔。 */
+  .page-head { flex-wrap: wrap; padding: 10px 12px; row-gap: 2px; }
+  .page-head h1 { white-space: nowrap; }
+  .page-head .tabs { flex: 1 0 100%; margin-left: 0; }
+  .page-body { padding: 16px 10px 60px; }
+  .form-row, .row-flex { flex-wrap: wrap; row-gap: 6px; }
+  .form-row wa-input, .form-row wa-select, .row-flex wa-input, .row-flex wa-select,
+  .form-row input, .row-flex input { max-width: 100%; min-width: 0; }
+  .font-btn::part(base) { width: auto; max-width: calc(100vw - 24px); }
+  .tblwrap th, .tblwrap td { white-space: nowrap; }
+
   /* Writing a message stops being a window and becomes the page.
      A floating window is a way of writing one thing without losing sight of another, and a
      phone has no second thing in view to lose -- what it has instead is a keyboard that takes

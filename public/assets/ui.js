@@ -184,6 +184,23 @@ export function fmtDate(ms) {
   }
 }
 
+/** A day and nothing else -- never a clock. For lists where WHEN means which day, and the hour
+ *  is noise: fmtDate would answer "13:47" for anything from today, which is exactly the day
+ *  such lists most often show.
+ *  只有日期,绝不带钟点。给那些"何时"指的是哪一天、时分只是噪音的清单用:
+ *  fmtDate 对今天的东西会答"13:47",而这类清单最常显示的恰恰就是今天。 */
+export function fmtDay(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  try {
+    return d.getFullYear() === new Date().getFullYear()
+      ? new Intl.DateTimeFormat(lang(), { month: 'short', day: 'numeric' }).format(d)
+      : new Intl.DateTimeFormat(lang(), { year: 'numeric', month: 'numeric', day: 'numeric' }).format(d);
+  } catch {
+    return d.toLocaleDateString();
+  }
+}
+
 export function fmtDateTime(ms) {
   if (!ms) return '';
   const d = new Date(ms);
