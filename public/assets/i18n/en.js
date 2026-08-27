@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "Domain not found",
   e_draft_not_found: "Draft not found",
   e_draft_too_big: "The draft is too large — trim it before saving",
+  e_drive_no_mse: "This browser cannot rebuild media streams, so this format will not play here. Download it and open it in a local player.",
   e_drive_audio_codec: "Nothing here can play {0} sound",
   e_drive_bad_name: "Invalid name",
   e_drive_bad_quota: "Invalid quota (1 MB - 10 TB)",

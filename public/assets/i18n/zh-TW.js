@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "網域不存在",
   e_draft_not_found: "草稿不存在",
   e_draft_too_big: "草稿內容過大，請精簡後再儲存",
+  e_drive_no_mse: "這個瀏覽器不支援串流重建，這種格式在此播不了。可下載後用本機播放器開啟。",
   e_drive_audio_codec: "這裡放不了 {0} 編碼的聲音",
   e_drive_bad_name: "名稱無效",
   e_drive_bad_quota: "配額數值無效（1 MB - 10 TB）",

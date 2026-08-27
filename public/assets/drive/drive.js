@@ -3443,7 +3443,11 @@ async function rebuildSong(n, src) {
   if (!el || !au) { await tune.close().catch(() => {}); return; }
   if (!window.MediaSource || !MediaSource.isTypeSupported(tune.mime)) {
     await tune.close().catch(() => {});
-    stumble(new Error('e_drive_audio_codec'));
+    // Not a codec problem: the file opened and named itself fine. This browser has no
+    // MediaSource, so nothing that needs rebuilding can play here at all -- say that.
+    // 不是编码的问题:文件打开了,也报上了名。是这个浏览器没有 MediaSource,
+    // 一切需要重建的东西在这里都放不了 —— 把这句话说出来。
+    stumble(new Error('e_drive_no_mse'));
     return;
   }
 
@@ -3695,7 +3699,7 @@ async function convertAndPlay(n, src) {
     const el = here();
     if (!el) throw new Error('e_drive_remux_failed');
     if (!window.MediaSource || !MediaSource.isTypeSupported(film.mime)) {
-      throw new Error('e_drive_video_codec');
+      throw new Error('e_drive_no_mse');
     }
     const v = el.querySelector('.drv-view-body video');
     if (!v) throw new Error('e_drive_remux_failed');

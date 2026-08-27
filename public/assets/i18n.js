@@ -131,7 +131,14 @@ export function tErr(code, args = []) {
   if (!code) return t('e_generic');
   const vals = args.map((a) => (typeof a === 'string' && /^e_[a-z0-9_]+$/.test(a) ? t(a) : a));
   if (!dict || !(code in dict)) return t('e_generic');
-  return t(code, ...vals);
+  // A placeholder nobody filled must not reach the screen. It happens when an error is thrown
+  // from a path that does not know the value -- "cannot play {0} here" with the {0} showing is
+  // a message about the software, not about the file. The slot goes, along with the space that
+  // was holding a seat for it.
+  // 没人来填的占位符不许上屏。这发生在"抛错的那条路并不知道那个值"的时候 ——
+  // 「放不了 {0} 编码的声音」连着 {0} 一起亮出来,说的就成了软件自己,而不是那个文件。
+  // 空槽拿掉,连同为它占着座的那个空格。
+  return t(code, ...vals).replace(/ ?\{\d+\} ?/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
 /**

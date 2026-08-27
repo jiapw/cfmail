@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "域名不存在",
   e_draft_not_found: "草稿不存在",
   e_draft_too_big: "草稿内容过大，请精简后再保存",
+  e_drive_no_mse: "这个浏览器不支持流式重建，这种格式在此放不了。可下载后用本机播放器打开。",
   e_drive_audio_codec: "这里放不了 {0} 编码的声音",
   e_drive_bad_name: "名称无效",
   e_drive_bad_quota: "配额数值无效（1 MB - 10 TB）",

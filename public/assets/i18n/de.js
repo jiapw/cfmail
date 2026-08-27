@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "Domain nicht gefunden",
   e_draft_not_found: "Entwurf nicht gefunden",
   e_draft_too_big: "Der Entwurf ist zu groß – bitte kürzen Sie ihn vor dem Speichern",
+  e_drive_no_mse: "Dieser Browser kann Medienströme nicht neu aufbauen; dieses Format läuft hier nicht. Laden Sie die Datei herunter und öffnen Sie sie in einem lokalen Player.",
   e_drive_audio_codec: "{0}-Ton lässt sich hier nicht abspielen",
   e_drive_bad_name: "Ungültiger Name",
   e_drive_bad_quota: "Ungültiges Kontingent (1 MB - 10 TB)",

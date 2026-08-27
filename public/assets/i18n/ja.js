@@ -477,6 +477,7 @@ export default {
   e_domain_not_found: "ドメインが見つかりません",
   e_draft_not_found: "下書きが見つかりません",
   e_draft_too_big: "下書きが大きすぎます。内容を減らしてから保存してください",
+  e_drive_no_mse: "このブラウザーはストリーム再構築に対応していないため，この形式はここでは再生できません。ダウンロードして端末のプレーヤーで開いてください。",
   e_drive_audio_codec: "{0} の音声はここでは再生できません",
   e_drive_bad_name: "名前が無効です",
   e_drive_bad_quota: "容量の値が無効です（1 MB - 10 TB）",
