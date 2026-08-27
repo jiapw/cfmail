@@ -569,6 +569,14 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
   };
   const cross = entry('mail', '#/', t('mail_title'), 'mail')
     + (me.drive_enabled ? entry('drive', '#/drive', t('drv_title'), 'cloud') : '');
+  // On a phone the bar keeps three things: the menu, the search, and the person. The brand and
+  // the mail/drive switcher move into the account menu -- the .um-nav/.um-brand rows below,
+  // which exist in every build of this dropdown and are shown by the stylesheet only where the
+  // bar versions of the same things have been taken away. One source of truth per entry, two
+  // places it can stand, never both at once.
+  // 手机上这条栏只留三样:菜单、搜索、这个人。品牌和邮箱/网盘切换搬进账号菜单 ——
+  // 就是下面那些 .um-nav/.um-brand 行,它们在这个下拉的每一次构建里都存在,
+  // 由样式表只在"栏上的同一样东西被拿走了"的地方显示。每个入口一个真身,两处可站,绝不同时。
   return `
     <header class="topbar">
       <wa-button class="icon" appearance="plain" id="btn-menu" aria-label="${esc(t('toggle_sidebar'))}">${icon('menu', 22)}</wa-button>
@@ -580,16 +588,19 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
       <div class="topbar-right">
         ${extra}
         ${page === 'mail' && !me.send_enabled ? `<span class="chip chip-warn" title="${esc(t('no_channel_tip'))}">${esc(t('no_channel_chip'))}</span>` : ''}
-        ${cross}
+        <span class="nav-cross">${cross}</span>
         ${me.chat_enabled ? `<wa-button class="icon" appearance="plain" href="#/chat" aria-label="${esc(t('c_title'))}" title="${esc(t('c_title'))}">${icon('sparkle', 20)}</wa-button>` : ''}
         ${canAdmin ? `<wa-button class="icon nav-extra" appearance="plain" href="#/admin" aria-label="${esc(t('admin'))}" title="${esc(t('admin'))}">${icon('shield', 20)}</wa-button>` : ''}
         <wa-button class="icon nav-extra" appearance="plain" href="#/settings" aria-label="${esc(t('settings'))}" title="${esc(t('settings'))}">${icon('gear', 20)}</wa-button>
         <wa-dropdown id="user-dd" placement="bottom-end">
           <wa-button slot="trigger" class="icon" appearance="plain" aria-label="${esc(me.user.email)}">${avatar(me.user.name || me.user.email, 32)}</wa-button>
+          <div class="um-brand">${brandLogoHtml(22)}<span>${esc(brandName)}</span></div>
           <div class="um-head">
             ${avatar(me.user.name || me.user.email, 40)}
             <div><div class="um-name">${esc(me.user.name)}</div><div class="um-mail">${esc(me.user.email)}</div></div>
           </div>
+          <wa-dropdown-item class="um-nav" value="mail">${icon('mail', 18)} ${esc(t('mail_title'))}</wa-dropdown-item>
+          ${me.drive_enabled ? `<wa-dropdown-item class="um-nav" value="drive">${icon('cloud', 18)} ${esc(t('drv_title'))}</wa-dropdown-item>` : ''}
           <wa-dropdown-item value="settings">${icon('gear', 18)} ${esc(t('settings'))}</wa-dropdown-item>
           ${canAdmin ? `<wa-dropdown-item value="admin">${icon('shield', 18)} ${esc(t('admin'))}</wa-dropdown-item>` : ''}
           <wa-dropdown-item value="logout">${icon('logout', 18)} ${esc(t('logout'))}</wa-dropdown-item>
@@ -673,7 +684,9 @@ export function bindTopbar() {
   syncSidebar();
   qs('#user-dd')?.addEventListener('wa-select', async (e) => {
     const v = e.detail?.item?.value;
-    if (v === 'settings') navigate('#/settings');
+    if (v === 'mail') navigate('#/');
+    else if (v === 'drive') navigate('#/drive');
+    else if (v === 'settings') navigate('#/settings');
     else if (v === 'admin') navigate('#/admin');
     else if (v === 'logout') {
       await api('POST', '/api/auth/logout');
