@@ -1026,6 +1026,27 @@
   .drv-crumbs::-webkit-scrollbar { display: none; }
   .drv-crumb { max-width: 180px; flex: none; }
   .drv-table col.c-size { width: 74px; }
+
+  /* The rail becomes the mail sidebar's twin: a full drawer floating over the listing.
+     Between 641 and 900px it is a 68px column of icons and the listing yields it that width --
+     a fair trade on a tablet, and a third of nothing on a phone. So here it stops taking any:
+     closed it is gone, open it lies OVER the list at full width, icons wearing their words
+     again, the New button wearing its word again, the quota back at its foot. The block above
+     shrank it; every rule here is that block undone, plus the float.
+     导轨在这里变成邮件侧栏的孪生:一整张浮在列表上面的抽屉。
+     641 到 900px 之间它是一条 68px 的图标柱,列表让出这点宽 —— 在平板上是笔划算的交换,
+     在手机上是"什么都不剩"的三分之一。所以在这里它不再占用任何宽度:
+     关上就不在,打开就以全宽压在列表**上面**,图标重新穿上它们的字,
+     新建按钮重新穿上它的字,配额回到它脚下。上面那块把它缩小;这里的每一条都是把那块解开,再加上浮。 */
+  .drv-nav {
+    position: fixed; left: 0; top: 60px; bottom: 0; z-index: 150;
+    width: 256px; padding: 0 8px 16px 8px;
+    background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
+  }
+  body.impersonating .drv-nav { top: 94px; }
+  .drv-nav-item .lbl, .drv-quota { display: block; }
+  .drv-new span { display: inline; }
+  .drv-nav-item { justify-content: flex-start; padding: 0 12px 0 14px; border-radius: 0 999px 999px 0; }
 }
 
 /* ---------- Share links: management list + public landing ---------- */

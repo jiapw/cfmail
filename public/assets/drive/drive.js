@@ -9,7 +9,7 @@ import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
   copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, phoneSheet, asSheet, cleanupSheet,
 } from '../ui.js';
-import { bindTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle } from '../app.js';
+import { bindTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle, syncSidebar } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
 import { hearing, verdict } from './remux.js';
@@ -126,6 +126,10 @@ export async function renderDrive(seg) {
     bindFrame();
   } else {
     syncFrame();
+    // On a phone the rail is a drawer over the list; a navigation that came from inside it
+    // has to put it away, the way the mail sidebar puts itself away.
+    // 手机上导轨是盖在列表上的抽屉；从它里面发起的导航得把它收起来，就像邮件侧栏收起自己那样。
+    syncSidebar();
     // The pane empties at once, as it did when the whole frame was rebuilt: a listing that
     // lingers while the next one loads is a listing somebody will click.
     // 窗格立刻清空,一如整个框架被重建的那时:上一份列表在下一份加载期间还留着,就会有人去点它。
