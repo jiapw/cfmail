@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { esc, icon, qs, qsa, toast, fmtDate, fmtDateTime, fmtSize, fileIcon, avatar, confirmDialog, cleanSnippet, showModal, closeModal, phoneSheet, asSheet, cleanupSheet } from './ui.js';
 import { t, tStored } from './i18n.js';
-import { store, renderShell, bindShell, show, loadFolders, navigate, refreshMe, folderName, setTitle, openCompose } from './app.js';
+import { store, showMail, loadFolders, navigate, refreshMe, folderName, setTitle, openCompose } from './app.js';
 
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
 
@@ -49,8 +49,7 @@ export async function renderList(folder, q, page = 0) {
   try {
     data = await api('GET', `/api/mailboxes/${store.mbId}/threads?${params}`);
   } catch (e) {
-    show(renderShell(`<div class="empty">${esc(e.message)}</div>`));
-    bindShell();
+    showMail(`<div class="empty">${esc(e.message)}</div>`);
     return;
   }
   listState.hasMore = data.has_more;
@@ -90,8 +89,7 @@ export async function renderList(folder, q, page = 0) {
   const content = `${sel.active ? selBar : normalBar}
     <div class="rows ${sel.active ? 'sel-mode' : ''}">${rows || `<div class="empty">${esc(q ? t('empty_search') : t('empty_folder'))}</div>`}</div>
     <div class="ctx-menu" id="ctx-menu" hidden></div>`;
-  show(renderShell(content));
-  bindShell();
+  showMail(content);
   bindList(folder, q);
 }
 
@@ -523,8 +521,7 @@ export async function renderThread(tid) {
   try {
     data = await api('GET', `/api/mailboxes/${store.mbId}/threads/${tid}`);
   } catch (e) {
-    show(renderShell(`<div class="empty">${esc(e.message)}</div>`));
-    bindShell();
+    showMail(`<div class="empty">${esc(e.message)}</div>`);
     return;
   }
   const msgs = data.messages;
@@ -562,8 +559,7 @@ export async function renderThread(tid) {
         </div>
       </div>
     </div>`;
-  show(renderShell(content));
-  bindShell();
+  showMail(content);
   bindThread(tid, msgs, backFolder);
 
   if (anyUnread) {
@@ -1213,8 +1209,7 @@ export async function renderContacts() {
   try {
     data = await api('GET', `/api/mailboxes/${store.mbId}/contacts`);
   } catch (e) {
-    show(renderShell(`<div class="empty">${esc(e.message)}</div>`));
-    bindShell();
+    showMail(`<div class="empty">${esc(e.message)}</div>`);
     return;
   }
   // Three states, chosen from a list rather than cycled through by clicking: with more than two
@@ -1260,8 +1255,7 @@ export async function renderContacts() {
     <div class="contacts-page" id="contacts-page">
       ${contacts.length ? groupHtml(internal, 'contacts_internal') + groupHtml(external, 'contacts_external') : `<div class="empty">${esc(t('no_contacts'))}</div>`}
     </div>`;
-  show(renderShell(content));
-  bindShell();
+  showMail(content);
   const pageEl = qs('#contacts-page');
   const reload = async () => {
     const v = qs('#ct-q')?.value.trim() || '';

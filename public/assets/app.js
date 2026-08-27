@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, avatar } from './ui.js';
+import { esc, icon, qs, qsa, avatar } from './ui.js';
 import { t, setLang, lang, dictReady } from './i18n.js';
 import { renderList, renderThread, renderContacts } from './mail.js';
 import { renderLogin, renderSetup, renderInvite, renderSettings, renderNoMailbox, renderForgot, renderReset } from './auth.js';
@@ -347,13 +347,11 @@ function brandLogoHtml(size = 26) {
   return icon('mail', size);
 }
 
-export function renderShell(contentHtml) {
-  const me = store.me;
-  // No door to the console while the session is borrowed -- the server refuses it anyway, and
-  // offering a button that only produces an error is worse than not offering it.
-  // 会话是借来的时候,后台没有门 —— 服务端本来就会拒,给一个只会报错的按钮不如不给。
-  const canAdmin = !me.impersonated_by && (me.user.is_admin || (me.domain_admin_of || []).length > 0);
-  const brandName = store.brand?.name || 'CFMail';
+/** Everything inside the mail sidebar's <nav>. Its own function because the fold control
+ *  redraws just this, in place, while the shell around it stands still.
+ *  邮件侧栏 <nav> 里面的一切。单独成函数,是因为折叠控件要原地只重画这一块,
+ *  而它周围的外壳站着不动。 */
+function sidebarInner() {
   const contactsItem = `
     <a class="side-item ${store.folder === 'contacts' ? 'active' : ''}" href="#/mb/${store.mbId}/contacts">
       ${icon('person', 20)}<span class="side-name">${esc(t('f_contacts'))}</span>
@@ -385,7 +383,7 @@ export function renderShell(contentHtml) {
       ${icon(f.icon, 20)}<span class="side-name">${esc(folderName(f.key))}</span>${folderBadge(f.key)}
     </a>` + (f.key === 'inbox' ? contactsItem : '');
   }).join('');
-  const accounts = me.mailboxes
+  const accounts = store.me.mailboxes
     .map(
       (m) => `
     <a class="side-item acct ${m.id === store.mbId ? 'active' : ''}" href="#/mb/${m.id}/inbox" title="${esc(m.address)}">
@@ -397,7 +395,16 @@ export function renderShell(contentHtml) {
     .join('');
 
   return `
-  <div class="shell">
+        <wa-button class="compose-btn" id="btn-compose">${icon('pencil', 20)}<span>${esc(t('compose'))}</span></wa-button>
+        <div class="side-group">${sideFolders}</div>
+        <div class="side-sep"></div>
+        <div class="side-title">${esc(t('mail_accounts'))}</div>
+        <div class="side-group">${accounts}</div>`;
+}
+
+export function renderShell(contentHtml) {
+  return `
+  <div class="shell" data-kind="mail">
     ${topbarHtml({
       page: 'mail',
       searchId: 'search-form',
@@ -406,16 +413,120 @@ export function renderShell(contentHtml) {
       searchValue: store.q || '',
     })}
     <div class="body">
-      <nav class="sidebar ${store.sidebarHidden ? 'hidden' : ''}">
-        <wa-button class="compose-btn" id="btn-compose">${icon('pencil', 20)}<span>${esc(t('compose'))}</span></wa-button>
-        <div class="side-group">${sideFolders}</div>
-        <div class="side-sep"></div>
-        <div class="side-title">${esc(t('mail_accounts'))}</div>
-        <div class="side-group">${accounts}</div>
-      </nav>
+      <nav class="sidebar ${store.sidebarHidden ? 'hidden' : ''}">${sidebarInner()}</nav>
       <main class="content" id="content">${contentHtml}</main>
     </div>
   </div>`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The shell stands still
+//
+// Navigation used to replace the whole of #app, chrome included, and the chrome is full of custom
+// elements -- every one of them re-created, re-upgraded, blank for a frame. That is the "reload"
+// look this section removes: within one subsystem, the top bar and the sidebar are built once and
+// only the content pane is replaced. What CAN change between two mail pages without the shell
+// being wrong -- which row is lit, what the badges count, what the search field holds -- is
+// synced by hand below, against the DOM that is already standing.
+//
+// The fingerprint decides which kind of change this is. It holds everything the shell's
+// STRUCTURE is built from -- the mailbox, the account list, the labels and their looks, the
+// language, the account's switches -- and none of the numbers that merely flow through it.
+// Fingerprint unchanged: sync in place. Changed: build the shell afresh, which is exactly the
+// old behaviour, on exactly the occasions the old behaviour was right.
+//
+// 外壳站着不动。
+//
+// 过去每次导航都换掉整个 #app,连壳带瓤 —— 而壳里全是自定义元素:每一个都重建、重升级、
+// 有一帧是空白的。这就是本节要去掉的那个"像刷新了一下":在同一个子系统之内,
+// 顶栏和侧栏只建一次,换的只有内容窗格。两个邮件页面之间"可以变而外壳不算错"的东西 ——
+// 哪一行亮着、徽标数到几、搜索框里装着什么 —— 由下面这些手工同步,对着已经站在那里的 DOM 改。
+//
+// 指纹决定这次变化属于哪一种。它装着外壳**结构**的全部来料 —— 邮箱、账号列表、
+// 标签及其外观、语言、这个账号的开关 —— 而不装任何只是从中流过的数字。
+// 指纹没变:原地同步。变了:重建外壳 —— 那正是旧行为,发生在旧行为本来就正确的那些场合。
+// ---------------------------------------------------------------------------------------------
+
+function mailShellPrint() {
+  const me = store.me;
+  return JSON.stringify([
+    store.mbId, lang(), labelsOpen(),
+    me.mailboxes.map((m) => [m.id, m.address, m.display_name]),
+    allLabels().map((l) => [l.id, l.name, l.color, l.icon]),
+    me.user.is_admin, me.impersonated_by, (me.domain_admin_of || []).length,
+    me.send_enabled, me.chat_enabled, me.drive_enabled,
+  ]);
+}
+
+/** Replace or renew a trailing badge without touching the rest of the row.
+ *  换掉或补上行尾的徽标,不碰这一行的其余部分。 */
+function setBadge(item, html) {
+  const old = item.querySelector('.badge, .side-count');
+  if (!html) { old?.remove(); return; }
+  if (old) old.outerHTML = html;
+  else item.insertAdjacentHTML('beforeend', html);
+}
+
+/** Bring the standing shell up to date with the route: highlights, counts, the search field.
+ *  让站着的外壳跟上路由:高亮、计数、搜索框。 */
+function syncMailShell(shell) {
+  syncSidebar();
+  // Which single row is lit. During a search nothing is: the list shows a question's answer,
+  // not a place.
+  // 亮着的是哪一行。搜索时哪行都不亮:列表显示的是一个问题的答案,不是一个地方。
+  const want = store.labelId
+    ? `#/mb/${store.mbId}/label/${encodeURIComponent(store.labelId)}`
+    : store.q ? null : `#/mb/${store.mbId}/${store.folder}`;
+  qsa('.sidebar a.side-item', shell).forEach((a) => {
+    if (a.id === 'lb-manage-link') return;
+    const href = a.getAttribute('href');
+    if (a.classList.contains('acct')) { a.classList.toggle('active', href === `#/mb/${store.mbId}/inbox`); return; }
+    a.classList.toggle('active', !!want && href === want);
+  });
+  // The numbers that flow through: folder badges, label counts, per-account unread.
+  // 流过外壳的那些数字:文件夹徽标、标签计数、各账号未读。
+  for (const f of FOLDERS) {
+    const a = qs(`.sidebar a.side-item[href="#/mb/${store.mbId}/${f.key}"]:not(.acct)`, shell);
+    if (a) setBadge(a, folderBadge(f.key));
+  }
+  for (const l of allLabels()) {
+    const a = qs(`.sidebar a.side-label[href="#/mb/${store.mbId}/label/${encodeURIComponent(l.id)}"]`, shell);
+    if (a) setBadge(a, l.n ? `<span class="side-count">${l.n}</span>` : '');
+  }
+  for (const m of store.me.mailboxes) {
+    const a = qs(`.sidebar a.acct[href="#/mb/${m.id}/inbox"]`, shell);
+    if (a) setBadge(a, m.unread > 0 ? `<span class="badge">${m.unread > 99 ? '99+' : m.unread}</span>` : '');
+  }
+  const si = qs('#search-input', shell);
+  if (si && si.value !== (store.q || '')) si.value = store.q || '';
+}
+
+/** The mail page's door: hand it the content pane and it decides how little needs to change.
+ *  邮件页的门:把内容交给它,由它决定需要变的最少是多少。 */
+export function showMail(contentHtml) {
+  const print = mailShellPrint();
+  const shell = qs('#app > .shell[data-kind="mail"]');
+  if (shell && shell.dataset.print === print) {
+    syncMailShell(shell);
+    qs('#content', shell).innerHTML = contentHtml;
+    return;
+  }
+  show(renderShell(contentHtml));
+  const built = qs('#app > .shell[data-kind="mail"]');
+  built.dataset.print = print;
+  bindShell();
+}
+
+/** Redraw just the sidebar's inside -- the fold control's job -- and stamp the new print so the
+ *  next navigation does not mistake the fold for a reason to rebuild everything.
+ *  只重画侧栏内部 —— 折叠控件的活儿 —— 并盖上新指纹,免得下一次导航把这次折叠误当成重建一切的理由。 */
+function rebuildSidebar() {
+  const shell = qs('#app > .shell[data-kind="mail"]');
+  const nav = shell && qs('.sidebar', shell);
+  if (!nav) return route();
+  nav.innerHTML = sidebarInner();
+  shell.dataset.print = mailShellPrint();
+  bindSidebar();
 }
 
 /**
@@ -572,20 +683,29 @@ export function bindTopbar() {
   });
 }
 
-export function bindShell() {
-  bindTopbar();
+/** The listeners that live INSIDE the sidebar. Rebuilding its innerHTML orphans them, so the
+ *  rebuild path and the full-shell path both come through here.
+ *  住在侧栏**里面**的监听器。重画它的 innerHTML 会把它们变成孤儿,
+ *  所以重画路径和整壳路径都从这里过。 */
+function bindSidebar() {
   qs('#lb-group')?.addEventListener('click', () => {
     setLabelsOpen(!labelsOpen());
-    // Re-render the shell only; the list on the right is untouched, which is the whole point of
-    // this control being a fold rather than a link.
-    // 只重绘外壳,右侧列表原样不动 —— 这个控件是"折叠"而不是"链接",要点就在这里。
-    route();
+    // The fold redraws the sidebar and nothing else: the list on the right is untouched, and so
+    // are the top bar and the pane -- this control is a fold, not a link.
+    // 折叠只重画侧栏,别的一概不动:右侧列表原样,顶栏和内容窗格也原样 ——
+    // 这个控件是"折叠",不是"链接"。
+    rebuildSidebar();
   });
   qs('#lb-manage-link')?.addEventListener('click', (e) => {
     e.preventDefault();
     openLabelManager(() => route());
   });
   qs('#btn-compose')?.addEventListener('click', () => openCompose({ mbId: store.mbId }));
+}
+
+export function bindShell() {
+  bindTopbar();
+  bindSidebar();
   qs('#search-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const v = qs('#search-input').value.trim();

@@ -116,8 +116,22 @@ export async function renderDrive(seg) {
   dst.sel.clear();
   dst.lastIdx = -1;
   dst.selMode = false;
-  show(frame());
-  bindFrame();
+  // The frame is built once and stands: walking the drive replaces only #drv-main. What the
+  // route changes about the frame -- which rail entry is lit, what the search field holds --
+  // is synced against the standing DOM, exactly the mail shell's arrangement next door.
+  // 框架建一次就立在那儿:在网盘里走动,换的只有 #drv-main。路由会改到框架的那点东西 ——
+  // 导轨上哪一项亮着、搜索框里装着什么 —— 对着立着的 DOM 同步,和隔壁邮件外壳同一套安排。
+  if (!qs('#app > .shell.drv-page')) {
+    show(frame());
+    bindFrame();
+  } else {
+    syncFrame();
+    // The pane empties at once, as it did when the whole frame was rebuilt: a listing that
+    // lingers while the next one loads is a listing somebody will click.
+    // 窗格立刻清空,一如整个框架被重建的那时:上一份列表在下一份加载期间还留着,就会有人去点它。
+    const main = qs('#drv-main');
+    if (main) main.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
+  }
   refreshState();
   if (dst.view === 'arc') {
     try {
@@ -217,6 +231,21 @@ function frame() {
     <input type="file" id="drv-file-input" multiple hidden>
     <input type="file" id="drv-dir-input" webkitdirectory hidden>
   </div>`;
+}
+
+/** Bring the standing frame up to date with the route: the lit rail entry and the search field.
+ *  Everything else in the frame is route-independent by construction.
+ *  让立着的框架跟上路由:导轨上亮着的那项,和搜索框。框架里的其余一切,按构造就与路由无关。 */
+function syncFrame() {
+  const activeKey = dst.view === 'folder' ? 'my' : dst.view;
+  qsa('.drv-nav-item').forEach((a) => {
+    const href = a.getAttribute('href') || '';
+    const key = href === '#/drive' ? 'my' : href.split('/')[2];
+    a.classList.toggle('active', key === activeKey);
+  });
+  const si = qs('#drv-search-input');
+  const want = dst.view === 'search' ? dst.q : '';
+  if (si && si.value !== want) si.value = want;
 }
 
 function bindFrame() {
