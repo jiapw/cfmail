@@ -209,6 +209,32 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 .wa-dark .brand-logo[data-logo-mode='light'] { filter: invert(1) hue-rotate(180deg); }
 .wa-light .brand-logo[data-logo-mode='dark'] { filter: invert(1) hue-rotate(180deg); }
 
+/* The brand and the mail/drive switcher live in the account menu wherever the bar had to give
+   them up -- which is the phone, where 393px cannot hold a name, a search field and a switcher
+   at once. Wider than that, the bar shows them itself and these rows stay out of the menu:
+   one entry, two possible places, never both.
+   品牌与邮箱/网盘切换,在"栏容不下它们"的地方住进账号菜单 —— 也就是手机:393px 装不下
+   名字、搜索框和切换器三样。比这宽,栏自己就摆得下,这些行便不进菜单:
+   每个入口一个真身,两处可站,绝不同时。 */
+/* A grouping wrapper, not a box: its buttons lay out as the bar's own children.
+   只是个成组的包装,不是盒子:里面的按钮照旧作为栏自己的子项排布。 */
+.nav-cross { display: contents; }
+
+.um-brand {
+  display: none; align-items: center; gap: 9px; padding: 12px 14px 10px;
+  font-family: var(--font-brand); font-size: 16px; color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.um-brand wa-icon { color: var(--primary); font-size: 20px; }
+@media (max-width: 640px) {
+  .topbar .logo { display: none; }
+  .topbar-right .nav-cross { display: none; }
+  .um-brand { display: flex; }
+}
+@media (min-width: 641px) {
+  #user-dd .um-nav { display: none; }
+}
+
 .um-head { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .um-name { font-weight: 500; }
 .um-mail { color: var(--text-2); font-size: 12.5px; }
@@ -955,12 +981,35 @@ body.impersonating .side-backdrop { inset: 94px 0 0 0; }
      而主题恰恰是那个说出"这封信是什么"的字段。所以主题落到自己一行上、占满它,
      行高多出一行的高度,而不是失去它存在的意义。 */
   .row { flex-wrap: wrap; height: auto; min-height: 54px; padding: 7px 12px 7px 8px; row-gap: 1px; }
-  .row-from { width: auto; flex: 1 1 auto; min-width: 0; margin-right: 8px; font-weight: 500; }
+  /* Shrinkable to nothing: basis 0, not auto. With basis auto a long sender name sets the
+     line's minimum width, the first line overflows, and wrap hands the date the second line --
+     the one place a date on a mail row must never be. The name ellipsizes instead.
+     可以缩到没有:basis 是 0,不是 auto。basis 为 auto 时,一个长发件人名就定下了这一行的
+     最小宽度,第一行装不下,wrap 就把日期递到第二行去 —— 而那正是邮件行上的日期
+     唯一不可以在的地方。名字改用省略号。 */
+  .row-from { width: auto; flex: 1 1 0; min-width: 0; margin-right: 8px; font-weight: 500; }
   .row-date { flex: none; margin-left: auto; }
   .row-main { order: 10; flex: 1 0 100%; }
   /* The strip stands at the end of the first line, beside the date, rather than under it. */
   /* 那一条站在第一行末尾、日期旁边,而不是落到日期下面。 */
-  .row-actions { order: 5; }
+  .row-actions { order: 5; flex: none; }
+  /* The label cell keeps a seat, not a bench: one mark's width, clipped past that. On this
+     screen the seat exists so rows line up, and the second and third label were always
+     readable only in the reading pane anyway.
+     标签位留一个座,不留一条凳:一个记号的宽度,再多就裁。在这块屏幕上这个座位的意义是
+     让行与行对齐,而第二、第三个标签本来也只有在阅读区才读得清。 */
+  /* One selector deeper than the base rule, which sits LATER in this file and would win a tie.
+     比基础规则深一层 —— 它在本文件更靠后,平手时是它赢。 */
+  .row .row-labels { width: 18px; gap: 0; overflow: hidden; }
+
+  /* The pane is the page. The rounded card the list and the conversation sit inside earns its
+     keep beside a sidebar, where it separates panel from ground; here the sidebar is a drawer,
+     the ground never shows, and every pixel the card's margins hold is taken from 393.
+     窗格就是页面。列表和会话坐在里面的那张圆角卡片,在侧栏旁边是值得的 ——
+     它把面板与底色分开;而在这里,侧栏是抽屉,底色根本露不出来,
+     卡片的边距攥着的每一个像素,都是从 393 里拿走的。 */
+  .content, .sidebar.hidden + .content { margin: 0; border-radius: 0; }
+  .thread { padding: 0 10px 24px; }
 
   /* Writing a message stops being a window and becomes the page.
      A floating window is a way of writing one thing without losing sight of another, and a
