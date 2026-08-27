@@ -443,7 +443,16 @@ function renderFolderView(main) {
   // 搜索是从四面八方一起答的,所以按地址归拢着显示。shown 按归拢后的顺序重写,
   // 并且仍是那唯一一份、所有下标都指向它的扁平列表 —— 范围选择、框选、拖动
   // 数过标题时就像数过空气一样。
-  const groups = dst.view === 'search' ? groupByFolder(dst.shown) : null;
+  // On a phone the results come flat, exactly like every other listing. The address headings
+  // earn their room on a desktop; at 393px they cut the list into crooked slices, and a deep
+  // path is wider than the screen -- the one thing a heading must never cost is the layout it
+  // heads. Where a hit lives is still one press away, on the row's own menu.
+  // 手机上结果平铺,和其余每一种列表完全一样。那些地址标题在桌面上对得起它们占的地方;
+  // 到了 393px,它们把列表切成歪歪扭扭的几段,而一条深路径比屏幕还宽 ——
+  // 标题唯一不可以付出的代价,就是它所领起的版式本身。一条命中住在哪儿,
+  // 仍旧一按就到:行自己的菜单里。
+  const groups = dst.view === 'search' && !matchMedia('(max-width: 640px)').matches
+    ? groupByFolder(dst.shown) : null;
   if (groups) dst.shown = groups.flatMap((g) => g.nodes);
   const selN = dst.sel.size;
   const trashCtx = dst.view === 'trash' || dst.inTrash;

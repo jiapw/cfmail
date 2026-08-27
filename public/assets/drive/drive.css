@@ -303,7 +303,13 @@
 .drv-ghead:hover { background: var(--hover); color: var(--text); }
 .drv-ghead wa-icon { flex: none; color: var(--text-3); }
 .drv-ghead:hover wa-icon { color: inherit; }
-.drv-ghead .pth { display: flex; align-items: center; gap: 1px; min-width: 0; white-space: nowrap; }
+/* One line that CLIPS. Left free to wrap or overflow, a deep path is wider than any pane and
+   quietly stretches the whole table -- every column then stands crooked and the page scrolls
+   sideways. The tail of the path survives the clip; the head is the part everyone already knows.
+   一行,而且**会裁**。放任它换行或溢出,一条深路径比任何窗格都宽,悄悄把整张表撑开 ——
+   于是每一列都站歪了,页面还能横着滚。被裁掉的是路径的头,那本来就是人人已知的部分。 */
+.drv-ghead .pth { display: flex; align-items: center; gap: 1px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.drv-ghead .pth > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .drv-ghead .pth > span { overflow: hidden; text-overflow: ellipsis; }
 /* The last name is the folder itself -- let it keep its full width and squeeze the ancestors */
 /* 最后一个名字是文件夹本身 —— 让它保留完整宽度,挤压前面的祖先 */
@@ -1053,8 +1059,8 @@
      pane's and the scroll container's own.
      列表通到两墙:导轨已经浮起来了,窗格的左留白不再隔开任何东西,右留白只会截短每个文件的名字。
      两层留白一起去掉 —— 窗格的,和滚动容器自己的。 */
-  .drv-main { padding: 0; }
-  .drv-scroll { padding-left: 0; padding-right: 0; }
+  .drv-main { padding: 0; overflow-x: hidden; }
+  .drv-scroll { padding-left: 0; padding-right: 0; overflow-x: hidden; }
 
   /* The arrows leave the preview; the finger that would have pressed them flicks instead.
      箭头退出预览;本来要按它们的那根手指,改为一甩。 */
