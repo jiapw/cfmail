@@ -1270,4 +1270,8 @@ body.impersonating .boot-loading { min-height: calc(100vh - 34px); min-height: c
 .bk-hint a { color: inherit; font-weight: 600; text-decoration: underline; margin-left: auto; white-space: nowrap; }
 
 /* 后台导航分组分隔线 / separators between the console's tab groups */
-.tab-sep { width: 1px; align-self: stretch; background: var(--border); margin: 6px 8px; }
+/* flex:none is the line itself. In the scrolling strip a 1px flex child is the first thing
+   shrink takes, leaving its margins standing around nothing -- a gap where a line should be.
+   flex:none 就是这条线本身。在横滚的条里,1px 的弹性子项是收缩第一个下手的对象,
+   剩下两侧的 margin 围着一个不存在的东西站着 —— 该有线的地方只剩一道空隙。 */
+.tab-sep { flex: none; width: 1px; align-self: stretch; background: var(--border); margin: 6px 8px; }
