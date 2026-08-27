@@ -2637,8 +2637,56 @@ export function openPreviewFor(files, node) {
   pv = { list: files.length ? files : [node], idx, el: document.createElement('div'), vers: null, verSel: null };
   pv.el.className = 'drv-view';
   document.body.appendChild(pv.el);
+  bindPvSwipe(pv.el);
   paintPreview();
   window.addEventListener('keydown', pvKeys);
+}
+
+/**
+ * A flick turns the page.
+ *
+ * On a phone the two arrow buttons are gone -- 44px circles over the picture cost more than
+ * they give on a 393px screen -- and the finger does what the arrows did: a horizontal flick
+ * shows the next file, or the previous one. The listeners live on the overlay itself, which
+ * survives every repaint, so this is bound once per opening.
+ *
+ * What does NOT page: a flick that is mostly vertical (that is a scroll), one that started on
+ * the player's controls (that is a seek), one that started inside anything that scrolls
+ * sideways itself (a spreadsheet, a wide code file -- the flick belongs to it), and anything
+ * from a mouse, whose wheel and buttons already have their own ways.
+ *
+ * 一甩就是翻页。
+ *
+ * 手机上那两个箭头按钮不在了 —— 393px 的屏幕上,两个压在画面上的 44px 圆钮,占的比给的多 ——
+ * 手指来做箭头做过的事:横着一甩,下一个文件,或上一个。监听器挂在浮层本体上,
+ * 它在每次重绘中都活着,所以每次打开只绑一回。
+ *
+ * 什么**不**翻页:大体竖直的一甩(那是滚动),从播放器控件上开始的(那是拖进度),
+ * 从任何自己会横向滚动的东西里开始的(表格、宽代码 —— 这一甩属于它),
+ * 以及一切来自鼠标的 —— 它的滚轮和按钮各有各的路。
+ */
+function bindPvSwipe(el) {
+  let t0 = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (e.target.closest('.drv-pl-bar, .drv-pvvers, .drv-view-head')) { t0 = null; return; }
+    // A container that scrolls sideways owns its own horizontal gestures.
+    // 自己会横滚的容器,横向手势归它自己。
+    for (let n = e.target; n && n !== el; n = n.parentElement) {
+      if (n.scrollWidth > n.clientWidth + 4) { t0 = null; return; }
+    }
+    t0 = { x: e.clientX, y: e.clientY, at: performance.now() };
+  });
+  el.addEventListener('pointercancel', () => { t0 = null; });
+  el.addEventListener('pointerup', (e) => {
+    if (!t0 || e.pointerType !== 'touch') return;
+    const dx = e.clientX - t0.x;
+    const dy = e.clientY - t0.y;
+    const dt = performance.now() - t0.at;
+    t0 = null;
+    if (dt > 700 || Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    pvStep(dx < 0 ? 1 : -1);
+  });
 }
 
 // The archive browser opens entries through this same overlay. It registers rather than being

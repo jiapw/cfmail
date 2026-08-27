@@ -395,6 +395,15 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
   .row-actions .hover-act { display: none; }
   .row-actions .row-menu { display: inline-flex; }
   .row:hover .row-date { visibility: visible; }
+  /* No :hover state may do anything on a touch screen. iOS simulates hover on the first tap,
+     and when it judges that the hover "revealed content" it swallows the tap instead of
+     delivering the click -- a mail row that needs pressing twice. So on touch, hovering a row
+     changes nothing at all, and the first tap is the click.
+     触摸屏上不许任何 :hover 生效。iOS 会把第一次触碰模拟成悬停,
+     一旦它判定悬停"显示了内容",就吞掉这一击、不派发 click —— 于是邮件行要按两次。
+     所以在触摸端,悬停一行什么也不改变,第一击就是那一次点击。 */
+  .row:hover { box-shadow: none; z-index: auto; }
+  .row:hover .row-actions { display: flex; }
 }
 .draft-red { color: var(--wa-color-danger-on-quiet); }
 .disabled-row { opacity: .55; }
