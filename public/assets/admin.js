@@ -54,8 +54,25 @@ export async function renderAdmin(tab) {
     .filter((x) => x.sep || !x.globalOnly || me.user.is_admin)
     .map((x) => (x.sep ? '<span class="tab-sep"></span>' : `<a class="tab ${x.key === tab ? 'active' : ''}" href="#/admin/${x.key}">${esc(x.name)}</a>`))
     .join('');
-  show(`
-  <div class="page">
+  // The head stands still. Switching tabs used to rebuild the whole page, chrome included --
+  // which flashed, and reset the tab strip's own scroll, so on a phone the strip snapped back
+  // to its left end the moment you chose anything on its right. Now the shell is built once;
+  // a switch relights the tabs in place and replaces only the body. The strip's scroll is not
+  // touched at all on that path -- where you scrolled it is where it stays -- and only a fresh
+  // build brings the lit tab into view, since a fresh strip has no position worth keeping.
+  // 头部站着不动。过去切换页签重建整页,壳也在内 —— 一闪,页签条自己的滚动也被清零,
+  // 于是手机上刚选中右端的哪个,那条就弹回左端。现在壳只建一次;
+  // 切换只是原地换亮哪个页签、只替换主体。那条路径完全不碰条的滚动 ——
+  // 你把它滚到哪儿,它就留在哪儿 —— 只有全新建立的条才把亮着的页签带进视野,
+  // 因为新条没有值得保留的位置。
+  const standing = qs('#app > .page[data-kind="admin"]');
+  if (standing) {
+    qsa('.page-head .tab', standing).forEach((a) =>
+      a.classList.toggle('active', a.getAttribute('href') === `#/admin/${tab}`));
+    qs('#admin-body', standing).innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
+  } else {
+    show(`
+  <div class="page" data-kind="admin">
     <header class="page-head">
       <wa-button class="icon" appearance="plain" href="#/" aria-label="${esc(t('back_mail'))}">${icon('back', 20)}</wa-button>
       <h1>${esc(t('admin'))}</h1>
@@ -63,6 +80,8 @@ export async function renderAdmin(tab) {
     </header>
     <div class="page-body wide" id="admin-body"><div class="loading">${esc(t('loading'))}</div></div>
   </div>`);
+    qs('.page-head .tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
   const body = qs('#admin-body');
   try {
     if (tab === 'overview') await tabOverview(body);
