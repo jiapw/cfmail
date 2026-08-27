@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, fmtDay, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser } from './ui.js';
 import { t } from './i18n.js';
 import { tabImport } from './admin-import.js';
 import { tabExport } from './admin-export.js';
@@ -744,7 +744,7 @@ async function tabBackup(body) {
     <div class="bk-row">
       <span class="bk-name">${esc(a.name)}</span>
       <span class="dim">${fmtSize(a.size)}</span>
-      <span class="dim bk-when">${a.at ? fmtDateTime(a.at) : ''}</span>
+      <span class="dim bk-when">${a.at ? fmtDay(a.at) : ''}</span>
       <a class="bk-dl" href="/api/admin/backup/file/${esc(a.key)}" download>${icon('download', 15)}</a>
     </div>`;
   const group = (title, list) => `
