@@ -1,20 +1,29 @@
 #!/usr/bin/env node
 // One command to put CFMail on a Cloudflare account, and the same command to upgrade it later.
 //
-//   node scripts/deploy.mjs --token <API token> [--domain example.com] [--entry mail]
+//   node scripts/deploy.mjs [--token <API token>] [--domain example.com] [--entry mail]
 //
-// Everything it needs arrives as an argument. The token is held in memory, passed to wrangler
-// through the environment of the child process, and never written anywhere -- not to
-// wrangler.jsonc, not to a dotfile, not to the log. Losing this terminal loses the token, which
-// is the intended property: the operator keeps custody of it.
+// Everything it needs arrives as an argument -- or, in a terminal, is asked for when missing:
+// the token, the account when the token can see several, the domain and entry host on a first
+// install. A wrong answer is not the end either: an invalid token can be pasted again, and a
+// missing permission names itself, waits while the token is edited in the dashboard, and is
+// probed again. Nothing is created until every check passes.
+//
+// The token is held in memory, passed to wrangler through the environment of the child process,
+// and never written anywhere -- not to wrangler.jsonc, not to a dotfile, not to the log. Losing
+// this terminal loses the token, which is the intended property: the operator keeps custody.
 //
 // Every step reads the account's current state before it changes anything, so running this twice
 // is the same as running it once. That is not a convenience -- it is what makes it safe to run
 // against an account that already has CFMail on it, which is the normal case for an upgrade.
+// The two steps that change what is live -- migrations, publishing -- pause for a yes first;
+// --yes skips the pauses. Outside a terminal (CI, a pipe, the .env.deploy* two-account routine)
+// nothing asks and nothing pauses: exactly the old behaviour, arguments required.
 //
 
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar } from './wrangler-config.mjs';
@@ -47,33 +56,46 @@ const BK_NAME = 'cfmail-backup';
 const args = parseArgs(process.argv.slice(2));
 if (args.help) usage(0);
 
-const TOKEN = args.token || process.env.CLOUDFLARE_API_TOKEN;
-if (!TOKEN) {
-  console.error('\n✗ No API token given.\n');
-  usage(1);
-}
-const DRY = !!args['dry-run'];
-const domain = (args.domain || '').trim().toLowerCase();
-const entryArg = (args.entry || '').trim().toLowerCase();
+// In a terminal, whatever is missing is asked for, and whatever the dashboard has to fix can be
+// fixed and re-checked without starting over. Anywhere else -- CI, a pipe, the two-account
+// .env.deploy* routine -- the old contract holds unchanged: arguments or nothing, no pauses.
+// CFMAIL_INTERACTIVE=1/0 overrides the detection, for terminal wrappers that hide the TTY.
+const INTERACTIVE = process.env.CFMAIL_INTERACTIVE
+  ? process.env.CFMAIL_INTERACTIVE === '1'
+  : !!(process.stdin.isTTY && process.stdout.isTTY) && !process.env.CI;
 
-if (domain && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
+let TOKEN = args.token || process.env.CLOUDFLARE_API_TOKEN || '';
+const DRY = !!args['dry-run'];
+let domain = (args.domain || '').trim().toLowerCase();
+let entryArg = (args.entry || '').trim().toLowerCase();
+
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+const LABEL_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+if (domain && !DOMAIN_RE.test(domain)) {
   die(`--domain "${domain}" does not look like a domain name`);
 }
-if (entryArg && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(entryArg)) {
+if (entryArg && !LABEL_RE.test(entryArg)) {
   die(`--entry "${entryArg}" is not a valid DNS label`);
 }
 
 function usage(code) {
   console.log(`
 Usage:
-  node scripts/deploy.mjs --token <API token> [--domain <domain>] [--entry <subdomain>]
+  node scripts/deploy.mjs [--token <API token>] [--domain <domain>] [--entry <subdomain>]
 
-  --token <t>     Cloudflare API token (required). Used for this run only; never saved.
-                  May also be given as the CLOUDFLARE_API_TOKEN environment variable.
-  --domain <d>    The company domain to connect. Required the first time; run this again
+  Run in a terminal, it asks for whatever is missing (the token, the domain and entry host on
+  a first install), pauses for a yes before migrations and before publishing, and when a fix
+  is needed in the Cloudflare dashboard it says which one and re-checks after you make it.
+  Run anywhere else (CI, a pipe), it asks nothing and pauses nowhere; arguments are required.
+
+  --token <t>     Cloudflare API token. Used for this run only; never saved. May also be given
+                  as the CLOUDFLARE_API_TOKEN environment variable, or typed in when asked.
+  --domain <d>    The company domain to connect. Needed the first time; run this again
                   with a different one for every further domain.
   --entry <e>     Entry subdomain, e.g. mail -> https://mail.<domain>.
-                  Required the first time; read back from the configuration afterwards.
+                  Needed the first time; read back from the configuration afterwards.
+  --yes           Answer yes to every pause (migrations, publishing). What was asked and
+                  answered stays printed either way.
   --account <id>  Account id. Only needed when this token can see more than one.
   --adopt         The account already has a Worker / database / bucket by these names but this
                   checkout has no configuration proving they are the same deployment. Pass this
@@ -128,6 +150,65 @@ const step = (s) => console.log('\n▸ ' + s);
 const log = (s) => console.log('  ' + s);
 const skip = (s) => console.log('  · ' + s);
 const plan = (s) => console.log('  + ' + s);
+
+// --- Interactive plumbing ---------------------------------------------------
+// Small on purpose: one question at a time, a default in brackets, Enter takes it.
+// Every call sits behind INTERACTIVE, so none of this exists for CI.
+
+/** One shared readline for the whole run -- opening and closing one per question would drop
+ *  whatever input sat buffered in the closed one. When stdin ends (piped answers running out),
+ *  exiting cannot happen inside the close event: an answer already given may still be in flight
+ *  as a microtask, and exiting there would discard it. So the end is only recorded, and the
+ *  next question -- the moment that actually has nobody left to ask -- says so and stops. */
+let rlShared = null;
+let inputEnded = false;
+let markEnded;
+const endedSignal = new Promise((r) => { markEnded = r; });
+function rl() {
+  if (!rlShared) {
+    rlShared = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rlShared.on('SIGINT', () => { console.log(''); process.exit(130); });
+    rlShared.on('close', () => { inputEnded = true; markEnded(); });
+  }
+  return rlShared;
+}
+
+/** One line in, one answer out. Empty answer takes the default. */
+async function ask(q, def = '') {
+  const prompt = '  ? ' + q + (def ? ` [${def}] ` : ' ');
+  // Racing against the end of input keeps a question from waiting forever on a stdin that
+  // can never answer -- the top-level await would otherwise just hang the process.
+  const a = inputEnded ? null : await Promise.race([rl().question(prompt), endedSignal.then(() => null)]);
+  if (a === null) {
+    console.error('\n✗ input ended before this question could be answered; stopping. Nothing further was changed.');
+    process.exit(1);
+  }
+  return a.trim() || def;
+}
+
+/** A yes/no pause before something that changes live state. Non-interactive runs and --yes
+ *  answer yes silently -- the old automatic behaviour. */
+async function confirm(q, def = true) {
+  if (!INTERACTIVE || args.yes) return true;
+  const a = (await ask(`${q} (${def ? 'Y/n' : 'y/N'})`)).toLowerCase();
+  return a === '' ? def : a === 'y' || a === 'yes';
+}
+
+/** Something only the dashboard can do was just explained above this call. Wait while the
+ *  person does it, then tell the caller to check again. Returns false to give up --
+ *  which is the only answer outside a terminal. */
+async function fixAndRetry(what = 'When that is done') {
+  if (!INTERACTIVE) return false;
+  const a = (await ask(`${what} -- press Enter to check again, or q to stop:`)).toLowerCase();
+  return a !== 'q' && a !== 'quit';
+}
+
+/** The person said no to a pause. Not an error and nothing is broken -- but the deploy did
+ *  not finish, and a chained command (deploy && deploy) must not sail on. */
+function stopped(msg) {
+  console.log('\n■ ' + msg + '\n');
+  process.exit(1);
+}
 
 async function cf(method, p, body) {
   const res = await fetch(API + p, {
@@ -191,34 +272,77 @@ function wranglerOut(argv) {
 console.log('\n=== CFMail deploy ===');
 if (DRY) console.log('    (--dry-run: report only, change nothing)');
 
-// --- 1. Token and account -------------------------------------------------
 // --- 1. Token and account --------------------------------------------------
 
 step('Token and account');
+if (!TOKEN) {
+  if (!INTERACTIVE) {
+    console.error('\n✗ No API token given.\n');
+    usage(1);
+  }
+  log('No token was given. Everything here is driven by a Cloudflare API token you create once:');
+  log('  Cloudflare dashboard -> My Profile -> API Tokens -> Create Token -> Custom token');
+  log('  (an account-owned token from Manage Account -> API Tokens works the same)');
+  log('The permissions it needs are in the "API token permissions" table in the README. An');
+  log('imperfect token is fine to start with: every missing permission is found and named');
+  log('here, before anything is created, and you can fix the token and continue.');
+  TOKEN = (await ask('Paste the API token (q to stop):')).trim();
+  if (!TOKEN || TOKEN.toLowerCase() === 'q') stopped('No token -- nothing was created or changed.');
+}
+
 // Listing accounts is both the validity check and the account lookup. The obvious endpoint,
 // /user/tokens/verify, is the wrong one here: a token created under Account API Tokens is not
 // owned by a user, and that endpoint answers "Invalid API Token" for a perfectly good one.
-const accounts = await cf('GET', '/accounts');
-if (!accounts.ok) {
-  die('this token does not work: ' + why(accounts) +
+let accList;
+for (;;) {
+  const accounts = await cf('GET', '/accounts');
+  accList = accounts.ok ? (accounts.data.result || []) : null;
+  if (accList && accList.length) break;
+  const reason = accList ? 'it is valid but can see no accounts at all' : why(accounts);
+  const advice = 'this token does not work: ' + reason +
       '\n  Check that it was copied whole, that it has not expired, and that it carries at' +
-      '\n  least one account-scope permission. Permission changes take about a minute.');
+      '\n  least one account-scope permission -- that is what makes accounts visible to it.' +
+      '\n  A just-edited token takes about a minute to change behaviour.';
+  if (!INTERACTIVE) die(advice);
+  console.error('\n  ✗ ' + advice.replace(/\n {2}/g, '\n    '));
+  const again = (await ask('Paste a corrected token, or press Enter to re-check this one (q to stop):')).trim();
+  if (again.toLowerCase() === 'q') stopped('The token never validated; nothing was created or changed.');
+  if (again) TOKEN = again;
 }
-const accList = accounts.data.result || [];
 log('token accepted');
+
 let accountId = args.account || process.env.CLOUDFLARE_ACCOUNT_ID || '';
+let accountName = '';
 if (accountId) {
   const hit = accList.find((a) => a.id === accountId);
-  if (!hit && accList.length) die(`this token cannot see account ${accountId}. It can see:\n` + accList.map((a) => `    ${a.id}  ${a.name}`).join('\n'));
-  log(`account ${accountId}${hit ? ' (' + hit.name + ')' : ''}`);
-} else if (accList.length === 1) {
-  accountId = accList[0].id;
-  log(`account ${accountId} (${accList[0].name})`);
-} else if (accList.length === 0) {
-  die('this token can see no accounts at all -- check its account-scope permissions.');
-} else {
-  die('this token can see several accounts; name one with --account:\n' + accList.map((a) => `    ${a.id}  ${a.name}`).join('\n'));
+  if (hit) {
+    accountName = hit.name || '';
+  } else {
+    const listing = accList.map((a) => `    ${a.id}  ${a.name}`).join('\n');
+    if (!INTERACTIVE) die(`this token cannot see account ${accountId}. It can see:\n` + listing);
+    log(`⚠ this token cannot see account ${accountId}; picking from the ones it can see instead`);
+    accountId = '';
+  }
 }
+if (!accountId) {
+  if (accList.length === 1) {
+    accountId = accList[0].id;
+    accountName = accList[0].name || '';
+  } else if (!INTERACTIVE) {
+    die('this token can see several accounts; name one with --account:\n' +
+        accList.map((a) => `    ${a.id}  ${a.name}`).join('\n'));
+  } else {
+    log('this token can see several accounts:');
+    accList.forEach((a, i) => log(`  ${i + 1}) ${a.id}  ${a.name}`));
+    for (;;) {
+      const pick = (await ask(`Deploy to which one? (1-${accList.length}, or paste an account id):`)).trim();
+      const hit = /^\d+$/.test(pick) ? accList[Number(pick) - 1] : accList.find((a) => a.id === pick);
+      if (hit) { accountId = hit.id; accountName = hit.name || ''; break; }
+      log(`"${pick}" is neither a number in range nor a listed account id -- try again`);
+    }
+  }
+}
+log(`account ${accountId}${accountName ? ' (' + accountName + ')' : ''}`);
 
 // --- 1b. Token permissions -------------------------------------------------
 //
@@ -303,27 +427,52 @@ async function checkPermissions(zoneId) {
     const send = await cf('GET', `/zones/${zoneId}/email/sending/subdomains`);
     if (AUTH_DENIED(send)) {
       log('⚠ Zone · Email Sending · Edit -- absent, or this account is not on Workers Paid.');
-      log('  Either way the deployment works and receives mail; only sending out is affected,');
-      log('  and the API says "Unauthorized" for both causes, so the message cannot tell them apart.');
+      log('  Everything still installs and the domain still receives mail; only sending to the');
+      log('  outside world needs this, and the API answers "Unauthorized" for both causes alike.');
+      log('  If sending out matters to you, either fix works and can be made now or later:');
+      log('    plan:  dashboard -> Workers & Pages -> Plans -> Workers Paid ($5/month --');
+      log('           receiving and internal mail stay free, only outward sending needs it)');
+      log('    token: add Account · Email Sending · Edit (it lives under Account scope,');
+      log('           not under Zone, where a similarly named receiving permission sits)');
+      log('  The "Sending mail" step at the end tries again and waits there if it still cannot.');
     } else {
       skip('Zone · Email Sending · Edit');
     }
   }
 
-  if (missing.length) {
-    die('This token is missing ' + missing.length + ' permission' + (missing.length > 1 ? 's' : '') + ':\n\n'
+  return missing;
+}
+
+/**
+ * Permissions are a thing the dashboard fixes and this script can only name. So naming them is
+ * done as precisely as possible, and then -- in a terminal -- the script waits, lets the person
+ * edit the token, and probes again, as many times as it takes. Nothing exists yet at this point,
+ * so patience costs nothing.
+ */
+async function ensurePermissions(zoneId) {
+  for (;;) {
+    const missing = await checkPermissions(zoneId);
+    if (!missing.length) return;
+    const advice = 'This token is missing ' + missing.length + ' permission' + (missing.length > 1 ? 's' : '') + ':\n\n'
       + missing.map((m) => `    ${m.name}\n      needed to ${m.why}`).join('\n\n')
-      + '\n\n  Add them at Cloudflare dashboard -> My Profile -> API Tokens -> your token -> Edit.'
+      + '\n\n  Add them at Cloudflare dashboard -> My Profile -> API Tokens -> your token -> Edit'
+      + '\n  (an account-owned token lives at Manage Account -> API Tokens instead).'
       + '\n  Account-scope permissions are in the "Account Resources" section, zone-scope ones in'
       + '\n  "Zone Resources"; several exist in both lists and only one of the two counts.'
-      + '\n  Changes take about a minute to take effect. Nothing has been created yet.');
+      + '\n  Changes take about a minute to take effect. Nothing has been created yet.';
+    if (!INTERACTIVE) die(advice);
+    console.error('\n  ✗ ' + advice.replace(/\n/g, '\n  '));
+    if (!(await fixAndRetry('Edit the token there'))) {
+      stopped('Permissions still missing -- nothing was created or changed.');
+    }
+    log('probing again (a fresh edit can take about a minute to show up)');
   }
 }
 
 // --- 2. Existing state ----------------------------------------------------
 
 step('Token permissions');
-await checkPermissions(null);
+await ensurePermissions(null);
 
 step('What the account already has');
 const readCfg = (file, label) => {
@@ -375,14 +524,56 @@ if (CONFIG !== MAIN_CONFIG) {
 // names, but this checkout has no configuration proving it is the same deployment. Deploying
 // anyway would publish over somebody else's Worker and adopt their database. Everything else --
 // both present, or both absent -- is an ordinary upgrade or an ordinary first install.
-if (!haveConfig && (workerExists || d1 || r2) && !args.adopt) {
-  die(`this account already holds resources by these names, but there is no ${CFG_NAME} here to prove they are the same deployment.\n` +
-      '  If this is a CFMail you installed earlier and you mean to keep it (all data is preserved), run again with --adopt:\n' +
-      `    node scripts/deploy.mjs --token <token> --domain ${domain || '<domain>'} --entry ${entryArg || '<subdomain>'} --adopt\n` +
-      '  If it is not, change these names or use another account -- otherwise this would overwrite somebody else\'s.');
+//
+// In a terminal the question is asked outright, and it is the one question --yes does not
+// answer: adopting somebody else's deployment by reflex is the exact accident this guard is for,
+// so the yes has to be typed (or given as --adopt, which is the same deliberate act).
+if (!haveConfig && (workerExists || d1 || r2)) {
+  if (args.adopt) {
+    log('--adopt: taking over the existing resources; their data is untouched');
+  } else if (INTERACTIVE) {
+    log(`⚠ this account already holds resources by these names, but there is no ${CFG_NAME} here`);
+    log('  to prove they are the same deployment.');
+    log('  If they are a CFMail you installed earlier: adopting keeps all their data, and this');
+    log('  run becomes an ordinary upgrade. If you are not sure what they are, answer no and');
+    log('  look at the account first -- publishing over somebody else\'s Worker is not undoable.');
+    const a = (await ask('Adopt these existing resources? (yes/No)')).toLowerCase();
+    if (a !== 'y' && a !== 'yes') {
+      stopped('Left the existing resources untouched. Run again and answer yes (or pass --adopt) once you are sure they are yours.');
+    }
+    log('adopting: their data is untouched');
+  } else {
+    die(`this account already holds resources by these names, but there is no ${CFG_NAME} here to prove they are the same deployment.\n` +
+        '  If this is a CFMail you installed earlier and you mean to keep it (all data is preserved), run again with --adopt:\n' +
+        `    node scripts/deploy.mjs --token <token> --domain ${domain || '<domain>'} --entry ${entryArg || '<subdomain>'} --adopt\n` +
+        '  If it is not, change these names or use another account -- otherwise this would overwrite somebody else\'s.');
+  }
 }
-if (!haveConfig && (workerExists || d1 || r2) && args.adopt) {
-  log('--adopt: taking over the existing resources; their data is untouched');
+
+// A first install has no routes to read the domain and entry host back from, so they have to
+// come from somewhere -- and in a terminal, "somewhere" can be a question with an explanation,
+// rather than an error naming a flag.
+const routesKnown = (existing?.routes || []).filter((r) => r?.custom_domain && typeof r.pattern === 'string' && !r.pattern.includes('<'));
+if (INTERACTIVE && !routesKnown.length && !domain) {
+  log('');
+  log('This looks like a first install: no entry host is configured yet. One domain is needed');
+  log('to start -- mail will be received on it, and the web client served from a subdomain.');
+  log('The domain must already be in this Cloudflare account as a full zone (the domain using');
+  log('Cloudflare\'s nameservers); if it is not there yet, the next step says how to add it.');
+  for (;;) {
+    const d = (await ask('Domain to connect (e.g. example.com; q to stop):')).trim().toLowerCase();
+    if (d === 'q') stopped('A first install needs a domain. Nothing has been created or changed yet.');
+    if (DOMAIN_RE.test(d)) { domain = d; break; }
+    log(`"${d}" does not look like a domain name -- letters, digits, dots and dashes only`);
+  }
+}
+if (INTERACTIVE && !routesKnown.length && domain && !entryArg) {
+  for (;;) {
+    const e = (await ask(`Entry subdomain -- the web client will live at https://<this>.${domain}`, 'mail')).trim().toLowerCase();
+    if (LABEL_RE.test(e)) { entryArg = e; break; }
+    log(`"${e}" is not a valid DNS label -- letters, digits and dashes only`);
+  }
+  log(`the entry host will be ${entryArg}.${domain}`);
 }
 
 // --- 3. Resources ---------------------------------------------------------
@@ -426,23 +617,50 @@ else {
 let zone = null;
 if (domain) {
   step(`Domain ${domain}`);
-  const zones = await cf('GET', `/zones?name=${encodeURIComponent(domain)}`);
-  if (!zones.ok) die('could not look up the zone: ' + why(zones) + '\n  The token needs Zone - Zone - Read.');
-  zone = (zones.data.result || [])[0];
-  if (!zone) die(`${domain} is not in this account. Add it to Cloudflare first and point the domain at its nameservers.`);
-  if (zone.account?.id && zone.account.id !== accountId) {
-    die(`${domain} belongs to account ${zone.account.id} (${zone.account.name || '?'}), which is not the one being deployed to.`);
-  }
-  // Email Routing needs the zone's own nameservers. A partial (CNAME) setup cannot receive mail,
-  // and finding that out after everything else is built is a poor way to learn it.
-  if (zone.type && zone.type !== 'full') {
-    die(`${domain} is set up as a "${zone.type}" zone. Email Routing needs a full zone -- the domain's nameservers pointing at Cloudflare.`);
+  // Three of the four ways this lookup fails are fixed in the dashboard, not here -- adding the
+  // domain to Cloudflare, converting it to a full zone, widening the token. So each failure says
+  // exactly what to do there, and in a terminal the script waits and looks again.
+  for (;;) {
+    const zones = await cf('GET', `/zones?name=${encodeURIComponent(domain)}`);
+    if (!zones.ok) {
+      log('✗ could not look up the zone: ' + why(zones));
+      log('  The token needs Zone · Zone · Read -- in the token editor it sits under');
+      log('  "Zone Resources" (scope it to all zones or at least to this one).');
+      if (INTERACTIVE && (await fixAndRetry('Edit the token'))) continue;
+      die('the zone could not be looked up; see above for the fix. The database and buckets already created are reused by the next run.');
+    }
+    zone = (zones.data.result || [])[0];
+    if (!zone) {
+      log(`✗ ${domain} is not in this Cloudflare account yet. Adding it is a dashboard step:`);
+      log('    dashboard -> Add a site -> enter the domain -> Free plan is fine ->');
+      log('    then set the two nameservers it shows at your domain registrar.');
+      log('  The zone shows up here the moment it is added; mail starts flowing only after the');
+      log('  nameservers take effect, but the deploy does not need to wait for that part.');
+      if (INTERACTIVE && (await fixAndRetry('Add it there'))) continue;
+      die(`${domain} is not in this account. Add it to Cloudflare first, then run this again -- everything created so far is reused.`);
+    }
+    if (zone.account?.id && zone.account.id !== accountId) {
+      die(`${domain} belongs to account ${zone.account.id} (${zone.account.name || '?'}), not to the one being deployed to (${accountId}).\n` +
+          '  Either deploy into that account instead (--account, or the matching token), or move the\n' +
+          '  domain between accounts in the dashboard first.');
+    }
+    // Email Routing needs the zone's own nameservers. A partial (CNAME) setup cannot receive mail,
+    // and finding that out after everything else is built is a poor way to learn it.
+    if (zone.type && zone.type !== 'full') {
+      log(`✗ ${domain} is set up as a "${zone.type}" zone, and Email Routing needs a full one --`);
+      log('  the domain using Cloudflare\'s own nameservers, not a CNAME setup.');
+      log('  Converting is a dashboard action: the domain -> Overview -> convert to full setup,');
+      log('  then update the nameservers at the registrar.');
+      if (INTERACTIVE && (await fixAndRetry('Convert it there'))) continue;
+      die(`${domain} is a "${zone.type}" zone. Email Routing needs a full zone -- convert it, then run this again.`);
+    }
+    break;
   }
   if (zone.status !== 'active') log(`⚠ this zone's status is "${zone.status}"; mail will not arrive until the nameservers take effect`);
   log(`zone ${zone.id}(${zone.status})`);
-  // The zone-scope permissions can only be probed once there is a zone to probe them against,
-  // and this is still before anything has been created.
-  await checkPermissions(zone.id);
+  // The zone-scope permissions can only be probed once there is a zone to probe them against --
+  // and like the account-scope ones, a missing one is named, fixed in the dashboard, re-probed.
+  await ensurePermissions(zone.id);
 }
 
 // --- 5. Configuration -----------------------------------------------------
@@ -589,8 +807,32 @@ step('Database migrations');
   if (/No migrations to apply/i.test(before.out)) {
     skip('no migrations to apply');
   } else {
+    // Show what is about to run before asking. wrangler prints the pending list as a table;
+    // the file names are the rows worth repeating here.
+    const pending = before.out.split('\n')
+      .filter((l) => l.includes('.sql'))
+      .map((l) => l.replace(/[\u2500-\u257F|]/g, '').trim())
+      .filter(Boolean);
+    log(`migrations to apply to the remote database${pending.length ? ` (${pending.length})` : ''}:`);
+    for (const m of pending) log('    ' + m);
+    log('Migrations only ever add tables, columns and indexes -- none rewrites or deletes existing');
+    log('rows, the running Worker keeps working while they apply, and applied ones are recorded');
+    log('and never run twice.');
+    if (!(await confirm('Apply them now?', true))) {
+      stopped('Stopped before the migrations. The database and the deployed code are exactly as they were; run this again when ready.');
+    }
     const code = wrangler(['d1', 'migrations', 'apply', D1_NAME, '--remote', '-c', CONFIG], { input: 'y\n' });
-    if (code !== 0) die('a migration failed; stopping here -- no new code has been deployed yet');
+    if (code !== 0) {
+      die('a migration failed -- wrangler\'s own error is above this line. Stopping here: no new\n' +
+          '  code has been deployed, and the running Worker is untouched.\n' +
+          '  What to look at:\n' +
+          '    - the failing statement is named in the error above\n' +
+          `    - the database\'s view of it:  npx wrangler d1 migrations list ${D1_NAME} --remote -c ${CFG_NAME}\n` +
+          '    - a migration that conflicts with existing data (say, a new UNIQUE index over rows\n' +
+          '      that already duplicate) has to be fixed in migrations/ before this can continue\n' +
+          '  Migrations that did apply are recorded and will not run twice -- fix the failing one\n' +
+          '  and run this again; it picks up exactly where it stopped.');
+    }
     // wrangler prints its confirmation blurb and exits 0 even when it applied nothing, so the
     // only trustworthy check is to ask again.
     // Ask again, and be willing to ask more than once.
@@ -614,8 +856,12 @@ step('Database migrations');
       if (!settled && i < 2) log('the migration list has not settled yet; asking again');
     }
     if (!settled) {
-      die('migrations are still pending after applying them; stopping here. Look for yourself:\n' +
-          '    npx wrangler d1 migrations list ' + D1_NAME + ' --remote');
+      die('migrations are still pending after applying them; stopping here, before any new code\n' +
+          '  is published against a schema that may not hold it. Look for yourself:\n' +
+          `    npx wrangler d1 migrations list ${D1_NAME} --remote -c ${CFG_NAME}\n` +
+          '  If that says "No migrations to apply", the disagreement was momentary -- run this\n' +
+          '  again and it will sail through. If migrations are truly still pending, apply them\n' +
+          '  by hand with the same command s/list/apply/ and watch the error.');
     }
     log('migrations applied');
   }
@@ -632,7 +878,30 @@ step('Deploy the Worker');
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'sync-vendor.mjs'), '--strict'], { cwd: ROOT, stdio: 'inherit' });
   if ((r.status ?? 1) !== 0) die('public/vendor/ could not be brought in sync -- the deploy stops before publishing.\n  The message above names what is stale and the command that fixes it.');
 }
-if (wrangler(['deploy', '-c', CONFIG]) !== 0) die('the deploy failed');
+// The last pause before anything goes live: what is about to be published, and where.
+{
+  let routes = [];
+  try { routes = (JSON.parse(stripJsonc(fs.readFileSync(CONFIG, 'utf8'))).routes || []).map((r) => r?.pattern).filter(Boolean); } catch { /* summary only */ }
+  log('about to publish:');
+  log(`    Worker    ${WORKER}`);
+  log(`    account   ${accountId}${accountName ? ' (' + accountName + ')' : ''}`);
+  log(`    config    ${CFG_NAME}`);
+  log(`    routes    ${routes.join(', ') || '(none)'}`);
+  if (!(await confirm('Publish now?', true))) {
+    stopped('Stopped before publishing. Migrations already applied stay applied -- they only add, and the running version does not mind them. The Worker itself is unchanged; run this again to publish.');
+  }
+}
+if (wrangler(['deploy', '-c', CONFIG]) !== 0) {
+  die('wrangler deploy failed -- its own error is above this line. The token, resources and\n' +
+      '  configuration all checked out earlier, so the usual causes are:\n' +
+      '    - a transient Cloudflare or network error: running this again is safe, and often enough\n' +
+      '    - the Worker bundle itself (a syntax error, the size limit): the error above names it\n' +
+      `    - a binding in ${CFG_NAME} pointing at something that was deleted by hand\n` +
+      '  To watch the same deploy with wrangler\'s full output:\n' +
+      `    npx wrangler deploy -c ${CFG_NAME}\n` +
+      '  Migrations already applied are fine to leave as they are: they only add, and the running\n' +
+      '  version is untouched by them.');
+}
 
 // --- Backup credentials ---------------------------------------------------
 // The container has no bindings, so it needs a token of its own to reach D1 and R2 with. It is
@@ -665,26 +934,49 @@ if (args['backup-token']) {
 
 if (zone) {
   step(`Receiving mail for ${domain}`);
-  const st = await cf('GET', `/zones/${zone.id}/email/routing`);
-  if (st.ok && st.data.result?.enabled) {
-    skip('Email Routing is already on');
-  } else {
-    const en = await cf('POST', `/zones/${zone.id}/email/routing/enable`);
-    if (en.ok) log('Email Routing switched on; MX and SPF records were written for you');
-    else {
-      log('⚠ could not switch Email Routing on: ' + why(en));
-      log('  Switch it on by hand at Dashboard -> the domain -> Email -> Email Routing, then run this again');
+  // Everything here the script does itself; the dashboard is only ever the fallback, and when
+  // it is needed the loop says which switch to flip there and checks again afterwards.
+  let routingOn = false;
+  for (;;) {
+    const st = await cf('GET', `/zones/${zone.id}/email/routing`);
+    if (st.ok && st.data.result?.enabled) {
+      skip('Email Routing is on');
+      routingOn = true;
+      break;
     }
+    const en = await cf('POST', `/zones/${zone.id}/email/routing/enable`);
+    if (en.ok) {
+      log('Email Routing switched on; MX and SPF records were written for you');
+      routingOn = true;
+      break;
+    }
+    log('⚠ could not switch Email Routing on: ' + why(en));
+    log('  It can be switched on by hand: dashboard -> the domain -> Email -> Email Routing ->');
+    log('  Get started / Enable. That is the switch that makes Cloudflare accept mail for the');
+    log('  domain at all; without it nothing arrives.');
+    if (INTERACTIVE && (await fixAndRetry('Flip it there, or fix the cause named above'))) continue;
+    log('  Continuing without it: everything else deploys, but mail will not arrive until it is');
+    log('  on. Running this again later finishes the job.');
+    break;
   }
 
-  const ca = await cf('PUT', `/zones/${zone.id}/email/routing/rules/catch_all`, {
-    name: `catch-all to ${WORKER}`,
-    enabled: true,
-    matchers: [{ type: 'all' }],
-    actions: [{ type: 'worker', value: [WORKER] }],
-  });
-  if (ca.ok) log(`catch-all → Worker "${WORKER}"`);
-  else log('⚠ could not set the catch-all rule: ' + why(ca));
+  for (;;) {
+    const ca = await cf('PUT', `/zones/${zone.id}/email/routing/rules/catch_all`, {
+      name: `catch-all to ${WORKER}`,
+      enabled: true,
+      matchers: [{ type: 'all' }],
+      actions: [{ type: 'worker', value: [WORKER] }],
+    });
+    if (ca.ok) { log(`catch-all → Worker "${WORKER}"`); break; }
+    log('⚠ could not set the catch-all rule: ' + why(ca));
+    log('  This is the rule that hands every incoming message to CFMail. It usually fails only');
+    log('  when Email Routing itself is not on yet (see above), or the token lacks');
+    log('  Zone · Email Routing Rules · Edit.');
+    if (INTERACTIVE && (await fixAndRetry(routingOn ? 'Fix the cause' : 'Fix Email Routing first'))) continue;
+    log('  Continuing: set it by hand at dashboard -> the domain -> Email -> Email Routing ->');
+    log(`  Routing rules -> Catch-all -> Send to a Worker -> ${WORKER}, or run this again.`);
+    break;
+  }
 
   // --- Sending -----------------------------------------------------------
   // Receiving and sending are two different services on the same domain, and a domain that can
@@ -693,34 +985,52 @@ if (zone) {
   // addresses -- so the first thing that breaks is the verification code sent to a new
   // colleague's personal mailbox, with an error nobody would connect to a missing onboarding.
   step(`Sending mail from ${domain}`);
-  if (await sendingReady(zone.id, domain)) {
-    skip('Email Sending is already on; the bounce and DKIM records are in place');
-  } else {
+  // Receiving and sending are different services, and only sending has a price: outward mail
+  // needs the account on Workers Paid. Everything the script can do itself it does (the
+  // onboarding call, re-checking DNS); what it cannot do -- pay, or widen the token -- it
+  // names, and in a terminal it waits and tries the onboarding again.
+  for (;;) {
+    if (await sendingReady(zone.id, domain)) {
+      skip('Email Sending is on; the bounce and DKIM records are in place');
+      break;
+    }
     const r = wranglerOut(['email', 'sending', 'enable', domain, '--zone-id', zone.id]);
     // Cloudflare publishes the records itself when the zone is on its own DNS, which is a
     // precondition here -- so their presence is the honest check that it actually took.
     if (await sendingReady(zone.id, domain)) {
       log('Email Sending switched on; the DKIM, SPF, DMARC and bounce records were written');
-    } else if (/already exists|2040/i.test(r.out)) {
+      break;
+    }
+    if (/already exists|2040/i.test(r.out)) {
       // Onboarded on the service side but the records are not in DNS. Refusing to guess why is
       // the point -- this is not the permission problem below, and saying so would send someone
       // to fix the wrong thing.
-      log('⚠ this domain is known to Email Sending, but the bounce and DKIM records are missing from DNS, so sending will still fail.');
-      log(`  See which records it wants: npx wrangler email sending dns get ${domain}`);
+      log('⚠ this domain is known to Email Sending, but the bounce and DKIM records are missing');
+      log('  from DNS, so sending will still fail.');
+      log(`  See which records it wants:  npx wrangler email sending dns get ${domain}`);
+      log('  (add them at dashboard -> the domain -> DNS -> Records if they do not appear on their own)');
     } else {
       // "Unauthorized" here is usually about money, not about the token. A free account gets a
       // permission-shaped refusal for a billing-shaped reason, and a token with every box ticked
       // will keep getting it -- so the plan is named first, and the error text is not to be
       // trusted about which of the two it is.
-      log('⚠ Email Sending could not be switched on. This domain can receive mail but not send any.');
-      log('  Two causes, in the order they actually happen:');
-      log('    - the account is not on Workers Paid, which sending out requires.');
-      log('      Note that the API answers "Unauthorized" for this, which reads like a permission problem and is not one.');
-      log('    - the token is missing Email Sending - Edit. Note that it lives under Account scope,');
-      log('      not under Zone (All Domains) -- that column only has Email Routing Rules, which is receiving.');
-      log('  You can also click it once at Dashboard -> Compute -> Email Service -> Email Sending -> Onboard Domain,');
-      log(`  or run it on its own: npx wrangler email sending enable ${domain}`);
+      log('⚠ Email Sending could not be switched on. The domain receives mail fine; it cannot');
+      log('  send to the outside world yet. Two causes, in the order they actually happen:');
+      log('    - the account is not on Workers Paid, which outward sending requires:');
+      log('        dashboard -> Workers & Pages -> Plans -> Workers Paid ($5/month).');
+      log('      Receiving and internal mail stay free -- only sending out needs the plan, and');
+      log('      the API answers "Unauthorized" for this, which reads like a permission problem');
+      log('      and is not one.');
+      log('    - the token is missing Account · Email Sending · Edit. It lives under Account');
+      log('      scope in the token editor, not under Zone -- the similarly named entry there');
+      log('      (Email Routing Rules) is receiving, and does not help.');
+      log('  The dashboard can also do the onboarding itself, once, with no token involved:');
+      log('    Compute -> Email Service -> Email Sending -> Onboard Domain.');
     }
+    if (INTERACTIVE && (await fixAndRetry('Fix one of these'))) continue;
+    log('  Continuing: receiving works now, and running this again after the fix switches');
+    log('  sending on. Nothing else is held up by it.');
+    break;
   }
 }
 
@@ -754,3 +1064,5 @@ Done.
   Optional: bot protection  node scripts/setup-turnstile.mjs
             (run it again after connecting a domain, so the widget knows the new entry host)
 `);
+// stdin was resumed if anything was asked; without this the process would sit open.
+process.exit(0);
