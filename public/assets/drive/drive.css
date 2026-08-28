@@ -1438,7 +1438,13 @@
 .pdfe-layer { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; }
 .drv-pdf.editing .pdfe-layer { cursor: default; }
 .drv-pdf.editing .pdfe-layer * { pointer-events: none; }
-.pdfe-layer .pdfe-act, .pdfe-layer .pdfe-type, .pdfe-layer .pdfe-grip { pointer-events: auto; }
+/* The exemptions must outrank the blanket rule above -- same prefix, or the universal
+   selector wins on specificity and every one of these goes numb to the mouse.
+   豁免行必须压过上面那条一刀切 —— 前缀得一样长，
+   否则通配选择器在特异性上胜出，这几样东西对鼠标全都没了知觉。 */
+.drv-pdf.editing .pdfe-layer .pdfe-act, .drv-pdf.editing .pdfe-layer .pdfe-act *,
+.drv-pdf.editing .pdfe-layer .pdfe-type, .drv-pdf.editing .pdfe-layer .pdfe-type *,
+.drv-pdf.editing .pdfe-layer .pdfe-grip { pointer-events: auto; }
 
 /* An outline under the pointer is an offer; the one around the selection is a fact. The first is
    thin and the colour of a hint, the second is solid and the colour of the interface.
