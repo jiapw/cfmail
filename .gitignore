@@ -3,6 +3,12 @@
 # ---------------------------------------------------------------------------
 .env
 .env.*
+# deploy.mjs 交互模式经用户同意保存的 token。上面的 .env.* 已经罩住它,
+# 仍然按名字单列:这一行是防线也是文档,哪怕文件现在还不存在。
+# The token deploy.mjs saves with explicit consent. Covered by .env.* above,
+# and still listed by name: this line is both a guard and the documentation,
+# even while the file does not exist yet.
+.env.deploy.token
 .dev.vars
 .dev.vars.*
 *.pem
