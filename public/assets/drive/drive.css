@@ -816,13 +816,16 @@
   display: inline-block; margin: 0 auto 14px; padding: 4px 14px; border-radius: 999px;
   background: var(--hover); color: var(--text-2); font-size: 12px;
 }
-/* The row naming the codepage a text is being read through. Right-aligned and quiet: it is an
-   instrument on the glass, not part of the document behind it.
-   标出"这段文字正被以哪个代码页读出"的那一行。靠右、安静:
-   它是玻璃上的仪表,不是玻璃后面那份文档的一部分。 */
-.drv-encrow { display: flex; justify-content: flex-end; padding: 0 0 10px; flex: none; }
-.drv-docwin.drv-mdwin .drv-encrow { padding: 12px 14px 0; }
-.drv-docwin.drv-codewin .drv-encrow { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+/* The codepage selector's slot on the overlay toolbar, beside the download button. Empty for
+   everything that is not text -- and an empty slot must not hold a seat in the flex gap. The
+   toolbar sits on the fixed dark mask, so the theme variables do not speak here.
+   预览工具栏上代码页选择器的槽,在下载按钮旁边。凡不是文本的它都空着 ——
+   而空着的槽不许在 flex 的间距里占座。工具栏落在固定的深色遮罩上,主题变量在这儿不作数。 */
+.drv-pv-enc { display: flex; align-items: center; }
+.drv-pv-enc:empty { display: none; }
+.drv-pv-enc select.enc-sel { color: #ccc; border-color: rgba(255, 255, 255, .25); background: transparent; }
+.drv-pv-enc select.enc-sel:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.drv-pv-enc select.enc-sel option { background: #26262b; color: #eee; }
 /* Plain text and code render directly on the themed window, theme ink, no inner box.
    txt reads in the interface font, code in monospace.
    纯文本与代码直接渲在主题色窗口上,用主题文字色,不再套内框。txt 用界面字体,代码用等宽。 */

@@ -61,6 +61,21 @@ const fmtBytes = (n) => {
 const noprev = (node) => `
   <div class="noprev" style="margin:auto">${fileIcon(node.name, 72)}<div>${esc(t('drv_no_preview'))}</div></div>`;
 
+/** The codepage selector lives on the overlay's toolbar, beside the download button -- an
+ *  instrument on the chrome, the same place the editors keep theirs, not a bar across the
+ *  document. The slot is repainted with each shell, so moving to another file clears it by
+ *  itself; destroy clears it too, for whatever keeps the shell.
+ *  代码页选择器住在预览层的工具栏上、下载按钮旁边 —— 是外壳上的仪表,
+ *  与编辑器放它的地方相同,而不是横在文档上的一条。槽随外壳一起重画,
+ *  翻到别的文件自然清空;destroy 再清一次,兜住沿用外壳的情形。 */
+function mountEncSel(box, urls, cp, onPick) {
+  const slot = box.closest('.drv-view')?.querySelector('.drv-pv-enc');
+  if (!slot) return;
+  slot.innerHTML = encSelectHtml(cp);
+  slot.querySelector('select')?.addEventListener('change', (e) => onPick(e.target.value));
+  urls.push({ revoke: () => { slot.innerHTML = ''; } });
+}
+
 // Everything scrolls inside the rounded document window, never at the overlay edge
 // 一切滚动都发生在圆角文档窗口内部,绝不挂在遮罩边上
 const win = (inner, cls = '') => `<div class="drv-docwin${cls ? ' ' + cls : ''}">${inner}</div>`;
@@ -143,11 +158,11 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 样式表与解析是两件互不相干的等待。
       const [, frag] = await Promise.all([mod.ensureCss(), mod.mdFragment(raw, node.parent_id || 'root')]);
       if (dead()) return { destroy };
-      box.innerHTML = win(`<div class="drv-encrow">${encSelectHtml(cp)}</div>${note}<div class="md-doc"></div>`, 'drv-mdwin');
+      box.innerHTML = win(`${note}<div class="md-doc"></div>`, 'drv-mdwin');
       const doc = box.querySelector('.md-doc');
       doc.appendChild(frag);
-      box.querySelector('.drv-encrow select')?.addEventListener('change', async (e) => {
-        const frag2 = await mod.mdFragment(decodeBytes(bytes, e.target.value), node.parent_id || 'root');
+      mountEncSel(box, urls, cp, async (enc) => {
+        const frag2 = await mod.mdFragment(decodeBytes(bytes, enc), node.parent_id || 'root');
         if (doc.isConnected) doc.replaceChildren(frag2);
       });
       // The same click rules the editor follows: an anchor scrolls, a relative link is resolved
@@ -186,7 +201,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       const cp = detect(bytes);
       const note = node.size > TXT_CAP
         ? `<div class="drv-trunc">${esc(t('drv_truncated', '2 MB'))}</div>` : '';
-      box.innerHTML = `<div class="drv-docwin drv-codewin"><div class="drv-encrow">${encSelectHtml(cp)}</div>${note}<div class="code-body"></div></div>`;
+      box.innerHTML = `<div class="drv-docwin drv-codewin">${note}<div class="code-body"></div></div>`;
       const mod = await import('../code/view.js?v=' + encodeURIComponent(store.brand?.version || ''));
       if (dead()) return { destroy };
       let view = await mod.renderOnly({
@@ -205,12 +220,12 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 重读是整个视图换掉:它持有的是一份不可变文档,把每个字都换掉的诚实做法就是重建。
       // 计数器挡住手快连拨两下会留下两个视图的情形。
       let vgen = 0;
-      box.querySelector('.drv-encrow select')?.addEventListener('change', async (e) => {
+      mountEncSel(box, urls, cp, async (enc) => {
         const g = ++vgen;
         view.destroy();
         const next = await mod.renderOnly({
           parent: box.querySelector('.code-body'),
-          text: decodeBytes(bytes, e.target.value),
+          text: decodeBytes(bytes, enc),
           name: node.name,
         });
         if (g !== vgen || dead()) { next.destroy(); return; }
@@ -239,7 +254,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       const firstWhole = r0.status !== 206;
       if (dead()) return { destroy };
       const cp = detect(first);
-      box.innerHTML = win(`<div class="drv-encrow">${encSelectHtml(cp)}</div><pre class="drv-txt uif"></pre>
+      box.innerHTML = win(`<pre class="drv-txt uif"></pre>
         <div class="drv-textmore drv-dim"></div>`);
       const pre = box.querySelector('pre');
       const foot = box.querySelector('.drv-textmore');
@@ -336,7 +351,7 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       };
       win_.addEventListener('scroll', onScroll, { passive: true });
       urls.push({ revoke: () => { io.disconnect(); win_.removeEventListener('scroll', onScroll); } });
-      box.querySelector('.drv-encrow select')?.addEventListener('change', (e) => begin(e.target.value));
+      mountEncSel(box, urls, cp, (enc) => begin(enc));
       begin(cp.enc);
       // Read until the window is full before handing over to the scroll triggers. A file that
       // is several windows long but short lines -- or a very tall preview -- would otherwise
