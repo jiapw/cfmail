@@ -1469,6 +1469,13 @@ function menuItems(nodes) {
         fn: () => window.open(`${location.pathname}${editorHash(editor, single.id)}`, '_blank', 'noopener'),
       });
     }
+    // A PDF edits inside its own preview rather than in a window of its own, so this entry
+    // opens the preview and walks straight through to the pencil.
+    // PDF 在它自己的预览里编辑,而不是另开一个窗口,所以这一项打开预览、径直走到那支铅笔跟前。
+    if (single.kind === 'file' && canEdit
+      && ((single.mime || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(single.name))) {
+      out.push({ ic: 'pencil', label: t('pdfe_open'), fn: () => { pvEditWanted = single.id; openPreview(single); } });
+    }
     out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles([single]) });
     // The views that answer from everywhere at once owe you the address. In a folder you are
     // already standing in it, so the offer would be to go where you are.
@@ -2892,6 +2899,8 @@ async function richPreview(n) {
 
 let pvPdf = null; // { task, io, gen } 当前预览中的 PDF 加载任务与懒渲染观察器
 let pvPdfEdit = null; // 正在进行的一次 PDF 编辑会话
+let pvEditWanted = null; // 列表菜单里点了"编辑"的文件 id:预览一立起来就直接进入编辑
+// The file id whose edit was asked for from the list menu: editing starts as soon as the preview stands.
 
 function destroyPdfPreview() {
   if (!pvPdf) return;
@@ -2906,10 +2915,15 @@ function destroyPdfPreview() {
   pvPdf = null;
 }
 
-async function renderPdfPreview(node, box) {
+async function renderPdfPreview(node, box, andEdit = false) {
   destroyPdfPreview();
   const my = { task: null, pager: null, gen: 0 };
   pvPdf = my;
+  // Editing asked for from the list: begin alongside the preview rather than after it. The
+  // editor fetches its own complete copy of the file, so neither loads behind the other.
+  // 从列表里就要求了编辑:与预览并肩开始,而不是排在它后面。
+  // 编辑器自己去取一份完整的文件字节,谁也不用等谁。
+  if (andEdit) startPdfEdit(node);
   const gen = my.gen;
   try {
     const mod = await loadThumbMod();
@@ -3075,6 +3089,11 @@ async function startPdfEdit(n) {
     const r = await fetch(n.arcUrl || dlUrl(n.id, true, verTag(n)));
     if (!r.ok) throw new Error('fetch');
     const bytes = new Uint8Array(await r.arrayBuffer());
+    // The fetch took time, and the preview may have moved on to another file. That file's box
+    // and that file's viewer are not ours to attach an editor for this one to.
+    // 取字节花了时间,预览可能已经翻到了别的文件。那个文件的容器和查看器,
+    // 轮不到这一份的编辑器往上挂。
+    if (!pv || pv.list[pv.idx] !== n) return;
     const box = pv.el.querySelector('.drv-pdf');
     if (!box || !pvPdf) return;
     const { editSession } = await import('./pdfui.js?v=' + encodeURIComponent(store.brand?.version || ''));
@@ -4419,6 +4438,10 @@ async function showSub(id) {
 
 async function paintPreview() {
   const n = pv.list[pv.idx];
+  // Claimed once and cleared: a stale wish to edit must not fire on some later preview.
+  // 取一次就清:一个过期的"想编辑"不能在之后的某次预览上突然生效。
+  const wantEdit = pvEditWanted === n.id;
+  pvEditWanted = null;
   destroyPdfPreview();
   pvRich?.destroy?.();
   pvRich = null;
@@ -4632,7 +4655,7 @@ async function paintPreview() {
     bindPreviewResize(docBox);
   }
   if (isPdf) {
-    renderPdfPreview(n, pv.el.querySelector('.drv-pdf'));
+    renderPdfPreview(n, pv.el.querySelector('.drv-pdf'), wantEdit);
   } else if (!IMG_RE.test(mime) && !VID_RE.test(mime) && !isAudio) {
     richPreview(n);
   }
