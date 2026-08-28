@@ -148,3 +148,14 @@ html.wa-dark, .wa-dark {
 .code-body .cm-panel button:hover { background: var(--hover); }
 .code-body .cm-searchMatch { background: color-mix(in srgb, var(--primary) 25%, transparent); }
 .code-body .cm-searchMatch-selected { background: color-mix(in srgb, var(--primary) 45%, transparent); }
+
+/* ---------- Phone ---------- */
+/* The number column tightens to half its desktop padding -- the pixels belong to the code --
+   and plain text drops the gutter altogether: lines without structure earn no rail. Folding by
+   pressing the number itself (view.js) is what makes the narrow column still workable.
+   行号列的内边距收到桌面的一半 —— 像素属于代码 —— 纯文本则整条边栏都不要:
+   没有结构的行,挣不来一条导轨。按行号本身即可折叠(view.js),窄列因此依然好用。 */
+@media (max-width: 640px) {
+  .code-body .cm-lineNumbers .cm-gutterElement { padding: 0 2px 0 9px; }
+  .code-plain .cm-gutters { display: none; }
+}

@@ -25,7 +25,7 @@ import { esc, icon, qs, toast, confirmDialog, fmtDateTime } from '../ui.js';
 import { store, setTitle } from '../app.js';
 import { openDoc, saveDoc, mergeDoc, draft, refreshThumb, MAX_BYTES } from '../edit/session.js';
 import { extOf } from '../edit/kinds.js';
-import { ensureCss, langFor, loadCm, themeStyle } from './view.js';
+import { ensureCss, foldingLineNumbers, langFor, loadCm, themeStyle } from './view.js';
 
 const V = () => encodeURIComponent(store.brand?.version || '');
 // Shared with the Markdown editor on purpose: soft wrap is one preference about reading, and a
@@ -43,10 +43,12 @@ const mimeFor = (name) => (extOf(name) === 'csv' ? 'text/csv' : 'text/plain');
 
 async function buildView(text) {
   const cm = await loadCm();
-  const { folding } = await langFor(cm, ed.doc.name);
+  const { lang, folding } = await langFor(cm, ed.doc.name);
+  // Plain text: the stylesheet may drop the gutter on a phone / 纯文本:手机上样式表可收掉边栏
+  document.querySelector('.code-app')?.classList.toggle('code-plain', !lang);
   const wrapOn = ed.wrap;
   const ext = [
-    cm.lineNumbers(),
+    foldingLineNumbers(cm),
     cm.highlightActiveLineGutter(),
     cm.highlightSpecialChars(),
     cm.history(),

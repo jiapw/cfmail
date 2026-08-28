@@ -274,6 +274,7 @@ export default {
   drv_dl_title: "Downloading {0} item(s)",
   drv_download: "Download",
   drv_drop_hint: "Drop files here to upload",
+  drv_empty_file: "This file is empty (0 bytes).",
   drv_empty_folder: "This folder is empty",
   drv_empty_recent: "No recent files",
   drv_empty_search: "No matching files",

@@ -274,6 +274,7 @@ export default {
   drv_dl_title: "正在下載 {0} 項",
   drv_download: "下載",
   drv_drop_hint: "將檔案拖曳到這裡即可上傳",
+  drv_empty_file: "這個檔案是空的（0 位元組）",
   drv_empty_folder: "資料夾是空的",
   drv_empty_recent: "還沒有近期存取的檔案",
   drv_empty_search: "沒有符合的檔案",

@@ -3240,6 +3240,17 @@ function pvVersionsHtml() {
   return `<div class="drv-pvvers"><div class="vhd">${esc(t('drv_ver_title', vs.length))}</div>${vs.map(row).join('')}</div>`;
 }
 
+/** The same history as a dropdown under the caption -- the phone's shape of the rail. Both are
+ *  always drawn; the stylesheet shows the one that fits the width.
+ *  同一份历史,做成标题下的下拉 —— 侧栏在手机上的形状。两个都画;样式表按宽度亮那个合身的。 */
+function pvVerPickHtml() {
+  const vs = pv?.vers;
+  if (!vs?.length) return '';
+  const cur = pv.verSel || vs.find((v) => v.head)?.id;
+  const opt = (v) => `<option value="${esc(v.id)}" ${v.id === cur ? 'selected' : ''}>v${v.seq} · ${esc(fmtDateTime(v.created_at))}</option>`;
+  return `<div class="drv-verpick">${icon('restore', 16)}<select aria-label="${esc(t('drv_ver_title', vs.length))}">${vs.map(opt).join('')}</select></div>`;
+}
+
 /** Put the rail in without repainting the preview: the file may be a video that just started
  *  playing, and a repaint would take it back to zero to say something it could be told quietly.
  *  把左栏放进去,而不重绘预览:那个文件可能是一段刚开始播的视频,
@@ -3250,6 +3261,10 @@ function mountVersionRail() {
   body.querySelector('.drv-pvvers')?.remove();
   const html = pvVersionsHtml();
   if (html) body.insertAdjacentHTML('afterbegin', html);
+  // The dropdown twin, kept in the same breath / 同一口气里维护的下拉孪生
+  pv.el.querySelector('.drv-verpick')?.remove();
+  const pick = pvVerPickHtml();
+  if (pick) pv.el.querySelector('.drv-view-head')?.insertAdjacentHTML('afterend', pick);
 }
 
 async function loadVersions(node) {
@@ -3289,12 +3304,17 @@ function paintPvShell(n, body) {
       ${pvCanEditPdf(n) ? `<wa-button class="icon" appearance="plain" data-pdfedit aria-label="${esc(t('pdfe_open'))}">${icon('pencil', 20)}</wa-button>` : ''}
       <wa-button class="icon" appearance="plain" data-dl aria-label="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>
     </div>
+    ${pvVerPickHtml()}
     <div class="drv-view-body">
       ${pvVersionsHtml()}
       ${pv.list.length > 1 ? `<wa-button class="icon drv-view-nav prev" appearance="plain" data-nav="-1">${icon('back', 22)}</wa-button>` : ''}
       ${body}
       ${pv.list.length > 1 ? `<wa-button class="icon drv-view-nav next" appearance="plain" data-nav="1">${icon('next', 22)}</wa-button>` : ''}
     </div>`;
+  pv.el.onchange = (e) => {
+    const sel = e.target.closest('.drv-verpick select');
+    if (sel) pickVersion(sel.value);
+  };
   pv.el.onclick = (e) => {
     const vrow = e.target.closest('[data-ver]');
     if (e.target.closest('[data-close]')) closePreview();
@@ -4254,6 +4274,17 @@ async function paintPreview() {
   pvRich?.destroy?.();
   pvRich = null;
   killMedia(pv.el); // the outgoing preview's stream dies here / 旧预览的流在此断开
+  // Zero bytes is an answer, not a task. Every renderer downstream would fetch nothing, parse
+  // nothing, and report the failure of whichever step tripped over the nothing first -- a
+  // different cryptic error per file type for the same plain fact. Say the fact instead.
+  // 零字节是一个答案,不是一件差事。下游随便哪个渲染器都会取到空、解析到空,
+  // 然后报出"最先被这份空绊倒的那一步"的失败 —— 同一个平淡的事实,按文件类型各报一种天书。
+  // 不如把事实直接说出来。
+  if (!(verView(n).size > 0)) {
+    paintPvShell(n, noprevHtml(n, t('drv_empty_file')));
+    loadVersions(n);
+    return;
+  }
   // Archive entries extract client-side on first view: spinner shell first, then the real
   // preview off a blob URL. The archive readers fetch only this entry's byte range.
   // 压缩包条目首次预览时在客户端解出:先上加载壳,再用 blob URL 走正常预览。

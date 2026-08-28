@@ -31,6 +31,7 @@ export {
 } from '@codemirror/commands';
 export {
   foldGutter, foldKeymap, codeFolding, foldService, foldAll, unfoldAll,
+  foldCode, unfoldCode, foldedRanges,
   indentOnInput, indentUnit, bracketMatching, syntaxHighlighting, HighlightStyle,
   StreamLanguage, LanguageSupport,
 } from '@codemirror/language';

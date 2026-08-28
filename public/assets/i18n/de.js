@@ -274,6 +274,7 @@ export default {
   drv_dl_title: "{0} Element(e) werden heruntergeladen",
   drv_download: "Herunterladen",
   drv_drop_hint: "Dateien zum Hochladen hierher ziehen",
+  drv_empty_file: "Diese Datei ist leer (0 Byte).",
   drv_empty_folder: "Dieser Ordner ist leer",
   drv_empty_recent: "Keine kürzlich verwendeten Dateien",
   drv_empty_search: "Keine passenden Dateien",
