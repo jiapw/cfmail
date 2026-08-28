@@ -633,6 +633,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
 
   function onMove(pageNo, e) {
     const L = layers.get(pageNo);
+    if (ed.isDropped(L.st)) return;
     // A page waiting for a placing click says so from the cursor -- silence here is what made
     // a successful upload look like nothing had happened.
     // 等着被点一下放东西的页面,由光标把这话说出来 —— 这里的沉默,
@@ -653,6 +654,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   function onDown(pageNo, e) {
     if (tool !== 'pick' || editing || e.button !== 0) return;
     const L = layers.get(pageNo);
+    if (ed.isDropped(L.st)) return;
     const [x, y] = pointIn(pageNo, e);
     const hit = hitAt(L.st, x, y);
     if (!hit) return;
@@ -748,6 +750,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     // 一次拖动结束时残留的那下点击,是拖动的尾巴,不是一次选择。
     if (clickWasDrag) { clickWasDrag = false; return; }
     const L = layers.get(pageNo);
+    if (ed.isDropped(L.st)) return;
     const [x, y] = pointIn(pageNo, e);
     if (tool === 'text') {
       openEditor(pageNo, null, '', [x, y]);
@@ -780,6 +783,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   function onDouble(pageNo, e) {
     if (tool !== 'pick' || editing) return;
     const L = layers.get(pageNo);
+    if (ed.isDropped(L.st)) return;
     const [x, y] = pointIn(pageNo, e);
     const hit = hitAt(L.st, x, y);
     if (hit?.added && hit.kind === 'text') openEditor(pageNo, hit, hit.edit.write.text, null);
@@ -840,6 +844,19 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         parts.push(`<div class="pdfe-grip" style="left:${r.left + r.width}%;top:${r.top + r.height}%"></div>`);
       }
     }
+    // The page's own two verbs, at its corner -- and, struck from the document, its shroud with
+    // the one verb left: coming back.
+    // 这一页自己的两个动词,停在页角 —— 而被划掉之后,盖上罩,只剩一个动词:回来。
+    if (ed.isDropped(L.st)) {
+      parts.push(`<div class="pdfe-pagegone">
+        <button data-pg="restore">${icon('restore', 16)}<span>${esc(t('pdfe_page_restore'))}</span></button>
+      </div>`);
+    } else {
+      parts.push(`<div class="pdfe-pagectl">
+        <button data-pg="rot" title="${esc(t('pdfe_rotate'))}">${icon('refresh', 15)}</button>
+        <button data-pg="del" title="${esc(t('pdfe_page_del'))}" ${ed.liveCount <= 1 ? 'disabled' : ''}>${icon('trash', 15)}</button>
+      </div>`);
+    }
     L.el.innerHTML = parts.join('');
     const grip = L.el.querySelector('.pdfe-grip');
     if (grip) {
@@ -849,7 +866,43 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         startResize(pageNo, ev);
       };
     }
+    L.el.querySelectorAll('[data-pg]').forEach((b) => {
+      b.onmousedown = (ev) => ev.stopPropagation();
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        pageAction(pageNo, b.dataset.pg);
+      };
+    });
     if (editing?.pageNo === pageNo) L.el.appendChild(editing.el);
+  }
+
+  /** Turn, strike, or bring back one page. All three are ordinary notes underneath, so undo,
+   *  the dirty flag and the save already know about them.
+   *  转一页、划掉一页,或把它带回来。三者在底下都是普通便条,
+   *  于是撤销、脏标记和保存本来就认得它们。 */
+  function pageAction(pageNo, act) {
+    const L = layers.get(pageNo);
+    if (act === 'rot') {
+      const e = ed.rotatePage(L.st);
+      e.fresh = false;
+      select(null);
+      changed(pageNo);
+      return;
+    }
+    if (act === 'del') {
+      if (ed.liveCount <= 1) return;
+      ed.dropPage(L.st);
+      select(null);
+      paintBar();
+      for (const n of layers.keys()) paintLayer(n);
+      return;
+    }
+    if (act === 'restore') {
+      const e = L.st.edits.find((x) => x.what === 'droppage');
+      if (e) ed.undo(L.st, e);
+      paintBar();
+      for (const n of layers.keys()) paintLayer(n);
+    }
   }
 
   // ---------- changing things ----------
@@ -1017,7 +1070,11 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     const pages = [...dirtyPages];
     dirtyPages.clear();
     try {
-      await viewer.swapDoc(await ed.build());
+      // The preview's document keeps removed pages in place, shrouded -- real removal would
+      // renumber every page under the holders. Only the save builds without them.
+      // 预览用的文档让被删的页蒙着罩留在原地 —— 真删会把每个页格底下的页码都挪一遍。
+      // 只有保存时才搭一份没有它们的。
+      await viewer.swapDoc(await ed.build({ keepRemoved: true }));
       for (const n of pages) await viewer.repaint(n);
       // The changes are on the page now; the marks that stood in for them stand down.
       // 改动如今已在页面上;那些替它们站岗的记号就此撤哨。

@@ -933,6 +933,8 @@ export default {
   pdfe_pick: "Выбрать",
   pdfe_redraw_fail: "Не удалось перерисовать страницу",
   pdfe_retype: "Изменить текст",
+  pdfe_page_del: "Удалить эту страницу",
+  pdfe_page_restore: "Вернуть эту страницу",
   pdfe_pw: "Пароль",
   pdfe_pw_need: "У этого PDF есть пароль - введите его, чтобы открыть",
   pdfe_pw_wrong: "Неверный пароль - попробуйте ещё раз",

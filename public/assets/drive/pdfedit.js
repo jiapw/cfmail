@@ -42,7 +42,7 @@
 //   一份 PDF 的样子,是做它的人许许多多细小决定的总和,
 //   而一个"为了改一个词就把整页重写一遍"的编辑器,已经悄悄推翻了那全部决定。
 
-import { PDFDocument, PDFName, subsetFontkit } from '/vendor/pdfedit/pdfedit.entry.js';
+import { PDFDocument, PDFName, degrees, subsetFontkit } from '/vendor/pdfedit/pdfedit.entry.js';
 import { applyEdits, pageObjects, parseOps } from './pdfobj.js';
 import { codesFor, contentOf, fontProgram, resourcesOf, runText, setContent } from './pdfpage.js';
 import { LAYERS, openFace, resolveFont } from './pdffont.js';
@@ -622,6 +622,29 @@ export async function openPdf(bytes, { local = null } = {}) {
     }
   }
 
+  /**
+   * Turn a whole page a quarter circle, or strike it from the document. Both are notes like any
+   * other -- undoable, counted, saved with the rest -- and neither touches a byte of content:
+   * a rotation is a property of the page, a removal is the page's absence.
+   *
+   * 把一整页转四分之一圈,或者把它从文档里划掉。两者都是普通的便条 ——
+   * 能撤销、被计数、随其余改动一起保存 —— 而且都不碰内容的任何一个字节:
+   * 旋转是页的一个属性,删除是页的缺席。
+   */
+  function rotatePage(st) {
+    const edit = { from: 0, to: 0, what: 'rotpage', by: 90 };
+    st.edits.push(edit);
+    return edit;
+  }
+
+  function dropPage(st) {
+    const edit = { from: 0, to: 0, what: 'droppage' };
+    st.edits.push(edit);
+    return edit;
+  }
+
+  const isDropped = (st) => st.edits.some((e) => e.what === 'droppage');
+
   /** Take back the last change, or a particular one. A change that had dragged its object
    *  somewhere puts the cached geometry back where it was.
    *  收回最后一次改动,或者某一次特定的改动。一次曾把对象拖到别处的改动,
@@ -652,13 +675,22 @@ export async function openPdf(bytes, { local = null } = {}) {
    * 而不是在读者打字的时候,因为一个子集字体的字形码是在它被拼装出来的过程中定下的 ——
    * 所以要写进流里的那些码,直到此刻才可知,而一份被搭两次的文档,两次必须搭得一样。
    */
-  async function build() {
+  async function build({ keepRemoved = false } = {}) {
     const doc = await PDFDocument.load(original);
     doc.registerFontkit(subsetFontkit);
 
+    const drops = [];
     for (const st of pages.values()) {
       if (!st.edits.length) continue;
       const pg = doc.getPage(st.index);
+      // Page-level notes first: a quarter turn is a property set once from the total, and a
+      // removal is deferred -- the preview keeps removed pages in place under a shroud, so page
+      // numbers hold still; only the save lets them go.
+      // 先处理页级便条:旋转按总量一次设定;删除则延后 —— 预览让被删的页蒙着罩留在原地,
+      // 页码因此纹丝不动;只有保存才真正放它们走。
+      const turn = st.edits.reduce((a, e) => a + (e.what === 'rotpage' ? e.by : 0), 0) % 360;
+      if (turn) pg.setRotation(degrees(((pg.getRotation().angle + turn) % 360 + 360) % 360));
+      if (!keepRemoved && isDropped(st)) drops.push(st.index);
 
       // Embed only the fonts and pictures this page's edits actually reached for.
       // 只嵌入这一页的编辑真正用到的那些字体与图片。
@@ -684,6 +716,7 @@ export async function openPdf(bytes, { local = null } = {}) {
       }
 
       const edits = st.edits.flatMap((e) => {
+        if (e.what === 'rotpage' || e.what === 'droppage') return [];
         // A move is two strokes of the pen: the bytes fall silent where they were, and reappear
         // at the end of the tape inside a translation. The transform that was in force where
         // they stood is replayed first -- an image is one bare Do whose entire shape lived in
@@ -756,6 +789,10 @@ export async function openPdf(bytes, { local = null } = {}) {
         .map((e) => ({ ...e, from: 0, to: 0 })));
       setContent(doc, pg, 'q' + String.fromCharCode(10) + inner + String.fromCharCode(10) + 'Q' + tail);
     }
+    // Removed pages go last and from the back, so each index still means the page it named.
+    // 被删的页最后处理,而且从后往前 —— 这样每个索引仍指着它当初指的那一页。
+    drops.sort((a, b) => b - a);
+    for (const i of drops) doc.removePage(i);
     return doc.save();
   }
 
@@ -769,8 +806,19 @@ export async function openPdf(bytes, { local = null } = {}) {
     addText,
     addImage,
     move,
+    rotatePage,
+    dropPage,
+    isDropped,
     undo,
     build,
+    /** How many pages the saved document would keep. A document of zero pages is not a
+     *  document, and the interface uses this to refuse the last deletion.
+     *  保存出的文档还会剩几页。零页的文档不是文档,界面靠这个数拒绝最后那一删。 */
+    get liveCount() {
+      let dropped = 0;
+      for (const st of pages.values()) if (isDropped(st)) dropped++;
+      return pageCount - dropped;
+    },
     get dirty() {
       for (const st of pages.values()) if (st.edits.length) return true;
       return false;

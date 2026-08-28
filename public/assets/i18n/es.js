@@ -933,6 +933,8 @@ export default {
   pdfe_pick: "Seleccionar",
   pdfe_redraw_fail: "No se pudo volver a dibujar la página",
   pdfe_retype: "Cambiar el texto",
+  pdfe_page_del: "Eliminar esta pagina",
+  pdfe_page_restore: "Recuperar esta pagina",
   pdfe_pw: "Contrasena",
   pdfe_pw_need: "Este PDF tiene contrasena - introducela para abrirlo",
   pdfe_pw_wrong: "Contrasena incorrecta - intentalo de nuevo",

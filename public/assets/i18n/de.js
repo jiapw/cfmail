@@ -933,6 +933,8 @@ export default {
   pdfe_pick: "Auswählen",
   pdfe_redraw_fail: "Die Seite konnte nicht neu gezeichnet werden",
   pdfe_retype: "Text ändern",
+  pdfe_page_del: "Diese Seite entfernen",
+  pdfe_page_restore: "Diese Seite zuruckholen",
   pdfe_pw: "Passwort",
   pdfe_pw_need: "Dieses PDF hat ein Passwort - zum Oeffnen eingeben",
   pdfe_pw_wrong: "Falsches Passwort - noch einmal",

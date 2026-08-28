@@ -933,6 +933,8 @@ export default {
   pdfe_pick: "選取",
   pdfe_redraw_fail: "重新算繪失敗",
   pdfe_retype: "修改文字",
+  pdfe_page_del: "刪除此頁",
+  pdfe_page_restore: "恢復此頁",
   pdfe_pw: "密碼",
   pdfe_pw_need: "這份 PDF 有密碼,輸入後才能開啟",
   pdfe_pw_wrong: "密碼不對,再試一次",
