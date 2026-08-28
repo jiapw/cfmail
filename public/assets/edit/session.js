@@ -20,6 +20,7 @@
 // 编辑器各自保有自己的状态与界面。住在这里的,只有协议。
 import { api } from '../api.js';
 import { announceChange } from '../drive/fsrc.js';
+import { detect, decodeBytes, encodeText } from './codepage.js';
 
 export const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -58,7 +59,14 @@ export async function openDoc(id) {
   if ((node.size || 0) > MAX_BYTES) throw new Error('e_md_too_big');
   const r = await fetch(dlUrlFor(id, stampOf(node)));
   if (!r.ok) throw new Error('e_drive_not_found');
-  const buf = await r.arrayBuffer();
+  const buf = new Uint8Array(await r.arrayBuffer());
+  // Judged from the bytes, not assumed: a BOM speaks for itself, valid multi-byte UTF-8 is
+  // UTF-8, and everything else is read the way this reader's Windows would read it. The raw
+  // bytes stay on the document so a person who disagrees can have them re-read another way.
+  // 从字节里断定,而不是假定:BOM 自己作数,合法的多字节 UTF-8 就是 UTF-8,
+  // 其余按这位读者的 Windows 会怎么读来读。原始字节留在文档上,
+  // 不同意这个判断的人可以让它们按别的方式重读一遍。
+  const cp = detect(buf);
   return {
     id,
     name: node.name,
@@ -69,9 +77,11 @@ export async function openDoc(id) {
     // merge when one is needed -- it is the only copy of it left anywhere once the server moves on.
     // 共同祖先。从此刻起留住,每次保存成功后推进,需要合并时交出去 ——
     // 服务器一旦向前走,它就是这份内容在世上仅剩的一份。
-    base: new TextDecoder('utf-8').decode(buf),
-    hash: await sha256Hex(new Uint8Array(buf)),
+    base: decodeBytes(buf, cp.enc),
+    hash: await sha256Hex(buf),
     token: tokenOf(node),
+    cp,
+    raw: buf,
   };
 }
 
@@ -84,7 +94,16 @@ export async function openDoc(id) {
  *
  *  三种答复而不是两种,因为"什么都没发生"和"别人先到过"都不是失败,不该被当成失败报出去。 */
 export async function saveDoc(doc, text, mime) {
-  const bytes = new TextEncoder().encode(text);
+  // Written back in the codepage it was read in. Converting a file's encoding is its owner's
+  // decision, made at the selector; a save never makes it. Characters the codepage cannot carry
+  // come back as a fourth answer instead of bytes: nothing is written until a person has seen
+  // which characters and said to go on.
+  // 按读入时的代码页写回去。改文件的编码是它主人的决定,在选择器上做;保存从不代劳。
+  // 代码页装不下的字符不会变成字节,而是变成第四种答复:
+  // 在人看过是哪些字符、说了继续之前,什么都不会写。
+  const cp = doc.cp || { enc: 'utf-8', bom: false };
+  const { bytes, bad } = encodeText(text, cp.enc, cp.bom);
+  if (bad.length) return { status: 'badchars', bad };
   if (bytes.byteLength > MAX_BYTES) return { status: 'too-big' };
   const hash = await sha256Hex(bytes);
   // The comparison the uploader makes, for the same reason: a save that changes nothing should
@@ -105,6 +124,7 @@ export async function saveDoc(doc, text, mime) {
 
   doc.base = text;
   doc.hash = hash;
+  doc.raw = bytes;
   doc.token = data?.ver_head || `${doc.id}-${data?.updated_at || Date.now()}`;
   // Any listing open in another tab is still stamping this file's address with the moment it last
   // knew about, and everything it needs in order to stop doing that came back with the write.
@@ -137,12 +157,18 @@ export async function mergeDoc(doc, mine, labels) {
   const node = meta.node;
   const r = await fetch(dlUrlFor(doc.id, stampOf(node)));
   if (!r.ok) throw new Error('e_drive_not_found');
-  const theirs = new TextDecoder('utf-8').decode(await r.arrayBuffer());
+  // Their bytes, read through the same codepage this session is reading in. The hash is taken
+  // from the bytes as they came, so "unchanged" keeps meaning what the server would say it means.
+  // 对方的字节,按本会话正在用的同一个代码页读出来。哈希取自字节原样,
+  // 于是"没有变化"的含义与服务器口中的保持一致。
+  const bufT = new Uint8Array(await r.arrayBuffer());
+  const theirs = decodeBytes(bufT, doc.cp?.enc || 'utf-8');
   const mod = await import('../md/merge.js');
   const out = mod.merge3(doc.base, mine, theirs, labels);
   out.first = mod.firstConflict(out.text);
   doc.base = theirs;
-  doc.hash = await sha256Hex(new TextEncoder().encode(theirs));
+  doc.hash = await sha256Hex(bufT);
+  doc.raw = bufT;
   doc.token = tokenOf(node);
   return out;
 }

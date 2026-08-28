@@ -816,6 +816,13 @@
   display: inline-block; margin: 0 auto 14px; padding: 4px 14px; border-radius: 999px;
   background: var(--hover); color: var(--text-2); font-size: 12px;
 }
+/* The row naming the codepage a text is being read through. Right-aligned and quiet: it is an
+   instrument on the glass, not part of the document behind it.
+   标出"这段文字正被以哪个代码页读出"的那一行。靠右、安静:
+   它是玻璃上的仪表,不是玻璃后面那份文档的一部分。 */
+.drv-encrow { display: flex; justify-content: flex-end; padding: 0 0 10px; flex: none; }
+.drv-docwin.drv-mdwin .drv-encrow { padding: 12px 14px 0; }
+.drv-docwin.drv-codewin .drv-encrow { padding: 8px 10px; border-bottom: 1px solid var(--border); }
 /* Plain text and code render directly on the themed window, theme ink, no inner box.
    txt reads in the interface font, code in monospace.
    纯文本与代码直接渲在主题色窗口上,用主题文字色,不再套内框。txt 用界面字体,代码用等宽。 */

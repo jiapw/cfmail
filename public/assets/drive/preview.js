@@ -10,6 +10,7 @@
 import { esc, fileIcon } from '../ui.js';
 import { t } from '../i18n.js';
 import { store } from '../app.js';
+import { detect, decodeBytes, encSelectHtml } from '../edit/codepage.js';
 import { docxParse, drawioDraw, drawioPages, ext as extOf, kindOf, mhtmlParse } from './doc.js';
 import { httpSource, memSource } from './rzip.js';
 import { lazyPages } from './lazypage.js';
@@ -126,8 +127,15 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 也不知道这个文件住在哪个目录里 —— 于是预览与编辑器对同一份文档各执一词,而两边都没错。
       const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${TXT_CAP - 1}` } });
       if (!r.ok && r.status !== 206) throw new Error('fetch');
-      const raw = new TextDecoder().decode(await r.arrayBuffer());
+      const bytes = new Uint8Array(await r.arrayBuffer());
       if (dead()) return { destroy };
+      // Which characters these bytes are is judged from the bytes -- BOM, then strict UTF-8,
+      // then the locale's codepage -- and the judgement stands on show: the selector re-reads
+      // the same bytes another way, no second fetch.
+      // 这些字节是哪些字,从字节里断定 —— 先 BOM,再严格 UTF-8,再落到 locale 的代码页 ——
+      // 而且这个判断摆在明面上:选择器把同一份字节按别的方式重读,不再走一次网络。
+      const cp = detect(bytes);
+      const raw = decodeBytes(bytes, cp.enc);
       const note = node.size > TXT_CAP
         ? `<div class="drv-trunc">${esc(t('drv_truncated', '2 MB'))}</div>` : '';
       const mod = await import('../md/render.js?v=' + encodeURIComponent(store.brand?.version || ''));
@@ -135,9 +143,13 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 样式表与解析是两件互不相干的等待。
       const [, frag] = await Promise.all([mod.ensureCss(), mod.mdFragment(raw, node.parent_id || 'root')]);
       if (dead()) return { destroy };
-      box.innerHTML = win(`${note}<div class="md-doc"></div>`, 'drv-mdwin');
+      box.innerHTML = win(`<div class="drv-encrow">${encSelectHtml(cp)}</div>${note}<div class="md-doc"></div>`, 'drv-mdwin');
       const doc = box.querySelector('.md-doc');
       doc.appendChild(frag);
+      box.querySelector('.drv-encrow select')?.addEventListener('change', async (e) => {
+        const frag2 = await mod.mdFragment(decodeBytes(bytes, e.target.value), node.parent_id || 'root');
+        if (doc.isConnected) doc.replaceChildren(frag2);
+      });
       // The same click rules the editor follows: an anchor scrolls, a relative link is resolved
       // against this file's folder, an outside link opens beside. The listener leaves with the
       // element it is on.
@@ -167,16 +179,19 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 上限也出于同一个理由 —— 超过两兆的源码文件属于下载,不是谁会在一块面板里读完的东西。
       const r = await fetch(inlineUrl, { headers: { Range: `bytes=0-${TXT_CAP - 1}` } });
       if (!r.ok && r.status !== 206) throw new Error('fetch');
-      const raw = new TextDecoder().decode(await r.arrayBuffer());
+      const bytes = new Uint8Array(await r.arrayBuffer());
       if (dead()) return { destroy };
+      // Judged from the bytes, changeable at the selector -- same rule as every text here.
+      // 从字节里断定,选择器上可换 —— 与这里的每种文本同一条规则。
+      const cp = detect(bytes);
       const note = node.size > TXT_CAP
         ? `<div class="drv-trunc">${esc(t('drv_truncated', '2 MB'))}</div>` : '';
-      box.innerHTML = `<div class="drv-docwin drv-codewin">${note}<div class="code-body"></div></div>`;
+      box.innerHTML = `<div class="drv-docwin drv-codewin"><div class="drv-encrow">${encSelectHtml(cp)}</div>${note}<div class="code-body"></div></div>`;
       const mod = await import('../code/view.js?v=' + encodeURIComponent(store.brand?.version || ''));
       if (dead()) return { destroy };
-      const view = await mod.renderOnly({
+      let view = await mod.renderOnly({
         parent: box.querySelector('.code-body'),
-        text: raw,
+        text: decodeBytes(bytes, cp.enc),
         name: node.name,
       });
       // The view holds a document, a parse worker's worth of state and a handful of DOM
@@ -184,6 +199,23 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 这个视图持有一份文档、一个解析器那么多的状态,以及若干 DOM 观察器。
       // 关掉面板必须把这些全部放手,而这就是负责放手的那份清单。
       urls.push({ revoke: () => view.destroy() });
+      // Re-reading swaps the whole view: it holds one immutable document, so the honest way to
+      // change every character is to build it again. The counter keeps a fast pair of switches
+      // from leaving two views in the box.
+      // 重读是整个视图换掉:它持有的是一份不可变文档,把每个字都换掉的诚实做法就是重建。
+      // 计数器挡住手快连拨两下会留下两个视图的情形。
+      let vgen = 0;
+      box.querySelector('.drv-encrow select')?.addEventListener('change', async (e) => {
+        const g = ++vgen;
+        view.destroy();
+        const next = await mod.renderOnly({
+          parent: box.querySelector('.code-body'),
+          text: decodeBytes(bytes, e.target.value),
+          name: node.name,
+        });
+        if (g !== vgen || dead()) { next.destroy(); return; }
+        view = next;
+      });
       return { destroy };
     }
 
@@ -196,47 +228,62 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // 因此改成分窗读：一次一兆，读者滚到已有内容的底部时再取下一段。
       // 什么都不丢 —— 往回滚不花一分钱 —— 且任何大小的文件都能走到尽头。
       const CHUNK = 1 << 20;
-      box.innerHTML = win(`<pre class="drv-txt uif"></pre>
+      // The first window is fetched before anything is drawn: the encoding is judged from
+      // bytes, and the BOM lives in the first three of them. The same window then serves as the
+      // first chunk fed in, and is kept so the selector can feed it in again another way.
+      // 画任何东西之前先取第一窗:编码要从字节里断定,而 BOM 就住在头三个字节里。
+      // 这一窗随后兼任喂进去的第一块,并被留下来,好让选择器按别的方式再喂一遍。
+      const r0 = await fetch(inlineUrl, { headers: { Range: `bytes=0-${CHUNK - 1}` } });
+      if (!r0.ok && r0.status !== 206) throw new Error('fetch');
+      const first = new Uint8Array(await r0.arrayBuffer());
+      const firstWhole = r0.status !== 206;
+      if (dead()) return { destroy };
+      const cp = detect(first);
+      box.innerHTML = win(`<div class="drv-encrow">${encSelectHtml(cp)}</div><pre class="drv-txt uif"></pre>
         <div class="drv-textmore drv-dim"></div>`);
       const pre = box.querySelector('pre');
       const foot = box.querySelector('.drv-textmore');
       const win_ = box.firstElementChild;
-      // One decoder across every window: a UTF-8 sequence split by a range boundary is carried
-      // over to the next chunk instead of coming out as a replacement character.
-      // 整个过程共用一个解码器:被 Range 边界切断的 UTF-8 字节序列
-      // 会被带到下一块，而不是变成一个替换字符。
-      const dec = new TextDecoder('utf-8');
-      let off = 0;
+      // One decoder across every window: a multi-byte sequence split by a range boundary is
+      // carried over to the next chunk instead of coming out as a replacement character. The
+      // generation count is what a change of codepage bumps: every read below works for one
+      // generation, and a window that comes back late finds its answer no longer wanted.
+      // 整个过程共用一个解码器:被 Range 边界切断的多字节序列会被带到下一块,
+      // 而不是变成一个替换字符。世代计数是换代码页时拨动的那一下:
+      // 下面的每次读取都效力于某一代,迟到的窗口会发现自己的答案已经没人要了。
+      let dec, off, stop;
       let busy = false;
-      let stop = false;
+      let gen = 0;
+      const feed = (buf, whole) => {
+        const len = buf.byteLength;
+        off = whole ? (node.size || len) : off + len;
+        pre.appendChild(document.createTextNode(dec.decode(buf, { stream: !whole })));
+        const done = whole || !len || (node.size && off >= node.size);
+        if (done) {
+          stop = true;
+          foot.hidden = true;
+        } else {
+          foot.textContent = t('drv_text_read', fmtBytes(off), fmtBytes(node.size));
+        }
+      };
       const step = async () => {
         if (busy || stop || dead()) return;
         busy = true;
+        const g = gen;
         try {
           const end = Math.min(off + CHUNK, node.size || off + CHUNK) - 1;
           const r = await fetch(inlineUrl, { headers: { Range: `bytes=${off}-${end}` } });
           if (!r.ok && r.status !== 206) throw new Error('fetch');
           const buf = await r.arrayBuffer();
-          if (dead()) return;
+          if (dead() || g !== gen) return;
           // A server that ignored the Range sent the whole file: that is all of it, at once
           // 服务器若无视 Range，发来的就是整个文件：那就是全部，一次性给齐
-          const whole = r.status !== 206;
-          off = whole ? (node.size || buf.byteLength) : off + buf.byteLength;
-          pre.appendChild(document.createTextNode(dec.decode(buf, { stream: !whole })));
-          const done = whole || !buf.byteLength || (node.size && off >= node.size);
-          if (done) {
-            stop = true;
-            foot.remove();
-            io.disconnect();
-          } else {
-            foot.textContent = t('drv_text_read', fmtBytes(off), fmtBytes(node.size));
-          }
+          feed(buf, r.status !== 206);
         } catch {
           stop = true;
-          foot.remove();
-          io.disconnect();
+          foot.hidden = true;
         } finally {
-          busy = false;
+          if (g === gen) busy = false;
           // Re-arm. An observer only speaks when intersection CHANGES, and the sentinel does
           // not move: if it is still in view after this window -- a short file, a tall window,
           // or a notification that arrived while the previous read was in flight -- no further
@@ -244,11 +291,31 @@ export async function renderPreview(node, box, kind, inlineUrl) {
           // 重新布防。观察器只在"相交状态发生变化"时说话,而哨兵并不移动:
           // 若这一窗读完它仍在视野内 —— 文件短、窗口高,或上一次通知恰好落在读取途中 ——
           // 就再也不会有事件到来,读者会永远停在同一兆上。
-          if (!stop && !dead() && foot.isConnected) {
+          if (!stop && !dead() && !foot.hidden) {
             io.unobserve(foot);
             io.observe(foot);
           }
         }
+      };
+      // Start, or start over: the same first window, read through whichever codepage is asked
+      // for. Everything already shown belongs to the old reading and goes with it.
+      // 开始,或者从头再来:同一个第一窗,按被要求的那个代码页读。
+      // 已经显示的一切都属于旧的那种读法,随它一并作废。
+      const begin = (enc) => {
+        gen++;
+        dec = new TextDecoder(enc);
+        off = 0;
+        stop = false;
+        busy = false;
+        pre.textContent = '';
+        foot.hidden = false;
+        feed(first, firstWhole);
+        // observe() reports the sentinel's state afresh; when the first window does not fill
+        // the view, that report is what pulls the next one -- a CHANGE may never come.
+        // observe() 会把哨兵的状态重新上报一遍;第一窗填不满视野时,靠的就是这一报 ——
+        // "相交发生变化"那件事可能永远不来。
+        io.unobserve(foot);
+        io.observe(foot);
       };
       const io = new IntersectionObserver((entries) => {
         for (const e of entries) if (e.isIntersecting) step();
@@ -257,7 +324,6 @@ export async function renderPreview(node, box, kind, inlineUrl) {
         // 滚动的是文档窗口那一层,所以观察器以它为 root;
         // 拿视口当 root,只会报告"恰好在遮罩后面的东西"。
       }, { root: win_, rootMargin: '400px' });
-      io.observe(foot);
       // And a plain scroll handler beside it. The observer covers what the handler cannot --
       // content too short to scroll at all, which must still load the next window -- and the
       // handler covers what the observer can miss, since intersection is reported only during
@@ -270,6 +336,8 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       };
       win_.addEventListener('scroll', onScroll, { passive: true });
       urls.push({ revoke: () => { io.disconnect(); win_.removeEventListener('scroll', onScroll); } });
+      box.querySelector('.drv-encrow select')?.addEventListener('change', (e) => begin(e.target.value));
+      begin(cp.enc);
       // Read until the window is full before handing over to the scroll triggers. A file that
       // is several windows long but short lines -- or a very tall preview -- would otherwise
       // open with content that does not reach the bottom and nothing to scroll toward.

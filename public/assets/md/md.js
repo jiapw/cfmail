@@ -17,6 +17,7 @@ import { t, tErr } from '../i18n.js';
 import { esc, icon, qs, toast, confirmDialog, fmtDateTime } from '../ui.js';
 import { store, setTitle } from '../app.js';
 import { openDoc, saveDoc, mergeDoc, draft, refreshThumb } from '../edit/session.js';
+import { encSelectHtml, pickEnc, confirmLossy, lossyText } from '../edit/codepage.js';
 import { joinPresentation, renderRoster } from '../edit/present.js';
 import { attachInk } from '../edit/annot.js';
 import { attachMarks } from '../edit/mark.js';
@@ -253,6 +254,7 @@ function shell() {
       <span class="md-name" id="md-name"></span>
       <span class="md-dot" id="md-dot" title=""></span>
       <span class="md-sp"></span>
+      <span id="md-enc"></span>
       <span id="md-peers"></span>
       <wa-button class="icon pr-hide" appearance="plain" id="md-pen" aria-label="${esc(t('pr_pen'))}"
         title="${esc(t('pr_pen'))}">${icon('pencil', 18)}</wa-button>
@@ -368,8 +370,19 @@ async function doSave() {
   if (pres && pres.state.live && pres.state.seat !== 'presenter') return;
   md.saving = true;
   try {
-    const text = md.ta.value;
-    const r = await saveDoc(md.doc, text, 'text/markdown');
+    let text = md.ta.value;
+    let r = await saveDoc(md.doc, text, 'text/markdown');
+    // Characters the file's codepage cannot carry. On a yes they become '?' -- in the box first,
+    // then in the file, so the screen and the disk cannot end up telling two stories.
+    // 文件的代码页装不下的字符。答应之后它们变成 '?' —— 先在框里,再进文件,
+    // 免得屏幕与磁盘各说各话。
+    if (r.status === 'badchars') {
+      if (!(await confirmLossy(r.bad, md.doc.cp.enc))) return;
+      text = lossyText(text, md.doc.cp.enc);
+      md.ta.value = text;
+      schedulePaint();
+      r = await saveDoc(md.doc, text, 'text/markdown');
+    }
     if (r.status === 'too-big') return toast(t('md_too_big'), true);
     if (r.status === 'unchanged') {
       markDirty(false);
@@ -580,6 +593,11 @@ function applySeat(st) {
     // 它在说这件事可以做,而房间已经说过不可以。
     '#md-claim': watching && st.canEdit && !st.presenter,
     '#md-solo': watching && st.canEdit,
+    // With company in the room the text on screen is shared state, patched keystroke by
+    // keystroke; re-reading the bytes another way would fork it. The selector waits outside.
+    // 房间里有了别人,屏幕上的文本就是共享状态,一个键一个键地打补丁;
+    // 把字节按别的方式重读会让它分叉。选择器在场外等。
+    '#md-enc': !room,
   };
   for (const [sel, on] of Object.entries(show)) qs(sel)?.classList.toggle('pr-hide', !on);
   if (!showInk && inkLayer) inkLayer.setTool(null);
@@ -683,6 +701,21 @@ async function load(id) {
   qs('#md-name').textContent = md.doc.name;
   setTitle(md.doc.name);
   markDirty(false);
+
+  // The codepage the file was read through, changeable while it has no BOM. Switching re-reads
+  // the same bytes; nothing is dirty afterwards, because the text IS the file again.
+  // 文件被读入时经过的代码页,没有 BOM 时可换。换挡是把同一份字节重读一遍;
+  // 换完没有脏标记,因为此刻文本就是文件本身。
+  const encBox = qs('#md-enc');
+  encBox.innerHTML = encSelectHtml(md.doc.cp);
+  encBox.querySelector('select')?.addEventListener('change', async (e) => {
+    const reread = await pickEnc(e.target, md.doc, md.dirty);
+    if (reread === null) return;
+    md.ta.value = reread;
+    markDirty(false);
+    saveDraft();
+    schedulePaint();
+  });
 
   // A draft outliving its tab means the tab did not close on purpose. Offering it is only worth
   // doing when it still says something the file does not.
