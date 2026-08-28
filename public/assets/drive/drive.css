@@ -1021,6 +1021,15 @@
   border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px;
 }
 
+/* The corner spinner that stands in while download bytes are fetched for the share sheet.
+   给分享面板取字节的那一小段时间里,站在角落的转圈。 */
+.dl-busy {
+  position: fixed; right: 14px; bottom: 18px; z-index: 1300;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: color-mix(in srgb, #000 55%, transparent);
+  display: flex; align-items: center; justify-content: center;
+}
+
 /* Trash banner / 回收站提示条 */
 .drv-trashbar {
   display: flex; align-items: center; gap: 10px; margin: 0 8px 8px; padding: 8px 14px;
@@ -1041,7 +1050,7 @@
    the thumb, ending where you are -- so it opens scrolled to its own end.
    竖屏手机:四层深的路径比屏幕还宽,折行则让这条栏叠成三行,压在它本该领起的列表上。
    一行,在拇指下横着滑,结尾就是你所在之处 —— 所以它打开时就滚到自己的末端。 */
-@media (max-width: 640px) {
+@media (max-width: 640px), ((hover: none) and (max-height: 500px)) {
   .drv-crumbs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .drv-crumbs::-webkit-scrollbar { display: none; }
   /* The strip scrolls, so no name needs shortening: an ellipsis on a scrollable path hides
@@ -1087,13 +1096,18 @@
      图片铺满屏幕,头部浮在画面上:一条渐变而不是一条栏,照片保住每一像素的高度。
      它底下的滑动台是滑轨上的三格 —— 相邻的图片跟着拖动一起走,相册的走法。 */
   .drv-view.pic .drv-view-head {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
     position: absolute; top: 0; left: 0; right: 0; z-index: 3;
     background: linear-gradient(rgba(0, 0, 0, .55), rgba(0, 0, 0, 0));
   }
   .drv-view.pic .drv-verpick { position: absolute; top: 52px; left: 0; right: 0; z-index: 3; }
   .drv-swipe { position: absolute; inset: 0; overflow: hidden; touch-action: pan-y; }
   .drv-swipe .track { display: flex; height: 100%; width: 300%; transform: translateX(-33.3333%); }
-  .drv-swipe .cell { width: 33.3333%; height: 100%; flex: none; display: flex; align-items: center; justify-content: center; }
+  /* A sliver of dark between neighbouring pictures, so a drag reads as two photographs
+     passing rather than one wide one sliding. 相邻图片之间留一线深色,拖动读起来是两张照片
+     在交错,而不是一张宽图在平移。 */
+  .drv-swipe .cell { width: 33.3333%; height: 100%; flex: none; display: flex; align-items: center; justify-content: center; padding: 0 8px; box-sizing: border-box; }
   .drv-swipe .cell img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .drv-swipe .cell .ph { opacity: .5; }
 
@@ -1110,6 +1124,7 @@
      新建按钮重新穿上它的字,配额回到它脚下。上面那块把它缩小;这里的每一条都是把那块解开,再加上浮。 */
   .drv-nav {
     position: fixed; left: 0; top: 60px; bottom: 0; z-index: 150;
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
     width: 256px; padding: 0 8px 16px 8px;
     background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
   }

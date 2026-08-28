@@ -274,6 +274,8 @@ export default {
   drv_dl_title: "正在下载 {0} 项",
   drv_download: "下载",
   drv_drop_hint: "将文件拖放到这里即可上传",
+  drv_save_ok: "已保存",
+  e_share_failed: "保存失败,已转普通下载",
   drv_empty_file: "这个文件是空的（0 字节）",
   drv_empty_folder: "文件夹是空的",
   drv_empty_recent: "还没有最近使用的文件",

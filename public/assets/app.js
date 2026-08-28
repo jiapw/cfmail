@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, avatar } from './ui.js';
+import { esc, icon, qs, qsa, avatar, isPhone } from './ui.js';
 import { t, setLang, lang, dictReady } from './i18n.js';
 import { renderList, renderThread, renderContacts } from './mail.js';
 import { renderLogin, renderSetup, renderInvite, renderSettings, renderNoMailbox, renderForgot, renderReset } from './auth.js';
@@ -646,7 +646,7 @@ export function syncSidebar() {
   // 网盘那条导轨在两种宽度下是两样东西。平板上它是一条 68px 的图标柱,把列表推开、不盖住任何
   // 东西 —— 在那里它保管自己的状态,从 DOM 读回来,进入页面从不把它关上。手机上样式表让它
   // 以全宽浮在列表上面,于是它成了邮件侧栏的孪生:听共享状态的,默认关着,披着遮罩,跟着链接收起。
-  const railFloats = !!rail && matchMedia('(max-width: 640px)').matches;
+  const railFloats = !!rail && isPhone();
   if (rail && !sheet && !railFloats) store.sidebarHidden = rail.classList.contains('hidden');
   sheet?.classList.toggle('hidden', store.sidebarHidden);
   if (railFloats) rail.classList.toggle('hidden', store.sidebarHidden);
@@ -676,6 +676,55 @@ function setSidebar(hidden) {
  *  所以跟着一条走,就把它关上。宽屏时它是一栏,原地不动。 */
 export function closeSidebarOnNavigate() {
   if (matchMedia(NARROW).matches) store.sidebarHidden = true;
+}
+
+/**
+ * The top bar rides the scroll on a phone.
+ *
+ * Sixty pixels of chrome is a fifth of a landscape phone. As the list scrolls down the bar
+ * slides up BY THE SAME DISTANCE -- following the finger, not toggling at a threshold -- until
+ * it is gone and the toolbar under it holds the top; scrolling up brings it back the same way.
+ * The negative margin does what a transform cannot: it gives the vacated height back to the
+ * layout, so the content grows by sixty pixels instead of leaving a band of ground behind.
+ *
+ * The scroller is torn down and rebuilt on every navigation, so this binds per render; the bar
+ * itself persists, and whoever binds next inherits whatever offset it stands at -- the reset on
+ * route() keeps a page that never scrolls from starting under a half-hidden bar.
+ *
+ * 顶栏在手机上跟着滚动走。
+ *
+ * 六十像素的壳,是一台横屏手机的五分之一。列表往下滚,这条栏就**等距**往上滑 ——
+ * 跟着手指,而不是过一条线才切换 —— 直到完全离场,它底下的工具条顶到最上;
+ * 往上滚,同样的方式把它拉回来。负 margin 做的是 transform 做不到的事:
+ * 把腾出来的高度还给布局,内容长高六十像素,而不是身后留一条底色。
+ *
+ * 滚动容器每次导航都拆了重建,所以这里按每次渲染绑定;栏本身是持久的,
+ * 谁下一个绑定,谁就继承它此刻站的位置 —— route() 里的归零,
+ * 让一个根本不滚的页面不至于一开场就顶着半截藏起来的栏。
+ */
+export function bindCollapsingTopbar(scroller) {
+  if (!scroller || !isPhone()) return;
+  const bar = qs('.topbar');
+  if (!bar) return;
+  let last = scroller.scrollTop;
+  let offset = -parseFloat(bar.style.marginTop || '0') || 0;
+  scroller.addEventListener('scroll', () => {
+    const h = bar.offsetHeight || 60;
+    const top = scroller.scrollTop;
+    const delta = top - last;
+    last = top;
+    const want = top <= 0 ? 0 : Math.max(0, Math.min(h, offset + delta));
+    if (want === offset) return;
+    offset = want;
+    bar.style.marginTop = offset ? `-${offset}px` : '';
+  }, { passive: true });
+}
+
+/** Nothing above the fold hides between pages: a fresh route starts with the bar fully out.
+ *  页与页之间不藏首屏之上的东西:新路由从栏完全露出开始。 */
+function resetTopbar() {
+  const bar = qs('.topbar');
+  if (bar && bar.style.marginTop) bar.style.marginTop = '';
 }
 
 // Dragging a window across the breakpoint turns one of those two objects into the other. The rail
@@ -742,6 +791,7 @@ async function route() {
   const seg = location.hash.replace(/^#\/?/, '').split('/').map((s) => decodeURIComponent(s));
   store.routeKey = location.hash;
   closeSidebarOnNavigate();
+  resetTopbar();
 
   if (!store.brand) await loadBrand();
   setTitle(routeTitle(seg));

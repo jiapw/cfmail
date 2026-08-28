@@ -7,7 +7,12 @@
        of the same decision (touch-action, overscroll) lives in style.css.
        这是应用不是文章:把一个邮件客户端捏大捏小只会弄坏它的版式,所以页面缩放关闭,
        字号大小交给系统设置。同一决定的 CSS 半边(touch-action、overscroll)在 style.css 里。 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <!-- cover: sideways, the page runs under the notch and the background reaches both edges;
+       the safe-area insets in style.css keep the CONTENT out of the ears. Upright all four
+       insets are zero and nothing changes.
+       cover:横屏时页面伸到刘海底下,背景抵达两边;style.css 里的 safe-area 内边距
+       让**内容**避开两只耳朵。竖屏四个内边距全为零,一切照旧。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <!-- Added to a home screen, this runs without the browser's own chrome around it. The status
        bar is deliberately left at the default rather than made translucent: translucent means the

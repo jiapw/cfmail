@@ -274,6 +274,8 @@ export default {
   drv_dl_title: "{0} 件のアイテムをダウンロード中",
   drv_download: "ダウンロード",
   drv_drop_hint: "ここにファイルをドロップしてアップロード",
+  drv_save_ok: "保存しました",
+  e_share_failed: "保存できなかったため,通常のダウンロードに切り替えました",
   drv_empty_file: "このファイルは空です（0 バイト）",
   drv_empty_folder: "フォルダは空です",
   drv_empty_recent: "最近使用したファイルはありません",
