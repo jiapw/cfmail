@@ -366,7 +366,13 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 .row-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-subj { color: var(--text); }
 .row.unread .row-subj { font-weight: 700; }
-.row-snip { color: var(--text-3); }
+.row-snip, .row-sep { color: var(--text-3); }
+/* Read mail steps back. Unread already leans forward -- bold, panel-white -- but the read rows
+   wore the same ink as everything else, so the eye had weight as its only cue. Now read text is
+   a shade lighter on every screen, and the two states read at a glance.
+   已读的信往后站一步。未读本来就朝前倾 —— 加粗、面板白 —— 可已读的行用的还是和别处相同的墨,
+   眼睛只能靠字重分辨。现在已读的文字在每块屏幕上都浅一号,两种状态一眼可辨。 */
+.row:not(.unread) .row-from, .row:not(.unread) .row-subj { color: var(--text-2); }
 .cnt { color: var(--text-2); font-weight: 400; font-size: 12.5px; }
 .row-clip { color: var(--text-2); flex: none; display: inline-flex; font-size: 16px; }
 .row-date { flex: none; width: 84px; text-align: right; font-size: 12px; color: var(--text-2); }
@@ -975,7 +981,29 @@ body.impersonating .side-backdrop { inset: 94px 0 0 0; }
   .logo span { display: none; }
 }
 @media (max-width: 640px) {
-  .row-snip { display: none; }
+  /* The snippet comes back, as a block of its own: the subject keeps its single ellipsized
+     line, and under it the first words of the message get two lines at most -- enough to know
+     whether to open it, never enough to become the message. The inline dash that introduced it
+     beside the subject has nothing to introduce here and goes.
+     摘要回来了,自成一块:主题守住它那一行省略,底下正文的开头最多得两行 ——
+     足够判断要不要点开,永远不够变成正文本身。在主题旁边负责引出它的那个内联破折号,
+     在这里没有什么可引,退下。 */
+  .row-main { white-space: normal; }
+  .row-main .row-subj { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-sep { display: none; }
+  .row-snip {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; font-size: 12.5px; line-height: 1.45;
+  }
+  /* The compose button leaves the toolbar: the drawer's own big one is the way in.
+     写邮件按钮退出工具条:抽屉里那个大的才是入口。 */
+  #btn-compose-sm { display: none; }
+  /* Five menu entries, each grown 15% -- these are pressed with a thumb, not a cursor.
+     The component keeps its padding on the host, so the host is where it is overruled:
+     35px of item plus 2.5px each side is the 40 that 15% comes to.
+     五个菜单项,各加高 15% —— 按它们的是拇指,不是光标。
+     这个组件把内边距放在宿主上,那就在宿主上推翻它:35px 的项上下各加 2.5px,正是 15% 换来的 40。 */
+  #user-dd wa-dropdown-item { padding-block: 10.5px; }
   .searchbar { width: 100%; }
   .compose { right: 0; }
   .t-subject { margin-left: 8px; }

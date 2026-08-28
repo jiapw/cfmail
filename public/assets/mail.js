@@ -131,7 +131,12 @@ function rowHtml(th, folder) {
   // Cleaning can empty the snippet entirely (a body that is just a link), in which case drop the separator too
   // 清洗后可能整条为空(正文只有一个链接),那就连分隔符一起省掉
   const snip = cleanSnippet(th.snippet);
-  const snipHtml = snip ? `<span class="row-snip"> — ${esc(snip)}</span>` : '';
+  // The dash is its own element: inline beside the subject it separates, and on a phone --
+  // where the snippet becomes a block of its own under the subject -- it disappears, because a
+  // block does not need introducing.
+  // 破折号是独立元素:在主题旁边内联时它负责隔开;到了手机 —— 摘要在主题底下自成一块 ——
+  // 它就消失,因为一个块不需要引子。
+  const snipHtml = snip ? `<span class="row-sep"> — </span><span class="row-snip">${esc(snip)}</span>` : '';
   if (th.draft_id) {
     return `
     <div class="row" data-draft="${esc(th.draft_id)}">
