@@ -682,6 +682,11 @@
 .drv-docwin {
   flex: 1; min-height: 0; overflow-y: auto; border-radius: 0;
   background: var(--panel); border: 1px solid var(--border);
+  /* The overlay speaks white; this window has a light panel behind its text and must say so,
+     or everything without a colour of its own (markdown, plain notes) inherits invisibility.
+     浮层说的是白;这扇窗的文字背后是浅色面板,必须自己声明 ——
+     否则一切没有自带颜色的内容(markdown、纯文本)继承到的就是隐形。 */
+  color: var(--text);
   padding: 24px 28px 32px; text-align: center;
 }
 .drv-docwin:has(> .drv-loading) { display: flex; }
@@ -1063,11 +1068,34 @@
      width shows its own).
      预览铺满整个屏幕:纸面卡片的边框、两侧留白、宽度手柄,都属于"浮在更大窗口里的一块窗格",
      而在这里窗格就是窗口本身。版本侧栏让位给标题下的下拉选择(drive.js 两者都画,各宽度亮各的)。 */
+  .drv-view-body { padding: 0; }
   .drv-view-body .drv-doc { max-width: 100%; width: 100%; }
-  .drv-docwin { border: none; border-radius: 0; padding: 12px 8px 24px; }
+  .drv-docwin { border: none; border-radius: 0; padding: 0; }
+  /* The rendered "paper" stops being a card: no radius, no floating shadow, gutters cut to
+     reading margins. On this screen the paper IS the page.
+     渲染出来的"纸"不再是一张卡:没有圆角,没有悬浮阴影,留白收成阅读边距。
+     在这块屏幕上,纸就是页面本身。 */
+  .drv-sheet { border-radius: 0; box-shadow: none; padding: 18px 12px; margin-bottom: 0; }
+  .drv-txt { padding: 10px 12px; }
   .drv-rsz { display: none; }
   .drv-pvvers { display: none; }
   .drv-verpick { display: flex; }
+
+  /* Pictures fill the screen, and the head floats over them: a strip of gradient rather than a
+     bar, so the photograph keeps every pixel of height. The swipe deck under it is three cells
+     on a sliding track -- the neighbouring pictures ride along with the drag, album-style.
+     图片铺满屏幕,头部浮在画面上:一条渐变而不是一条栏,照片保住每一像素的高度。
+     它底下的滑动台是滑轨上的三格 —— 相邻的图片跟着拖动一起走,相册的走法。 */
+  .drv-view.pic .drv-view-head {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 3;
+    background: linear-gradient(rgba(0, 0, 0, .55), rgba(0, 0, 0, 0));
+  }
+  .drv-view.pic .drv-verpick { position: absolute; top: 52px; left: 0; right: 0; z-index: 3; }
+  .drv-swipe { position: absolute; inset: 0; overflow: hidden; touch-action: pan-y; }
+  .drv-swipe .track { display: flex; height: 100%; width: 300%; transform: translateX(-33.3333%); }
+  .drv-swipe .cell { width: 33.3333%; height: 100%; flex: none; display: flex; align-items: center; justify-content: center; }
+  .drv-swipe .cell img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .drv-swipe .cell .ph { opacity: .5; }
 
   /* The rail becomes the mail sidebar's twin: a full drawer floating over the listing.
      Between 641 and 900px it is a 68px column of icons and the listing yields it that width --
