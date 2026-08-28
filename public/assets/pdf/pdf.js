@@ -346,7 +346,7 @@ export function askPassword(title, hint) {
   return new Promise((resolve) => {
     const d = showModal(`
       <div class="modal-body">
-        <h3 style="margin:0 0 10px;font-size:15px;display:flex;align-items:center;gap:8px">${icon('lock', 17)}<span>${esc(title)}</span></h3>
+        <h3 style="margin:0 0 10px;display:flex;align-items:center;gap:8px">${icon('lock', 18)}<span>${esc(title)}</span></h3>
         ${hint ? `<p style="margin:0 0 12px;color:var(--text-2);font-size:13px">${esc(hint)}</p>` : ''}
         <input id="pdft-pw" type="${masked ? 'text' : 'password'}" name="pw-${Math.random().toString(36).slice(2)}"
           autocomplete="${masked ? 'off' : 'new-password'}" spellcheck="false" autocapitalize="off"
