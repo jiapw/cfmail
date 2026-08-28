@@ -335,6 +335,9 @@ function readFont(ctx, dict) {
       // 本编辑器可能遇到的每一种 CMap 都是双字节;单字节的 CMap 存在,
       // 但属于当今没有工具还在产出的那些编码。
       bytes: 2, ...heights(desc), width, toUnicode, baseFont, subtype, dict, descendant: df,
+      // A CID font's W array (with its DW default) is required equipment, so its answers are
+      // the file's own. / CID 字体的 W 数组(连同 DW 缺省)是必备行头,它的答案就是文件自己的。
+      measured: true,
       identity: enc.includes('Identity'),
       // A composite font's codes mean whatever its own CMap decided, so without a ToUnicode map
       // there is nothing to read them with. This is why a CJK page from a careless tool can be
@@ -357,6 +360,11 @@ function readFont(ctx, dict) {
   const encoded = simpleEncoding(ctx, dict.lookup(PDFName.of('Encoding')));
   return {
     bytes: 1, ...(isType3 ? type3Heights(dict, fm) : heights(desc)),
+    // Whether width() answers from the file or from a guess. A standard-14 font carries no
+    // Widths at all, and the half-em stand-in is good enough for a box but not for an anchor.
+    // width() 的答案是出自文件,还是出自猜测。标准十四字体根本不带 Widths,
+    // 那个半 em 的替身画框够用,当锚不够。
+    measured: !!widths,
     toUnicode, baseFont, subtype, dict, encoded, fontMatrix: fm,
     // The map when there is one, the encoding when there is not. A file that carries both and
     // disagrees with itself is trusting the map, which is the one it wrote on purpose.
