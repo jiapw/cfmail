@@ -931,6 +931,7 @@ export default {
   pdfe_pick: "Select",
   pdfe_redraw_fail: "Could not draw the page again",
   pdfe_retype: "Change the words",
+  pdfe_rotate: "Rotate 90°",
   pdfe_save: "Save",
   pdfe_saved: "Saved as a new version",
   pdfe_undo: "Undo",

@@ -931,6 +931,7 @@ export default {
   pdfe_pick: "選択",
   pdfe_redraw_fail: "ページを描き直せませんでした",
   pdfe_retype: "文字を書き換える",
+  pdfe_rotate: "90° 回転",
   pdfe_save: "保存",
   pdfe_saved: "新しいバージョンとして保存しました",
   pdfe_undo: "元に戻す",
