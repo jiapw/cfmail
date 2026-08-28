@@ -1597,3 +1597,29 @@
 .pdfa-pen { width: 30px; justify-content: center; }
 .pdfa-pen i { display: inline-block; border-radius: 50%; background: var(--text-2); }
 .pdfa-pen.on i { background: var(--primary); }
+
+/* One page's own verbs at its corner, and the shroud of a struck page.
+   一页自己的动词停在页角,以及被划掉那页的罩。 */
+.pdfe-pagectl { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; z-index: 4; }
+.pdfe-layer:hover .pdfe-pagectl { opacity: 1; }
+.pdfe-pagectl button {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2);
+  color: var(--text-2); cursor: pointer; line-height: 0; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.pdfe-pagectl button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.pdfe-pagectl button:disabled { opacity: .4; cursor: default; }
+.pdfe-pagegone {
+  position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: repeating-linear-gradient(45deg, rgba(170,40,40,.16) 0 12px, rgba(170,40,40,.05) 12px 24px);
+}
+.pdfe-pagegone button {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--panel);
+  color: var(--text); cursor: pointer; font: inherit; font-size: 13.5px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.pdfe-pagegone button:hover { background: var(--hover); }
+.drv-pdf.editing .pdfe-layer .pdfe-pagectl, .drv-pdf.editing .pdfe-layer .pdfe-pagectl *,
+.drv-pdf.editing .pdfe-layer .pdfe-pagegone, .drv-pdf.editing .pdfe-layer .pdfe-pagegone * { pointer-events: auto; }

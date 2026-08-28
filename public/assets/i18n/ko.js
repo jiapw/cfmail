@@ -933,6 +933,8 @@ export default {
   pdfe_pick: "선택",
   pdfe_redraw_fail: "페이지를 다시 그리지 못했습니다",
   pdfe_retype: "글자 고치기",
+  pdfe_page_del: "이 페이지 삭제",
+  pdfe_page_restore: "이 페이지 되살리기",
   pdfe_pw: "비밀번호",
   pdfe_pw_need: "이 PDF에는 비밀번호가 있습니다 - 입력해야 열 수 있습니다",
   pdfe_pw_wrong: "비밀번호가 틀렸습니다 - 다시 시도하세요",

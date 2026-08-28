@@ -933,6 +933,8 @@ export default {
   pdfe_pick: "Sélectionner",
   pdfe_redraw_fail: "Impossible de redessiner la page",
   pdfe_retype: "Changer le texte",
+  pdfe_page_del: "Supprimer cette page",
+  pdfe_page_restore: "Ramener cette page",
   pdfe_pw: "Mot de passe",
   pdfe_pw_need: "Ce PDF a un mot de passe - saisissez-le pour ouvrir",
   pdfe_pw_wrong: "Mot de passe incorrect - reessayez",
