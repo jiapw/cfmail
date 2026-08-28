@@ -71,6 +71,9 @@ const P = {
   // 那个折返抵达横线所抵达的同一条右边缘,于是整个字形读起来是一整块,
   // 而不是一根杠上粘了个东西;箭头是唯一越出三行的部分 —— 它也是唯一在说横线没在说的事的部分。
   wrapText: 'M3 5h18v2H3zM3 10h14.5a3.5 3.5 0 0 1 0 7H14.5v-2h3a1.5 1.5 0 0 0 0-3H3zM3 15h5.5v2H3zM11 16 15 13v6z',
+  alignLeft: 'M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z',
+  alignCenter: 'M7 15v2h10v-2H7zm-4 6h18v-2H3v2zm0-8h18v-2H3v2zm4-6v2h10V7H7zM3 3v2h18V3H3z',
+  alignRight: 'M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z',
   image:
     'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
   // Image scale steps: a hollow outer frame plus a proportionally smaller solid block (the frame is drawn in reverse to cut the hole)

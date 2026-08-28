@@ -1512,6 +1512,22 @@
 .pdft-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; flex: 0 0 auto; }
 .pdft-dot.on { background: var(--primary); }
 .pdft-main { flex: 1; overflow: auto; padding: 14px; }
-.pdft-main .pdfe-bar { position: sticky; top: 0; z-index: 6; max-width: 940px; margin: 0 auto 12px; }
+/* The bar sits in the frame like the Markdown editor's head does -- part of the window, not a
+   raft floating over the pages. / 工具条像 Markdown 编辑器的头部那样嵌在窗框里 ——
+   是窗的一部分,不是漂在页面上的一只筏子。 */
+.pdft-bar { flex: 0 0 auto; }
+.pdft-bar .pdfe-bar {
+  position: static; margin: 0; max-width: none; border-radius: 0; box-shadow: none;
+  border: 0; border-bottom: 1px solid var(--border); background: var(--panel); padding: 6px 12px;
+}
 .pdft-box { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .pdft-err { margin: 60px auto; color: var(--text-2); text-align: center; }
+
+/* A thing that can be picked up says so from the cursor; one in flight shows where it would land.
+   拿得起来的东西,光标就这么说;拎在半空的那个,显示它将落在哪里。 */
+.pdfe-layer.can-grab { cursor: grab; }
+.pdfe-layer.grabbing { cursor: grabbing; }
+.pdfe-ghost {
+  position: absolute; border-radius: 3px;
+  outline: 2px dashed var(--primary); outline-offset: 1px; background: rgba(120,170,255,.12);
+}
