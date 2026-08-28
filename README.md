@@ -212,6 +212,8 @@ That is the whole installation. The third command creates the database and the s
   **加域名**就是换个 `--domain` 再跑一次;`--entry` 会被记住,只需在第一次给。
 - **`--dry-run`** reports exactly what it would do and changes nothing.
   **`--dry-run`** 会把打算做的事完整报一遍,不做任何改动。
+- **In a terminal, the arguments are optional.** Plain `npm run deploy` asks for whatever is missing — the token, the domain and entry host on a first install — pauses for a yes before migrations and before publishing (`--yes` skips the pauses), and when something has to be fixed in the Cloudflare dashboard (a token permission, a domain not added yet, the Workers Paid plan for outward sending) it says exactly which switch, waits, and re-checks after you flip it. Outside a terminal it behaves exactly as before: arguments required, no pauses.
+  **在终端里,参数都可以不带。**直接 `npm run deploy` 会把缺的信息逐个问你 —— token、首次安装的域名和入口子域;在跑迁移和发布前停下来等你确认(`--yes` 跳过确认);遇到必须去 Cloudflare 后台才能解决的事(token 权限、域名还没加进账号、对外发信要的 Workers 付费版),它会说清楚要拨哪个开关,等你弄好后回来按回车重新检查。不在终端里跑则与从前完全一致:必须带参数,全程不停。
 
 > **What are `npx` and `wrangler`?** `npx` ships with Node.js (18+) — it runs a command-line tool out of `node_modules` without installing anything globally. `wrangler` is Cloudflare's official CLI; it is a regular dependency of this project, so the install already put it there. `npm run deploy` drives it for you; the `npx wrangler …` commands further down are for the occasional thing you do by hand. There is nothing extra to install, and nothing to log into — the token you pass is what authenticates.
 >
