@@ -1574,25 +1574,75 @@ async function downloadFiles(nodes) {
   }
 }
 
+/**
+ * Hand a file to the system instead of to the browser's downloader.
+ *
+ * On a phone the browser's own download path is where files go to get lost: iOS lands some
+ * types on an "open with" page with no way back, and a photograph saved that way never reaches
+ * the photo library. The share sheet is the door to both places the user actually means --
+ * "Save Image" and "Save to Files" -- so on touch screens the download button opens it, with
+ * the bytes fetched first and handed over as a file.
+ *
+ * Everything about it degrades: no share API, a file too big to buffer, a type the sheet
+ * refuses, or the share failing for any reason other than the user closing it -- each falls
+ * back to the plain download that always existed. Cancelling the sheet is a decision, not a
+ * failure, and falls back to nothing.
+ *
+ * 把文件交给系统,而不是交给浏览器的下载器。
+ *
+ * 手机上,浏览器自己的下载路径是文件失踪的地方:iOS 会把一些类型带到一个回不去的
+ * "打开方式"页,而照片那样存永远进不了相册。分享面板才是通向用户真正想去的两个地方的门 ——
+ * 「存储图像」和「存储到文件」—— 所以触摸屏上下载按钮打开它:先把字节取到手,作为文件递过去。
+ *
+ * 它的每一环都会退化:没有分享 API、文件大到不便缓冲、面板拒收的类型、
+ * 或者分享因为"用户关掉面板"之外的任何原因失败 —— 都退回那个一直存在的普通下载。
+ * 关掉面板是一个决定,不是一次失败,什么也不退回。
+ */
+const SHARE_CAP = 300 * 1024 * 1024;
+async function shareOut(name, mime, size, getBlob, fallback) {
+  if (!isTouch() || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function'
+    || (size && size > SHARE_CAP)) return fallback();
+  let file;
+  try {
+    const blob = await getBlob();
+    file = new File([blob], name, { type: mime || blob.type || 'application/octet-stream' });
+  } catch {
+    return fallback();
+  }
+  if (!navigator.canShare({ files: [file] })) return fallback();
+  try {
+    await navigator.share({ files: [file] });
+  } catch (e) {
+    if (e?.name !== 'AbortError') fallback();
+  }
+}
+
 function downloadFile(n, verId) {
   if (n.arc) return downloadArcEntry(n);
-  const a = document.createElement('a');
-  a.href = verId ? verUrl(n.id, verId) : dlUrl(n.id, false, verTag(n));
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const url = verId ? verUrl(n.id, verId) : dlUrl(n.id, false, verTag(n));
+  const legacy = () => {
+    const a = document.createElement('a');
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  shareOut(n.name, n.mime, n.size, async () => (await fetch(url)).blob(), legacy);
 }
 
 /** Archive entries download from their client-side extraction / 压缩包条目从客户端解出的字节下载 */
 async function downloadArcEntry(n) {
   try {
     if (!n.arcUrl) n.arcUrl = await n.arcGet();
-    const a = document.createElement('a');
-    a.href = n.arcUrl;
-    a.download = n.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const legacy = () => {
+      const a = document.createElement('a');
+      a.href = n.arcUrl;
+      a.download = n.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+    await shareOut(n.name, n.mime, n.size, async () => (await fetch(n.arcUrl)).blob(), legacy);
   } catch (e) {
     toast(tErr(e), true);
   }
@@ -3240,6 +3290,89 @@ function pvVersionsHtml() {
   return `<div class="drv-pvvers"><div class="vhd">${esc(t('drv_ver_title', vs.length))}</div>${vs.map(row).join('')}</div>`;
 }
 
+/**
+ * The album deck: three cells on one track, the current picture in the middle.
+ *
+ * A neighbour that is itself a picture rides in its cell at full size, so a drag shows it
+ * coming; a neighbour that is something else -- a film, a document -- shows as its icon, and
+ * releasing the drag still turns to it, through the ordinary repaint. An archive picture whose
+ * bytes have not been extracted yet gets the icon too: its URL does not exist until it is the
+ * one being looked at.
+ *
+ * 相册台:一条轨上三格,正在看的那张居中。
+ *
+ * 邻居自己也是图片的,原尺寸坐在它的格里,拖动时看得见它过来;邻居是别的 —— 片子、文档 ——
+ * 就以图标出现,松手照样翻过去,走普通的重绘。字节还没解出来的压缩包图片同样给图标:
+ * 它的 URL 在轮到它被看之前并不存在。
+ */
+function deckCell(n2, cur = false) {
+  if (!n2) return '<div class="cell"></div>';
+  const m2 = n2.mime || '';
+  const url = n2.arc ? n2.arcUrl : dlUrl(n2.id, true, verTag(n2));
+  if (IMG_RE.test(m2) && (!n2.arc || n2.arcUrl)) {
+    return `<div class="cell"><img ${cur ? 'class="pv-cur"' : 'loading="lazy"'} src="${esc(url)}" alt=""></div>`;
+  }
+  return `<div class="cell"><span class="ph">${fileIcon(n2.name, 64)}</span></div>`;
+}
+
+function swipeDeckHtml(src) {
+  return `<div class="drv-swipe"><div class="track">
+    ${deckCell(pv.list[pv.idx - 1])}
+    <div class="cell"><img class="pv-cur" src="${esc(src)}" alt=""></div>
+    ${deckCell(pv.list[pv.idx + 1])}
+  </div></div>`;
+}
+
+/** Drag the track; past a fifth of the screen, the release finishes the turn and the ordinary
+ *  pvStep repaints a fresh deck around the new middle. The deck swallows its pointer events so
+ *  the coarse flick-to-turn handler underneath never double-fires.
+ *  拖那条轨;过了屏宽的五分之一,松手完成翻页,普通的 pvStep 围着新的中间那张重画一副台。
+ *  这个台吞掉自己的指针事件,底下那个粗粒度的"一甩翻页"不会跟着再响一次。 */
+function bindSwipeDeck() {
+  const deck = pv?.el?.querySelector('.drv-swipe');
+  if (!deck) return;
+  const track = deck.querySelector('.track');
+  let from = null;
+  let dx = 0;
+  deck.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    e.stopPropagation();
+    from = { x: e.clientX, w: deck.clientWidth || 1 };
+    dx = 0;
+    track.style.transition = 'none';
+    try { deck.setPointerCapture(e.pointerId); } catch { /* not fatal / 不致命 */ }
+  });
+  deck.addEventListener('pointermove', (e) => {
+    if (!from) return;
+    dx = e.clientX - from.x;
+    // The ends push back: a drag past the first or last picture moves at a third strength.
+    // 两端有回推:拖过第一张或最后一张,只走三分之一的力。
+    const blocked = (dx > 0 && pv.idx === 0) || (dx < 0 && pv.idx === pv.list.length - 1);
+    const d = blocked ? dx / 3 : dx;
+    track.style.transform = `translateX(calc(-33.3333% + ${d}px))`;
+  });
+  const settle = () => {
+    if (!from) return;
+    const { w } = from;
+    from = null;
+    const blocked = (dx > 0 && pv.idx === 0) || (dx < 0 && pv.idx === pv.list.length - 1);
+    const turn = !blocked && Math.abs(dx) > w * 0.2;
+    track.style.transition = 'transform .16s ease-out';
+    if (!turn) {
+      track.style.transform = 'translateX(-33.3333%)';
+      return;
+    }
+    const dir = dx < 0 ? 1 : -1;
+    track.style.transform = `translateX(${dir > 0 ? '-66.6667%' : '0%'})`;
+    let stepped = false;
+    const step = () => { if (!stepped) { stepped = true; pvStep(dir); } };
+    track.addEventListener('transitionend', step, { once: true });
+    setTimeout(step, 260); // a hidden tab fires no transitionend / 藏起的页不发 transitionend
+  };
+  deck.addEventListener('pointerup', settle);
+  deck.addEventListener('pointercancel', settle);
+}
+
 /** The same history as a dropdown under the caption -- the phone's shape of the rail. Both are
  *  always drawn; the stylesheet shows the one that fits the width.
  *  同一份历史,做成标题下的下拉 —— 侧栏在手机上的形状。两个都画;样式表按宽度亮那个合身的。 */
@@ -4328,7 +4461,13 @@ async function paintPreview() {
   // 上一部片子在下一部到来之前先放掉,否则会同时攥着两部。
   dropPvBlob();
   const film = verdict(n.name, mime);
-  if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
+  // On a phone a picture opens album-style: three cells on a sliding track, the neighbours
+  // riding along with the drag. Everywhere else the single <img> stays as it was.
+  // 手机上图片按相册的方式打开:滑轨上的三格,相邻的跟着拖动一起走。其余地方单个 <img> 原样。
+  const albumPic = IMG_RE.test(mime) && isTouch() && matchMedia('(max-width: 640px)').matches;
+  pv.el.classList.toggle('pic', albumPic);
+  if (albumPic) body = `${swipeDeckHtml(src)}<div class="drv-pvwait">${spinnerHtml()}</div>`;
+  else if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
   else if (film === 'native' || VID_RE.test(mime)) body = `<video autoplay playsinline src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
   // A box that can be changed. How big it is does not come into it any more: the film is changed
   // a piece at a time while it plays, so a four-gigabyte one is the same wait as a small one.
@@ -4363,6 +4502,7 @@ async function paintPreview() {
   } else if (isPdf) body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-pdf drv-docwin">${spinnerHtml()}</div></div></div>`;
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
+  bindSwipeDeck();
   loadVersions(n);
   // The controls belong to the film from the moment there is a film element, not from the moment
   // it has something to play: a conversion takes a while to start, and a player with nothing in
@@ -4431,7 +4571,9 @@ async function paintPreview() {
     if (med.readyState >= 3) ready();
     else med.addEventListener('canplay', ready, { once: true });
   }
-  const im = IMG_RE.test(mime) ? pv.el.querySelector('.drv-view-body > img') : null;
+  const im = IMG_RE.test(mime)
+    ? pv.el.querySelector('.drv-view-body > img, .drv-swipe .cell img.pv-cur')
+    : null;
   if (im) {
     const settle = async (ok) => {
       pv?.el?.querySelector('.drv-pvwait')?.remove();
