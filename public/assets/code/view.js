@@ -158,14 +158,48 @@ export async function langFor(cm, name) {
  *
  * 选中也留着。一份复制不出内容的预览,是一份非得打开编辑器才能用的预览。
  */
+/**
+ * Line numbers that fold.
+ *
+ * The number is the widest, easiest target on a line, and folding is the thing a reader wants
+ * from a gutter -- so pressing one toggles the block that starts there. The fold arrows still
+ * work; this is the same verb on a bigger button, which is worth the most on a phone, where the
+ * arrow is a few pixels wide. Fold state is an effect, not an edit, so this works in the
+ * read-only preview exactly as it does in the editor.
+ *
+ * 会折叠的行号。
+ *
+ * 行号是一行里最宽、最好按的目标,而折叠正是读者对边栏想要的那件事 ——
+ * 所以按下某个行号,就开合从那里开始的代码块。折叠箭头照旧可用;
+ * 这是同一个动词换了个更大的按钮,而这在手机上最值钱:箭头在那里只有几个像素宽。
+ * 折叠是效果不是编辑,所以它在只读预览里和在编辑器里一样好使。
+ */
+export function foldingLineNumbers(cm) {
+  return cm.lineNumbers({
+    domEventHandlers: {
+      mousedown(view, block) {
+        const line = view.state.doc.lineAt(block.from);
+        let folded = false;
+        cm.foldedRanges(view.state).between(line.from, line.to + 1, () => { folded = true; });
+        view.dispatch({ selection: { anchor: folded ? line.to : line.from } });
+        (folded ? cm.unfoldCode : cm.foldCode)(view);
+        return true;
+      },
+    },
+  });
+}
+
 export async function renderOnly({ parent, text, name }) {
   const [cm] = await Promise.all([loadCm(), ensureCss()]);
-  const { folding } = await langFor(cm, name);
+  const { lang, folding } = await langFor(cm, name);
+  // Plain text has no structure worth a gutter on a phone; the class lets the stylesheet decide.
+  // 纯文本没有值得在手机上占一条边栏的结构;这个类把决定权交给样式表。
+  if (!lang) parent.classList.add('code-plain');
   return new cm.EditorView({
     state: cm.EditorState.create({
       doc: text,
       extensions: [
-        cm.lineNumbers(),
+        foldingLineNumbers(cm),
         cm.highlightSpecialChars(),
         cm.codeFolding(),
         cm.foldGutter(),

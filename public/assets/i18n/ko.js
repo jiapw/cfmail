@@ -274,6 +274,7 @@ export default {
   drv_dl_title: "{0}개 항목 내려받는 중",
   drv_download: "다운로드",
   drv_drop_hint: "파일을 여기에 끌어다 놓으면 업로드됩니다",
+  drv_empty_file: "이 파일은 비어 있습니다(0바이트).",
   drv_empty_folder: "폴더가 비어 있습니다",
   drv_empty_recent: "최근 파일이 없습니다",
   drv_empty_search: "일치하는 파일이 없습니다",
