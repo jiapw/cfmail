@@ -931,6 +931,7 @@ export default {
   pdfe_pick: "Auswählen",
   pdfe_redraw_fail: "Die Seite konnte nicht neu gezeichnet werden",
   pdfe_retype: "Text ändern",
+  pdfe_rotate: "Um 90° drehen",
   pdfe_save: "Speichern",
   pdfe_saved: "Als neue Version gespeichert",
   pdfe_undo: "Rückgängig",

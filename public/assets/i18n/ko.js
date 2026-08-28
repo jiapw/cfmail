@@ -931,6 +931,7 @@ export default {
   pdfe_pick: "선택",
   pdfe_redraw_fail: "페이지를 다시 그리지 못했습니다",
   pdfe_retype: "글자 고치기",
+  pdfe_rotate: "90° 회전",
   pdfe_save: "저장",
   pdfe_saved: "새 버전으로 저장했습니다",
   pdfe_undo: "실행 취소",

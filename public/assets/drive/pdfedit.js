@@ -538,7 +538,10 @@ export async function openPdf(bytes, { local = null } = {}) {
     const edit = {
       from: st.src.length, to: st.src.length, what: 'add', kind: 'image',
       box: [x, y, x + w, y + h],
-      img: { key: 'EdImg' + (++imgCount), bytes, mime, x, y, w, h },
+      // w and h are the box as shown -- a quarter turn swaps them, and rot remembers which way
+      // the picture faces inside it. / w 和 h 是显示出来的那个框 —— 转四分之一圈就把它们对调,
+      // rot 记着图在框里朝向哪边。
+      img: { key: 'EdImg' + (++imgCount), bytes, mime, x, y, w, h, rot: 0 },
     };
     st.edits.push(edit);
     return edit;
@@ -657,22 +660,36 @@ export async function openPdf(bytes, { local = null } = {}) {
 
       const edits = st.edits.flatMap((e) => {
         // A move is two strokes of the pen: the bytes fall silent where they were, and reappear
-        // at the end of the tape inside a translation.
+        // at the end of the tape inside a translation. The transform that was in force where
+        // they stood is replayed first -- an image is one bare Do whose entire shape lived in
+        // the surrounding cm, and without it the picture lands at the origin, one point square.
         // 一次挪动是笔下的两划:那些字节在原地归于沉默,又在带子末尾的一次平移里重新现身。
+        // 它们原来站的地方生效着的变换要先重放一遍 —— 一张图不过是一条光秃秃的 Do,
+        // 它的整个形状都住在外围那个 cm 里;少了它,图片会落在原点,一个点见方。
         if (e.what === 'move') {
+          const m = e.obj.ctm;
+          const steps = ['q', `1 0 0 1 ${n6(e.dx)} ${n6(e.dy)} cm`];
+          if (m && (m[0] !== 1 || m[1] || m[2] || m[3] !== 1 || m[4] || m[5])) {
+            steps.push(`${m.map(n6).join(' ')} cm`);
+          }
+          steps.push(st.src.slice(e.obj.from, e.obj.to), 'Q');
           return [
             { from: e.obj.from, to: e.obj.to, text: '' },
-            {
-              from: st.src.length, to: st.src.length,
-              text: NL + ['q', `1 0 0 1 ${n6(e.dx)} ${n6(e.dy)} cm`, st.src.slice(e.obj.from, e.obj.to), 'Q'].join(NL) + NL,
-            },
+            { from: st.src.length, to: st.src.length, text: NL + steps.join(NL) + NL },
           ];
         }
         if (e.img) {
           const g = e.img;
+          // Each quarter turn maps the unit square into the same shown box, the picture facing
+          // another way inside it. / 每转四分之一圈,单位正方形都映射进同一个显示框,
+          // 只是图在框里换了个朝向。
+          const cm = g.rot === 90 ? [0, g.h, -g.w, 0, g.x + g.w, g.y]
+            : g.rot === 180 ? [-g.w, 0, 0, -g.h, g.x + g.w, g.y + g.h]
+            : g.rot === 270 ? [0, -g.h, g.w, 0, g.x, g.y + g.h]
+            : [g.w, 0, 0, g.h, g.x, g.y];
           return [{
             from: e.from, to: e.to,
-            text: NL + ['q', `${n6(g.w)} 0 0 ${n6(g.h)} ${n6(g.x)} ${n6(g.y)} cm`, `/${g.key} Do`, 'Q'].join(NL) + NL,
+            text: NL + ['q', `${cm.map(n6).join(' ')} cm`, `/${g.key} Do`, 'Q'].join(NL) + NL,
           }];
         }
         if (!e.write) return [e];

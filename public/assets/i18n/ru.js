@@ -931,6 +931,7 @@ export default {
   pdfe_pick: "Выбрать",
   pdfe_redraw_fail: "Не удалось перерисовать страницу",
   pdfe_retype: "Изменить текст",
+  pdfe_rotate: "Повернуть на 90°",
   pdfe_save: "Сохранить",
   pdfe_saved: "Сохранено как новая версия",
   pdfe_undo: "Отменить",

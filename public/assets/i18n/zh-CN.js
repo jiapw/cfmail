@@ -931,6 +931,7 @@ export default {
   pdfe_pick: "选择",
   pdfe_redraw_fail: "重新渲染失败",
   pdfe_retype: "修改文字",
+  pdfe_rotate: "旋转 90°",
   pdfe_save: "保存",
   pdfe_saved: "已保存为新版本",
   pdfe_undo: "撤销",

@@ -120,6 +120,8 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         <span class="pdfe-sep"></span>
         ${alignBtn('left')}${alignBtn('center')}${alignBtn('right')}
         <span class="pdfe-sep"></span>
+        <button class="pdfe-t" data-act="rotate" ${selection?.obj?.added && selection.obj.kind === 'image' ? '' : 'disabled'}
+          title="${esc(t('pdfe_rotate'))}">${icon('refresh', 18)}</button>
         <button class="pdfe-t" data-act="delete" ${selection ? '' : 'disabled'} title="${esc(t('pdfe_delete'))}">${icon('trash', 18)}</button>
         <button class="pdfe-t" data-act="undo" ${canUndo ? '' : 'disabled'} title="${esc(t('pdfe_undo'))}">${icon('restore', 18)}</button>
       </div>
@@ -152,11 +154,31 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     if (b.dataset.tool) { tool = b.dataset.tool; pendingImage = null; select(null); paintBar(); return; }
     const act = b.dataset.act;
     if (act === 'delete') removeSelected();
+    else if (act === 'rotate') rotateSelected();
     else if (act === 'undo') await undo();
     else if (act === 'image') await pickImage();
     else if (act === 'fonts') await openFonts();
     else if (act === 'save') await save();
   };
+
+  /** A quarter turn about the picture's own centre: the shown box swaps its sides, the centre
+   *  stays where the eye left it. / 绕图自己的中心转四分之一圈:显示框调换长短边,
+   *  中心留在眼睛离开它的地方。 */
+  function rotateSelected() {
+    const sel = selection;
+    const e0 = sel?.obj?.edit;
+    if (!e0?.img) return;
+    const g = e0.img;
+    g.rot = ((g.rot || 0) + 90) % 360;
+    const cx = g.x + g.w / 2;
+    const cy = g.y + g.h / 2;
+    [g.w, g.h] = [g.h, g.w];
+    g.x = cx - g.w / 2;
+    g.y = cy - g.h / 2;
+    e0.box = [g.x, g.y, g.x + g.w, g.y + g.h];
+    e0.fresh = true;
+    changed(sel.pageNo);
+  }
 
   /**
    * Re-hang the selected block from the newly chosen anchor. Its text is what the reader last
@@ -369,11 +391,31 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     e.preventDefault();
   }
 
+  /** Begin a corner drag: the opposite corner holds still, the proportions hold themselves.
+   *  开始捏角拖动:对角按住不动,比例自己守着自己。 */
+  function startResize(pageNo, ev) {
+    if (!selection?.obj?.added) return;
+    const [x, y] = pointIn(pageNo, ev);
+    drag = {
+      mode: 'resize', pageNo, obj: selection.obj,
+      sx: x, sy: y, dx: 0, dy: 0, moved: false, box0: [...selection.obj.box],
+    };
+  }
+
   function onDragMove(e) {
     if (!drag) return;
     const [x, y] = pointIn(drag.pageNo, e);
     drag.dx = x - drag.sx;
     drag.dy = y - drag.sy;
+    if (drag.mode === 'resize') {
+      const [x0, y0, x1, y1] = drag.box0;
+      const w0 = x1 - x0;
+      const s = Math.max(0.05, (w0 + drag.dx) / w0);
+      drag.ghostBox = [x0, y1 - (y1 - y0) * s, x0 + w0 * s, y1];
+      if (!drag.moved && Math.abs(drag.dx) + Math.abs(drag.dy) > 1.5) drag.moved = true;
+      if (drag.moved) paintLayer(drag.pageNo);
+      return;
+    }
     // Shift makes the drag honest about one axis: whichever way it mostly goes is the only way
     // it goes at all.
     // 按住 Shift,这次拖动就只认一条轴:主要往哪边走,就只往哪边走。
@@ -394,6 +436,22 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     drag = null;
     const L = layers.get(d.pageNo);
     L?.el.classList.remove('grabbing');
+    if (d.mode === 'resize') {
+      if (!d.moved || !d.ghostBox) return;
+      clickWasDrag = true;
+      const e0 = d.obj.edit;
+      const g = e0.img;
+      const b = d.ghostBox;
+      g.x = b[0];
+      g.y = b[1];
+      g.w = b[2] - b[0];
+      g.h = b[3] - b[1];
+      e0.box = [...b];
+      e0.fresh = true;
+      selection = { pageNo: d.pageNo, obj: d.obj };
+      changed(d.pageNo);
+      return;
+    }
     if (!d.moved || (!d.dx && !d.dy)) return;
     clickWasDrag = true;
     if (d.obj.added) {
@@ -490,12 +548,12 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       const r = rectOf(pageNo, b);
       parts.push(`<div class="${e.what === 'remove' ? 'pdfe-gone' : 'pdfe-was'}" style="${at(r)}"></div>`);
     }
-    // A drag in flight shows where the thing would land.
-    // 一次进行中的拖动,显示这样东西将会落在哪里。
-    if (drag?.pageNo === pageNo && drag.moved && drag.obj.box) {
-      const b = drag.obj.box;
-      const r = rectOf(pageNo, [b[0] + drag.dx, b[1] + drag.dy, b[2] + drag.dx, b[3] + drag.dy]);
-      parts.push(`<div class="pdfe-ghost" style="${at(r)}"></div>`);
+    // A drag in flight shows where the thing would land -- or, resizing, how large it would be.
+    // 一次进行中的拖动,显示这样东西将会落在哪里 —— 缩放时,则显示它将会有多大。
+    if (drag?.pageNo === pageNo && drag.moved && (drag.ghostBox || drag.obj.box)) {
+      const b = drag.ghostBox
+        || [drag.obj.box[0] + drag.dx, drag.obj.box[1] + drag.dy, drag.obj.box[2] + drag.dx, drag.obj.box[3] + drag.dy];
+      parts.push(`<div class="pdfe-ghost" style="${at(rectOf(pageNo, b))}"></div>`);
     }
     if (hover?.pageNo === pageNo && hover.obj !== selection?.obj && hover.obj.box) {
       const r = rectOf(pageNo, hover.obj.box);
@@ -507,8 +565,21 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       parts.push(`<div class="pdfe-act" style="left:${r.left}%;top:${r.top}%">
         <span class="what">${esc(t('pdfe_kind_' + selection.obj.kind))}</span>
       </div>`);
+      // A placed picture grows and shrinks by its corner, the proportions its own.
+      // 放上去的图,捏着角放大缩小,比例是它自己的。
+      if (selection.obj.added && selection.obj.kind === 'image') {
+        parts.push(`<div class="pdfe-grip" style="left:${r.left + r.width}%;top:${r.top + r.height}%"></div>`);
+      }
     }
     L.el.innerHTML = parts.join('');
+    const grip = L.el.querySelector('.pdfe-grip');
+    if (grip) {
+      grip.onmousedown = (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        startResize(pageNo, ev);
+      };
+    }
     if (editing?.pageNo === pageNo) L.el.appendChild(editing.el);
   }
 

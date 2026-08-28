@@ -1438,7 +1438,7 @@
 .pdfe-layer { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; }
 .drv-pdf.editing .pdfe-layer { cursor: default; }
 .drv-pdf.editing .pdfe-layer * { pointer-events: none; }
-.pdfe-layer .pdfe-act, .pdfe-layer .pdfe-type { pointer-events: auto; }
+.pdfe-layer .pdfe-act, .pdfe-layer .pdfe-type, .pdfe-layer .pdfe-grip { pointer-events: auto; }
 
 /* An outline under the pointer is an offer; the one around the selection is a fact. The first is
    thin and the colour of a hint, the second is solid and the colour of the interface.
@@ -1530,4 +1530,11 @@
 .pdfe-ghost {
   position: absolute; border-radius: 3px;
   outline: 2px dashed var(--primary); outline-offset: 1px; background: rgba(120,170,255,.12);
+}
+
+/* The corner a placed picture is resized by. / 捏着放大缩小一张放上去的图的那个角。 */
+.pdfe-grip {
+  position: absolute; width: 11px; height: 11px; margin: -6px;
+  background: var(--primary); border: 2px solid #fff; border-radius: 3px;
+  cursor: nwse-resize; box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
