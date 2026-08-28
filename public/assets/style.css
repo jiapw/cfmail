@@ -178,6 +178,18 @@ wa-textarea.flat::part(textarea) { padding: 12px 0; font-size: 14px; line-height
 .badge { margin-left: auto; color: var(--text); font-size: 12px; font-weight: 700; }
 .side-item.active .badge { color: var(--accent-text); }
 
+/* 字符代码页下拉:文本预览与两个编辑器共用的一枚小仪表。安静地待在工具栏里,
+   不与正文抢注意力;带 BOM 的文件把它锁住,悬停提示会说明原因 */
+select.enc-sel {
+  background: transparent; color: var(--text-2);
+  border: 1px solid var(--border); border-radius: 7px;
+  font-size: 12px; padding: 3px 6px; max-width: 150px;
+  cursor: pointer; flex: none;
+}
+select.enc-sel:hover { color: var(--text); background: var(--hover); }
+select.enc-sel:disabled { opacity: .55; cursor: default; }
+select.enc-sel option { background: var(--panel); color: var(--text); }
+
 .avatar {
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 50%; color: #fff; font-weight: 500; flex: none; user-select: none;

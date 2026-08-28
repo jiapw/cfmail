@@ -24,6 +24,7 @@ import { t, tErr } from '../i18n.js';
 import { esc, icon, qs, toast, confirmDialog, fmtDateTime } from '../ui.js';
 import { store, setTitle } from '../app.js';
 import { openDoc, saveDoc, mergeDoc, draft, refreshThumb, MAX_BYTES } from '../edit/session.js';
+import { encSelectHtml, pickEnc, confirmLossy, lossyText } from '../edit/codepage.js';
 import { extOf } from '../edit/kinds.js';
 import { ensureCss, foldingLineNumbers, langFor, loadCm, themeStyle } from './view.js';
 
@@ -102,6 +103,7 @@ function shell() {
       <span class="code-name" id="code-name"></span>
       <span class="code-dot" id="code-dot" title=""></span>
       <span class="code-sp"></span>
+      <span id="code-enc"></span>
       <wa-button class="icon" appearance="plain" id="code-wrap" aria-label="${esc(t('md_wrap'))}"
         title="${esc(t('md_wrap'))}">${icon('wrapText', 18)}</wa-button>
       <wa-button size="small" variant="brand" id="code-save">${esc(t('md_save'))}</wa-button>
@@ -150,8 +152,18 @@ async function doSave() {
   if (!ed || ed.saving) return;
   ed.saving = true;
   try {
-    const text = textOf();
-    const r = await saveDoc(ed.doc, text, ed.mime);
+    let text = textOf();
+    let r = await saveDoc(ed.doc, text, ed.mime);
+    // Characters the file's codepage cannot carry. On a yes they become '?' -- in the box first,
+    // then in the file, so the screen and the disk cannot end up telling two stories.
+    // 文件的代码页装不下的字符。答应之后它们变成 '?' —— 先在框里,再进文件,
+    // 免得屏幕与磁盘各说各话。
+    if (r.status === 'badchars') {
+      if (!(await confirmLossy(r.bad, ed.doc.cp.enc))) return;
+      text = lossyText(text, ed.doc.cp.enc);
+      replaceAll(text, -1);
+      r = await saveDoc(ed.doc, text, ed.mime);
+    }
     if (r.status === 'too-big') return toast(t('md_too_big'), true);
     if (r.status === 'unchanged') {
       markDirty(false);
@@ -227,6 +239,17 @@ export async function renderCodeEditor(id) {
     qs('#code-name').textContent = ed.doc.name;
     setTitle(ed.doc.name);
     qs('#code-wrap').classList.toggle('on', ed.wrap);
+    // The codepage the file was read through, changeable while it has no BOM. Switching re-reads
+    // the same bytes; the view update that follows notices the text now matches base and clears
+    // the dirty mark and the draft on its own.
+    // 文件被读入时经过的代码页,没有 BOM 时可换。换挡是把同一份字节重读一遍;
+    // 随之而来的视图更新会发现文本与 base 一致,自己清掉脏标记和草稿。
+    const encBox = qs('#code-enc');
+    encBox.innerHTML = encSelectHtml(ed.doc.cp);
+    encBox.querySelector('select')?.addEventListener('change', async (e) => {
+      const reread = await pickEnc(e.target, ed.doc, ed.dirty);
+      if (reread !== null) replaceAll(reread, -1);
+    });
 
     let text = ed.doc.base;
     // A draft outliving its tab means the tab did not close on purpose. Offering it is worth doing
