@@ -119,7 +119,7 @@ const NL = String.fromCharCode(10);
  * 重写的块不包:它就站在旧的那个站过的地方,处在那里本来就已生效的颜色和变换之中 ——
  * 它正是靠这一点,才看上去仍和这一页的其余部分是一伙的。
  */
-function textBlock(w, hex, rows) {
+function textBlock(w, hex, rows, seq) {
   const lines = ['BT'];
   if (w.charSp) lines.push(`${n6(w.charSp)} Tc`);
   if (w.wordSp) lines.push(`${n6(w.wordSp)} Tw`);
@@ -127,7 +127,17 @@ function textBlock(w, hex, rows) {
   if (w.rise) lines.push(`${n6(w.rise)} Ts`);
   if (w.color) lines.push(`${n6(w.color[0])} ${n6(w.color[1])} ${n6(w.color[2])} rg`);
   lines.push(`/${w.font} ${n6(w.size)} Tf`);
-  if (rows) {
+  if (seq) {
+    // Stretches of one line, the pen advancing through them: the document's font by codes, the
+    // stand-in only where a Tf has switched to it, and never a new matrix in between.
+    // 同一行里的几段,笔从头写到尾:文档字体按码位写,替身只在 Tf 切过去的那几段出场,
+    // 中间绝不另起矩阵。
+    lines.push(`${w.tm.map(n6).join(' ')} Tm`);
+    for (const p of seq) {
+      lines.push(p.codes ? `/${w.font} ${n6(w.size)} Tf` : `/${w.subFont} ${n6(w.size)} Tf`);
+      lines.push(`${p.codes ? hexOf(p.codes, w.bytes) : p.hex} Tj`);
+    }
+  } else if (rows) {
     // Several lines, each placed by its own matrix -- alignment is nothing but where each line
     // starts, decided when it was typed and carried here as an offset.
     // 好几行,每行由它自己的矩阵安放 —— 对齐无非是"每行从哪儿起笔",
@@ -157,6 +167,39 @@ function codesWidth(font, codes, size) {
   let units = 0;
   for (const c of codes) units += font.width(c) || 0;
   return (units * size) / 1000;
+}
+
+/**
+ * The width of text in a standard-14 font, measured by the browser.
+ *
+ * These fonts ship no widths -- their metrics live in the reader -- and the reader at hand IS a
+ * browser, whose Arial, Times New Roman and Courier New are metrically compatible with
+ * Helvetica, Times and Courier by design. So the canvas is asked, in the same pt-for-px scale,
+ * and the answer is the one the page will actually be drawn with.
+ *
+ * 标准十四字体里一段文字的宽,由浏览器来量。
+ *
+ * 这些字体不带宽度 —— 它们的度量住在阅读器里 —— 而眼下这个阅读器就是浏览器,
+ * 它的 Arial、Times New Roman 与 Courier New,与 Helvetica、Times、Courier 在度量上
+ * 本就是按兼容设计的。所以去问 canvas,按点当像素的同一比例,得到的正是页面实际会被画出的那个答案。
+ */
+let stdCtx = null;
+function stdWidth(baseFont, text, size) {
+  const name = String(baseFont || '');
+  const fam = /courier/i.test(name) ? '"Courier New", Courier, monospace'
+    : /times/i.test(name) ? '"Times New Roman", Times, serif'
+    : /helvetica|arial/i.test(name) ? 'Arial, Helvetica, sans-serif'
+    : null;
+  if (!fam) return null;
+  try {
+    stdCtx ||= document.createElement('canvas').getContext('2d');
+    const b = /bold/i.test(name) ? 'bold ' : '';
+    const i = /oblique|italic/i.test(name) ? 'italic ' : '';
+    stdCtx.font = `${i}${b}${size}px ${fam}`;
+    return stdCtx.measureText(String(text)).width;
+  } catch {
+    return null;
+  }
 }
 
 /** How wide a line of text comes out in a face, in points. Advance widths are what the fonts
@@ -194,7 +237,29 @@ export async function openPdf(bytes, { local = null } = {}) {
 
   const pages = new Map();          // index -> page state
   const fonts = new Map();          // key -> {key, bytes, face, family, layer}
+  // A document edited before carries this editor's names in its resources already, and a name
+  // reused is a resource overwritten: last session's EdFont1 replaced by this session's turns
+  // every code written against the old one into a different glyph. Count past what is there.
+  // 编辑过的文档,资源里已经带着这个编辑器起的名字;名字一旦复用就是资源被顶替 ——
+  // 上一场的 EdFont1 被这一场的顶掉,当初按旧的写下的每个码位都变成另一个字形。
+  // 所以计数从已有的名字之后起。
   let fontCount = 0;
+  let imgCount = 0;
+  for (let i = 0; i < pageCount; i++) {
+    const node = probe.getPage(i).node;
+    const scan = (dictName, re, bump) => {
+      try {
+        const dict = node.Resources()?.lookup(PDFName.of(dictName));
+        if (!dict?.keys) return;
+        for (const key of dict.keys()) {
+          const m = re.exec(String(key).replace(/^\//, ''));
+          if (m) bump(parseInt(m[1], 10));
+        }
+      } catch { /* a page whose resources cannot be read adds no names / 资源读不了的页,也贡献不了名字 */ }
+    };
+    scan('Font', /^EdFont(\d+)$/, (n) => { fontCount = Math.max(fontCount, n); });
+    scan('XObject', /^EdImg(\d+)$/, (n) => { imgCount = Math.max(imgCount, n); });
+  }
 
   /** Read one page into the model. Done once per page; the objects it returns are stable, because
    *  edits never move the original bytes they point at.
@@ -333,12 +398,21 @@ export async function openPdf(bytes, { local = null } = {}) {
     let oldAdv = k ? 0 : null;
     for (const r of (k && obj.runs) || []) {
       const f = st.res.font(r.font);
-      if (!f?.width || !f.measured) { oldAdv = null; break; }
-      let u = 0;
-      for (let i = 0; i + f.bytes <= r.codes.length; i += f.bytes) {
-        u += f.width(f.bytes === 2 ? r.codes[i] * 256 + r.codes[i + 1] : r.codes[i]) || 0;
+      let w = null;
+      if (f?.width && f.measured) {
+        let u = 0;
+        for (let i = 0; i + f.bytes <= r.codes.length; i += f.bytes) {
+          u += f.width(f.bytes === 2 ? r.codes[i] * 256 + r.codes[i + 1] : r.codes[i]) || 0;
+        }
+        w = (u * r.size) / 1000;
+      } else {
+        // No widths in the file: a standard-14 run, measured by the browser it will be drawn by.
+        // 文件里没有宽度:这是标准十四字体的一段,交给将要画它的浏览器来量。
+        const s = runText(r, f);
+        if (s != null) w = stdWidth(f?.baseFont, s, r.size);
       }
-      oldAdv += ((u * r.size) / 1000) * (r.hscale || 1);
+      if (w == null) { oldAdv = null; break; }
+      oldAdv += w * (r.hscale || 1);
     }
     const placed = (newW) => {
       const m = first.tm;
@@ -359,20 +433,56 @@ export async function openPdf(bytes, { local = null } = {}) {
       // The document's own font can say it: nothing is embedded, nothing about the page's
       // appearance changes except which letters are there.
       // 文档自己的字体说得出来:什么都不必嵌入,页面的样子除了"是哪几个字"之外毫无变化。
-      const p = placed(codesWidth(font, own, first.size));
+      const p = placed(codesWidth(font, own, first.size) ?? stdWidth(font.baseFont, text, first.size));
       return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: LAYERS.OWN, align,
         write: { ...write, tm: p.tm, font: first.font, codes: own, bytes: font.bytes } }, p);
     }
-    // It cannot, so the search begins. The embedded program is handed over not because it will
-    // be used -- it demonstrably cannot write this -- but so a candidate found elsewhere can be
-    // held against it and checked to be the same face.
-    // 它说不出来,于是搜索开始。把嵌入的那个程序交出去,不是因为它会被用上 ——
-    // 它明摆着写不出这个 —— 而是好让别处找到的候选者能举到它旁边,验一验是不是同一张脸。
+    // It cannot say all of it -- but almost always it can say most of it, and every character it
+    // can say should keep the document's own face. So the text is split into stretches: the
+    // subset writes what it knows, and only the characters the author never used go to a
+    // stand-in. A digit added to a price changes one glyph, not the look of the line.
+    // 它说不全 —— 但几乎总能说出大半,而它说得出的每一个字,都该保持文档自己的字面。
+    // 于是文字被切成几段:子集写它认得的,只有作者从未用过的那几个字符才交给替身。
+    // 价格里添的一个数字,换的是一个字形,不是一整行的模样。
+    const parts = [];
+    let short = '';
+    for (const ch of text) {
+      const c = codesFor(ch, font);
+      const last = parts[parts.length - 1];
+      if (c) {
+        if (last?.codes) { last.codes.push(...c); last.text += ch; }
+        else parts.push({ codes: [...c], text: ch });
+      } else {
+        short += ch;
+        if (last && !last.codes) last.text += ch;
+        else parts.push({ text: ch });
+      }
+    }
+    const mixed = parts.some((p) => p.codes);
+    // The search runs for what is missing -- all of it when nothing could be said. The embedded
+    // program is handed over not because it will be used -- it demonstrably cannot write this --
+    // but so a candidate found elsewhere can be held against it and checked to be the same face.
+    // 搜索只为缺的那部分而跑 —— 一个都说不出时,就是全部。把嵌入的那个程序交出去,
+    // 不是因为它会被用上 —— 它明摆着写不出这个 —— 而是好让别处找到的候选者能举到它旁边,
+    // 验一验是不是同一张脸。
     const program = fontProgram(font);
     const face = program ? openFace(program) : null;
-    const got = await resolve(text, { baseFont: font.baseFont, pdfFace: face });
+    const got = await resolve(mixed ? short : text, { baseFont: font.baseFont, pdfFace: face });
     if (!got.font) return null;
-    got.font.texts.push(text);
+    got.font.texts.push(mixed ? short : text);
+    if (mixed) {
+      let newW = 0;
+      for (const p of parts) {
+        const w = p.codes
+          ? codesWidth(font, p.codes, first.size) ?? stdWidth(font.baseFont, p.text, first.size)
+          : lineWidth(got.font.face, p.text, first.size);
+        if (w == null) { newW = null; break; }
+        newW += w;
+      }
+      const p = placed(newW);
+      return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: got.layer, align,
+        write: { ...write, tm: p.tm, font: first.font, bytes: font.bytes, parts, subFont: got.font.key, embedded: true } }, p);
+    }
     const p = placed(lineWidth(got.font.face, text, first.size));
     return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: got.layer, align,
       write: { ...write, tm: p.tm, font: got.font.key, embedded: true } }, p);
@@ -424,7 +534,6 @@ export async function openPdf(bytes, { local = null } = {}) {
    * 在页面上放一张图。图的数据在搭建时按名字嵌入一次;
    * 带子上多出来的只有四个数字和一个名字 —— 在哪儿、多大、哪张图。
    */
-  let imgCount = 0;
   function addImage(st, { bytes, mime, x, y, w, h }) {
     const edit = {
       from: st.src.length, to: st.src.length, what: 'add', kind: 'image',
@@ -527,12 +636,14 @@ export async function openPdf(bytes, { local = null } = {}) {
       // 只嵌入这一页的编辑真正用到的那些字体与图片。
       const used = new Map();
       for (const e of st.edits) {
-        if (!e.write?.font || used.has(e.write.font)) continue;
-        const entry = fonts.get(e.write.font);
-        if (!entry) continue;
-        const embedded = await doc.embedFont(entry.bytes, { subset: true });
-        pg.node.setFontDictionary(PDFName.of(entry.key), embedded.ref);
-        used.set(entry.key, embedded);
+        for (const key of [e.write?.font, e.write?.subFont]) {
+          if (!key || used.has(key)) continue;
+          const entry = fonts.get(key);
+          if (!entry) continue;
+          const embedded = await doc.embedFont(entry.bytes, { subset: true });
+          pg.node.setFontDictionary(PDFName.of(entry.key), embedded.ref);
+          used.set(entry.key, embedded);
+        }
       }
       const imgs = new Set();
       for (const e of st.edits) {
@@ -566,6 +677,17 @@ export async function openPdf(bytes, { local = null } = {}) {
         }
         if (!e.write) return [e];
         const w = e.write;
+        // A mixed block: the document's font writes its stretches by code, the stand-in encodes
+        // only the characters the subset never carried.
+        // 一个混排的块:文档字体按码位写它那几段,替身只编码子集从未携带过的那几个字符。
+        if (w.parts) {
+          const f = used.get(w.subFont);
+          if (!f) return [{ from: e.from, to: e.to, text: '' }];
+          const seq = w.parts.map((p) => (p.codes
+            ? { codes: p.codes }
+            : { hex: f.encodeText(p.text).toString() }));
+          return [{ from: e.from, to: e.to, text: NL + textBlock(w, null, null, seq) + NL }];
+        }
         let hex;
         let rows = null;
         if (w.embedded || w.block === 'new') {

@@ -127,31 +127,68 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       <div class="pdfe-tools">
         ${localfont.available() && !localfont.isOpen()
           ? `<button class="pdfe-t wide" data-act="fonts" title="${esc(t('pdfe_fonts_why'))}">${icon('textFormat', 16)}<span>${esc(t('pdfe_fonts'))}</span></button>` : ''}
-        <button class="pdfe-t wide primary" data-act="save" ${canUndo ? '' : 'disabled'}>${icon('check', 16)}<span>${esc(t('pdfe_save'))}</span></button>
-        <button class="pdfe-t wide" data-act="close">${icon('close', 16)}<span>${esc(t('pdfe_done'))}</span></button>
+        <button class="pdfe-t wide primary" data-act="save" ${canUndo ? '' : 'disabled'}><span>${esc(t('pdfe_save'))}</span></button>
       </div>`;
   }
 
   bar.onclick = async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.tool) { tool = b.dataset.tool; pendingImage = null; select(null); paintBar(); return; }
     if (b.dataset.align) {
       align = b.dataset.align;
-      // The open box follows at once; the page follows when it is committed.
-      // 开着的框立刻跟上;页面等它写完时再跟。
+      // The open box follows at once; the page follows when it is committed. A selected block
+      // follows right now -- somebody who selected a thing and chose an alignment meant that
+      // thing, this moment.
+      // 开着的框立刻跟上;页面等它写完时再跟。已选中的块此刻就跟 ——
+      // 一个先选中了东西再挑对齐的人,指的就是这个东西、就是此刻。
       if (editing) editing.el.style.textAlign = align;
+      else if (selection) await realignSelected();
       paintBar();
       return;
     }
+    // Any other button means the typing is over; the box commits before the action runs.
+    // 按下其余任何按钮,都表示字打完了;先让框落定,动作再执行。
+    if (editing) await closeEditor(true);
+    if (b.dataset.tool) { tool = b.dataset.tool; pendingImage = null; select(null); paintBar(); return; }
     const act = b.dataset.act;
     if (act === 'delete') removeSelected();
     else if (act === 'undo') await undo();
     else if (act === 'image') await pickImage();
     else if (act === 'fonts') await openFonts();
     else if (act === 'save') await save();
-    else if (act === 'close') api.close();
   };
+
+  /**
+   * Re-hang the selected block from the newly chosen anchor. Its text is what the reader last
+   * typed into it, or failing that what the file can read back out of it; a block whose text
+   * cannot be known cannot be re-laid, and is left alone.
+   *
+   * 把选中的块挂到刚选定的锚上。它的文字,取读者最后打进去的那份;
+   * 没有的话,取文件自己读得出来的那份。文字无从得知的块没法重排,原样不动。
+   */
+  async function realignSelected() {
+    const sel = selection;
+    if (!sel || sel.obj.kind !== 'text') return;
+    const L = layers.get(sel.pageNo);
+    let got = null;
+    if (sel.obj.added) {
+      const e0 = sel.obj.edit;
+      ed.undo(L.st, e0);
+      got = await ed.addText(L.st, {
+        text: e0.write.text, x: e0.write.tm[4], y: e0.write.tm[5], size: e0.write.size, align,
+      });
+      if (got) selection = { pageNo: sel.pageNo, obj: ghostOf(got) };
+    } else {
+      const prior = L.st.edits.find((e) => e.what === 'retype' && e.obj === sel.obj);
+      const text = prior?.write.text ?? ed.textOf(L.st, sel.obj);
+      if (text == null || text === '') return;
+      got = await ed.retype(L.st, sel.obj, text, align);
+    }
+    if (got) {
+      got.fresh = true;
+      changed(sel.pageNo);
+    }
+  }
 
   /**
    * Choose a picture, then a place for it. The picker is the browser's own; the place is the
@@ -567,6 +604,12 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   function onDocDown(e) {
     if (!editing) return;
     if (editing.el.contains(e.target)) return;
+    // The bar is not "outside": a press there means the box AND the button -- switching the
+    // alignment of what is being typed, most of all. Actions that need the text committed
+    // commit it themselves.
+    // 工具条不算"外面":按在那里,要的是框与按钮两个都在 —— 首先就是给正在打的字换对齐。
+    // 需要文字先落定的动作,会自己去落定它。
+    if (bar.contains(e.target)) return;
     closeEditor(true);
   }
 
