@@ -81,6 +81,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   let placePage = 0;
   let drag = null;                   // { pageNo, obj, sx, sy, dx, dy, moved }
   let clickWasDrag = false;          // the click a finished drag leaves behind must not select
+  let lastPtrType = 'mouse';         // what pressed last -- a finger asks for different manners / 上一次按下的是什么 —— 手指要另一套礼数
   let assetsVeil = null;             // the stamp/signature shelf, when it is open / 开着的图章签名架
 
   const bar = document.createElement('div');
@@ -93,9 +94,14 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   // drag keeps following the pointer after it has left the page that started it.
   // 只有 document 听得到的三件事:在打字框外按下,等于写完了;
   // 一次拖动在指针离开起始页之后,仍要继续跟着它。
-  document.addEventListener('mousedown', onDocDown, true);
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup', onDragUp);
+  // Pointer events rather than mouse events, so a finger counts as a press too; a cancelled
+  // touch (the browser reclaiming the gesture) ends the drag the same way lifting does.
+  // 用 pointer 事件而不是 mouse 事件,手指的按下才算数;一次被打断的触摸
+  // (浏览器把手势收回去了)结束拖动的方式,与抬起相同。
+  document.addEventListener('pointerdown', onDocDown, true);
+  document.addEventListener('pointermove', onDragMove);
+  document.addEventListener('pointerup', onDragUp);
+  document.addEventListener('pointercancel', onDragUp);
 
   /**
    * The reader's own font library, offered to the search but never opened behind their back.
@@ -599,14 +605,17 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       holder.appendChild(el);
     }
     layers.set(pageNo, { el, holder, page: pageProxy, vp, st });
-    el.onmousemove = (e) => onMove(pageNo, e);
+    // A finger sends no hover worth drawing: its moves exist only mid-gesture, and an outline
+    // that blinks under a scroll is noise. / 手指发不出值得画的悬停:它的移动只存在于手势中途,
+    // 一圈随滚动闪烁的描边只是噪音。
+    el.onpointermove = (e) => { if (e.pointerType !== 'touch') onMove(pageNo, e); };
     el.onwheel = (e) => onWheel(pageNo, e);
-    el.onmouseleave = () => {
+    el.onpointerleave = () => {
       hover = null;
       if (placeEl) placeEl.style.display = 'none';
       paintLayer(pageNo);
     };
-    el.onmousedown = (e) => onDown(pageNo, e);
+    el.onpointerdown = (e) => onDown(pageNo, e);
     el.onclick = (e) => onClick(pageNo, e);
     el.ondblclick = (e) => onDouble(pageNo, e);
     paintLayer(pageNo);
@@ -719,14 +728,25 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   // ---------- 把一样东西拖到别处 ----------
 
   function onDown(pageNo, e) {
+    lastPtrType = e.pointerType || 'mouse';
+    // A drag's leftover click arrives before the next press or not at all -- a finger that
+    // dragged leaves no click behind, and the stale flag would eat the next honest tap.
+    // 拖动残留的那下点击,要么赶在下一次按下之前到,要么根本不来 ——
+    // 拖过的手指不留点击,这面过期的旗子会吃掉下一次老实的轻点。
+    clickWasDrag = false;
     if (tool !== 'pick' || editing || e.button !== 0) return;
     const L = layers.get(pageNo);
     if (ed.isDropped(L.st)) return;
     const [x, y] = pointIn(pageNo, e);
     const hit = hitAt(L.st, x, y);
     if (!hit) return;
-    drag = { pageNo, obj: hit, sx: x, sy: y, dx: 0, dy: 0, moved: false };
-    e.preventDefault();
+    drag = { pageNo, obj: hit, sx: x, sy: y, dx: 0, dy: 0, moved: false, ptrId: e.pointerId };
+    // Only a mouse press is defused here. WebKit answers a defused touch by never sending the
+    // tap's click, and the click is how a finger selects at all; what keeps a touch from
+    // scrolling is the selection box's own touch-action, not this.
+    // 这里只拆鼠标按下的引信。WebKit 对被拆了引信的触摸,回应是不再送出这一点的 click,
+    // 而 click 正是手指赖以选中的全部;不让触摸变成滚动的,是选中框自己的 touch-action,不是这句。
+    if (e.pointerType === 'mouse') e.preventDefault();
   }
 
   /** Begin a corner drag: the opposite corner holds still, the proportions hold themselves.
@@ -737,6 +757,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     drag = {
       mode: 'resize', pageNo, obj: selection.obj,
       sx: x, sy: y, dx: 0, dy: 0, moved: false, box0: [...selection.obj.box],
+      ptrId: ev.pointerId,
     };
   }
 
@@ -745,6 +766,14 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     const [x, y] = pointIn(drag.pageNo, e);
     drag.dx = x - drag.sx;
     drag.dy = y - drag.sy;
+    // The finger's stream is pinned to the layer at the first real move -- the box under it is
+    // about to be redrawn, and an uncaptured pointer would land on whatever replaced it. Not at
+    // the press: a press captured that early costs WebKit the tap's click.
+    // 手指的事件流在第一次真移动时才钉到层上 —— 指下的框马上要被重画,
+    // 没被捕获的指针会落到顶替它的东西上。不在按下时钉:钉得那么早,WebKit 会把这一点的 click 赔进去。
+    if (!drag.moved && e.pointerType !== 'mouse' && Math.abs(drag.dx) + Math.abs(drag.dy) > 1.5) {
+      try { layers.get(drag.pageNo)?.el.setPointerCapture(drag.ptrId); } catch { /* synthetic pointers have no capture / 合成指针没有捕获可言 */ }
+    }
     if (drag.mode === 'resize') {
       const [x0, y0, x1, y1] = drag.box0;
       const w0 = x1 - x0;
@@ -828,6 +857,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       return;
     }
     const hit = hitAt(L.st, x, y);
+    // Touch has no double-click, so the second tap serves: tapping the text that is already
+    // selected opens it for typing. / 触摸没有双击,于是第二下顶上:
+    // 再点一下已经选中的那段文字,就把它打开来改。
+    if (lastPtrType !== 'mouse' && hit && hit === selection?.obj && editText(pageNo, hit)) return;
     select(hit ? { pageNo, obj: hit } : null);
   }
 
@@ -851,9 +884,16 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     const L = layers.get(pageNo);
     if (ed.isDropped(L.st)) return;
     const [x, y] = pointIn(pageNo, e);
-    const hit = hitAt(L.st, x, y);
-    if (hit?.added && hit.kind === 'text') openEditor(pageNo, hit, hit.edit.write.text, null);
-    else if (hit?.kind === 'text' && !hit.added) openEditor(pageNo, hit, ed.textOf(L.st, hit) ?? '', null);
+    editText(pageNo, hitAt(L.st, x, y));
+  }
+
+  /** Open the words behind a text object for typing, fresh addition or original alike.
+   *  把一个文字对象背后的字打开来改,新加的与原有的一视同仁。 */
+  function editText(pageNo, hit) {
+    if (!hit || hit.kind !== 'text') return false;
+    if (hit.added) openEditor(pageNo, hit, hit.edit.write.text, null);
+    else openEditor(pageNo, hit, ed.textOf(layers.get(pageNo).st, hit) ?? '', null);
+    return true;
   }
 
   function select(next) {
@@ -926,14 +966,14 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     L.el.innerHTML = parts.join('');
     const grip = L.el.querySelector('.pdfe-grip');
     if (grip) {
-      grip.onmousedown = (ev) => {
+      grip.onpointerdown = (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
         startResize(pageNo, ev);
       };
     }
     L.el.querySelectorAll('[data-pg]').forEach((b) => {
-      b.onmousedown = (ev) => ev.stopPropagation();
+      b.onpointerdown = (ev) => ev.stopPropagation();
       b.onclick = (ev) => {
         ev.stopPropagation();
         pageAction(pageNo, b.dataset.pg);
@@ -1085,7 +1125,14 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     const text = obj && !obj.added ? raw.replace(/\n+/g, ' ') : raw;
     editing = null;
     const L = layers.get(pageNo);
-    if (commit && text && text !== was) {
+    const committing = commit && text && text !== was;
+    // The tool disarms before the first await, not after: the press that carried this commit
+    // sends its click while the font work is still running, and an armed tool would answer
+    // that click with a fresh empty box.
+    // 工具要在第一个 await 之前收回,而不是之后:载着这次落定的那一按,
+    // 会在字体的活儿还没干完时把 click 送到;一件还架着的工具,会用一个崭新的空框去应它。
+    if (committing && !obj) tool = 'pick';
+    if (committing) {
       let got;
       if (obj?.added) {
         // Re-typing a pending box is withdrawing the note and writing a fresh one in its place,
@@ -1107,7 +1154,6 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         got.fresh = true;
         changed(pageNo);
       }
-      if (!obj) { tool = 'pick'; }
     }
     select(null);
     paintBar();
@@ -1189,9 +1235,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       clearTimeout(redrawTimer);
       closeAssets();
       clearPending();
-      document.removeEventListener('mousedown', onDocDown, true);
-      document.removeEventListener('mousemove', onDragMove);
-      document.removeEventListener('mouseup', onDragUp);
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('pointermove', onDragMove);
+      document.removeEventListener('pointerup', onDragUp);
+      document.removeEventListener('pointercancel', onDragUp);
       bar.remove();
       for (const L of layers.values()) L.el.remove();
       layers.clear();

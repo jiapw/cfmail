@@ -1462,7 +1462,10 @@
    前者细,用提示的颜色;后者实,用界面的颜色。 */
 .pdfe-hover, .pdfe-sel, .pdfe-gone, .pdfe-was { position: absolute; border-radius: 3px; }
 .pdfe-hover { outline: 1px dashed rgba(120,170,255,.85); outline-offset: 1px; background: rgba(120,170,255,.10); }
-.pdfe-sel { outline: 2px solid var(--primary); outline-offset: 1px; background: rgba(120,170,255,.14); }
+/* The selection box is what a finger drags, so the browser must not read that touch as a
+   scroll -- the claim is decided by the element under the press.
+   选中框就是手指要拖的东西,浏览器不得把这一按当成滚动 —— 这个归属,由按下时指下的元素说了算。 */
+.pdfe-sel { outline: 2px solid var(--primary); outline-offset: 1px; background: rgba(120,170,255,.14); touch-action: none; }
 /* Something removed is still shown, struck through, until the page is drawn again. A thing that
    vanishes the instant it is clicked leaves nothing to take back.
    被删掉的东西仍然显示着、划着一道,直到这一页被重画。一样点下去就立刻消失的东西,
@@ -1553,6 +1556,7 @@
   position: absolute; width: 11px; height: 11px; margin: -6px;
   background: var(--primary); border: 2px solid #fff; border-radius: 3px;
   cursor: nwse-resize; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  touch-action: none;
 }
 
 /* ---------- The stamp and signature shelf, and the signature pad ----------
@@ -1618,6 +1622,31 @@
   color: var(--text-2); cursor: pointer; line-height: 0; box-shadow: 0 2px 8px rgba(0,0,0,.3);
 }
 .pdfe-pagectl button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+
+/* On a phone the bar keeps Save in hand and lets the tools scroll; the message line yields.
+   Buttons and the picture-corner grow to finger size -- an 11px grip under a fingertip is a
+   target in name only.
+   手机上,保存留在手边,工具自己横着滚;那行提示话让位。
+   按钮和捏角长到手指的尺寸 —— 指尖底下 11px 的角,只是名义上的目标。 */
+@media (max-width: 640px), ((hover: none) and (max-height: 500px)) {
+  .pdfe-bar { gap: 8px; padding: 6px 8px; }
+  .pdfe-say { display: none; }
+  .pdfe-tools { flex-wrap: nowrap; }
+  .pdfe-tools:first-child { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .pdfe-tools:first-child::-webkit-scrollbar { display: none; }
+  .pdfe-t, .pdfe-sep { flex: none; }
+  .pdfe-t { padding: 9px; }
+  .pdfe-t.wide { padding: 9px 12px; }
+  .pdfe-grip { width: 20px; height: 20px; margin: -11px; }
+}
+
+/* Where nothing hovers, what hover would have revealed is simply shown: the corner verbs of a
+   page, and the cross that deletes a kept stamp.
+   在没有悬停的地方,悬停本要揭示的东西就直接摆出来:页角的动词,和删掉一枚存着的图章的叉。 */
+@media (hover: none) {
+  .pdfe-pagectl { opacity: 1; }
+  .pdfa-item .pdfa-del { display: inline-flex; }
+}
 .pdfe-pagectl button:disabled { opacity: .4; cursor: default; }
 .pdfe-pagegone {
   position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
