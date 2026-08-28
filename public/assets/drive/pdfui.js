@@ -78,6 +78,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   let pendingImage = null;           // a picture picked and waiting for a click to place it
   let drag = null;                   // { pageNo, obj, sx, sy, dx, dy, moved }
   let clickWasDrag = false;          // the click a finished drag leaves behind must not select
+  let assetsVeil = null;             // the stamp/signature shelf, when it is open / 开着的图章签名架
 
   const bar = document.createElement('div');
   bar.className = 'pdfe-bar';
@@ -110,6 +111,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
 
   function paintBar() {
     const canUndo = ed.changes.length > 0;
+    // The host may carry changes of its own -- a password set but not yet saved -- and Save
+    // must wake for those too. / 宿主可能带着它自己的改动 —— 设了还没存的密码 ——
+    // 保存也得为它们醒着。
+    const canSave = canUndo || !!ui.extraDirty?.();
     const alignBtn = (a) => `<button class="pdfe-t${align === a ? ' on' : ''}" data-align="${a}"
       title="${esc(t('tt_align_' + a))}">${icon('align' + a[0].toUpperCase() + a.slice(1), 18)}</button>`;
     bar.innerHTML = `
@@ -117,6 +122,8 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         <button class="pdfe-t${tool === 'pick' ? ' on' : ''}" data-tool="pick" title="${esc(t('pdfe_pick'))}">${icon('select', 18)}</button>
         <button class="pdfe-t${tool === 'text' ? ' on' : ''}" data-tool="text" title="${esc(t('pdfe_addtext'))}">${icon('textFormat', 18)}</button>
         <button class="pdfe-t${tool === 'image' ? ' on' : ''}" data-act="image" title="${esc(t('tt_image'))}">${icon('image', 18)}</button>
+        <button class="pdfe-t" data-act="stamp" title="${esc(t('pdfe_stamp'))}">${icon('stamp', 18)}</button>
+        <button class="pdfe-t" data-act="sign" title="${esc(t('pdfe_sign'))}">${icon('signature', 18)}</button>
         <span class="pdfe-sep"></span>
         ${alignBtn('left')}${alignBtn('center')}${alignBtn('right')}
         <span class="pdfe-sep"></span>
@@ -129,7 +136,8 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       <div class="pdfe-tools">
         ${localfont.available() && !localfont.isOpen()
           ? `<button class="pdfe-t wide" data-act="fonts" title="${esc(t('pdfe_fonts_why'))}">${icon('textFormat', 16)}<span>${esc(t('pdfe_fonts'))}</span></button>` : ''}
-        <button class="pdfe-t wide primary" data-act="save" ${canUndo ? '' : 'disabled'}><span>${esc(t('pdfe_save'))}</span></button>
+        ${ui.password ? `<button class="pdfe-t${ui.hasPassword?.() ? ' on' : ''}" data-act="lock" title="${esc(t('pdfe_pw'))}">${icon('lock', 18)}</button>` : ''}
+        <button class="pdfe-t wide primary" data-act="save" ${canSave ? '' : 'disabled'}><span>${esc(t('pdfe_save'))}</span></button>
       </div>`;
   }
 
@@ -157,6 +165,9 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     else if (act === 'rotate') rotateSelected();
     else if (act === 'undo') await undo();
     else if (act === 'image') await pickImage();
+    else if (act === 'stamp') openAssets('stamp');
+    else if (act === 'sign') openAssets('signature');
+    else if (act === 'lock') { await ui.password?.(); paintBar(); }
     else if (act === 'fonts') await openFonts();
     else if (act === 'save') await save();
   };
@@ -220,6 +231,34 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
    * 先挑一张图,再挑它落脚的地方。挑图用浏览器自己的;落脚点是下一次在页面上的点击。
    * PNG 和 JPEG 原样放进去 —— PDF 装得下的就这两种 —— 其余的先重画成一张 PNG。
    */
+  /** A picture file as bytes a PDF can hold: PNG and JPEG as they are, anything else redrawn
+   *  into a PNG. `asPng` forces the redraw for every non-PNG -- the asset shelf keeps only PNG,
+   *  because transparency is the point of what it keeps.
+   *  一张图片文件,化作 PDF 装得下的字节:PNG 与 JPEG 原样,其余重画成 PNG。
+   *  `asPng` 让所有非 PNG 一律重画 —— 架子上只放 PNG,透明正是架上之物的意义。 */
+  async function readImage(f, asPng) {
+    const bmp = await createImageBitmap(f);
+    const keep = asPng ? f.type === 'image/png' : (f.type === 'image/png' || f.type === 'image/jpeg');
+    if (keep) {
+      return { bytes: new Uint8Array(await f.arrayBuffer()), mime: f.type, w: bmp.width, h: bmp.height };
+    }
+    const c = document.createElement('canvas');
+    c.width = bmp.width;
+    c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    if (!blob) return null;
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: 'image/png', w: bmp.width, h: bmp.height };
+  }
+
+  /** Hand a picture to the next click on a page. / 把一张图交给下一次在页面上的点击。 */
+  function usePending(img) {
+    pendingImage = img;
+    tool = 'image';
+    select(null);
+    paintBar();
+  }
+
   async function pickImage() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -228,29 +267,230 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       const f = input.files?.[0];
       if (!f) return;
       try {
-        const bmp = await createImageBitmap(f);
-        let bytes;
-        let mime;
-        if (f.type === 'image/png' || f.type === 'image/jpeg') {
-          bytes = new Uint8Array(await f.arrayBuffer());
-          mime = f.type;
-        } else {
-          const c = document.createElement('canvas');
-          c.width = bmp.width;
-          c.height = bmp.height;
-          c.getContext('2d').drawImage(bmp, 0, 0);
-          const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-          if (!blob) return;
-          bytes = new Uint8Array(await blob.arrayBuffer());
-          mime = 'image/png';
-        }
-        pendingImage = { bytes, mime, w: bmp.width, h: bmp.height };
-        tool = 'image';
-        select(null);
-        paintBar();
+        const img = await readImage(f, false);
+        if (img) usePending(img);
       } catch { /* a file that is not a picture places nothing / 不是图的文件放不出东西 */ }
     };
     input.click();
+  }
+
+  // ---------- the stamp and signature shelf ----------
+  // ---------- 图章与签名的架子 ----------
+
+  /**
+   * The account's own shelf of stamps or signatures: pick one to place, add one from a file or
+   * a drop, draw a signature by hand. Everything picked or added becomes an ordinary placed
+   * picture -- draggable, resizable, turnable, deletable -- because that is all a stamp is.
+   *
+   * 账号自己的图章或签名架:挑一枚去盖,从文件或拖拽里添一枚,签名还能手写一枚。
+   * 挑中或添上的,都成为一张普通的已放置图片 —— 能拖、能缩、能转、能删 ——
+   * 因为图章本来就只是这么一回事。
+   */
+  function openAssets(kind) {
+    closeAssets();
+    const veil = document.createElement('div');
+    veil.className = 'pdfa-veil';
+    veil.innerHTML = `
+      <div class="pdfa-panel">
+        <div class="pdfa-head">
+          <span>${esc(t(kind === 'signature' ? 'pdfe_sign' : 'pdfe_stamp'))}</span>
+          <button class="pdfe-t" data-a="close">${icon('close', 18)}</button>
+        </div>
+        <div class="pdfa-grid"></div>
+        <div class="pdfa-foot">
+          <button class="pdfe-t wide" data-a="upload">${icon('upload', 16)}<span>${esc(t('pdfe_asset_add'))}</span></button>
+          ${kind === 'signature' ? `<button class="pdfe-t wide" data-a="draw">${icon('signature', 16)}<span>${esc(t('pdfe_asset_draw'))}</span></button>` : ''}
+        </div>
+      </div>`;
+    document.body.appendChild(veil);
+    assetsVeil = veil;
+
+    const grid = veil.querySelector('.pdfa-grid');
+    const paint = async () => {
+      const got = await fetch(`/api/drive/pdfassets?kind=${kind}`).then((r) => r.json()).catch(() => null);
+      const items = got?.assets || [];
+      grid.innerHTML = items.length
+        ? items.map((a) => `
+          <div class="pdfa-item" data-id="${esc(a.id)}" data-w="${a.w}" data-h="${a.h}">
+            <img src="/api/drive/pdfassets/${esc(a.id)}" alt="">
+            <button class="pdfa-del" title="${esc(t('pdfe_delete'))}">${icon('close', 13)}</button>
+          </div>`).join('')
+        : `<div class="pdfa-empty">${esc(t('pdfe_asset_empty'))}</div>`;
+    };
+    paint();
+
+    /** A new picture goes on the shelf and straight into the hand that added it.
+     *  新添的图上架,同时直接递到添它的那只手里。 */
+    const add = async (file) => {
+      try {
+        const img = await readImage(file, true);
+        if (!img) return;
+        const q = `kind=${kind}&w=${img.w}&h=${img.h}&name=${encodeURIComponent(file.name || '')}`;
+        const res = await fetch(`/api/drive/pdfassets?${q}`, { method: 'POST', body: img.bytes });
+        if (!res.ok) return;
+        usePending(img);
+        closeAssets();
+      } catch { /* not a picture, nothing to shelve / 不是图,无从上架 */ }
+    };
+
+    veil.addEventListener('click', async (e) => {
+      if (e.target === veil) { closeAssets(); return; }
+      const del = e.target.closest('.pdfa-del');
+      if (del) {
+        e.stopPropagation();
+        await fetch(`/api/drive/pdfassets/${del.parentElement.dataset.id}`, { method: 'DELETE' });
+        paint();
+        return;
+      }
+      const item = e.target.closest('.pdfa-item');
+      if (item) {
+        const r = await fetch(`/api/drive/pdfassets/${item.dataset.id}`);
+        if (!r.ok) return;
+        usePending({
+          bytes: new Uint8Array(await r.arrayBuffer()), mime: 'image/png',
+          w: +item.dataset.w || 300, h: +item.dataset.h || 150,
+        });
+        closeAssets();
+        return;
+      }
+      const b = e.target.closest('[data-a]');
+      if (!b) return;
+      if (b.dataset.a === 'close') closeAssets();
+      else if (b.dataset.a === 'upload') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = () => { if (input.files?.[0]) add(input.files[0]); };
+        input.click();
+      } else if (b.dataset.a === 'draw') {
+        openDrawPad(add);
+      }
+    });
+    // Dropping a picture onto the shelf is the same gesture as uploading it.
+    // 把一张图拖到架子上,与上传是同一个手势。
+    veil.addEventListener('dragover', (e) => e.preventDefault());
+    veil.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'));
+      if (f) add(f);
+    });
+  }
+
+  function closeAssets() {
+    assetsVeil?.remove();
+    assetsVeil = null;
+  }
+
+  /**
+   * The signature pad: a mouse writes, midpoints smooth the line, and what is kept is only the
+   * ink -- cropped to its own bounds, on nothing at all.
+   *
+   * 手写签名板:鼠标来写,取中点把线抹顺;留下的只有墨迹 ——
+   * 裁到它自己的边界,底下什么也没有。
+   */
+  function openDrawPad(onDone) {
+    const veil = document.createElement('div');
+    veil.className = 'pdfa-veil';
+    veil.innerHTML = `
+      <div class="pdfa-draw">
+        <div class="pdfa-head"><span>${esc(t('pdfe_draw_hint'))}</span>
+          <button class="pdfe-t" data-a="close">${icon('close', 18)}</button></div>
+        <canvas width="640" height="280"></canvas>
+        <div class="pdfa-foot">
+          <button class="pdfe-t wide" data-a="clear">${esc(t('pdfe_draw_clear'))}</button>
+          <button class="pdfe-t wide" data-a="undo" title="${esc(t('pdfe_undo'))}">${icon('restore', 16)}</button>
+          <span style="flex:1"></span>
+          <button class="pdfe-t wide primary" data-a="ok" disabled>${esc(t('confirm'))}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(veil);
+    const canvas = veil.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const strokes = [];
+    let cur = null;
+
+    const repaint = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#111';
+      for (const s of strokes) trace(ctx, s);
+      veil.querySelector('[data-a="ok"]').disabled = !strokes.length;
+    };
+    const trace = (g, pts) => {
+      if (pts.length < 2) {
+        g.beginPath();
+        g.arc(pts[0][0], pts[0][1], 1.2, 0, Math.PI * 2);
+        g.fillStyle = '#111';
+        g.fill();
+        return;
+      }
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+        const my = (pts[i][1] + pts[i + 1][1]) / 2;
+        g.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+      }
+      const last = pts[pts.length - 1];
+      g.lineTo(last[0], last[1]);
+      g.stroke();
+    };
+    const at = (e) => {
+      const r = canvas.getBoundingClientRect();
+      // A zero-sized rect (a hidden window) must not turn every stroke into NaN.
+      // 零尺寸的矩形(窗口被藏起来时)不能把每一笔都变成 NaN。
+      const kx = r.width ? canvas.width / r.width : 1;
+      const ky = r.height ? canvas.height / r.height : 1;
+      return [(e.clientX - r.left) * kx, (e.clientY - r.top) * ky];
+    };
+    canvas.onpointerdown = (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      cur = [at(e)];
+      strokes.push(cur);
+    };
+    canvas.onpointermove = (e) => {
+      if (!cur) return;
+      cur.push(at(e));
+      repaint();
+    };
+    canvas.onpointerup = () => {
+      cur = null;
+      repaint();
+    };
+
+    veil.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-a]');
+      if (e.target === veil || b?.dataset.a === 'close') { veil.remove(); return; }
+      if (!b) return;
+      if (b.dataset.a === 'clear') { strokes.length = 0; repaint(); }
+      else if (b.dataset.a === 'undo') { strokes.pop(); repaint(); }
+      else if (b.dataset.a === 'ok' && strokes.length) {
+        // Only the ink survives: its bounding box, a little margin, a transparent ground.
+        // 活下来的只有墨迹:它的包围盒,一点边距,一块透明的底。
+        let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
+        for (const s of strokes) for (const [x, y] of s) {
+          x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+        }
+        const pad = 8;
+        const w = Math.max(1, Math.ceil(x1 - x0 + pad * 2));
+        const h = Math.max(1, Math.ceil(y1 - y0 + pad * 2));
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        const g = out.getContext('2d');
+        g.translate(pad - x0, pad - y0);
+        g.lineWidth = 2.5;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.strokeStyle = '#111';
+        for (const s of strokes) trace(g, s);
+        const blob = await new Promise((r) => out.toBlob(r, 'image/png'));
+        veil.remove();
+        if (blob) onDone(new File([blob], 'signature.png', { type: 'image/png' }));
+      }
+    });
   }
 
   /** Opening the library is a decision made by a person, in the click that makes it.
@@ -786,9 +1026,13 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     attach,
     keys,
     get changeCount() { return ed.changes.length; },
+    /** Repaint the bar when a fact it shows changed outside this module -- the password, say.
+     *  当工具条展示的某个事实在本模块之外变了 —— 比如密码 —— 就重画它。 */
+    refresh: paintBar,
     close() { ui.exit(); },
     destroy() {
       clearTimeout(redrawTimer);
+      closeAssets();
       document.removeEventListener('mousedown', onDocDown, true);
       document.removeEventListener('mousemove', onDragMove);
       document.removeEventListener('mouseup', onDragUp);
