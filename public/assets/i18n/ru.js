@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "Пока пусто - загрузите прозрачный PNG или перетащите его сюда",
   pdfe_draw_clear: "Очистить",
   pdfe_draw_hint: "Напишите подпись мышью",
+  pdfe_draw_width: "Толщина штриха",
   pdfe_save: "Сохранить",
   pdfe_saved: "Сохранено как новая версия",
   pdfe_undo: "Отменить",

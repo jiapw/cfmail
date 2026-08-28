@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "Noch nichts hier - ein transparentes PNG hochladen oder hereinziehen",
   pdfe_draw_clear: "Leeren",
   pdfe_draw_hint: "Unterschrift mit der Maus schreiben",
+  pdfe_draw_width: "Strichstaerke",
   pdfe_save: "Speichern",
   pdfe_saved: "Als neue Version gespeichert",
   pdfe_undo: "Rückgängig",

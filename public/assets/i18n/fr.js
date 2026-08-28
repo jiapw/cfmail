@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "Rien ici pour l instant - televersez un PNG transparent ou deposez-le",
   pdfe_draw_clear: "Effacer",
   pdfe_draw_hint: "Ecrivez votre signature a la souris",
+  pdfe_draw_width: "Epaisseur du trait",
   pdfe_save: "Enregistrer",
   pdfe_saved: "Enregistré comme nouvelle version",
   pdfe_undo: "Annuler",

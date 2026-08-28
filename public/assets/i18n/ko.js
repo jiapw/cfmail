@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "아직 비어 있습니다 - 투명 PNG를 업로드하거나 끌어다 놓으세요",
   pdfe_draw_clear: "지우기",
   pdfe_draw_hint: "마우스로 서명을 써 주세요",
+  pdfe_draw_width: "선 굵기",
   pdfe_save: "저장",
   pdfe_saved: "새 버전으로 저장했습니다",
   pdfe_undo: "실행 취소",

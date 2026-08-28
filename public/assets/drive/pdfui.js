@@ -27,6 +27,7 @@
 import { objectsAt, openPdf } from './pdfedit.js';
 import { LAYERS } from './pdffont.js';
 import * as localfont from './localfont.js';
+import { toast } from '../ui.js';
 
 /** How long to wait after a change before asking for the page to be drawn again. Long enough that
  *  a burst of typing costs one redraw, short enough that it feels like the same gesture.
@@ -319,18 +320,29 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     };
     paint();
 
-    /** A new picture goes on the shelf and straight into the hand that added it.
-     *  新添的图上架,同时直接递到添它的那只手里。 */
-    const add = async (file) => {
+    /**
+     * A new picture goes on the shelf, and the shelf shows it at once -- silence after an
+     * upload reads as failure, whatever actually happened. Only a hand-drawn signature skips
+     * the shelf view and goes straight to placing: the person who just wrote it means to use
+     * it this moment.
+     *
+     * 新图上架,架子立刻把它亮出来 —— 上传之后的沉默,不管实际发生了什么,读起来都是失败。
+     * 只有手写的签名跳过架子直接去盖:刚写完它的人,此刻就是要用它。
+     */
+    const add = async (file, andUse) => {
       try {
         const img = await readImage(file, true);
-        if (!img) return;
+        if (!img) { toast(t('e_bad_request'), true); return; }
         const q = `kind=${kind}&w=${img.w}&h=${img.h}&name=${encodeURIComponent(file.name || '')}`;
         const res = await fetch(`/api/drive/pdfassets?${q}`, { method: 'POST', body: img.bytes });
-        if (!res.ok) return;
-        usePending(img);
-        closeAssets();
-      } catch { /* not a picture, nothing to shelve / 不是图,无从上架 */ }
+        if (!res.ok) { toast(t('e_request_failed'), true); return; }
+        if (andUse) {
+          usePending(img);
+          closeAssets();
+        } else {
+          paint();
+        }
+      } catch { toast(t('e_bad_request'), true); }
     };
 
     veil.addEventListener('click', async (e) => {
@@ -363,7 +375,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         input.onchange = () => { if (input.files?.[0]) add(input.files[0]); };
         input.click();
       } else if (b.dataset.a === 'draw') {
-        openDrawPad(add);
+        openDrawPad((f) => add(f, true));
       }
     });
     // Dropping a picture onto the shelf is the same gesture as uploading it.
@@ -397,6 +409,9 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
           <button class="pdfe-t" data-a="close">${icon('close', 18)}</button></div>
         <canvas width="640" height="280"></canvas>
         <div class="pdfa-foot">
+          ${[1.5, 2.5, 4.5].map((w) => `<button class="pdfe-t pdfa-pen${w === 2.5 ? ' on' : ''}" data-w="${w}"
+            aria-label="${esc(t('pdfe_draw_width'))}" title="${esc(t('pdfe_draw_width'))}"><i style="width:${Math.round(w * 2.2)}px;height:${Math.round(w * 2.2)}px"></i></button>`).join('')}
+          <span class="pdfe-sep"></span>
           <button class="pdfe-t wide" data-a="clear">${esc(t('pdfe_draw_clear'))}</button>
           <button class="pdfe-t wide" data-a="undo" title="${esc(t('pdfe_undo'))}">${icon('restore', 16)}</button>
           <span style="flex:1"></span>
@@ -406,22 +421,24 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     document.body.appendChild(veil);
     const canvas = veil.querySelector('canvas');
     const ctx = canvas.getContext('2d');
-    const strokes = [];
+    const strokes = [];        // each stroke remembers its own width / 每一笔记着它自己的粗细
     let cur = null;
+    let penW = 2.5;
 
     const repaint = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#111';
       for (const s of strokes) trace(ctx, s);
       veil.querySelector('[data-a="ok"]').disabled = !strokes.length;
     };
-    const trace = (g, pts) => {
+    const trace = (g, s) => {
+      const pts = s.pts;
+      g.lineWidth = s.w;
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.strokeStyle = '#111';
       if (pts.length < 2) {
         g.beginPath();
-        g.arc(pts[0][0], pts[0][1], 1.2, 0, Math.PI * 2);
+        g.arc(pts[0][0], pts[0][1], s.w / 2, 0, Math.PI * 2);
         g.fillStyle = '#111';
         g.fill();
         return;
@@ -446,13 +463,13 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       return [(e.clientX - r.left) * kx, (e.clientY - r.top) * ky];
     };
     canvas.onpointerdown = (e) => {
-      canvas.setPointerCapture(e.pointerId);
-      cur = [at(e)];
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic pointers have no capture / 合成指针没有捕获可言 */ }
+      cur = { pts: [at(e)], w: penW };
       strokes.push(cur);
     };
     canvas.onpointermove = (e) => {
       if (!cur) return;
-      cur.push(at(e));
+      cur.pts.push(at(e));
       repaint();
     };
     canvas.onpointerup = () => {
@@ -461,19 +478,30 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     };
 
     veil.addEventListener('click', async (e) => {
+      const pen = e.target.closest('[data-w]');
+      if (pen) {
+        penW = parseFloat(pen.dataset.w);
+        veil.querySelectorAll('[data-w]').forEach((p) => p.classList.toggle('on', p === pen));
+        return;
+      }
       const b = e.target.closest('[data-a]');
       if (e.target === veil || b?.dataset.a === 'close') { veil.remove(); return; }
       if (!b) return;
       if (b.dataset.a === 'clear') { strokes.length = 0; repaint(); }
       else if (b.dataset.a === 'undo') { strokes.pop(); repaint(); }
       else if (b.dataset.a === 'ok' && strokes.length) {
-        // Only the ink survives: its bounding box, a little margin, a transparent ground.
-        // 活下来的只有墨迹:它的包围盒,一点边距,一块透明的底。
+        // Only the ink survives: its bounding box, a margin the widest stroke fits in, a
+        // transparent ground. / 活下来的只有墨迹:它的包围盒,一圈装得下最粗那笔的边距,
+        // 一块透明的底。
         let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
-        for (const s of strokes) for (const [x, y] of s) {
-          x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+        let widest = 0;
+        for (const s of strokes) {
+          widest = Math.max(widest, s.w);
+          for (const [x, y] of s.pts) {
+            x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+          }
         }
-        const pad = 8;
+        const pad = Math.max(8, Math.ceil(widest));
         const w = Math.max(1, Math.ceil(x1 - x0 + pad * 2));
         const h = Math.max(1, Math.ceil(y1 - y0 + pad * 2));
         const out = document.createElement('canvas');
@@ -481,10 +509,6 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
         out.height = h;
         const g = out.getContext('2d');
         g.translate(pad - x0, pad - y0);
-        g.lineWidth = 2.5;
-        g.lineCap = 'round';
-        g.lineJoin = 'round';
-        g.strokeStyle = '#111';
         for (const s of strokes) trace(g, s);
         const blob = await new Promise((r) => out.toBlob(r, 'image/png'));
         veil.remove();
@@ -608,8 +632,13 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   }
 
   function onMove(pageNo, e) {
-    if (tool !== 'pick' || editing || drag) return;
     const L = layers.get(pageNo);
+    // A page waiting for a placing click says so from the cursor -- silence here is what made
+    // a successful upload look like nothing had happened.
+    // 等着被点一下放东西的页面,由光标把这话说出来 —— 这里的沉默,
+    // 正是让一次成功的上传看起来什么都没发生的原因。
+    L.el.classList.toggle('placing', tool === 'text' || (tool === 'image' && !!pendingImage));
+    if (tool !== 'pick' || editing || drag) return;
     const [x, y] = pointIn(pageNo, e);
     const hit = hitAt(L.st, x, y);
     L.el.classList.toggle('can-grab', !!hit);

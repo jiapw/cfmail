@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "まだ何もありません - 透過 PNG をアップロードするか、ここにドロップ",
   pdfe_draw_clear: "クリア",
   pdfe_draw_hint: "マウスで署名を書いてください",
+  pdfe_draw_width: "線の太さ",
   pdfe_save: "保存",
   pdfe_saved: "新しいバージョンとして保存しました",
   pdfe_undo: "元に戻す",
