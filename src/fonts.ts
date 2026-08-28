@@ -294,6 +294,15 @@ const EDITOR_FONTS: Record<string, { url: string; type: string; note: string }> 
     type: 'font/otf',
     note: 'Noto Sans SC Regular, SIL Open Font License 1.1',
   },
+  // The bold weight of the same face, for standing in inside bold text: a regular glyph spliced
+  // into a bold line is the difference everybody sees first.
+  // 同一张脸的粗体字重,给站进粗体文字里的替身用:一个常规字形插进一行粗体里,
+  // 是所有人第一眼就看见的那个差别。
+  'noto-sans-sc-bold': {
+    url: 'https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/SubsetOTF/SC/NotoSansSC-Bold.otf',
+    type: 'font/otf',
+    note: 'Noto Sans SC Bold, SIL Open Font License 1.1',
+  },
 };
 
 /** The list, so the editor can ask what it may fall back to rather than being told.

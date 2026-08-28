@@ -326,7 +326,10 @@ export async function resolveFont(text, pdfFace, baseFont, sources) {
     }
   }
 
-  const shipped = await candidates(sources, null);
+  // The stand-in should at least match the weight: a name that says bold asks for the bold cut.
+  // 替身至少要对上字重:名字里写着粗体,要的就是粗体那一刀。
+  const bold = /bold|black|heavy|semibold|demibold|demi\b/i.test(String(baseFont || ''));
+  const shipped = await candidates(sources, null, { bold });
   for (const bytes of shipped) {
     const face = openFace(faceFromTTC(bytes, 0));
     if (!face) continue;
@@ -340,10 +343,10 @@ export async function resolveFont(text, pdfFace, baseFont, sources) {
   return { layer: null, face: null, family, missing, exact: false };
 }
 
-async function candidates(sources, family) {
+async function candidates(sources, family, opts) {
   if (typeof sources !== 'function') return [];
   try {
-    const got = await sources(family);
+    const got = await sources(family, opts);
     return (Array.isArray(got) ? got : [got]).filter(Boolean);
   } catch {
     return [];

@@ -47,20 +47,31 @@ import { applyEdits, pageObjects, parseOps } from './pdfobj.js';
 import { codesFor, contentOf, fontProgram, resourcesOf, runText, setContent } from './pdfpage.js';
 import { LAYERS, openFace, resolveFont } from './pdffont.js';
 
-/** The face this editor ships, for when a document's own font cannot write what was typed and
- *  the face it was made with is nowhere to be found.
- *  本编辑器自带的那张脸,用于"文档自己的字体写不出刚打进去的字、而它原本那款字又无处可寻"时。 */
-const BUNDLED = '/api/fonts/editor/noto-sans-sc';
+/** The faces this editor ships, for when a document's own font cannot write what was typed and
+ *  the face it was made with is nowhere to be found. Two weights of one face, because a stand-in
+ *  spliced into bold text must be bold before anything else about it can match.
+ *  本编辑器自带的那几张脸,用于"文档自己的字体写不出刚打进去的字、而它原本那款字又无处可寻"时。
+ *  同一张脸的两个字重 —— 站进粗体文字里的替身,先得是粗的,其余才谈得上像。 */
+const BUNDLED = {
+  regular: '/api/fonts/editor/noto-sans-sc',
+  bold: '/api/fonts/editor/noto-sans-sc-bold',
+};
 
-let bundledBytes = null;
+const bundledBytes = new Map();
 
-async function bundled() {
-  if (!bundledBytes) {
-    const res = await fetch(BUNDLED);
-    if (!res.ok) throw new Error('no fallback font');
-    bundledBytes = new Uint8Array(await res.arrayBuffer());
+async function bundled(bold) {
+  const key = bold ? 'bold' : 'regular';
+  if (!bundledBytes.has(key)) {
+    const res = await fetch(BUNDLED[key]);
+    if (!res.ok) {
+      // A missing weight falls back to the one that exists; a missing everything is an error.
+      // 缺一个字重就退到存在的那个;什么都缺才是错误。
+      if (bold) return bundled(false);
+      throw new Error('no fallback font');
+    }
+    bundledBytes.set(key, new Uint8Array(await res.arrayBuffer()));
   }
-  return bundledBytes;
+  return bundledBytes.get(key);
 }
 
 /**
@@ -78,14 +89,14 @@ async function bundled() {
  * 因为到那一步,除了覆盖范围之外已经没有别的还重要了。
  */
 export function fontSources(local) {
-  return async (family) => {
+  return async (family, opts) => {
     if (local) {
       try {
         const got = await local(family);
         if (got?.length) return got;
       } catch { /* a library that will not answer is a library we do without */ }
     }
-    return family ? [] : [await bundled()];
+    return family ? [] : [await bundled(!!opts?.bold)];
   };
 }
 
@@ -374,7 +385,24 @@ export async function openPdf(bytes, { local = null } = {}) {
       }
     }
     const font = st.res.font(first.font);
-    const own = codesFor(text, font);
+    // The embedded program, opened before anything is decided: later it verifies candidates,
+    // and -- under an Identity encoding, where the stream's codes ARE glyph ids -- it answers
+    // for characters the ToUnicode map forgot: a glyph that is in the font is writable,
+    // whatever the map neglected to say.
+    // 嵌入的字体程序,在做任何决定之前先打开:往后它要验证候选者,而在 Identity 编码下 ——
+    // 内容流的码位就是字形编号 —— 它还替 ToUnicode 表漏记的字符作答:
+    // 字形只要在字体里,就写得出来,不管那张表忘了说什么。
+    const program = fontProgram(font);
+    const face = program ? openFace(program) : null;
+    const codesOf = (ch) => {
+      const c = codesFor(ch, font);
+      if (c) return c;
+      if (font.identity && face) {
+        const gid = face.gidFor(ch);
+        if (gid > 0) return [gid];
+      }
+      return null;
+    };
     const write = {
       size: first.size, tm: first.tm, text,
       charSp: first.charSp, wordSp: first.wordSp, hscale: first.hscale, rise: first.rise,
@@ -429,25 +457,15 @@ export async function openPdf(bytes, { local = null } = {}) {
       st.edits.push(edit);
       return edit;
     };
-    if (own) {
-      // The document's own font can say it: nothing is embedded, nothing about the page's
-      // appearance changes except which letters are there.
-      // 文档自己的字体说得出来:什么都不必嵌入,页面的样子除了"是哪几个字"之外毫无变化。
-      const p = placed(codesWidth(font, own, first.size) ?? stdWidth(font.baseFont, text, first.size));
-      return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: LAYERS.OWN, align,
-        write: { ...write, tm: p.tm, font: first.font, codes: own, bytes: font.bytes } }, p);
-    }
-    // It cannot say all of it -- but almost always it can say most of it, and every character it
-    // can say should keep the document's own face. So the text is split into stretches: the
-    // subset writes what it knows, and only the characters the author never used go to a
-    // stand-in. A digit added to a price changes one glyph, not the look of the line.
-    // 它说不全 —— 但几乎总能说出大半,而它说得出的每一个字,都该保持文档自己的字面。
-    // 于是文字被切成几段:子集写它认得的,只有作者从未用过的那几个字符才交给替身。
-    // 价格里添的一个数字,换的是一个字形,不是一整行的模样。
+    // Split first, decide after. Every character the document's font can write should keep its
+    // face, so the text becomes stretches: what the subset knows, and what only a stand-in can
+    // say. A digit added to a price changes one glyph, not the look of the line.
+    // 先切分,后决断。文档字体写得出的每一个字都该保持它的字面,于是文字成了几段:
+    // 子集认得的,和只有替身说得出的。价格里添的一个数字,换的是一个字形,不是一整行的模样。
     const parts = [];
     let short = '';
     for (const ch of text) {
-      const c = codesFor(ch, font);
+      const c = codesOf(ch);
       const last = parts[parts.length - 1];
       if (c) {
         if (last?.codes) { last.codes.push(...c); last.text += ch; }
@@ -458,19 +476,26 @@ export async function openPdf(bytes, { local = null } = {}) {
         else parts.push({ text: ch });
       }
     }
-    const mixed = parts.some((p) => p.codes);
+    const anyOwn = parts.some((p) => p.codes);
+    if (parts.length && parts.every((p) => p.codes)) {
+      // The document's own font can say all of it: nothing is embedded, nothing about the
+      // page's appearance changes except which letters are there.
+      // 文档自己的字体全都说得出来:什么都不必嵌入,页面的样子除了"是哪几个字"之外毫无变化。
+      const own = parts.flatMap((p) => p.codes);
+      const p = placed(codesWidth(font, own, first.size) ?? stdWidth(font.baseFont, text, first.size));
+      return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: LAYERS.OWN, align,
+        write: { ...write, tm: p.tm, font: first.font, codes: own, bytes: font.bytes } }, p);
+    }
     // The search runs for what is missing -- all of it when nothing could be said. The embedded
-    // program is handed over not because it will be used -- it demonstrably cannot write this --
+    // program goes along not because it will be used -- it demonstrably cannot write this --
     // but so a candidate found elsewhere can be held against it and checked to be the same face.
-    // 搜索只为缺的那部分而跑 —— 一个都说不出时,就是全部。把嵌入的那个程序交出去,
+    // 搜索只为缺的那部分而跑 —— 一个都说不出时,就是全部。把嵌入的那个程序捎上,
     // 不是因为它会被用上 —— 它明摆着写不出这个 —— 而是好让别处找到的候选者能举到它旁边,
     // 验一验是不是同一张脸。
-    const program = fontProgram(font);
-    const face = program ? openFace(program) : null;
-    const got = await resolve(mixed ? short : text, { baseFont: font.baseFont, pdfFace: face });
+    const got = await resolve(anyOwn ? short : text, { baseFont: font.baseFont, pdfFace: face });
     if (!got.font) return null;
-    got.font.texts.push(mixed ? short : text);
-    if (mixed) {
+    got.font.texts.push(anyOwn ? short : text);
+    if (anyOwn) {
       let newW = 0;
       for (const p of parts) {
         const w = p.codes
