@@ -25,7 +25,7 @@
 // 取回一次的字节同时供绘制与编辑使用。
 
 import { t, tErr } from '../i18n.js';
-import { esc, icon, qs, toast, confirmDialog } from '../ui.js';
+import { esc, icon, qs, toast, confirmDialog, showModal, closeModal } from '../ui.js';
 import { store, setTitle } from '../app.js';
 import { api } from '../api.js';
 import { sha256Hex, tokenOf, stampOf, refreshThumb } from '../edit/session.js';
@@ -75,7 +75,10 @@ function shell() {
   </div>`;
 }
 
-const dirty = () => !!pe?.session && pe.session.changeCount !== pe.savedCount;
+/** Unsaved work is edits on the pages OR a password decided but not yet written into the file.
+ *  没存的活儿,要么是页面上的改动,要么是一个已经定了、还没写进文件里的密码。 */
+const dirty = () => !!pe?.session
+  && (pe.session.changeCount !== pe.savedCount || (pe.passTarget ?? null) !== (pe.password ?? null));
 
 function paintDot() {
   const dot = qs('#pdft-dot');
@@ -135,9 +138,33 @@ async function buildEditor(my, bytes) {
   // original still has an editing session to serve.
   // 交给 pdf.js 的是一份副本:getDocument 会把它的缓冲带去 worker,
   // 而原件还要伺候一场编辑会话。
-  const task = lib.getDocument(thumb.pdfDocOpts(bytes.slice()));
+  let task = lib.getDocument(thumb.pdfDocOpts(bytes.slice()));
   my.task = task;
-  const doc = await task.promise;
+  let doc;
+  try {
+    doc = await task.promise;
+  } catch (e) {
+    // A locked file: pdf.js names the refusal, qpdf opens it. The editing pipeline must hold
+    // plaintext -- every object gets read -- so the file is laid open once, here, and the
+    // password remembered so the save can lock it again.
+    // 一份上了锁的文件:pdf.js 说出这声拒绝,qpdf 把它打开。编辑管线必须攥着明文 ——
+    // 每个对象都要被读到 —— 所以文件在这里摊开一次,密码记下,好让保存时再锁回去。
+    task.destroy().catch(() => {});
+    const crypt = await import('../drive/pdfcrypt.js');
+    if (!crypt.needsPassword(e)) throw e;
+    const opened = await unlockLoop(crypt, bytes);
+    if (pe !== my) return;
+    if (!opened) {
+      box.innerHTML = `<div class="pdft-err">${esc(t('pdfe_pw_need'))}</div>`;
+      return;
+    }
+    bytes = opened.bytes;
+    my.password = opened.password;
+    my.passTarget = opened.password;
+    task = lib.getDocument(thumb.pdfDocOpts(bytes.slice()));
+    my.task = task;
+    doc = await task.promise;
+  }
   if (pe !== my) { task.destroy().catch(() => {}); return; }
   my.doc = doc;
 
@@ -205,7 +232,16 @@ async function buildEditor(my, bytes) {
     box,
     bytes,
     viewer: { repaint: (no) => my.repaint(no), swapDoc: (b) => my.swapDoc(b) },
-    ui: { t, icon, exit: exitEditor, saveAs: saveOut, barHost: qs('#pdft-bar') },
+    ui: {
+      t,
+      icon,
+      exit: exitEditor,
+      saveAs: saveOut,
+      barHost: qs('#pdft-bar'),
+      hasPassword: () => !!pe?.passTarget,
+      password: pwDialog,
+      extraDirty: () => (pe ? (pe.passTarget ?? null) !== (pe.password ?? null) : false),
+    },
     onDirty: paintDot,
   });
   if (pe !== my) { my.session.destroy(); return; }
@@ -224,12 +260,26 @@ async function buildEditor(my, bytes) {
 async function saveOut(out) {
   const my = pe;
   if (!my?.session) return;
-  const hash = await sha256Hex(out);
+  // The document is built plain; the lock goes on at the door. A file that had a password
+  // keeps it, one whose password was changed or removed gets what was decided.
+  // 文档以明文搭好;锁在门口才上。原本有密码的保持有,改过或移除过的,按定下的来。
+  let body = out;
+  if (my.passTarget) {
+    const crypt = await import('../drive/pdfcrypt.js');
+    const enc = await crypt.encrypt(out, my.passTarget);
+    if (pe !== my) return;
+    if (!enc.ok) {
+      toast(tErr('e_request_failed'), true);
+      return;
+    }
+    body = enc.bytes;
+  }
+  const hash = await sha256Hex(body);
   const q = `node=${encodeURIComponent(my.id)}&mime=application%2Fpdf&hash=${hash}`;
   const res = await fetch(`/api/drive/upload?${q}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/pdf', ...(my.token ? { 'If-Match': `"${my.token}"` } : {}) },
-    body: out,
+    body,
   });
   const data = await res.json().catch(() => null);
   if (pe !== my) return;
@@ -239,16 +289,115 @@ async function saveOut(out) {
   }
   my.token = data?.ver_head || `${my.id}-${data?.updated_at || Date.now()}`;
   my.savedCount = my.session.changeCount;
+  my.password = my.passTarget ?? null;
   paintDot();
+  my.session.refresh();
   announceChange(my.id, {
     updated_at: data?.updated_at || Date.now(),
     ver_head: data?.ver_head || null,
-    size: out.byteLength,
+    size: body.byteLength,
     thumb: false,
     bumpVersions: !!data?.ver_head,
   });
   toast(t('pdfe_saved'));
-  void refreshThumb({ id: my.id, name: my.node.name }, out, 'application/pdf', V());
+  // A locked file keeps its thumbnail to itself -- rendering one would put the first page of a
+  // password-protected document on an open shelf.
+  // 上了锁的文件,缩略图也不外露 —— 渲染一张,等于把带密码文档的第一页摆上敞开的架子。
+  if (!my.passTarget) void refreshThumb({ id: my.id, name: my.node.name }, out, 'application/pdf', V());
+}
+
+// ---------- Passwords ----------
+// ---------- 密码 ----------
+
+/** One password field in a modal, resolved to the string (may be empty) or null for cancel --
+ *  the two answers a password question actually has.
+ *  模态里的一格密码输入,解析为字符串(可以为空)或表示取消的 null ——
+ *  一个密码问题真正拥有的两种回答。 */
+function askPassword(title, hint) {
+  return new Promise((resolve) => {
+    const d = showModal(`
+      <div class="modal-body">
+        <h3 style="margin:0 0 8px">${esc(title)}</h3>
+        ${hint ? `<p style="margin:0 0 12px;color:var(--text-2);font-size:13px">${esc(hint)}</p>` : ''}
+        <input id="pdft-pw" type="password" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:14px">
+      </div>
+      <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <wa-button appearance="plain" data-x="cancel">${esc(t('cancel'))}</wa-button>
+        <wa-button variant="brand" data-x="ok">${esc(t('confirm'))}</wa-button>
+      </div>`);
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      resolve(v);
+    };
+    const submit = () => {
+      const v = qs('#pdft-pw', d)?.value ?? '';
+      closeModal();
+      finish(v);
+    };
+    d.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-x]');
+      if (!b) return;
+      if (b.dataset.x === 'ok') submit();
+      else {
+        closeModal();
+        finish(null);
+      }
+    });
+    d.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submit();
+      }
+    });
+    d.addEventListener('wa-hide', (e) => {
+      if (e.target === d) finish(null);
+    });
+    customElements.whenDefined('wa-dialog').then(async () => {
+      await d.updateComplete;
+      qs('#pdft-pw', d)?.focus();
+    });
+  });
+}
+
+/** Ask until the file opens or the person gives up. A wrong password is an answer to try again
+ *  on, not an error to die of. / 一直问到文件打开,或人放弃为止。密码不对是"再试一次"的回答,
+ *  不是可以死掉的错误。 */
+async function unlockLoop(crypt, bytes) {
+  let title = t('pdfe_pw_need');
+  for (;;) {
+    const pw = await askPassword(title);
+    if (pw == null) return null;
+    if (!pw) continue;
+    const got = await crypt.decrypt(bytes, pw);
+    if (got.ok) return { bytes: got.bytes, password: pw };
+    if (!got.badPassword) {
+      toast(tErr('e_request_failed'), true);
+      return null;
+    }
+    title = t('pdfe_pw_wrong');
+  }
+}
+
+/** The lock button's dialog: set a password, change it, or -- by leaving the field empty --
+ *  remove it. Nothing touches the file until the next save.
+ *  锁按钮的对话框:设密码、改密码,或者留空把它摘掉。在下一次保存之前,文件本身分毫不动。 */
+async function pwDialog() {
+  const my = pe;
+  if (!my) return;
+  const had = !!my.passTarget;
+  const v = await askPassword(
+    t(had ? 'pdfe_pw_change' : 'pdfe_pw_set'),
+    had ? t('pdfe_pw_blank') : '',
+  );
+  if (pe !== my || v == null) return;
+  if (v) my.passTarget = v;
+  else if (had) my.passTarget = null;
+  else return;
+  toast(t(my.passTarget ? 'pdfe_pw_on' : 'pdfe_pw_off'));
+  paintDot();
+  my.session?.refresh();
 }
 
 // ---------- Leaving ----------
@@ -263,6 +412,7 @@ async function exitEditor() {
   if (dirty() && !(await confirmDialog(t('pdfe_discard'), t('pdfe_discard_ok')))) return;
   if (pe !== my) return;
   my.savedCount = my.session?.changeCount ?? 0; // discarded on purpose; the unload guard stands down / 特意放弃了,卸载守卫就此立正稍息
+  my.passTarget = my.password ?? null;
   window.close();
   setTimeout(() => { location.hash = '#/drive'; }, 150);
 }

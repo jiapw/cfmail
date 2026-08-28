@@ -1544,3 +1544,46 @@
   background: var(--primary); border: 2px solid #fff; border-radius: 3px;
   cursor: nwse-resize; box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
+
+/* ---------- The stamp and signature shelf, and the signature pad ----------
+   ---------- 图章与签名的架子,以及手写签名板 ---------- */
+.pdfa-veil {
+  position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+}
+.pdfa-panel, .pdfa-draw {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.5); width: min(560px, 92vw);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.pdfa-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px;
+}
+.pdfa-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px;
+  padding: 14px 16px; max-height: 320px; overflow: auto; min-height: 90px;
+}
+.pdfa-item {
+  position: relative; border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+  padding: 8px; display: flex; align-items: center; justify-content: center; height: 84px;
+  /* Transparency needs something to be transparent against. / 透明,得衬着点什么才看得见。 */
+  background:
+    linear-gradient(45deg, rgba(128,128,128,.14) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.14) 75%) 0 0 / 14px 14px,
+    linear-gradient(45deg, rgba(128,128,128,.14) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.14) 75%) 7px 7px / 14px 14px;
+}
+.pdfa-item:hover { border-color: var(--primary); }
+.pdfa-item img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.pdfa-del {
+  position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; line-height: 0;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--panel-2);
+  color: var(--text-2); cursor: pointer; display: none; align-items: center; justify-content: center;
+}
+.pdfa-item:hover .pdfa-del { display: inline-flex; }
+.pdfa-empty { grid-column: 1 / -1; color: var(--text-3); font-size: 13px; text-align: center; padding: 22px 8px; }
+.pdfa-foot { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
+.pdfa-draw canvas {
+  display: block; margin: 14px auto 0; width: min(640px, calc(92vw - 32px));
+  background: #fff; border: 1px dashed var(--border); border-radius: 10px;
+  cursor: crosshair; touch-action: none;
+}

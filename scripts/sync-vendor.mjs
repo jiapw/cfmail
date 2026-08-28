@@ -111,6 +111,20 @@ const SPECS = [
     roots: ['dist/purify.es.mjs', 'LICENSE', 'LICENSE-MPL'],
     exts: null,
   },
+  {
+    // PDF passwords, which neither pdf.js nor pdf-lib can WRITE: qpdf's CLI compiled to WASM,
+    // one self-contained module with the wasm embedded, loaded only when a password is met or
+    // asked for. It decrypts an opened file into bytes the editing pipeline can hold, and
+    // encrypts the built document on the way back out.
+    // PDF 密码 —— pdf.js 和 pdf-lib 都"写"不了它:qpdf 的命令行编译成 WASM,
+    // 一个自含 wasm 的独立模块,只在遇到或要设密码时才加载。它把打开的文件解成
+    // 编辑管线拿得住的字节,再在出门的路上把搭好的文档加密回去。
+    name: 'qpdf',
+    from: 'qpdf-wasm-esm-embedded',
+    to: 'qpdf',
+    roots: ['qpdf.mjs', 'LICENSE'],
+    exts: null,
+  },
 ];
 
 // ---------------------------------------------------------------------------

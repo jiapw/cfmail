@@ -105,6 +105,17 @@ Released under the Apache License 2.0 and Mozilla Public License 2.0 (dual-licen
 
 自 npm 包 `dompurify` v3.4.14 的 `dist/purify.es.mjs`。GitHub 的方言允许内联 HTML 通过,于是总得有谁来决定什么可以通过 —— 而这个决定是一道安全边界,因为文档的作者就是把文档递给你的那个人。两份许可文本随包分发于 `public/vendor/dompurify/LICENSE` 与 `LICENSE-MPL`。本项目未修改其源码。
 
+### qpdf (WASM) → `public/vendor/qpdf/`
+
+```
+qpdf, compiled to WebAssembly (npm package qpdf-wasm-esm-embedded)
+Released under the Apache License 2.0
+```
+
+`qpdf.mjs` from the npm package `qpdf-wasm-esm-embedded` v1.1.1 — qpdf's command line compiled to WASM, in one self-contained ES module with the wasm embedded. The PDF editor loads it on demand, and only when a password is actually met or asked for: it lays an encrypted file open into bytes the editing pipeline can hold, and locks the built document again (AES-256) on its way back out. The licence text ships alongside at `public/vendor/qpdf/LICENSE`. This project does not modify its code.
+
+自 npm 包 `qpdf-wasm-esm-embedded` v1.1.1 的 `qpdf.mjs` —— qpdf 的命令行编译为 WASM,单个自含 wasm 的 ES 模块。PDF 编辑器按需加载它,且只在真正遇到或要设密码时:它把加密文件摊开成编辑管线拿得住的字节,再在出门的路上把搭好的文档锁回去(AES-256)。许可文本随包分发于 `public/vendor/qpdf/LICENSE`。本项目未修改其源码。
+
 ### CodeMirror 6 → `public/vendor/codemirror/`
 
 ```

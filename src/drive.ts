@@ -1559,6 +1559,83 @@ driveApp.post('/files/:id/thumb', async (c) => {
   return c.json({ ok: true });
 });
 
+// ---------- Stamps and signatures ----------
+// Small transparent pictures a person places again and again, so they belong to the account
+// rather than to any document. PNG only -- transparency is the point of them -- and modest in
+// size and number, because a library is a shelf, not a drive.
+// ---------- 图章与签名 ----------
+// 一些会被反复盖下去的小透明图,所以它们属于账号,而不属于任何文档。只收 PNG ——
+// 透明正是它们存在的理由 —— 尺寸与数量都克制,因为库是一层架子,不是一块硬盘。
+
+const PDF_ASSET_MAX = 2 * 1024 * 1024;
+const PDF_ASSET_COUNT = 48;
+const pdfAssetKey = (userId: string, id: string) => `pdfassets/${userId}/${id}.png`;
+
+driveApp.get('/pdfassets', async (c) => {
+  const kind = c.req.query('kind') === 'signature' ? 'signature' : 'stamp';
+  const rows = await c.env.DB.prepare(
+    'SELECT id, name, w, h FROM pdf_assets WHERE user_id=?1 AND kind=?2 ORDER BY created_at DESC',
+  ).bind(c.get('user').id, kind).all();
+  return c.json({ assets: rows.results || [] });
+});
+
+driveApp.post('/pdfassets', async (c) => {
+  const user = c.get('user');
+  const kind = c.req.query('kind') === 'signature' ? 'signature' : 'stamp';
+  const name = String(c.req.query('name') || '').slice(0, 80);
+  const w = Math.max(0, parseInt(c.req.query('w') || '0', 10) || 0);
+  const h = Math.max(0, parseInt(c.req.query('h') || '0', 10) || 0);
+  const len = parseInt(c.req.header('Content-Length') || '', 10);
+  if (!Number.isFinite(len) || len <= 0) throw new HttpError(400, 'e_drive_body_required');
+  if (len > PDF_ASSET_MAX) throw new HttpError(413, 'e_drive_part_too_big');
+  const buf = await c.req.arrayBuffer();
+  if (buf.byteLength > PDF_ASSET_MAX) throw new HttpError(413, 'e_drive_part_too_big');
+  const b = new Uint8Array(buf);
+  // A PNG is what starts like one; anything else was converted client-side or is refused.
+  // PNG 就是以 PNG 的方式开头的那种;其余的要么已在客户端转好,要么谢绝。
+  if (!(b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47)) {
+    throw new HttpError(400, 'e_bad_request');
+  }
+  const have = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM pdf_assets WHERE user_id=?1 AND kind=?2',
+  ).bind(user.id, kind).first() as { n: number } | null;
+  if ((have?.n || 0) >= PDF_ASSET_COUNT) throw new HttpError(400, 'e_drive_over_quota');
+  const id = crypto.randomUUID();
+  await c.env.RAW.put(pdfAssetKey(user.id, id), buf, { httpMetadata: { contentType: 'image/png' } });
+  await c.env.DB.prepare(
+    'INSERT INTO pdf_assets (id, user_id, kind, name, w, h, bytes, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)',
+  ).bind(id, user.id, kind, name, w, h, buf.byteLength, Date.now()).run();
+  return c.json({ id, name, w, h });
+});
+
+driveApp.get('/pdfassets/:id', async (c) => {
+  const row = await c.env.DB.prepare(
+    'SELECT id FROM pdf_assets WHERE id=?1 AND user_id=?2',
+  ).bind(c.req.param('id'), c.get('user').id).first();
+  if (!row) throw new HttpError(404, 'e_drive_not_found');
+  const obj: any = await c.env.RAW.get(pdfAssetKey(c.get('user').id, c.req.param('id')));
+  if (!obj) throw new HttpError(404, 'e_drive_not_found');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': 'image/png',
+      'Content-Length': String(obj.size),
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=86400',
+    },
+  });
+});
+
+driveApp.delete('/pdfassets/:id', async (c) => {
+  const user = c.get('user');
+  const row = await c.env.DB.prepare(
+    'SELECT id FROM pdf_assets WHERE id=?1 AND user_id=?2',
+  ).bind(c.req.param('id'), user.id).first();
+  if (!row) throw new HttpError(404, 'e_drive_not_found');
+  await c.env.RAW.delete(pdfAssetKey(user.id, c.req.param('id')));
+  await c.env.DB.prepare('DELETE FROM pdf_assets WHERE id=?1').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
 driveApp.get('/files/:id/thumb', async (c) => {
   const node = await accessFileCached(c, c.req.param('id'));
   if (node.kind !== 'file' || !node.r2_key || !node.has_thumb) {
