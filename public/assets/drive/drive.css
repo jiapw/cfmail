@@ -1102,7 +1102,10 @@
     background: linear-gradient(rgba(0, 0, 0, .55), rgba(0, 0, 0, 0));
   }
   .drv-view.pic .drv-verpick { position: absolute; top: 52px; left: 0; right: 0; z-index: 3; }
-  .drv-swipe { position: absolute; inset: 0; overflow: hidden; touch-action: pan-y; }
+  /* All gestures belong to the deck while it is up: pan-y would chain the vertical component
+     to the listing underneath, which then scrolls behind a full-screen photograph.
+     台立着时手势全归它:pan-y 会把竖向分量链给底下的列表,于是整屏照片背后列表在滚。 */
+  .drv-swipe { position: absolute; inset: 0; overflow: hidden; touch-action: none; }
   .drv-swipe .track { display: flex; height: 100%; width: 300%; transform: translateX(-33.3333%); }
   /* A sliver of dark between neighbouring pictures, so a drag reads as two photographs
      passing rather than one wide one sliding. 相邻图片之间留一线深色,拖动读起来是两张照片
@@ -1123,8 +1126,7 @@
      关上就不在,打开就以全宽压在列表**上面**,图标重新穿上它们的字,
      新建按钮重新穿上它的字,配额回到它脚下。上面那块把它缩小;这里的每一条都是把那块解开,再加上浮。 */
   .drv-nav {
-    position: fixed; left: 0; top: 60px; bottom: 0; z-index: 150;
-    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    position: fixed; left: env(safe-area-inset-left, 0px); top: 60px; bottom: 0; z-index: 150;
     width: 256px; padding: 0 8px 16px 8px;
     background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
   }
@@ -1484,4 +1486,12 @@
   box-shadow: 0 4px 18px rgba(0,0,0,.4);
   font-family: var(--font-ui); line-height: 1.25; white-space: pre-wrap; word-break: break-word;
   max-width: 96%;
+}
+
+/* Sideways the same grid deals four to a row: the height that limited the portrait deal is now
+   the abundant axis. The landscape deals four; portrait keeps its two.
+   横过来同一张网格一行发四张:限制竖屏发牌的高度,如今成了富余的那条轴。竖屏仍是两张。 */
+@media (hover: none) and (max-height: 500px) {
+  .drv-grid { grid-template-columns: repeat(4, 1fr); }
+  .drv-card .thumb { height: 110px; }
 }
