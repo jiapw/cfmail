@@ -119,7 +119,7 @@ const NL = String.fromCharCode(10);
  * 重写的块不包:它就站在旧的那个站过的地方,处在那里本来就已生效的颜色和变换之中 ——
  * 它正是靠这一点,才看上去仍和这一页的其余部分是一伙的。
  */
-function textBlock(w, hex) {
+function textBlock(w, hex, rows) {
   const lines = ['BT'];
   if (w.charSp) lines.push(`${n6(w.charSp)} Tc`);
   if (w.wordSp) lines.push(`${n6(w.wordSp)} Tw`);
@@ -127,8 +127,19 @@ function textBlock(w, hex) {
   if (w.rise) lines.push(`${n6(w.rise)} Ts`);
   if (w.color) lines.push(`${n6(w.color[0])} ${n6(w.color[1])} ${n6(w.color[2])} rg`);
   lines.push(`/${w.font} ${n6(w.size)} Tf`);
-  lines.push(`${w.tm.map(n6).join(' ')} Tm`);
-  lines.push(`${hex} Tj`);
+  if (rows) {
+    // Several lines, each placed by its own matrix -- alignment is nothing but where each line
+    // starts, decided when it was typed and carried here as an offset.
+    // 好几行,每行由它自己的矩阵安放 —— 对齐无非是"每行从哪儿起笔",
+    // 在打字时就已定下,带到这里只是一个偏移量。
+    for (const r of rows) {
+      lines.push(`${[w.tm[0], w.tm[1], w.tm[2], w.tm[3], w.tm[4] + r.dx, w.tm[5] + r.dy].map(n6).join(' ')} Tm`);
+      lines.push(`${r.hex} Tj`);
+    }
+  } else {
+    lines.push(`${w.tm.map(n6).join(' ')} Tm`);
+    lines.push(`${hex} Tj`);
+  }
   lines.push('ET');
   // A Tf outlives the text object that set it, so a block that had to switch fonts puts the
   // page's own font back for whatever comes after.
@@ -136,6 +147,21 @@ function textBlock(w, hex) {
   // 会把页面自己的字体放回去,给随后而来的东西用。
   if (w.embedded && w.restore) lines.push(`${w.restore} ${n6(w.size)} Tf`);
   return w.block === 'new' ? ['q', ...lines, 'Q'].join(NL) : lines.join(NL);
+}
+
+/** How wide a line of text comes out in a face, in points. Advance widths are what the fonts
+ *  themselves lay lines out by, so this is the same answer a renderer would reach.
+ *  一行字在某张脸下写出来有多宽,单位是点。步进宽度正是字体自己排行的依据,
+ *  所以这里得出的与渲染器会得出的是同一个答案。 */
+function lineWidth(face, text, size) {
+  if (!face?.font) return 0;
+  let units = 0;
+  for (const ch of text) {
+    try {
+      units += face.font.glyphForCodePoint(ch.codePointAt(0))?.advanceWidth || 0;
+    } catch { /* a glyph it cannot measure adds nothing / 量不了的字形就不计宽 */ }
+  }
+  return (units * size) / (face.unitsPerEm || 1000);
 }
 
 /**
@@ -258,6 +284,12 @@ export async function openPdf(bytes, { local = null } = {}) {
   async function retype(st, obj, text) {
     const first = obj.runs?.find((r) => r.codes.length) || obj.runs?.[0];
     if (!first) return null;
+    // A block that was dragged and is now retyped: the rewritten text carries the new place in
+    // its matrix (the runs moved with the drag), so the move note has nothing left to say.
+    // 一个先被拖动、如今又被重打的块:重写的文字在自己的矩阵里带着新位置
+    // (它的 runs 已随拖动挪过),于是那条挪动的记录再没有什么可说的了。
+    const mv = st.edits.findIndex((e) => e.what === 'move' && e.obj === obj);
+    if (mv >= 0) st.edits.splice(mv, 1);
     const font = st.res.font(first.font);
     const own = codesFor(text, font);
     const write = {
@@ -301,24 +333,110 @@ export async function openPdf(bytes, { local = null } = {}) {
    * 续在带子末尾,也就是最后画、因而画在最上面。它是它自己的一个文本对象,
    * 所以既不把状态带进页面已有的那些对象,也不从它们那里带出来。
    */
-  async function addText(st, { text, x, y, size = 12, color = [0, 0, 0], family = '' }) {
+  async function addText(st, { text, x, y, size = 12, color = [0, 0, 0], family = '', align = 'left' }) {
     const got = await resolve(text, { baseFont: family });
     if (!got.font) return null;
     got.font.texts.push(text);
+    // Several lines make a block, and alignment is decided here, where the widths are known:
+    // each line is placed against the widest one, and what build() receives is offsets.
+    // 几行合成一块,对齐就在这里决定 —— 这里知道每行的宽:
+    // 每一行都对着最宽的那行安放,build() 拿到的只是偏移量。
+    const lineH = size * 1.2;
+    const rows = String(text).replace(/\s+$/, '').split('\n');
+    const widths = rows.map((ln) => lineWidth(got.font.face, ln, size));
+    const wide = Math.max(...widths, 0);
+    const k = align === 'center' ? 0.5 : align === 'right' ? 1 : 0;
+    const lines = rows.map((ln, i) => ({ text: ln, dx: (wide - widths[i]) * k, dy: -lineH * i }));
     const edit = {
-      from: st.src.length, to: st.src.length, what: 'add', layer: got.layer,
-      write: { font: got.font.key, size, text, color, tm: [1, 0, 0, 1, x, y], block: 'new' },
+      from: st.src.length, to: st.src.length, what: 'add', kind: 'text', layer: got.layer, align,
+      box: [x, y - lineH * (rows.length - 1) - size * 0.25, x + Math.max(wide, size), y + size],
+      write: { font: got.font.key, size, text, lines, color, tm: [1, 0, 0, 1, x, y], block: 'new' },
     };
     st.edits.push(edit);
     return edit;
   }
 
-  /** Take back the last change, or a particular one.
-   *  收回最后一次改动,或者某一次特定的改动。 */
+  /**
+   * Put a picture on the page. The program itself is embedded once per key at build time; what
+   * the tape gains is four numbers and a name -- where, how large, and which picture.
+   *
+   * 在页面上放一张图。图的数据在搭建时按名字嵌入一次;
+   * 带子上多出来的只有四个数字和一个名字 —— 在哪儿、多大、哪张图。
+   */
+  let imgCount = 0;
+  function addImage(st, { bytes, mime, x, y, w, h }) {
+    const edit = {
+      from: st.src.length, to: st.src.length, what: 'add', kind: 'image',
+      box: [x, y, x + w, y + h],
+      img: { key: 'EdImg' + (++imgCount), bytes, mime, x, y, w, h },
+    };
+    st.edits.push(edit);
+    return edit;
+  }
+
+  /**
+   * Slide an object somewhere else, original bytes untouched.
+   *
+   * The object's own instructions are left exactly as the author wrote them and wrapped in a
+   * translation -- q cm .. Q -- appended at the end of the tape. Nothing inside is re-laid-out,
+   * so the per-glyph spacing, the image sampling, whatever the block carried, all survive the
+   * trip. What is lost is paint order: the moved thing now draws last, and so on top.
+   *
+   * 把一个对象挪到别处,原始字节一个不动。
+   *
+   * 对象自己的指令原样保留,包在一次平移里 —— q cm .. Q —— 续到带子末尾。
+   * 内部什么都不重排,于是逐字的间距、图像的采样,这个块携带的一切都原样活着到达。
+   * 失去的是绘制顺序:被挪的东西如今最后画,也就画在最上面。
+   */
+  function move(st, obj, dx, dy) {
+    // A retyped block owns its position through its matrix; a second move just adds up.
+    // 被重打过的块,位置由它自己的矩阵持有;再挪一次,不过是往上加。
+    const rp = st.edits.find((e) => e.what === 'retype' && e.obj === obj);
+    const prior = rp || st.edits.find((e) => e.what === 'move' && e.obj === obj);
+    let edit;
+    if (rp) {
+      const m = rp.write.tm;
+      rp.write.tm = [m[0], m[1], m[2], m[3], m[4] + dx, m[5] + dy];
+      edit = rp;
+    } else if (prior) {
+      prior.dx += dx;
+      prior.dy += dy;
+      edit = prior;
+    } else {
+      edit = { from: obj.from, to: obj.to, what: 'move', obj, dx, dy };
+      st.edits.push(edit);
+    }
+    // The boxes follow, so the next grab -- and the next double-click -- find the thing where
+    // it now is.
+    // 框跟着走,于是下一次抓取 —— 以及下一次双击 —— 找到的是它现在所在的地方。
+    shift(obj, dx, dy);
+    edit.moved = [(edit.moved?.[0] || 0) + dx, (edit.moved?.[1] || 0) + dy];
+    return edit;
+  }
+
+  /** Move an object's cached geometry, boxes and text matrices alike.
+   *  平移一个对象缓存下来的几何 —— 包围框和文本矩阵一并。 */
+  function shift(obj, dx, dy) {
+    if (obj.box) obj.box = [obj.box[0] + dx, obj.box[1] + dy, obj.box[2] + dx, obj.box[3] + dy];
+    for (const r of obj.runs || []) {
+      if (r.box) r.box = [r.box[0] + dx, r.box[1] + dy, r.box[2] + dx, r.box[3] + dy];
+      if (r.tm) r.tm = [r.tm[0], r.tm[1], r.tm[2], r.tm[3], r.tm[4] + dx, r.tm[5] + dy];
+    }
+  }
+
+  /** Take back the last change, or a particular one. A change that had dragged its object
+   *  somewhere puts the cached geometry back where it was.
+   *  收回最后一次改动,或者某一次特定的改动。一次曾把对象拖到别处的改动,
+   *  会把缓存的几何放回原地。 */
   function undo(st, edit) {
-    if (!edit) return st.edits.pop() || null;
-    const at = st.edits.indexOf(edit);
-    return at < 0 ? null : st.edits.splice(at, 1)[0];
+    let out;
+    if (!edit) out = st.edits.pop() || null;
+    else {
+      const at = st.edits.indexOf(edit);
+      out = at < 0 ? null : st.edits.splice(at, 1)[0];
+    }
+    if (out?.moved && out.obj) shift(out.obj, -out.moved[0], -out.moved[1]);
+    return out;
   }
 
   /**
@@ -343,8 +461,8 @@ export async function openPdf(bytes, { local = null } = {}) {
       if (!st.edits.length) continue;
       const pg = doc.getPage(st.index);
 
-      // Embed only the fonts this page's edits actually reached for.
-      // 只嵌入这一页的编辑真正用到的那些字体。
+      // Embed only the fonts and pictures this page's edits actually reached for.
+      // 只嵌入这一页的编辑真正用到的那些字体与图片。
       const used = new Map();
       for (const e of st.edits) {
         if (!e.write?.font || used.has(e.write.font)) continue;
@@ -354,23 +472,53 @@ export async function openPdf(bytes, { local = null } = {}) {
         pg.node.setFontDictionary(PDFName.of(entry.key), embedded.ref);
         used.set(entry.key, embedded);
       }
+      const imgs = new Set();
+      for (const e of st.edits) {
+        if (!e.img || imgs.has(e.img.key)) continue;
+        const emb = e.img.mime === 'image/png'
+          ? await doc.embedPng(e.img.bytes)
+          : await doc.embedJpg(e.img.bytes);
+        pg.node.setXObject(PDFName.of(e.img.key), emb.ref);
+        imgs.add(e.img.key);
+      }
 
-      const edits = st.edits.map((e) => {
-        if (!e.write) return e;
+      const edits = st.edits.flatMap((e) => {
+        // A move is two strokes of the pen: the bytes fall silent where they were, and reappear
+        // at the end of the tape inside a translation.
+        // 一次挪动是笔下的两划:那些字节在原地归于沉默,又在带子末尾的一次平移里重新现身。
+        if (e.what === 'move') {
+          return [
+            { from: e.obj.from, to: e.obj.to, text: '' },
+            {
+              from: st.src.length, to: st.src.length,
+              text: NL + ['q', `1 0 0 1 ${n6(e.dx)} ${n6(e.dy)} cm`, st.src.slice(e.obj.from, e.obj.to), 'Q'].join(NL) + NL,
+            },
+          ];
+        }
+        if (e.img) {
+          const g = e.img;
+          return [{
+            from: e.from, to: e.to,
+            text: NL + ['q', `${n6(g.w)} 0 0 ${n6(g.h)} ${n6(g.x)} ${n6(g.y)} cm`, `/${g.key} Do`, 'Q'].join(NL) + NL,
+          }];
+        }
+        if (!e.write) return [e];
         const w = e.write;
         let hex;
+        let rows = null;
         if (w.embedded || w.block === 'new') {
           const f = used.get(w.font);
-          if (!f) return { from: e.from, to: e.to, text: '' };
+          if (!f) return [{ from: e.from, to: e.to, text: '' }];
           // encodeText both produces the codes and records which glyphs the subset must carry,
           // which is why it happens here and not when the reader typed.
           // encodeText 既产出那些码,也记下这个子集必须携带哪些字形 ——
           // 这正是它发生在此处、而不是发生在读者打字那一刻的原因。
-          hex = f.encodeText(w.text).toString();
+          if (w.lines) rows = w.lines.map((r) => ({ ...r, hex: f.encodeText(r.text).toString() }));
+          else hex = f.encodeText(w.text).toString();
         } else {
           hex = hexOf(w.codes, w.bytes);
         }
-        return { from: e.from, to: e.to, text: NL + textBlock(w, hex) + NL };
+        return [{ from: e.from, to: e.to, text: NL + textBlock(w, hex, rows) + NL }];
       });
 
       // The page's own instructions are wrapped, so that anything they left unbalanced -- an
@@ -393,6 +541,8 @@ export async function openPdf(bytes, { local = null } = {}) {
     remove,
     retype,
     addText,
+    addImage,
+    move,
     undo,
     build,
     get dirty() {

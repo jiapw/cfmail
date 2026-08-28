@@ -68,6 +68,7 @@ function shell() {
       <span class="pdft-name" id="pdft-name"></span>
       <span class="pdft-dot" id="pdft-dot" title=""></span>
     </div>
+    <div class="pdft-bar" id="pdft-bar"></div>
     <div class="pdft-main" id="pdft-main">
       <div class="pdft-box drv-pdf editing" id="pdft-box"></div>
     </div>
@@ -204,7 +205,7 @@ async function buildEditor(my, bytes) {
     box,
     bytes,
     viewer: { repaint: (no) => my.repaint(no), swapDoc: (b) => my.swapDoc(b) },
-    ui: { t, icon, exit: exitEditor, saveAs: saveOut },
+    ui: { t, icon, exit: exitEditor, saveAs: saveOut, barHost: qs('#pdft-bar') },
     onDirty: paintDot,
   });
   if (pe !== my) { my.session.destroy(); return; }
