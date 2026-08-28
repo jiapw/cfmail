@@ -1544,9 +1544,14 @@ driveApp.post('/files/:id/thumb', async (c) => {
   // 两种都以魔数为凭 —— 缩略图是它在第零个字节自称的那种东西,而不是某个头声称的那种。
   const isWebp = b.length >= 12 && tag(0) === 'RIFF' && tag(8) === 'WEBP';
   const isJpeg = b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
-  if (!isWebp && !isJpeg) throw new HttpError(400, 'e_bad_request');
+  // ISO-BMFF with an avif/avis brand. No canvas encodes it yet; the day one does, the client's
+  // format ladder starts sending these and this line is already waiting.
+  // 带 avif/avis 品牌的 ISO-BMFF。目前还没有画布会编它;哪天有了,
+  // 客户端的格式梯子就会开始送来这种,而这一行已经在这里等着。
+  const isAvif = b.length >= 12 && tag(4) === 'ftyp' && (tag(8) === 'avif' || tag(8) === 'avis');
+  if (!isWebp && !isJpeg && !isAvif) throw new HttpError(400, 'e_bad_request');
   await c.env.RAW.put(a.node.r2_key + THUMB_SUFFIX, buf, {
-    httpMetadata: { contentType: isWebp ? 'image/webp' : 'image/jpeg' },
+    httpMetadata: { contentType: isWebp ? 'image/webp' : isAvif ? 'image/avif' : 'image/jpeg' },
   });
   await c.env.DB.prepare('UPDATE drive_nodes SET has_thumb=1 WHERE id=?1').bind(a.node.id).run();
   // The uploader's own stream cache may still say has_thumb=0 / 上传者自己的流缓存可能还记着没有缩略图

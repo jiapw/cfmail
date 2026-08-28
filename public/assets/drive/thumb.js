@@ -100,23 +100,39 @@ function withTimeout(p, ms) {
  * 一张照片内容的 PNG 缩略图又直接冲破字节上限。所以退路是 JPEG —— 每个画布都会编,
  * 阶梯也真的拧得动。只探一次,因为页面活着的时候答案不会变。
  */
+// The formats worth asking for, best first. WebP leads because every canvas that encodes it
+// does so quickly; AVIF stands behind it so that the day some browser's canvas learns to
+// encode it, this ladder picks it up without a code change -- today the probe simply falls
+// through. JPEG is not on the list because it is not a candidate: it is the floor, the format
+// every canvas encodes and the ladder lands on when nothing better answers.
+// 值得开口要的格式,最好的排前面。WebP 领头,因为凡是会编它的画布都编得快;
+// AVIF 站在它身后 —— 哪天哪个浏览器的画布学会了编它,这把梯子不改一行代码就能用上,
+// 而在今天,探测只是落空而已。JPEG 不在名单上,因为它不是候选:它是地板 ——
+// 每个画布都会编的那种,梯子在没有更好的应答时落脚的地方。
+const THUMB_CANDIDATES = ['image/webp', 'image/avif'];
 let fmtProbe = null;
 function thumbFormat() {
   if (!fmtProbe) {
-    fmtProbe = new Promise((res) => {
+    fmtProbe = (async () => {
       const c = document.createElement('canvas');
       c.width = 2;
       c.height = 2;
-      c.toBlob((b) => res(b && b.type === 'image/webp' ? 'image/webp' : 'image/jpeg'), 'image/webp');
-    });
+      for (const type of THUMB_CANDIDATES) {
+        const got = await new Promise((res) => c.toBlob((b) => res(b && b.type), type));
+        if (got === type) return type;
+      }
+      return 'image/jpeg';
+    })();
   }
   return fmtProbe;
 }
 
 async function toBlob(canvas, q) {
   const type = await thumbFormat();
-  if (type === 'image/webp') {
-    return new Promise((res) => canvas.toBlob(res, 'image/webp', q));
+  // The candidates all carry alpha; only the JPEG floor needs flattening below.
+  // 候选格式全都带透明通道;只有兜底的 JPEG 需要下面那一步压平。
+  if (type !== 'image/jpeg') {
+    return new Promise((res) => canvas.toBlob(res, type, q));
   }
   // JPEG has no alpha: whatever the canvas left transparent turns black in the encode. Flatten
   // onto the panel's own ground first, so a PNG logo's thumbnail matches the tile behind it.
