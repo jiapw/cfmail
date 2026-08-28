@@ -3376,6 +3376,7 @@ function paintPvShell(n, body) {
       ${fileIcon(n.name, 20)}<span class="nm">${esc(n.name)}</span>
       <span class="drv-dim" style="color:#aaa;font-size:12.5px">${fmtSize(vn.size)}</span>
       ${pvCanEditPdf(n) ? `<wa-button class="icon" appearance="plain" data-pdfedit aria-label="${esc(t('pdfe_open'))}">${icon('pencil', 20)}</wa-button>` : ''}
+      <span class="drv-pv-enc"></span>
       <wa-button class="icon" appearance="plain" data-dl aria-label="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>
     </div>
     ${pvVerPickHtml()}
