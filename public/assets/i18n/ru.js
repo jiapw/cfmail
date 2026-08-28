@@ -274,6 +274,8 @@ export default {
   drv_dl_title: "Скачивание объектов: {0}",
   drv_download: "Скачать",
   drv_drop_hint: "Перетащите файлы сюда для загрузки",
+  drv_save_ok: "Сохранено.",
+  e_share_failed: "Не удалось сохранить; обычная загрузка вместо этого.",
   drv_empty_file: "Этот файл пуст (0 байт).",
   drv_empty_folder: "Папка пуста",
   drv_empty_recent: "Нет недавних файлов",

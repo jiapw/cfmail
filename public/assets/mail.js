@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { esc, icon, qs, qsa, toast, fmtDate, fmtDateTime, fmtSize, fileIcon, avatar, confirmDialog, cleanSnippet, showModal, closeModal, phoneSheet, asSheet, cleanupSheet } from './ui.js';
 import { t, tStored } from './i18n.js';
-import { store, showMail, loadFolders, navigate, refreshMe, folderName, setTitle, openCompose } from './app.js';
+import { store, showMail, loadFolders, navigate, refreshMe, folderName, setTitle, openCompose, bindCollapsingTopbar } from './app.js';
 
 import { sanitizeQuoteHtml, htmlToPlainText } from './richtext.js';
 
@@ -178,6 +178,8 @@ const reRender = (folder, q) => renderList(folder, q, listState.page);
 
 function bindList(folder, q) {
   qs('#btn-refresh')?.addEventListener('click', () => reRender(folder, q));
+  // The top bar rides the list's scroll on a phone / 手机上顶栏跟着列表的滚动走
+  bindCollapsingTopbar(qs('.rows'));
   qs('#btn-prev')?.addEventListener('click', () => renderList(folder, q, Math.max(0, listState.page - 1)));
   qs('#btn-next')?.addEventListener('click', () => renderList(folder, q, listState.page + 1));
   qs('#btn-compose-sm')?.addEventListener('click', () => openCompose({ mbId: store.mbId }));
@@ -602,6 +604,7 @@ export async function renderThread(tid) {
       </div>
     </div>`;
   showMail(content);
+  bindCollapsingTopbar(qs('.thread'));
   bindThread(tid, msgs, backFolder);
 
   if (anyUnread) {

@@ -7,9 +7,9 @@ import { api, ApiError } from '../api.js';
 import { t, tErr, lang } from '../i18n.js';
 import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
-  copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, phoneSheet, asSheet, cleanupSheet,
+  copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, isPhone, phoneSheet, asSheet, cleanupSheet,
 } from '../ui.js';
-import { bindTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle, syncSidebar } from '../app.js';
+import { bindTopbar, bindCollapsingTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle, syncSidebar } from '../app.js';
 import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash } from '../edit/kinds.js';
 import { hearing, verdict } from './remux.js';
@@ -451,7 +451,7 @@ function renderFolderView(main) {
   // 到了 393px,它们把列表切成歪歪扭扭的几段,而一条深路径比屏幕还宽 ——
   // 标题唯一不可以付出的代价,就是它所领起的版式本身。一条命中住在哪儿,
   // 仍旧一按就到:行自己的菜单里。
-  const groups = dst.view === 'search' && !matchMedia('(max-width: 640px)').matches
+  const groups = dst.view === 'search' && !isPhone()
     ? groupByFolder(dst.shown) : null;
   if (groups) dst.shown = groups.flatMap((g) => g.nodes);
   const selN = dst.sel.size;
@@ -1149,6 +1149,8 @@ function bindFolderView(main) {
   }));
 
   bindThumbBackfill(box);
+  // The top bar rides this pane's scroll on a phone / 手机上顶栏跟着这块窗格的滚动走
+  bindCollapsingTopbar(box);
 
   // Drag-drop upload / 拖拽上传
   if (canWriteHere()) {
@@ -1602,18 +1604,32 @@ const SHARE_CAP = 300 * 1024 * 1024;
 async function shareOut(name, mime, size, getBlob, fallback) {
   if (!isTouch() || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function'
     || (size && size > SHARE_CAP)) return fallback();
+  // Fetching the bytes can take a moment on a big file, and a button that does nothing for two
+  // seconds reads as a button that did nothing at all -- so a small spinner stands in the corner
+  // for exactly the fetch, and leaves before the sheet arrives.
+  // 大文件取字节要等一会儿,而一颗两秒没动静的按钮读起来就是一颗什么都没做的按钮 ——
+  // 所以取字节的那一段,角落里站一个小转圈,面板来之前就退场。
+  const busy = document.createElement('div');
+  busy.className = 'dl-busy';
+  busy.innerHTML = spinnerHtml();
+  document.body.appendChild(busy);
   let file;
   try {
     const blob = await getBlob();
     file = new File([blob], name, { type: mime || blob.type || 'application/octet-stream' });
   } catch {
+    busy.remove();
     return fallback();
   }
+  busy.remove();
   if (!navigator.canShare({ files: [file] })) return fallback();
   try {
     await navigator.share({ files: [file] });
+    // The promise resolving means the sheet finished its errand -- the save is done.
+    // promise 兑现,说明面板把差事办完了 —— 保存已经落地。
+    toast(t('drv_save_ok'), false, 1000);
   } catch (e) {
-    if (e?.name !== 'AbortError') fallback();
+    if (e?.name !== 'AbortError') { toast(tErr('e_share_failed'), true); fallback(); }
   }
 }
 
@@ -4464,9 +4480,18 @@ async function paintPreview() {
   // On a phone a picture opens album-style: three cells on a sliding track, the neighbours
   // riding along with the drag. Everywhere else the single <img> stays as it was.
   // 手机上图片按相册的方式打开:滑轨上的三格,相邻的跟着拖动一起走。其余地方单个 <img> 原样。
-  const albumPic = IMG_RE.test(mime) && isTouch() && matchMedia('(max-width: 640px)').matches;
+  const albumPic = IMG_RE.test(mime) && isPhone();
   pv.el.classList.toggle('pic', albumPic);
   if (albumPic) body = `${swipeDeckHtml(src)}<div class="drv-pvwait">${spinnerHtml()}</div>`;
+  if (albumPic) {
+    // Warm the second neighbours too: the deck itself carries idx±1, so by the time a turn
+    // lands, the next pair is already on its way.
+    // 连第二圈邻居也预热:台上本来就载着 ±1,一次翻页落定时,下一对已经在路上。
+    for (const d of [-2, 2]) {
+      const n2 = pv.list[pv.idx + d];
+      if (n2 && IMG_RE.test(n2.mime || '') && !n2.arc) new Image().src = dlUrl(n2.id, true, verTag(n2));
+    }
+  }
   else if (IMG_RE.test(mime)) body = `<img src="${esc(src)}" alt=""><div class="drv-pvwait">${spinnerHtml()}</div>`;
   else if (film === 'native' || VID_RE.test(mime)) body = `<video autoplay playsinline src="${esc(src)}"></video><div class="drv-pvwait">${spinnerHtml()}</div>`;
   // A box that can be changed. How big it is does not come into it any more: the film is changed

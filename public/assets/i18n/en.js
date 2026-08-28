@@ -274,6 +274,8 @@ export default {
   drv_dl_title: "Downloading {0} item(s)",
   drv_download: "Download",
   drv_drop_hint: "Drop files here to upload",
+  drv_save_ok: "Saved.",
+  e_share_failed: "Could not save; falling back to a plain download.",
   drv_empty_file: "This file is empty (0 bytes).",
   drv_empty_folder: "This folder is empty",
   drv_empty_recent: "No recent files",

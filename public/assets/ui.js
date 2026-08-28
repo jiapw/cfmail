@@ -86,12 +86,12 @@ export function fileIcon(filename, size = 20) {
 }
 
 let fallbackTimer = null;
-export function toast(msg, isError = false) {
+export function toast(msg, isError = false, ms = 0) {
   const stack = qs('#toast-stack');
   if (stack && typeof stack.create === 'function') {
     stack.create(String(msg), {
       variant: isError ? 'danger' : 'neutral',
-      duration: isError ? 6000 : 3200,
+      duration: ms || (isError ? 6000 : 3200),
     });
     return;
   }
@@ -391,7 +391,26 @@ export const isTouch = () => matchMedia('(hover: none)').matches;
  * 条目是整宽的、拇指高的,并且就在拇指本来歇着的地方。平板保留浮动菜单:
  * 屏幕大到一张动作单反而意味着手要走更远,而不是更近。
  */
-export const phoneSheet = () => matchMedia('(hover: none)').matches && matchMedia('(max-width: 700px)').matches;
+export const phoneSheet = () => matchMedia('(hover: none)').matches
+  && (matchMedia('(max-width: 700px)').matches || matchMedia('(max-height: 500px)').matches);
+
+/**
+ * Whether this is a phone right now, in either orientation.
+ *
+ * Width alone lies twice: a phone turned sideways is 850px wide and is still a phone, and a
+ * desktop window dragged narrow is 500px wide and is still a desk. So a phone is a screen that
+ * cannot hover AND is short of room in either direction -- turned upright it lacks width,
+ * turned sideways it lacks height. A tablet fails the short-of-room half in both orientations.
+ * The stylesheets carry the same condition; keep the two in step.
+ *
+ * 此刻是不是一台手机,横竖都算。
+ *
+ * 只看宽度会撒两次谎:横过来的手机 850px 宽,仍是手机;拖窄的桌面窗口 500px 宽,仍是桌面。
+ * 所以手机 = 不会悬停、且两个方向必缺其一的屏幕 —— 竖着缺宽,横着缺高。
+ * 平板在两个朝向里都不缺。样式表里带着同一个条件;两边要保持一致。
+ */
+export const isPhone = () => matchMedia('(hover: none)').matches
+  && (matchMedia('(max-width: 640px)').matches || matchMedia('(max-height: 500px)').matches);
 
 /**
  * Turn a positioned menu into that sheet, backdrop included.

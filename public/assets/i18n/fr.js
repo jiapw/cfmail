@@ -274,6 +274,8 @@ export default {
   drv_dl_title: "Téléchargement de {0} élément(s)",
   drv_download: "Télécharger",
   drv_drop_hint: "Déposez des fichiers ici pour les importer",
+  drv_save_ok: "Enregistré.",
+  e_share_failed: "Échec de l’enregistrement ; téléchargement classique à la place.",
   drv_empty_file: "Ce fichier est vide (0 octet).",
   drv_empty_folder: "Ce dossier est vide",
   drv_empty_recent: "Aucun fichier récent",

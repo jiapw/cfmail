@@ -155,7 +155,7 @@ html.wa-dark, .wa-dark {
    pressing the number itself (view.js) is what makes the narrow column still workable.
    行号列的内边距收到桌面的一半 —— 像素属于代码 —— 纯文本则整条边栏都不要:
    没有结构的行,挣不来一条导轨。按行号本身即可折叠(view.js),窄列因此依然好用。 */
-@media (max-width: 640px) {
+@media (max-width: 640px), ((hover: none) and (max-height: 500px)) {
   .code-body .cm-lineNumbers .cm-gutterElement { padding: 0 2px 0 9px; }
   .code-plain .cm-gutters { display: none; }
 }
