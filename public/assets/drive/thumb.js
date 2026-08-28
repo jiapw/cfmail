@@ -83,8 +83,53 @@ function withTimeout(p, ms) {
   return Promise.race([p, new Promise((res) => setTimeout(() => res(null), ms))]);
 }
 
-function toBlob(canvas, q) {
-  return new Promise((res) => canvas.toBlob(res, 'image/webp', q));
+/**
+ * Which format this browser's canvas will actually encode.
+ *
+ * WebP is asked for first; Safari -- every browser on iOS included -- has never learned to
+ * encode it, and the specification's answer to an unsupported type is a PNG wearing the wrong
+ * request. PNG is useless here twice over: it has no quality dial for the ladder below, and a
+ * photographic thumbnail in PNG blows straight through the byte cap. So the fallback is JPEG,
+ * which every canvas encodes and the quality ladder can actually steer. Probed once, because
+ * the answer cannot change while the page lives.
+ *
+ * 这个浏览器的画布究竟肯编哪种格式。
+ *
+ * 先要 WebP;Safari —— 包括 iOS 上的每一个浏览器 —— 从来没学会编它,而规范对"不支持的类型"
+ * 的回答,是一张顶着错误名号的 PNG。PNG 在这里没用要没用两回:下面那把质量阶梯拧不动它,
+ * 一张照片内容的 PNG 缩略图又直接冲破字节上限。所以退路是 JPEG —— 每个画布都会编,
+ * 阶梯也真的拧得动。只探一次,因为页面活着的时候答案不会变。
+ */
+let fmtProbe = null;
+function thumbFormat() {
+  if (!fmtProbe) {
+    fmtProbe = new Promise((res) => {
+      const c = document.createElement('canvas');
+      c.width = 2;
+      c.height = 2;
+      c.toBlob((b) => res(b && b.type === 'image/webp' ? 'image/webp' : 'image/jpeg'), 'image/webp');
+    });
+  }
+  return fmtProbe;
+}
+
+async function toBlob(canvas, q) {
+  const type = await thumbFormat();
+  if (type === 'image/webp') {
+    return new Promise((res) => canvas.toBlob(res, 'image/webp', q));
+  }
+  // JPEG has no alpha: whatever the canvas left transparent turns black in the encode. Flatten
+  // onto the panel's own ground first, so a PNG logo's thumbnail matches the tile behind it.
+  // JPEG 没有透明:画布上留白的地方一编码就成了黑。先压平到面板自己的底色上,
+  // 一张 PNG 标志的缩略图才和它身后的卡片是一个底。
+  const flat = document.createElement('canvas');
+  flat.width = canvas.width;
+  flat.height = canvas.height;
+  const g = flat.getContext('2d');
+  g.fillStyle = getComputedStyle(document.body).backgroundColor || '#fff';
+  g.fillRect(0, 0, flat.width, flat.height);
+  g.drawImage(canvas, 0, 0);
+  return new Promise((res) => flat.toBlob(res, 'image/jpeg', q));
 }
 
 /** Quality ladder, then a half-size retry; give up rather than exceed the cap.
