@@ -717,6 +717,7 @@ export default {
   img_show_once: "Bilder anzeigen",
   img_trust_sender: "Diesem Absender immer vertrauen",
   img_trusted: "{0} als vertrauenswürdig markiert",
+  imp_n_files: "{0} Datei(en) ausgewählt",
   imp_backup_hint: "Die eben importierte Mail gelangt nicht von selbst in die Sicherungsarchive.",
   imp_backup_hint_go: "Im Reiter „Sicherung\" nachholen",
   imp_cancel: "Abbrechen",

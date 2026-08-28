@@ -3,7 +3,7 @@
 // 管理后台「导入工具」:把旧邮箱(Zoho / Outlook 等)导出的 .eml 目录搬进来。
 // 流程:选目录 → 扫描表头,统计收件人和子目录 → 管理员确认目标邮箱和每个子目录的去向 → 逐封上传。
 import { api } from './api.js';
-import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog, CAP, needsBrowser } from './ui.js';
+import { esc, qs, qsa, toast, fmtSize, fmtDuration, confirmDialog, CAP } from './ui.js';
 import { tabGmail, backupCatchupHint } from './admin-gmail.js';
 import { t } from './i18n.js';
 // Same parser, same version as the Worker: the attachment order must match, because downloads locate parts by part_index in the original
@@ -203,7 +203,7 @@ async function emlImport(body) {
         <label>${esc(t('imp_pick_dir'))}</label>
         <wa-button appearance="outlined" id="imp-pick">${esc(t('imp_pick_dir'))}</wa-button>
         <span class="dim" id="imp-dirname"></span>
-        <input type="file" id="imp-dir" webkitdirectory directory multiple hidden>
+        <input type="file" id="imp-dir" multiple accept=".eml" hidden>
       </div>
       <div id="imp-scan">${boxes.length ? '' : `<p class="dim">${esc(t('imp_no_mailbox'))}</p>`}</div>
     </section>
@@ -241,23 +241,23 @@ async function emlImport(body) {
   let picked = [];
   let cancelled = false;
 
-  // Prefer File System Access: once the directory is authorised, walk it lazily instead of pulling the whole
-  // tree of file objects into memory at once.
-  // Browsers without it (Firefox, Safari) fall back to a webkitdirectory input -- a substitute
-  // that costs more memory and asks nothing of the reader, so it is taken silently.
-  // A tablet has neither, and there is nothing left to fall back to: its file picker hands over
-  // files and never a directory. That one is said out loud, because the alternative is a button
-  // that does nothing at all.
+  // Prefer File System Access: once the directory is authorised, walk it lazily instead of
+  // pulling the whole tree of file objects into memory at once.
+  // Everywhere else the fallback is a plain multi-select of .eml files. It used to be a
+  // directory input, which cost the folder grouping nothing -- but a directory picker does not
+  // exist on any tablet or phone, and on Firefox it still loads every file object up front. A
+  // multi-select works on every machine that can reach this page, and the mapping table copes:
+  // files chosen flat land in one group, preselected by their recipients like everything else.
+  // The folder structure was only ever a convenience for preselection, not information the
+  // import needs.
   // 优先用 File System Access:拿到目录授权后惰性遍历,不把整棵树的文件对象一次性塞进内存。
-  // 不支持的浏览器(Firefox/Safari)回落到 webkitdirectory 输入框 —— 这个替代品多花些内存,
-  // 但对读者一无所求,所以悄悄换掉就是。
-  // 平板两样都没有,也没有下一层可退:那里的文件选择器交出来的是文件,从来不是目录。
-  // 这一种要说出来,因为另一条路是一个按下去什么也不发生的按钮。
+  // 其余一切环境回落为 .eml 的普通多选。过去这里是目录输入框 —— 目录分组不花什么 ——
+  // 但目录选择器在任何平板和手机上都不存在,Firefox 上它照样把全部文件对象一口气载入。
+  // 多选文件在每一台够得到这个页面的机器上都能用,而映射表也接得住:
+  // 平铺选进来的文件归成一组,照旧按收件人预选。目录结构从来只是预选的便利,
+  // 不是导入需要的信息。
   qs('#imp-pick').addEventListener('click', async () => {
-    if (!CAP.dirHandle) {
-      if (!CAP.dirPick) return needsBrowser('cap_no_dir_pick');
-      return qs('#imp-dir').click();
-    }
+    if (!CAP.dirHandle) return qs('#imp-dir').click();
     let handle;
     try {
       handle = await window.showDirectoryPicker({ mode: 'read' });
@@ -272,7 +272,7 @@ async function emlImport(body) {
 
   qs('#imp-dir').addEventListener('change', async (e) => {
     const files = [...e.target.files];
-    qs('#imp-dirname').textContent = (files[0]?.webkitRelativePath || '').split('/')[0] || '';
+    qs('#imp-dirname').textContent = t('imp_n_files', files.length);
     await runScan(fromInput(files));
   });
 

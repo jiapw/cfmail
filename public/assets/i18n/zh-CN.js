@@ -717,6 +717,7 @@ export default {
   img_show_once: "显示图片",
   img_trust_sender: "始终信任该发件人",
   img_trusted: "已信任 {0}",
+  imp_n_files: "已选 {0} 个文件",
   imp_backup_hint: "刚导入的邮件不会自动进入备份包。",
   imp_backup_hint_go: "去「备份」页补档",
   imp_cancel: "取消",

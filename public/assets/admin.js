@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, fmtDay, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser } from './ui.js';
 import { t } from './i18n.js';
 import { tabImport } from './admin-import.js';
 import { tabExport } from './admin-export.js';
@@ -763,12 +763,11 @@ async function tabBackup(body) {
     <div class="bk-row">
       <span class="bk-name">${esc(a.name)}</span>
       <span class="dim">${fmtSize(a.size)}</span>
-      <span class="dim bk-when">${a.at ? fmtDay(a.at) : ''}</span>
       <a class="bk-dl" href="/api/admin/backup/file/${esc(a.key)}" download>${icon('download', 15)}</a>
     </div>`;
   const group = (title, list) => `
     <div class="bk-col">
-      <div class="side-title">${esc(title)} (${list.length})</div>
+      <div class="bk-cap">${esc(title)} (${list.length})</div>
       ${list.length ? list.map(row).join('') : `<div class="dim" style="padding:4px 2px">${esc(t('bk_none'))}</div>`}
     </div>`;
 
@@ -948,7 +947,7 @@ async function tabUnrouted(body) {
       </table></div>
       <div class="row-flex" style="margin-top:12px">
         <wa-button appearance="outlined" size="small" id="un-prev" ${unroutedPage === 0 ? 'disabled' : ''}>${esc(t('prev_page'))}</wa-button>
-        <span class="dim">${esc(t('page_n', unroutedPage + 1))}</span>
+        <span class="dim">${esc(t('page_n', unroutedPage + 1, data.has_more ? `${unroutedPage + 2}+` : unroutedPage + 1))}</span>
         <wa-button appearance="outlined" size="small" id="un-next" ${data.has_more ? '' : 'disabled'}>${esc(t('next_page'))}</wa-button>
       </div>
       <p class="dim" style="margin:10px 0 0">${esc(t('unrouted_retention'))}</p>
@@ -1007,7 +1006,13 @@ async function viewUnrouted(id) {
       `::-webkit-scrollbar-track{background:rgba(0,0,0,.06);border-radius:999px}` +
       `::-webkit-scrollbar-thumb{background:rgba(0,0,0,.28);border-radius:999px;border:5px solid transparent;background-clip:content-box}` +
       `::-webkit-scrollbar-button{display:none;width:0;height:0}</style>` +
-      d.html;
+      // Execution is already doubly barred -- a sandbox with nothing allowed, and a CSP of
+      // default-src 'none'. Stripping the tags as well keeps the console clear of blocked-script
+      // warnings, which read as the viewer being broken when they are the fence doing its job.
+      // 执行本来就被双重拦住 —— 什么都不放行的沙箱,加 default-src 'none' 的 CSP。
+      // 再把标签剥掉,是让控制台不再蹦出"已拦截脚本"的警告 ——
+      // 那读起来像查看器坏了,实际上是栅栏在干活。
+      d.html.replace(/<script[\s\S]*?(?:<\/script\s*>|$)/gi, '');
   } else {
     box.innerHTML = `<div class="plainbody">${esc(d.text || t('no_content'))}</div>`;
   }

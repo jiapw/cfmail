@@ -717,6 +717,7 @@ export default {
   img_show_once: "Show images",
   img_trust_sender: "Always trust this sender",
   img_trusted: "Trusted {0}",
+  imp_n_files: "{0} file(s) selected",
   imp_backup_hint: "The mail just imported does not enter the backup archives on its own.",
   imp_backup_hint_go: "Catch up in the Backup tab",
   imp_cancel: "Cancel",

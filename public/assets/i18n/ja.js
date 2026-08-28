@@ -717,6 +717,7 @@ export default {
   img_show_once: "画像を表示",
   img_trust_sender: "この送信者を常に信頼",
   img_trusted: "{0} を信頼しました",
+  imp_n_files: "{0} 件を選択済み",
   imp_backup_hint: "いま取り込んだメールは、自動ではバックアップ書庫に入りません。",
   imp_backup_hint_go: "「バックアップ」タブで補完する",
   imp_cancel: "キャンセル",

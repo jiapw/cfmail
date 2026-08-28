@@ -717,6 +717,7 @@ export default {
   img_show_once: "Afficher les images",
   img_trust_sender: "Toujours faire confiance à cet expéditeur",
   img_trusted: "{0} approuvé",
+  imp_n_files: "{0} fichier(s) sélectionné(s)",
   imp_backup_hint: "Le courrier qui vient d'être importé n'entre pas de lui-même dans les archives de sauvegarde.",
   imp_backup_hint_go: "Rattraper dans l'onglet Sauvegarde",
   imp_cancel: "Annuler",

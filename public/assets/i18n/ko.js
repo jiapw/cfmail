@@ -717,6 +717,7 @@ export default {
   img_show_once: "이미지 표시",
   img_trust_sender: "이 발신자를 항상 신뢰",
   img_trusted: "{0} 신뢰함",
+  imp_n_files: "{0}개 파일 선택됨",
   imp_backup_hint: "방금 가져온 메일은 백업 보관 파일에 자동으로 들어가지 않습니다.",
   imp_backup_hint_go: "\"백업\" 탭에서 보충하기",
   imp_cancel: "취소",
