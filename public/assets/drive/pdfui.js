@@ -140,7 +140,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       align = b.dataset.align;
       // The open box follows at once; the page follows when it is committed.
       // 开着的框立刻跟上;页面等它写完时再跟。
-      if (editing && !editing.obj) editing.el.style.textAlign = align;
+      if (editing) editing.el.style.textAlign = align;
       paintBar();
       return;
     }
@@ -535,7 +535,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     el.style.top = obj ? r.top + '%' : `calc(${r.top}% - ${size}px)`;
     el.style.minWidth = obj ? r.width + '%' : '140px';
     el.style.fontSize = size + 'px';
-    el.style.textAlign = obj?.added ? (obj.edit.align || 'left') : obj ? '' : align;
+    el.style.textAlign = obj?.added ? (obj.edit.align || 'left') : align;
+    // A new box hangs from the click the way the alignment says: by its left edge, its centre,
+    // or its right edge. / 新框按对齐所说的方式挂在点击处:挂左缘、挂中心,或挂右缘。
+    if (!obj && align !== 'left') el.style.transform = `translateX(${align === 'center' ? '-50%' : '-100%'})`;
     if (obj) el.style.minHeight = r.height + '%';
     editing = { pageNo, obj, el, at, was: text };
     paintLayer(pageNo);
@@ -580,15 +583,17 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     if (commit && text && text !== was) {
       let got;
       if (obj?.added) {
-        // Re-typing a pending box is withdrawing the note and writing a fresh one in its place.
-        // 重打一个未落地的框,就是撤回那张便条,在原处另写一张新的。
+        // Re-typing a pending box is withdrawing the note and writing a fresh one in its place,
+        // aligned the way the bar says now -- the reader who just picked an alignment meant it.
+        // 重打一个未落地的框,就是撤回那张便条,在原处另写一张新的,
+        // 按工具条此刻所说的方式对齐 —— 刚选了对齐的那位读者,选的就是这个意思。
         const e0 = obj.edit;
         ed.undo(L.st, e0);
         got = await ed.addText(L.st, {
-          text, x: e0.write.tm[4], y: e0.write.tm[5], size: e0.write.size, align: e0.align || 'left',
+          text, x: e0.write.tm[4], y: e0.write.tm[5], size: e0.write.size, align,
         });
       } else if (obj) {
-        got = await ed.retype(L.st, obj, text);
+        got = await ed.retype(L.st, obj, text, align);
       } else {
         got = await ed.addText(L.st, { text, x: at[0], y: at[1], size: NEW_TEXT_SIZE, align });
       }

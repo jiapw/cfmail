@@ -149,6 +149,16 @@ function textBlock(w, hex, rows) {
   return w.block === 'new' ? ['q', ...lines, 'Q'].join(NL) : lines.join(NL);
 }
 
+/** What these codes add up to in width, in points, by the widths the file itself declares --
+ *  the same numbers its own layout was computed from.
+ *  这些码位加起来有多宽,单位是点,按文件自己声明的宽度 —— 它当初排版用的就是这些数。 */
+function codesWidth(font, codes, size) {
+  if (!font?.width || !font.measured) return null;
+  let units = 0;
+  for (const c of codes) units += font.width(c) || 0;
+  return (units * size) / 1000;
+}
+
 /** How wide a line of text comes out in a face, in points. Advance widths are what the fonts
  *  themselves lay lines out by, so this is the same answer a renderer would reach.
  *  一行字在某张脸下写出来有多宽,单位是点。步进宽度正是字体自己排行的依据,
@@ -281,15 +291,23 @@ export async function openPdf(bytes, { local = null } = {}) {
    * 那个损失不是这个做法的缺陷,而是这个要求本身的:那些位置是为旧的那些字算出来的,
    * 没有任何诚实的办法把它们搬到不一样的字上去。
    */
-  async function retype(st, obj, text) {
+  async function retype(st, obj, text, align = 'left') {
     const first = obj.runs?.find((r) => r.codes.length) || obj.runs?.[0];
     if (!first) return null;
-    // A block that was dragged and is now retyped: the rewritten text carries the new place in
-    // its matrix (the runs moved with the drag), so the move note has nothing left to say.
-    // 一个先被拖动、如今又被重打的块:重写的文字在自己的矩阵里带着新位置
-    // (它的 runs 已随拖动挪过),于是那条挪动的记录再没有什么可说的了。
-    const mv = st.edits.findIndex((e) => e.what === 'move' && e.obj === obj);
-    if (mv >= 0) st.edits.splice(mv, 1);
+    // One block, one note. An earlier retype of this block is folded into this one -- and its
+    // box put back first, so every alignment is anchored to the geometry the author drew, not
+    // to whatever the last edit left. A move note folds in the same way: the rewritten text
+    // carries the new place in its matrix, since the runs moved with the drag.
+    // 一个块,一张便条。这个块早先的重打并进这一次 —— 先把它的框放回去,
+    // 好让每一次对齐都锚在作者画下的几何上,而不是上一次编辑留下的什么上。
+    // 挪动的便条同样并入:重写的文字在自己的矩阵里带着新位置,因为 runs 已随拖动挪过。
+    for (let i = st.edits.length - 1; i >= 0; i--) {
+      const e = st.edits[i];
+      if ((e.what === 'move' || e.what === 'retype') && e.obj === obj) {
+        if (e.boxWas) obj.box = e.boxWas;
+        st.edits.splice(i, 1);
+      }
+    }
     const font = st.res.font(first.font);
     const own = codesFor(text, font);
     const write = {
@@ -297,14 +315,53 @@ export async function openPdf(bytes, { local = null } = {}) {
       charSp: first.charSp, wordSp: first.wordSp, hscale: first.hscale, rise: first.rise,
       restore: first.font, block: 'inline',
     };
+    // Where the new text starts is the alignment's to say, anchored to the box the old text
+    // occupied: left keeps the pen where the author put it, right keeps the right edge still,
+    // centre keeps the centre. Longer text then grows the way the anchor implies -- a
+    // right-aligned figure grows leftward -- which is the whole point of asking.
+    // 新文字从哪儿起笔,由对齐说了算,锚在旧文字占过的那个框上:居左,笔就留在作者放下的地方;
+    // 居右,右缘纹丝不动;居中,中心不动。于是更长的文字朝锚所指的方向生长 ——
+    // 一个右对齐的数字向左长 —— 这正是问这一句的全部意义。
+    const k = align === 'center' ? 0.5 : align === 'right' ? 1 : 0;
+    const hs = first.hscale || 1;
+    const pad = (first.charSp || 0) * Math.max(0, [...text].length - 1)
+      + (first.wordSp || 0) * (text.match(/ /g) || []).length;
+    // The old text's width, by the same ruler the new text will be measured with -- advance
+    // widths, run by run. Anchoring bbox against advance would miss by their disagreement.
+    // 旧文字的宽,用与新文字同一把尺来量 —— 逐段累加的步进宽度。
+    // 拿字形框去锚步进宽,会正好差出它们不一致的那一截。
+    let oldAdv = k ? 0 : null;
+    for (const r of (k && obj.runs) || []) {
+      const f = st.res.font(r.font);
+      if (!f?.width || !f.measured) { oldAdv = null; break; }
+      let u = 0;
+      for (let i = 0; i + f.bytes <= r.codes.length; i += f.bytes) {
+        u += f.width(f.bytes === 2 ? r.codes[i] * 256 + r.codes[i + 1] : r.codes[i]) || 0;
+      }
+      oldAdv += ((u * r.size) / 1000) * (r.hscale || 1);
+    }
+    const placed = (newW) => {
+      const m = first.tm;
+      if (!k || newW == null || oldAdv == null) return { tm: m, w: newW };
+      const w = newW * hs + pad;
+      const dx = (oldAdv - w) * k;
+      return { tm: [m[0], m[1], m[2], m[3], m[4] + dx, m[5]], w, dx };
+    };
+    const settle = (edit, p) => {
+      edit.boxWas = obj.box && [...obj.box];
+      if (obj.box && p.dx !== undefined) {
+        obj.box = [obj.box[0] + p.dx, obj.box[1], obj.box[0] + p.dx + p.w, obj.box[3]];
+      }
+      st.edits.push(edit);
+      return edit;
+    };
     if (own) {
       // The document's own font can say it: nothing is embedded, nothing about the page's
       // appearance changes except which letters are there.
       // 文档自己的字体说得出来:什么都不必嵌入,页面的样子除了"是哪几个字"之外毫无变化。
-      const edit = { from: obj.from, to: obj.to, what: 'retype', obj, layer: LAYERS.OWN,
-        write: { ...write, font: first.font, codes: own, bytes: font.bytes } };
-      st.edits.push(edit);
-      return edit;
+      const p = placed(codesWidth(font, own, first.size));
+      return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: LAYERS.OWN, align,
+        write: { ...write, tm: p.tm, font: first.font, codes: own, bytes: font.bytes } }, p);
     }
     // It cannot, so the search begins. The embedded program is handed over not because it will
     // be used -- it demonstrably cannot write this -- but so a candidate found elsewhere can be
@@ -316,10 +373,9 @@ export async function openPdf(bytes, { local = null } = {}) {
     const got = await resolve(text, { baseFont: font.baseFont, pdfFace: face });
     if (!got.font) return null;
     got.font.texts.push(text);
-    const edit = { from: obj.from, to: obj.to, what: 'retype', obj, layer: got.layer,
-      write: { ...write, font: got.font.key, embedded: true } };
-    st.edits.push(edit);
-    return edit;
+    const p = placed(lineWidth(got.font.face, text, first.size));
+    return settle({ from: obj.from, to: obj.to, what: 'retype', obj, layer: got.layer, align,
+      write: { ...write, tm: p.tm, font: got.font.key, embedded: true } }, p);
   }
 
   /**
@@ -341,15 +397,20 @@ export async function openPdf(bytes, { local = null } = {}) {
     // each line is placed against the widest one, and what build() receives is offsets.
     // 几行合成一块,对齐就在这里决定 —— 这里知道每行的宽:
     // 每一行都对着最宽的那行安放,build() 拿到的只是偏移量。
+    // The click is the anchor, and alignment says which part of the block hangs from it: its
+    // left edge, its centre, or its right edge. Lines shorter than the widest follow suit.
+    // 点击处是锚,对齐说的是块的哪一部分挂在锚上:左缘、中心,还是右缘。
+    // 比最宽行短的行,也照此办理。
     const lineH = size * 1.2;
     const rows = String(text).replace(/\s+$/, '').split('\n');
     const widths = rows.map((ln) => lineWidth(got.font.face, ln, size));
     const wide = Math.max(...widths, 0);
     const k = align === 'center' ? 0.5 : align === 'right' ? 1 : 0;
-    const lines = rows.map((ln, i) => ({ text: ln, dx: (wide - widths[i]) * k, dy: -lineH * i }));
+    const lines = rows.map((ln, i) => ({ text: ln, dx: -widths[i] * k, dy: -lineH * i }));
     const edit = {
       from: st.src.length, to: st.src.length, what: 'add', kind: 'text', layer: got.layer, align,
-      box: [x, y - lineH * (rows.length - 1) - size * 0.25, x + Math.max(wide, size), y + size],
+      box: [x - wide * k, y - lineH * (rows.length - 1) - size * 0.25,
+        x - wide * k + Math.max(wide, size), y + size],
       write: { font: got.font.key, size, text, lines, color, tm: [1, 0, 0, 1, x, y], block: 'new' },
     };
     st.edits.push(edit);
@@ -436,6 +497,7 @@ export async function openPdf(bytes, { local = null } = {}) {
       out = at < 0 ? null : st.edits.splice(at, 1)[0];
     }
     if (out?.moved && out.obj) shift(out.obj, -out.moved[0], -out.moved[1]);
+    if (out?.boxWas && out.obj) out.obj.box = out.boxWas;
     return out;
   }
 
