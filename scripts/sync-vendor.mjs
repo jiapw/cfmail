@@ -11,21 +11,32 @@
 //
 // When it runs:
 //   - automatically after npm install (the postinstall hook)
-//   - before npm run deploy (idempotent; does nothing when nothing changed)
+//   - before npm run deploy (with --strict; a stale committed build stops the publish)
 //   - by hand after upgrading dependencies: npm run vendor
 //
-// Usage: node scripts/sync-vendor.mjs [--check]
-//   --check verifies without writing, exiting non-zero if anything is missing (for CI)
+// Everything it needs is a regular dependency, so it works the same after
+// `npm install --omit=dev` -- a deploy-only checkout is a first-class citizen here.
+//
+// Usage: node scripts/sync-vendor.mjs [--check] [--strict]
+//   --check   verify without writing; exit non-zero if anything is missing or stale (CI,
+//             and the gate in front of npm run dev)
+//   --strict  do the work, but exit non-zero if a committed build (libav, themes) no longer
+//             matches its sources. npm run deploy uses this: publishing with a stale
+//             committed build is exactly the drift this script exists to prevent. Without
+//             it (the postinstall case) those are warnings, so npm install never fails over
+//             something a fresh clone cannot fix mid-install.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stampedFingerprint, themesFingerprint } from './themes-fingerprint.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NM = path.join(ROOT, 'node_modules');
 const VENDOR = path.join(ROOT, 'public', 'vendor');
 const CHECK_ONLY = process.argv.includes('--check');
+const STRICT = process.argv.includes('--strict');
 
 /**
  * Each entry: what to copy from node_modules, and where it lands under vendor.
@@ -102,6 +113,163 @@ const SPECS = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Output. This runs inside npm install, where its lines are all a person gets to
+// know what is happening to their checkout -- so every stage says what it is doing
+// and why, and every failure explains itself and names the command that fixes it.
+// ---------------------------------------------------------------------------
+
+let copied = 0;
+let removed = 0;
+// Fatal problems: the sync itself cannot complete (a source package missing, a bundle
+// that will not build). These end the run immediately in every mode.
+// Flagged problems: the sync completed but something is stale or missing. Fatal under
+// --check and --strict; a summarised warning otherwise, so npm install still succeeds.
+const flagged = [];
+
+function step(n, title, why) {
+  console.log(`\n[${n}/4] ${title}`);
+  if (why) for (const line of why.split('\n')) console.log('      ' + line);
+}
+const item = (s) => console.log('  ' + s);
+
+/** A problem that ends the run: print what broke, why it matters, how to fix it -- then exit. */
+function fatal(title, lines) {
+  console.error(`\n✗ ${title}\n`);
+  for (const l of lines) console.error('  ' + l);
+  console.error('');
+  process.exit(1);
+}
+
+/** A problem that fails --check/--strict but only warns after npm install. */
+function flag(title, lines) {
+  flagged.push({ title, lines });
+  console.error('  ✗ ' + title);
+  for (const l of lines) console.error('      ' + l);
+}
+
+const INSTALL_HELP = [
+  'Most likely npm install has not run, was interrupted, or node_modules is stale',
+  'after a package.json change. In order:',
+  '  1. run: npm install        (with or without --omit=dev -- both install this)',
+  '  2. still failing: delete node_modules and run npm install again',
+  '  3. still failing: the checkout itself may be incomplete -- check git status',
+];
+
+// ---------------------------------------------------------------------------
+// Stage 1: straight copies from node_modules
+// ---------------------------------------------------------------------------
+
+/** Recursively collect paths relative to base, filtered by extension. */
+function collect(base, rel = '', exts, out = []) {
+  const abs = path.join(base, rel);
+  let st;
+  try { st = fs.statSync(abs); } catch { return out; }
+  if (st.isDirectory()) {
+    for (const e of fs.readdirSync(abs)) collect(base, path.join(rel, e), exts, out);
+  } else if (!exts || exts.includes(path.extname(rel))) {
+    out.push(rel);
+  }
+  return out;
+}
+
+function readVersion(from) {
+  // `from` looks like 'quill/dist' -- the package name is its first segment, or the first two when scoped.
+  const parts = from.split('/');
+  const pkg = parts[0].startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+  try {
+    return JSON.parse(fs.readFileSync(path.join(NM, pkg, 'package.json'), 'utf8')).version;
+  } catch { return null; }
+}
+
+function copyLibraries() {
+  for (const spec of SPECS) {
+    const src = path.join(NM, spec.from);
+    if (!fs.existsSync(src)) {
+      fatal(`${spec.name} is not in node_modules (expected ${path.relative(ROOT, src)})`, [
+        'This is one of the libraries the browser loads from public/vendor/, and the copy',
+        'there is made from node_modules -- which does not have it.',
+        '',
+        ...INSTALL_HELP,
+      ]);
+    }
+    const dst = path.join(VENDOR, spec.to);
+
+    const rels = spec.roots
+      ? spec.roots.flatMap((r) => collect(src, r, spec.exts))
+      : collect(src, '', spec.exts);
+
+    const want = new Set(rels.map((r) => r.split(path.sep).join('/')));
+    let specCopied = 0;
+    let specStale = 0;
+
+    for (const rel of rels) {
+      const a = path.join(src, rel);
+      const b = path.join(dst, rel);
+      const same = fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFileSync(b));
+      if (same) continue;
+      if (CHECK_ONLY) { specStale++; continue; }
+      fs.mkdirSync(path.dirname(b), { recursive: true });
+      fs.copyFileSync(a, b);
+      specCopied++;
+    }
+
+    // Drop leftovers vendor still holds but the source no longer ships (components removed by an upgrade).
+    if (!CHECK_ONLY && fs.existsSync(dst)) {
+      for (const rel of collect(dst, '', null)) {
+        if (!want.has(rel.split(path.sep).join('/'))) {
+          fs.rmSync(path.join(dst, rel));
+          removed++;
+        }
+      }
+    }
+
+    copied += specCopied;
+    const ver = readVersion(spec.from);
+    if (CHECK_ONLY && specStale) {
+      flag(`${spec.name}: ${specStale} of ${rels.length} file(s) missing or stale in public/vendor/${spec.to}/`,
+        ['run: npm run vendor']);
+    } else {
+      item(`${spec.name.padEnd(14)} ${String(rels.length).padStart(4)} files` +
+        (CHECK_ONLY ? '  (up to date)' : specCopied ? `  (${specCopied} updated)` : '  (up to date)') +
+        (ver ? `  v${ver}` : ''));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2 and 3: the two libraries that cannot be copied, only built
+// ---------------------------------------------------------------------------
+
+/** esbuild, or a full explanation of why the bundles cannot be made without it. */
+async function loadEsbuild(what) {
+  try {
+    return await import('esbuild');
+  } catch {
+    fatal(`esbuild is not installed, so ${what} cannot be bundled`, [
+      'esbuild is a regular dependency (deploying rebuilds these bundles too).',
+      '',
+      ...INSTALL_HELP,
+      '',
+      'If npm install succeeded and this still fails, the platform binary for this',
+      'OS/architecture may be missing -- deleting node_modules and reinstalling fetches',
+      'the right one.',
+    ]);
+  }
+}
+
+function reportBuildErrors(label, errors) {
+  fatal(`bundling ${label} failed`, [
+    ...errors.map((e) => e.text),
+    '',
+    'esbuild could not assemble the bundle from node_modules. This usually means the',
+    'dependency tree is incomplete or has drifted from package-lock.json:',
+    '  1. run: npm install, then try again (npm run vendor)',
+    '  2. if a dependency was just upgraded, the entry file may need to catch up --',
+    `     see scripts/${label === 'CodeMirror' ? 'codemirror' : 'pdfedit'}.entry.js`,
+  ]);
+}
+
 /**
  * The one library that cannot be copied, only built.
  *
@@ -113,20 +281,16 @@ const SPECS = [
  * Split rather than bundled flat, because the entry reaches its languages through dynamic import:
  * esbuild gives each of them a chunk, and opening a shell script fetches the shell grammar and
  * not the other thirty.
- *
- *
  */
 async function buildCodeMirror() {
   const entry = path.join(ROOT, 'scripts', 'codemirror.entry.js');
   const out = path.join(VENDOR, 'codemirror');
   if (CHECK_ONLY) {
-    if (!fs.existsSync(path.join(out, 'codemirror.entry.js'))) {
-      missing++;
-      console.error('  missing: vendor/codemirror/ (run npm run vendor to build it)');
-    }
+    if (fs.existsSync(path.join(out, 'codemirror.entry.js'))) item('CodeMirror     bundle present');
+    else flag('vendor/codemirror/ has not been built', ['run: npm run vendor']);
     return;
   }
-  const esbuild = await import('esbuild');
+  const esbuild = await loadEsbuild('CodeMirror');
   fs.rmSync(out, { recursive: true, force: true });
   const r = await esbuild.build({
     entryPoints: [entry],
@@ -141,16 +305,12 @@ async function buildCodeMirror() {
     metafile: true,
     logLevel: 'silent',
   });
-  if (r.errors?.length) {
-    console.error('✗ bundling CodeMirror failed');
-    for (const e of r.errors) console.error('  ' + e.text);
-    process.exit(1);
-  }
+  if (r.errors?.length) reportBuildErrors('CodeMirror', r.errors);
   writeBundleLicense(out, r.metafile);
   const files = collect(out, '', null);
   assertNothingLeftBare(out, files);
   const bytes = files.reduce((n2, rel) => n2 + fs.statSync(path.join(out, rel)).size, 0);
-  console.log(`  CodeMirror  ${String(files.length).padStart(3)} files  (bundled, ${Math.round(bytes / 1024)} KB)`);
+  item(`CodeMirror   ${String(files.length).padStart(4)} files  (bundled, ${Math.round(bytes / 1024)} KB)`);
 }
 
 /**
@@ -179,13 +339,11 @@ async function buildPdfEdit() {
   const entry = path.join(ROOT, 'scripts', 'pdfedit.entry.js');
   const out = path.join(VENDOR, 'pdfedit');
   if (CHECK_ONLY) {
-    if (!fs.existsSync(path.join(out, 'pdfedit.entry.js'))) {
-      missing++;
-      console.error('  missing: vendor/pdfedit/ (run npm run vendor to build it)');
-    }
+    if (fs.existsSync(path.join(out, 'pdfedit.entry.js'))) item('pdf edit       bundle present');
+    else flag('vendor/pdfedit/ has not been built', ['run: npm run vendor']);
     return;
   }
-  const esbuild = await import('esbuild');
+  const esbuild = await loadEsbuild('the PDF editor');
   fs.rmSync(out, { recursive: true, force: true });
   const r = await esbuild.build({
     entryPoints: [entry],
@@ -211,16 +369,12 @@ async function buildPdfEdit() {
       },
     }],
   });
-  if (r.errors?.length) {
-    console.error('✗ bundling pdf-lib + fontkit failed');
-    for (const e of r.errors) console.error('  ' + e.text);
-    process.exit(1);
-  }
+  if (r.errors?.length) reportBuildErrors('pdfedit', r.errors);
   writeBundleLicense(out, r.metafile);
   const files = collect(out, '', null);
   assertNothingLeftBare(out, files, 'pdfedit');
   const bytes = files.reduce((n2, rel) => n2 + fs.statSync(path.join(out, rel)).size, 0);
-  console.log(`  pdf edit    ${String(files.length).padStart(3)} files  (bundled, ${Math.round(bytes / 1024)} KB)`);
+  item(`pdf edit     ${String(files.length).padStart(4)} files  (bundled, ${Math.round(bytes / 1024)} KB)`);
 }
 
 /**
@@ -234,8 +388,6 @@ async function buildPdfEdit() {
  * So the output is read back. Nothing in this directory should name a package, because naming one
  * is precisely what the browser cannot do -- and that is a property of finished files, which is
  * something a build can check about itself.
- *
- *
  */
 function assertNothingLeftBare(out, files, label = 'CodeMirror') {
   const bare = [];
@@ -248,9 +400,15 @@ function assertNothingLeftBare(out, files, label = 'CodeMirror') {
     if (/import\(\s*[^)'"`]/.test(s)) bare.push(`${rel}: a computed import(), which no bundler can follow`);
   }
   if (bare.length) {
-    console.error(`✗ the ${label} bundle still has module references that cannot be resolved:`);
-    for (const b of [...new Set(bare)].slice(0, 10)) console.error('  ' + b);
-    process.exit(1);
+    fatal(`the ${label} bundle still has module references a browser cannot resolve`, [
+      ...[...new Set(bare)].slice(0, 10),
+      '',
+      'This is the bundle checking itself: a bare package name in the output would load',
+      'fine today and fail in a browser the first time that code path runs. It usually',
+      'appears after upgrading or adding a dependency whose imports the bundler could not',
+      `follow. Fix scripts/${label === 'pdfedit' ? 'pdfedit' : 'codemirror'}.entry.js (imports must be literal, never computed)`,
+      'and run npm run vendor again. Nothing was published.',
+    ]);
   }
 }
 
@@ -265,8 +423,6 @@ function assertNothingLeftBare(out, files, label = 'CodeMirror') {
  * The list comes from the metafile rather than from package.json, because package.json says what
  * may be reached and the metafile says what was actually reached. A grammar dropped from the entry
  * would otherwise go on being credited here forever, and one added would never be.
- *
- *
  */
 function writeBundleLicense(out, metafile) {
   const pkgs = new Set();
@@ -275,10 +431,6 @@ function writeBundleLicense(out, metafile) {
     if (m) pkgs.add(m[1]);
   }
   const parts = [
-    'CodeMirror 6 and Lezer, bundled from source',
-    '',
-    'The bundle in this directory is built from the packages listed below. Each is reproduced',
-    'with its own notice, as its licence requires.',
     'The bundles in this directory are built from the packages below. Each notice is reproduced as its licence requires.',
     '',
   ];
@@ -306,8 +458,11 @@ function writeBundleLicense(out, metafile) {
         repo = typeof pj.repository === 'string' ? pj.repository : (pj.repository?.url || '');
       } catch { /* nothing further to say about it */ }
       if (!declared) {
-        console.error(`✗ ${name} states no licence at all and cannot be shipped`);
-        process.exit(1);
+        fatal(`${name} states no licence at all and cannot be shipped`, [
+          'Every bundled package must carry a notice; this one declares nothing and ships no',
+          'text, so the bundle cannot lawfully include it. Remove it from the entry file or',
+          'take it up with upstream.',
+        ]);
       }
       text = `${declared}
 
@@ -319,6 +474,10 @@ Source: ${repo.replace(/^git\+|\.git$/g, '')}` : ''}`;
   }
   fs.writeFileSync(path.join(out, 'LICENSE'), parts.join('\n') + '\n');
 }
+
+// ---------------------------------------------------------------------------
+// Stage 4: the committed builds -- verified here, never made here
+// ---------------------------------------------------------------------------
 
 /**
  * The one build that is not copied from anywhere, checked rather than made.
@@ -332,8 +491,6 @@ Source: ${repo.replace(/^git\+|\.git$/g, '')}` : ''}`;
  * Whether it is required is not stated here; it is asked of the application. While nothing imports
  * it, a missing build is worth mentioning and not worth stopping for. The moment something does,
  * the same absence becomes a broken deployment, and this says so.
- *
- *
  */
 function checkLibavFull() {
   const dir = path.join(VENDOR, 'libav-full');
@@ -349,8 +506,11 @@ function checkLibavFull() {
         .update(version + '\n' + [...frags].sort().join(',')).digest('hex').slice(0, 16),
     };
   } catch {
-    console.error('  ✗ could not read the build settings out of scripts/build-libav.sh');
-    missing++;
+    flag('could not read the build settings out of scripts/build-libav.sh', [
+      'The committed libav build is verified against the VERSION and FRAGMENTS in that',
+      'script; if they cannot be parsed the check cannot run. The script may have been',
+      'edited into a shape this parser does not recognise -- see checkLibavFull() here.',
+    ]);
     return;
   }
 
@@ -372,112 +532,149 @@ function checkLibavFull() {
   let have = null;
   try { have = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8')); } catch { /* never built */ }
 
-  const say = used.length
-    ? (m) => { console.error('  ✗ ' + m); missing++; needsLibav = true; }
-    : (m) => console.log('  · ' + m);
+  const DOCKER_NOTE = [
+    'This is the one vendor build that cannot be made from node_modules: upstream does not',
+    'publish these codecs, so it is built once with Docker and committed to git. A normal',
+    'clone already has it and never rebuilds it.',
+    '',
+    'To (re)build and commit:  npm run libav',
+    '(needs Docker; on Windows, Docker inside WSL works)',
+  ];
+
   if (!have) {
-    say(`libav-full is not built${used.length ? ` (${used.join(', ')} need it)` : ' (nothing uses it yet)'}: run npm run libav`);
+    if (used.length) {
+      flag(`libav-full has never been built here, and ${used.join(', ')} depend on it`, [
+        'Without it, opening those media files fails in the browser.',
+        '',
+        'A fresh clone has this build committed -- if it is missing, the checkout may be',
+        'incomplete (check git status) or someone removed public/vendor/libav-full/.',
+        '',
+        ...DOCKER_NOTE,
+      ]);
+    } else {
+      item('libav-full     not built (nothing uses it yet -- fine; npm run libav when something does)');
+    }
     return;
   }
   if (have.fingerprint !== want.fingerprint) {
-    say(`libav-full does not match build-libav.sh (${have.version}/${have.fingerprint} != ${want.version}/${want.fingerprint}): run npm run libav to rebuild`);
+    flag('libav-full no longer matches scripts/build-libav.sh', [
+      `committed build: v${have.version} fp=${have.fingerprint}`,
+      `script says:     v${want.version} fp=${want.fingerprint}`,
+      '',
+      'The codec list or version in build-libav.sh changed after the committed binary was',
+      'built. Deployed as-is, the mismatch surfaces months later as a media file that will',
+      'not play, for a reason that is nowhere in the code.',
+      '',
+      ...DOCKER_NOTE,
+    ]);
     return;
   }
   const files = collect(dir, '', null).filter((f) => f !== 'build.json');
   const bytes = files.reduce((n2, rel) => n2 + fs.statSync(path.join(dir, rel)).size, 0);
-  console.log(`  libav-full  ${String(files.length).padStart(3)} files  (built here, ${Math.round(bytes / 1024)} KB)  v${have.version}`);
+  item(`libav-full   ${String(files.length).padStart(4)} files  (committed build, ${Math.round(bytes / 1024)} KB)  v${have.version}  matches build-libav.sh`);
 }
 
-let copied = 0;
-// Set when what is missing is the build npm cannot supply, because the fix for that one is a
-// different command and sending somebody to the wrong one wastes the trip.
-let needsLibav = false;
-let missing = 0;
-let removed = 0;
-
-/** Recursively collect paths relative to base, filtered by extension.
-  */
-function collect(base, rel = '', exts, out = []) {
-  const abs = path.join(base, rel);
-  let st;
-  try { st = fs.statSync(abs); } catch { return out; }
-  if (st.isDirectory()) {
-    for (const e of fs.readdirSync(abs)) collect(base, path.join(rel, e), exts, out);
-  } else if (!exts || exts.includes(path.extname(rel))) {
-    out.push(rel);
+/**
+ * The committed themes, held to the same standard as the committed libav build.
+ *
+ * public/assets/themes.css (and themes-meta.js, and src/themes-list.ts) are generated by
+ * build-themes.mjs from @radix-ui/colors, and committed. Nothing at install or deploy time
+ * rebuilds them -- which is correct, and also exactly how an upgraded palette or an edited
+ * theme list could drift from the committed output with nothing noticing. So themes.css
+ * carries a fingerprint of its inputs, and this recomputes it.
+ *
+ * @radix-ui/colors is a devDependency. When it is not installed (npm install --omit=dev),
+ * the committed output is the only truth there is, and using it as-is is correct -- so the
+ * check is skipped, and says so rather than failing a deploy-only checkout.
+ *
+ * 入库的主题产物,与入库的 libav 构建同一个标准对待。
+ * @radix-ui/colors 是 devDependency:没装它(--omit=dev)时,入库产物就是唯一的真相,
+ * 照用即对 —— 所以跳过校验并说明,而不是让一个纯部署 checkout 挂掉。
+ */
+function checkThemes() {
+  const want = themesFingerprint(ROOT);
+  if (!want) {
+    item('themes         check skipped: @radix-ui/colors not installed (deploy-only install;');
+    item('               the committed themes.css is used as-is, which is correct)');
+    return;
   }
-  return out;
+
+  const siblings = ['public/assets/themes-meta.js', 'src/themes-list.ts']
+    .filter((p) => !fs.existsSync(path.join(ROOT, p)));
+  const have = stampedFingerprint(ROOT);
+
+  const REGEN = [
+    'Regenerate and commit all three outputs together:',
+    '  node scripts/build-themes.mjs',
+    '(public/assets/themes.css, public/assets/themes-meta.js, src/themes-list.ts)',
+  ];
+
+  if (!have || siblings.length) {
+    flag(!have
+      ? 'public/assets/themes.css is missing or carries no source fingerprint'
+      : `generated theme file(s) missing: ${siblings.join(', ')}`, [
+      'The theme CSS, the picker metadata and the backend name list are generated from',
+      '@radix-ui/colors by scripts/build-themes.mjs and committed; the deployed UI reads',
+      'them as-is. An output that is absent -- or predates the fingerprint check -- cannot',
+      'be verified against its sources.',
+      '',
+      ...REGEN,
+    ]);
+    return;
+  }
+  if (have.hash !== want.hash) {
+    flag('the committed themes no longer match their sources', [
+      `committed themes.css: @radix-ui/colors@${have.version} fp=${have.hash}`,
+      `sources here:         @radix-ui/colors@${want.version} fp=${want.hash}`,
+      '',
+      'Either @radix-ui/colors was upgraded or scripts/build-themes.mjs was edited after',
+      'themes.css was last generated. Deployed as-is, the UI silently keeps the old',
+      'colours and theme list.',
+      '',
+      ...REGEN,
+    ]);
+    return;
+  }
+  const count = (fs.readFileSync(path.join(ROOT, 'public', 'assets', 'themes.css'), 'utf8')
+    .match(/html\[data-theme='/g) || []).length / 2;
+  item(`themes       ${String(count).padStart(4)} themes  (committed build)  @radix-ui/colors@${want.version}  matches build-themes.mjs`);
 }
 
-for (const spec of SPECS) {
-  const src = path.join(NM, spec.from);
-  const dst = path.join(VENDOR, spec.to);
-  if (!fs.existsSync(src)) {
-    console.error(`✗ no source directory for ${spec.name}: ${path.relative(ROOT, src)}`);
-    console.error('  run npm install first');
-    process.exit(1);
-  }
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
 
-  const rels = spec.roots
-    ? spec.roots.flatMap((r) => collect(src, r, spec.exts))
-    : collect(src, '', spec.exts);
+console.log(`=== CFMail vendor sync${CHECK_ONLY ? ' (check only -- nothing is written)' : ''} ===`);
+console.log('public/vendor/ is the third-party code the browser loads directly. It is not in');
+console.log('git; this derives it from node_modules so the two can never drift apart.');
 
-  const want = new Set(rels.map((r) => r.split(path.sep).join('/')));
-  let specCopied = 0;
+step(1, CHECK_ONLY ? 'Check the copied browser libraries' : 'Copy browser libraries into public/vendor/',
+  'Finished ES modules, used by the browser exactly as published.');
+copyLibraries();
 
-  for (const rel of rels) {
-    const a = path.join(src, rel);
-    const b = path.join(dst, rel);
-    const same = fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFileSync(b));
-    if (same) continue;
-    if (CHECK_ONLY) { missing++; console.error(`  missing or stale: vendor/${spec.to}/${rel}`); continue; }
-    fs.mkdirSync(path.dirname(b), { recursive: true });
-    fs.copyFileSync(a, b);
-    specCopied++;
-  }
-
-  // Drop leftovers vendor still holds but the source no longer ships (components removed by an upgrade).
-  if (!CHECK_ONLY && fs.existsSync(dst)) {
-    for (const rel of collect(dst, '', null)) {
-      if (!want.has(rel.split(path.sep).join('/'))) {
-        fs.rmSync(path.join(dst, rel));
-        removed++;
-      }
-    }
-  }
-
-  copied += specCopied;
-  const ver = readVersion(spec.from);
-  console.log(`  ${spec.name.padEnd(12)} ${String(rels.length).padStart(4)} files` +
-    (CHECK_ONLY ? '' : specCopied ? `  (${specCopied} updated)` : '  (up to date)') +
-    (ver ? `  v${ver}` : ''));
-}
-
-function readVersion(from) {
-  // `from` looks like 'quill/dist' -- the package name is its first segment, or the first two when scoped.
-  const parts = from.split('/');
-  const pkg = parts[0].startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
-  try {
-    return JSON.parse(fs.readFileSync(path.join(NM, pkg, 'package.json'), 'utf8')).version;
-  } catch { return null; }
-}
-
+step(2, CHECK_ONLY ? 'Check the CodeMirror bundle' : 'Bundle CodeMirror (the code editor)',
+  'Published as ~30 packages importing each other by bare name, which a browser cannot\nresolve -- esbuild assembles them into loadable chunks, one per language.');
 await buildCodeMirror();
-await buildPdfEdit();
-checkLibavFull();
 
-if (CHECK_ONLY) {
-  if (missing) {
-    // Naming the command that can actually fix it. `npm run vendor` copies from node_modules and
-    // cannot produce the one build that is not there, so sending somebody to it for that is
-    // sending them to run something that will report the same problem again.
-    const how = needsLibav
-      ? (missing > 1 ? 'run npm run vendor and npm run libav to fix it' : 'run npm run libav to fix it')
-      : 'run npm run vendor to fix it';
-    console.error(`\n✗ public/vendor/ has ${missing} file(s) missing or stale. ${how}`);
-    process.exit(1);
-  }
-  console.log('\n✓ public/vendor/ matches node_modules');
-} else {
-  console.log(`\n✓ vendor in sync${copied ? `, ${copied} file(s) updated` : ' (nothing changed)'}${removed ? `, ${removed} leftover(s) removed` : ''}`);
+step(3, CHECK_ONLY ? 'Check the PDF editor bundle' : 'Bundle the PDF editor (pdf-lib + fontkit)',
+  'fontkit ships with bare imports into its own dependency tree, so both come through\nthe bundler together.');
+await buildPdfEdit();
+
+step(4, 'Verify the committed builds',
+  'These live in git and are never rebuilt here -- this only proves they still match\nthe sources they were built from.');
+checkLibavFull();
+checkThemes();
+
+if (flagged.length && (CHECK_ONLY || STRICT)) {
+  console.error(`\n✗ ${flagged.length} problem(s) -- each is explained above with the command that fixes it.`);
+  if (STRICT && !CHECK_ONLY) console.error('  (--strict: deploying would publish the stale build, so stopping here instead)');
+  process.exit(1);
 }
+if (flagged.length) {
+  console.error(`\n⚠ vendor synced, but ${flagged.length} check(s) failed above. npm install is not blocked`);
+  console.error('  by this; npm run dev and npm run deploy will refuse until it is fixed.');
+  process.exit(0);
+}
+console.log(CHECK_ONLY
+  ? '\n✓ public/vendor/ matches node_modules, and the committed builds match their sources'
+  : `\n✓ vendor in sync${copied ? `: ${copied} file(s) updated` : ' (nothing changed)'}${removed ? `, ${removed} leftover(s) removed` : ''}`);
