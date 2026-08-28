@@ -152,11 +152,25 @@ async function buildEditor(my, bytes) {
     task.destroy().catch(() => {});
     const crypt = await import('../drive/pdfcrypt.js');
     if (!crypt.needsPassword(e)) throw e;
-    const opened = await unlockLoop(crypt, bytes);
-    if (pe !== my) return;
+    // A password this browser already knows opens the file without a question; one that has
+    // stopped being right is forgotten on the spot and the question returns.
+    // 这台浏览器已经记得的密码,开门不必再问;不再正确的那条,当场忘掉,问题重新回来。
+    let opened = null;
+    const stored = crypt.pwStore.get(my.id);
+    if (stored) {
+      const got = await crypt.decrypt(bytes, stored);
+      if (pe !== my) return;
+      if (got.ok) opened = { bytes: got.bytes, password: stored };
+      else crypt.pwStore.set(my.id, null);
+    }
     if (!opened) {
-      box.innerHTML = `<div class="pdft-err">${esc(t('pdfe_pw_need'))}</div>`;
-      return;
+      opened = await unlockLoop(crypt, bytes);
+      if (pe !== my) return;
+      if (!opened) {
+        box.innerHTML = `<div class="pdft-err">${esc(t('pdfe_pw_need'))}</div>`;
+        return;
+      }
+      crypt.pwStore.set(my.id, opened.password);
     }
     bytes = opened.bytes;
     my.password = opened.password;
@@ -289,6 +303,13 @@ async function saveOut(out) {
   }
   my.token = data?.ver_head || `${my.id}-${data?.updated_at || Date.now()}`;
   my.savedCount = my.session.changeCount;
+  // What the file is locked with now is what this browser remembers about it -- a removed
+  // password removes the memory too.
+  // 文件现在用什么上锁,这台浏览器就记住什么 —— 密码摘了,记忆也一并摘掉。
+  if (my.passTarget || my.password) {
+    const crypt = await import('../drive/pdfcrypt.js');
+    crypt.pwStore.set(my.id, my.passTarget || null);
+  }
   my.password = my.passTarget ?? null;
   paintDot();
   my.session.refresh();
@@ -313,13 +334,23 @@ async function saveOut(out) {
  *  the two answers a password question actually has.
  *  模态里的一格密码输入,解析为字符串(可以为空)或表示取消的 null ——
  *  一个密码问题真正拥有的两种回答。 */
-function askPassword(title, hint) {
+export function askPassword(title, hint) {
+  // A document password is not a login: the browser's password manager must neither offer to
+  // save it nor fill it in. Where the browser can mask a plain text field, that is what this is
+  // -- a masked text field is invisible to the manager; elsewhere, new-password and a name that
+  // never repeats keep it at arm's length.
+  // 文档密码不是登录:浏览器的密码管家既不该提出保存,也不该往里填。
+  // 浏览器会给普通文本框打码的地方,就用打了码的文本框 —— 管家看不见它;
+  // 其余地方,用 new-password 和一个绝不重复的 name,把管家挡在一臂之外。
+  const masked = typeof CSS !== 'undefined' && CSS.supports?.('-webkit-text-security', 'disc');
   return new Promise((resolve) => {
     const d = showModal(`
       <div class="modal-body">
-        <h3 style="margin:0 0 8px">${esc(title)}</h3>
+        <h3 style="margin:0 0 10px;font-size:15px">${esc(title)}</h3>
         ${hint ? `<p style="margin:0 0 12px;color:var(--text-2);font-size:13px">${esc(hint)}</p>` : ''}
-        <input id="pdft-pw" type="password" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:14px">
+        <input id="pdft-pw" type="${masked ? 'text' : 'password'}" name="pw-${Math.random().toString(36).slice(2)}"
+          autocomplete="${masked ? 'off' : 'new-password'}" spellcheck="false" autocapitalize="off"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:14px${masked ? ';-webkit-text-security:disc' : ''}">
       </div>
       <div slot="footer" style="display:flex;gap:8px;justify-content:flex-end">
         <wa-button appearance="plain" data-x="cancel">${esc(t('cancel'))}</wa-button>

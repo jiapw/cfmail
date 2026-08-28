@@ -22,6 +22,23 @@
 // 在回网盘的路上。本模块只在真正遇到或要设密码时才加载 —— 那 1.7 MB 的 wasm,
 // 大多数文档一辈子用不上。
 
+/** Passwords the reader chose to keep, one per file, in this browser only. Asked for once,
+ *  remembered here, and forgotten the moment they stop being right.
+ *  读者选择记下的密码,一份文件一条,只存在这台浏览器里。问过一次,记在这里,
+ *  一旦不再正确,当场忘掉。 */
+const PW_KEY = 'cf_pdf_pw_';
+export const pwStore = {
+  get(id) {
+    try { return localStorage.getItem(PW_KEY + id) || null; } catch { return null; }
+  },
+  set(id, pw) {
+    try {
+      if (pw) localStorage.setItem(PW_KEY + id, pw);
+      else localStorage.removeItem(PW_KEY + id);
+    } catch { /* a full quota keeps no passwords / 配额满了就不记 */ }
+  },
+};
+
 let factory = null;
 
 async function run(args, inBytes) {

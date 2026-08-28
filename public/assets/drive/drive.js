@@ -2931,17 +2931,67 @@ async function renderPdfPreview(node, box) {
     // 省下的是大文件里没人滚到的那一部分,所以门槛设在"那一部分开始值得省"的地方。
     const PDF_RANGE_MIN = 8 * 1024 * 1024;
     const ranged = !node.arc && !url.startsWith('blob:') && node.size > PDF_RANGE_MIN;
-    let opts;
-    if (ranged) {
-      opts = mod.pdfDocOpts(url, node.size);
-    } else {
+    let raw = null;
+    if (!ranged) {
       const r = await fetch(url);
       if (!r.ok) throw new Error('fetch');
-      opts = mod.pdfDocOpts(await r.arrayBuffer());
+      raw = await r.arrayBuffer();
     }
-    const task = lib.getDocument(opts);
+    // Rebuilt per attempt: getDocument carries a byte buffer off to its worker, so a retry with
+    // a password needs a fresh copy, not the husk the first try left behind.
+    // 每次尝试都重新造:getDocument 会把字节缓冲带去 worker,
+    // 于是带密码的重试需要一份新的,而不是第一次剩下的那具空壳。
+    const mkOpts = (pw) => {
+      const o = ranged ? mod.pdfDocOpts(url, node.size) : mod.pdfDocOpts(raw.slice(0));
+      if (pw) o.password = pw;
+      return o;
+    };
+    let task = lib.getDocument(mkOpts());
     my.task = task;
-    const doc = await task.promise;
+    let doc;
+    try {
+      doc = await task.promise;
+    } catch (err) {
+      // A locked file: pdf.js can draw it given the password, and drawing is all a preview
+      // does. Asked once, remembered in this browser, forgotten the moment it stops being
+      // right. The editor shares the same memory.
+      // 一份上了锁的文件:给了密码,pdf.js 就画得出来,而预览要做的只有画。
+      // 问一次,记在这台浏览器里,一旦不再正确当场忘掉。编辑器共用同一份记忆。
+      if (err?.name !== 'PasswordException') throw err;
+      task.destroy?.().catch?.(() => {});
+      const { pwStore } = await import('./pdfcrypt.js');
+      const { askPassword } = await import('../pdf/pdf.js?v=' + encodeURIComponent(store.brand?.version || ''));
+      let pw = pwStore.get(node.id);
+      let remembered = !!pw;
+      let title = t('pdfe_pw_need');
+      for (;;) {
+        if (pvPdf !== my || my.gen !== gen || !box.isConnected) return;
+        if (!pw) {
+          pw = await askPassword(title);
+          remembered = false;
+          if (!pw) {
+            if (pvPdf === my && box.isConnected) {
+              box.innerHTML = `<div class="noprev" style="margin-top:60px">${icon('lock', 56)}<div>${esc(t('pdfe_pw_need'))}</div></div>`;
+            }
+            return;
+          }
+        }
+        task = lib.getDocument(mkOpts(pw));
+        my.task = task;
+        try {
+          doc = await task.promise;
+          if (!remembered) pwStore.set(node.id, pw);
+          break;
+        } catch (e2) {
+          task.destroy?.().catch?.(() => {});
+          if (e2?.name !== 'PasswordException') throw e2;
+          if (remembered) pwStore.set(node.id, null);
+          pw = null;
+          remembered = false;
+          title = t('pdfe_pw_wrong');
+        }
+      }
+    }
     my.lib = lib;
     my.mod = mod;
     my.doc = doc;
