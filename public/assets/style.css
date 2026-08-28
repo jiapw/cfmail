@@ -977,7 +977,7 @@ body.impersonating .side-backdrop { inset: 94px 0 0 0; }
 
 @media (max-width: 900px) {
   .sidebar {
-    position: fixed; left: 0; top: 60px; bottom: 0; z-index: 150;
+    position: fixed; left: env(safe-area-inset-left, 0px); top: 60px; bottom: 0; z-index: 150;
     background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
   }
   .sidebar.hidden { display: none; }

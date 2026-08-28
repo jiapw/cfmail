@@ -1627,7 +1627,7 @@ async function shareOut(name, mime, size, getBlob, fallback) {
     await navigator.share({ files: [file] });
     // The promise resolving means the sheet finished its errand -- the save is done.
     // promise 兑现,说明面板把差事办完了 —— 保存已经落地。
-    toast(t('drv_save_ok'), false, 1000);
+    toast(t('drv_save_ok'));
   } catch (e) {
     if (e?.name !== 'AbortError') { toast(tErr('e_share_failed'), true); fallback(); }
   }
