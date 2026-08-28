@@ -430,6 +430,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     if (editing) return false;
     if (e.key === 'Delete' || e.key === 'Backspace') { removeSelected(); return true; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { undo(); return true; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      if (ed.changes.length) save();
+      return true;
+    }
     if (e.key === 'Escape' && selection) { select(null); return true; }
     return false;
   }

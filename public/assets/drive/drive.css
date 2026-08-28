@@ -1495,3 +1495,23 @@
   .drv-grid { grid-template-columns: repeat(4, 1fr); }
   .drv-card .thumb { height: 110px; }
 }
+
+/* ---------- The PDF editor as a window of its own (#/pdf/<id>) ----------
+   The pages and their layers keep the preview's classes, so everything above already applies;
+   what follows is only the window around them: a head with the name, a scrolling middle, and
+   the editor's own bar held at the top of the scroll.
+   ---------- PDF 编辑器自己的那扇窗(#/pdf/<id>) ----------
+   页面与其图层沿用预览的类名,上面的一切规则直接适用;下面只有围着它们的那扇窗:
+   带文件名的头部、滚动的中段,以及被按在滚动区顶上的编辑器工具条。 */
+.pdft-app { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.pdft-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.pdft-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdft-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; flex: 0 0 auto; }
+.pdft-dot.on { background: var(--primary); }
+.pdft-main { flex: 1; overflow: auto; padding: 14px; }
+.pdft-main .pdfe-bar { position: sticky; top: 0; z-index: 6; max-width: 940px; margin: 0 auto 12px; }
+.pdft-box { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.pdft-err { margin: 60px auto; color: var(--text-2); text-align: center; }
