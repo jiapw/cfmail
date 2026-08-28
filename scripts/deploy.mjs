@@ -9,9 +9,11 @@
 // missing permission names itself, waits while the token is edited in the dashboard, and is
 // probed again. Nothing is created until every check passes.
 //
-// The token is held in memory, passed to wrangler through the environment of the child process,
-// and never written anywhere -- not to wrangler.jsonc, not to a dotfile, not to the log. Losing
-// this terminal loses the token, which is the intended property: the operator keeps custody.
+// The token is held in memory and passed to wrangler through the child process's environment.
+// By default it is written nowhere -- not to wrangler.jsonc, not to a dotfile, not to the log --
+// and losing the terminal loses the token: the operator keeps custody. The one exception is
+// opt-in: a typed-in token may, with an explicit yes, be saved to .env.deploy.token (gitignored,
+// this machine only) so the next run does not ask. Deleting that file unmakes the choice.
 //
 // Every step reads the account's current state before it changes anything, so running this twice
 // is the same as running it once. That is not a convenience -- it is what makes it safe to run
@@ -64,7 +66,30 @@ const INTERACTIVE = process.env.CFMAIL_INTERACTIVE
   ? process.env.CFMAIL_INTERACTIVE === '1'
   : !!(process.stdin.isTTY && process.stdout.isTTY) && !process.env.CI;
 
+// Where a typed-in token may be saved, with consent, so the next run does not ask. Explicit
+// arguments and the environment always win over it -- the two-account .env.deploy* routine
+// keeps working untouched -- and deleting the file is how the consent is withdrawn.
+const TOKEN_FILE = path.join(ROOT, '.env.deploy.token');
+const TOKEN_BASENAME = path.basename(TOKEN_FILE);
+
+function readSavedToken() {
+  try {
+    const lines = fs.readFileSync(TOKEN_FILE, 'utf8').split(/\r?\n/);
+    const get = (k) => (lines.find((l) => l.startsWith(k + '=')) || '').slice(k.length + 1).trim();
+    const token = get('CLOUDFLARE_API_TOKEN');
+    return token ? { token, accountId: get('CLOUDFLARE_ACCOUNT_ID') } : null;
+  } catch { return null; }
+}
+
 let TOKEN = args.token || process.env.CLOUDFLARE_API_TOKEN || '';
+// Where the token came from decides what may be offered later: only a typed-in token is ever
+// offered a save, and only a saved one gets the "delete the file to switch" hint.
+let tokenSource = args.token ? 'arg' : TOKEN ? 'env' : '';
+let savedAccountId = '';
+if (!TOKEN) {
+  const saved = readSavedToken();
+  if (saved) { TOKEN = saved.token; savedAccountId = saved.accountId; tokenSource = 'file'; }
+}
 const DRY = !!args['dry-run'];
 let domain = (args.domain || '').trim().toLowerCase();
 let entryArg = (args.entry || '').trim().toLowerCase();
@@ -88,8 +113,11 @@ Usage:
   is needed in the Cloudflare dashboard it says which one and re-checks after you make it.
   Run anywhere else (CI, a pipe), it asks nothing and pauses nowhere; arguments are required.
 
-  --token <t>     Cloudflare API token. Used for this run only; never saved. May also be given
-                  as the CLOUDFLARE_API_TOKEN environment variable, or typed in when asked.
+  --token <t>     Cloudflare API token. May also be given as the CLOUDFLARE_API_TOKEN
+                  environment variable, or typed in when asked. Not saved unless you say so:
+                  a typed-in token is offered a save to .env.deploy.token (gitignored) so the
+                  next run does not ask; argument and environment always take precedence over
+                  that file, and deleting it undoes the save.
   --domain <d>    The company domain to connect. Needed the first time; run this again
                   with a different one for every further domain.
   --entry <e>     Entry subdomain, e.g. mail -> https://mail.<domain>.
@@ -155,30 +183,55 @@ const plan = (s) => console.log('  + ' + s);
 // Small on purpose: one question at a time, a default in brackets, Enter takes it.
 // Every call sits behind INTERACTIVE, so none of this exists for CI.
 
-/** One shared readline for the whole run -- opening and closing one per question would drop
- *  whatever input sat buffered in the closed one. When stdin ends (piped answers running out),
- *  exiting cannot happen inside the close event: an answer already given may still be in flight
- *  as a microtask, and exiting there would discard it. So the end is only recorded, and the
- *  next question -- the moment that actually has nobody left to ask -- says so and stops. */
+/** One shared readline for the whole run, with its lines queued here rather than taken through
+ *  question(). Two failure shapes force that design. Piped answers arrive all at once, and a
+ *  line that lands between questions -- while the script is off validating the previous answer
+ *  -- would be dropped by an interface with no question pending; the queue keeps it. And when
+ *  stdin ends, a question that can never be answered must stop the run rather than hang the
+ *  top-level await -- but not from inside the close event, where an answer already given may
+ *  still be in flight as a microtask. So the end is only recorded, and the next unanswerable
+ *  question is the thing that says so and stops. */
 let rlShared = null;
 let inputEnded = false;
 let markEnded;
 const endedSignal = new Promise((r) => { markEnded = r; });
+const pendingLines = [];
+let lineWaiter = null;
 function rl() {
   if (!rlShared) {
     rlShared = readline.createInterface({ input: process.stdin, output: process.stdout });
     rlShared.on('SIGINT', () => { console.log(''); process.exit(130); });
     rlShared.on('close', () => { inputEnded = true; markEnded(); });
+    rlShared.on('line', (l) => {
+      if (lineWaiter) { const w = lineWaiter; lineWaiter = null; w(l); }
+      else pendingLines.push(l);
+    });
   }
   return rlShared;
 }
 
 /** One line in, one answer out. Empty answer takes the default. */
 async function ask(q, def = '') {
-  const prompt = '  ? ' + q + (def ? ` [${def}] ` : ' ');
-  // Racing against the end of input keeps a question from waiting forever on a stdin that
-  // can never answer -- the top-level await would otherwise just hang the process.
-  const a = inputEnded ? null : await Promise.race([rl().question(prompt), endedSignal.then(() => null)]);
+  rl();
+  process.stdout.write('  ? ' + q + (def ? ` [${def}] ` : ' '));
+  let a;
+  if (pendingLines.length) {
+    a = pendingLines.shift();
+    process.stdout.write(a + '\n');   // echo the queued answer so the transcript stays readable
+  } else if (inputEnded) {
+    a = null;
+  } else {
+    // The ended branch must not touch the queue: a .then() still runs after losing the race,
+    // and a shift() in it would steal the line a later question is owed.
+    a = await Promise.race([
+      new Promise((r) => { lineWaiter = r; }),
+      endedSignal.then(() => null),
+    ]);
+    if (a === null) {
+      lineWaiter = null;
+      if (pendingLines.length) a = pendingLines.shift();
+    }
+  }
   if (a === null) {
     console.error('\n✗ input ended before this question could be answered; stopping. Nothing further was changed.');
     process.exit(1);
@@ -275,6 +328,10 @@ if (DRY) console.log('    (--dry-run: report only, change nothing)');
 // --- 1. Token and account --------------------------------------------------
 
 step('Token and account');
+if (tokenSource === 'file') {
+  log(`using the token saved in ${TOKEN_BASENAME} (pass --token, set CLOUDFLARE_API_TOKEN, or`);
+  log('delete that file to use a different one)');
+}
 if (!TOKEN) {
   if (!INTERACTIVE) {
     console.error('\n✗ No API token given.\n');
@@ -288,6 +345,7 @@ if (!TOKEN) {
   log('here, before anything is created, and you can fix the token and continue.');
   TOKEN = (await ask('Paste the API token (q to stop):')).trim();
   if (!TOKEN || TOKEN.toLowerCase() === 'q') stopped('No token -- nothing was created or changed.');
+  tokenSource = 'asked';
 }
 
 // Listing accounts is both the validity check and the account lookup. The obvious endpoint,
@@ -304,14 +362,15 @@ for (;;) {
       '\n  least one account-scope permission -- that is what makes accounts visible to it.' +
       '\n  A just-edited token takes about a minute to change behaviour.';
   if (!INTERACTIVE) die(advice);
+  if (tokenSource === 'file') log(`(this token came from ${TOKEN_BASENAME} -- a new answer replaces it for this run)`);
   console.error('\n  ✗ ' + advice.replace(/\n {2}/g, '\n    '));
   const again = (await ask('Paste a corrected token, or press Enter to re-check this one (q to stop):')).trim();
   if (again.toLowerCase() === 'q') stopped('The token never validated; nothing was created or changed.');
-  if (again) TOKEN = again;
+  if (again) { TOKEN = again; tokenSource = 'asked'; }
 }
 log('token accepted');
 
-let accountId = args.account || process.env.CLOUDFLARE_ACCOUNT_ID || '';
+let accountId = args.account || process.env.CLOUDFLARE_ACCOUNT_ID || savedAccountId || '';
 let accountName = '';
 if (accountId) {
   const hit = accList.find((a) => a.id === accountId);
@@ -343,6 +402,34 @@ if (!accountId) {
   }
 }
 log(`account ${accountId}${accountName ? ' (' + accountName + ')' : ''}`);
+
+// A typed-in token can be kept for next time -- but only by explicit consent, which is why
+// this does not go through confirm(): --yes speaks for deploy pauses, not for writing a
+// credential to disk. The file is this machine's alone and .gitignore lists it by name;
+// deleting it is how the choice is unmade. A saved token that stopped working and was
+// re-typed defaults the other way -- the choice to keep one on disk was already made, and
+// leaving a dead credential in the file helps nobody.
+if (INTERACTIVE && tokenSource === 'asked') {
+  const updating = fs.existsSync(TOKEN_FILE);
+  const q = updating
+    ? `The token saved in ${TOKEN_BASENAME} did not work; replace it with this one? (Y/n)`
+    : `Save this token and account to ${TOKEN_BASENAME}, so the next run does not ask?\n` +
+      `    It stays on this machine only, git ignores it, and deleting the file undoes this. (y/N)`;
+  const a = (await ask(q)).toLowerCase();
+  const yes = a === '' ? updating : (a === 'y' || a === 'yes');
+  if (yes) {
+    fs.writeFileSync(TOKEN_FILE, [
+      '# Saved by scripts/deploy.mjs at your request, so the next deploy does not ask for a token.',
+      '# Delete this file to be asked again. Never commit it -- .gitignore lists it by name.',
+      `CLOUDFLARE_API_TOKEN=${TOKEN}`,
+      `CLOUDFLARE_ACCOUNT_ID=${accountId}`,
+      '',
+    ].join('\n'), { mode: 0o600 });
+    log(`${updating ? 'updated' : 'saved to'} ${TOKEN_BASENAME}`);
+  } else if (updating) {
+    log(`left ${TOKEN_BASENAME} as it is -- the stale token in it will be reported again next run`);
+  }
+}
 
 // --- 1b. Token permissions -------------------------------------------------
 //

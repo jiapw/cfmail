@@ -204,8 +204,8 @@ That is the whole installation. The third command creates the database and the s
 
 `--omit=dev` 跳过只有开发才需要的东西(TypeScript、测试工具、主题色板源)——安装和部署所需的一切,包括 `wrangler` 和浏览器端 bundle 的构建,都是正式依赖。要改代码就直接 `npm install`;两种装法结束时都会同步 `public/vendor/` 并逐步说明它做了什么。
 
-- **The token is never stored.** It is used for this one run and passed to `wrangler` through the child process's environment — it is not written to `wrangler.jsonc`, not to a dotfile, not to the log. Closing the terminal is enough to be rid of it. (`CLOUDFLARE_API_TOKEN` in the environment works too, if you would rather not have it in your shell history.)
-  **token 不会被保存。** 它只用于这一次运行,通过子进程的环境变量交给 `wrangler`,不写进 `wrangler.jsonc`、不写进任何 dotfile、不打印到日志。关掉终端就没了。(不想让它留在 shell 历史里,也可以放在环境变量 `CLOUDFLARE_API_TOKEN` 里。)
+- **The token is not stored — unless you ask.** By default it is used for this one run and passed to `wrangler` through the child process's environment — not written to `wrangler.jsonc`, not to a dotfile, not to the log; closing the terminal is enough to be rid of it. (`CLOUDFLARE_API_TOKEN` in the environment works too, if you would rather not have it in your shell history.) When you type the token in interactively, the script offers — once it has validated — to save it to `.env.deploy.token` so the next run does not ask; the file is gitignored by name, stays on your machine, loses to `--token` and the environment variable, and deleting it undoes the choice.
+  **token 默认不保存 —— 除非你要求。** 默认它只用于这一次运行,通过子进程的环境变量交给 `wrangler`,不写进 `wrangler.jsonc`、不写进任何 dotfile、不打印到日志,关掉终端就没了。(不想让它留在 shell 历史里,也可以放在环境变量 `CLOUDFLARE_API_TOKEN` 里。)交互式输入 token 时,脚本会在验证通过后问一句要不要存到 `.env.deploy.token`,下次就不再问;这个文件按名字写进了 .gitignore、只留在你机器上、优先级低于 `--token` 和环境变量,删掉它即撤销。
 - **Running it again is safe.** Every step checks the account first: an existing database or bucket is reused, never recreated; migrations only add. That is also how you upgrade — `git pull` and run the same command.
   **重复运行是安全的。** 每一步都先查账号:已有的数据库和存储桶直接复用,绝不重建;迁移只做加法。升级也是这么做 —— `git pull` 之后跑同一条命令。
 - **Adding a domain** is the same command with a different `--domain`; `--entry` is remembered, so you only pass it the first time.
