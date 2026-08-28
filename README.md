@@ -192,13 +192,17 @@ Three commands, start to finish:
 ```bash
 git clone https://github.com/jiapw/cfmail.git
 cd cfmail
-npm install
+npm install --omit=dev
 npm run deploy -- --token <your API token> --domain example.com --entry mail
 ```
 
 That is the whole installation. The third command creates the database and the storage bucket, writes your `wrangler.jsonc`, applies the migrations, publishes the Worker, turns on Email Routing for the domain and points its catch-all at CFMail. Then open `https://mail.example.com` and create the first admin account.
 
 这就是全部安装过程。第三条命令会建数据库和存储桶、生成你的 `wrangler.jsonc`、跑迁移、发布 Worker、为该域名启用 Email Routing 并把 catch-all 指向 CFMail。之后打开 `https://mail.example.com` 创建第一个管理员账号。
+
+`--omit=dev` skips what only development needs (TypeScript, test tooling, the theme-palette source) — everything installing and deploying require, `wrangler` and the build of the browser bundles included, is a regular dependency. To work on the code, run plain `npm install` instead; either way the install ends by syncing `public/vendor/` and telling you what it did.
+
+`--omit=dev` 跳过只有开发才需要的东西(TypeScript、测试工具、主题色板源)——安装和部署所需的一切,包括 `wrangler` 和浏览器端 bundle 的构建,都是正式依赖。要改代码就直接 `npm install`;两种装法结束时都会同步 `public/vendor/` 并逐步说明它做了什么。
 
 - **The token is never stored.** It is used for this one run and passed to `wrangler` through the child process's environment — it is not written to `wrangler.jsonc`, not to a dotfile, not to the log. Closing the terminal is enough to be rid of it. (`CLOUDFLARE_API_TOKEN` in the environment works too, if you would rather not have it in your shell history.)
   **token 不会被保存。** 它只用于这一次运行,通过子进程的环境变量交给 `wrangler`,不写进 `wrangler.jsonc`、不写进任何 dotfile、不打印到日志。关掉终端就没了。(不想让它留在 shell 历史里,也可以放在环境变量 `CLOUDFLARE_API_TOKEN` 里。)
@@ -209,9 +213,9 @@ That is the whole installation. The third command creates the database and the s
 - **`--dry-run`** reports exactly what it would do and changes nothing.
   **`--dry-run`** 会把打算做的事完整报一遍,不做任何改动。
 
-> **What are `npx` and `wrangler`?** `npx` ships with Node.js (18+) — it runs a command-line tool out of `node_modules` without installing anything globally. `wrangler` is Cloudflare's official CLI; it is listed in this project's `devDependencies`, so `npm install` already put it there. `npm run deploy` drives it for you; the `npx wrangler …` commands further down are for the occasional thing you do by hand. There is nothing extra to install, and nothing to log into — the token you pass is what authenticates.
+> **What are `npx` and `wrangler`?** `npx` ships with Node.js (18+) — it runs a command-line tool out of `node_modules` without installing anything globally. `wrangler` is Cloudflare's official CLI; it is a regular dependency of this project, so the install already put it there. `npm run deploy` drives it for you; the `npx wrangler …` commands further down are for the occasional thing you do by hand. There is nothing extra to install, and nothing to log into — the token you pass is what authenticates.
 >
-> **`npx` 和 `wrangler` 是什么?** `npx` 是 Node.js(18+)自带的命令,作用是直接运行 `node_modules` 里的命令行工具,不用全局安装。`wrangler` 是 Cloudflare 官方 CLI,已写在本项目的 `devDependencies` 里,`npm install` 时就装好了。`npm run deploy` 会替你调用它;后文那些 `npx wrangler …` 是留给偶尔手工操作用的。不需要另外装任何东西,也不需要登录 —— 认证靠你传进去的那个 token。
+> **`npx` 和 `wrangler` 是什么?** `npx` 是 Node.js(18+)自带的命令,作用是直接运行 `node_modules` 里的命令行工具,不用全局安装。`wrangler` 是 Cloudflare 官方 CLI,是本项目的正式依赖,安装时就装好了。`npm run deploy` 会替你调用它;后文那些 `npx wrangler …` 是留给偶尔手工操作用的。不需要另外装任何东西,也不需要登录 —— 认证靠你传进去的那个 token。
 
 Where the token comes from: **Cloudflare Dashboard → My Profile → API Tokens → Create Token → Custom token**, with the permissions in the table below. An account-owned token (Manage Account → API Tokens) works just as well.
 token 从哪来:**Cloudflare Dashboard → My Profile → API Tokens → Create Token → Custom token**,权限按下面的表格勾。账号级 token(Manage Account → API Tokens)同样可用。
@@ -221,7 +225,7 @@ Adding more domains later, and upgrading, are the same command:
 
 ```bash
 npm run deploy -- --token <token> --domain another.com   # --entry 沿用第一次的前缀
-git pull && npm install && npm run deploy -- --token <token>
+git pull && npm install --omit=dev && npm run deploy -- --token <token>
 ```
 
 ### Where the entry subdomain is set / 入口子域在哪里指定
@@ -751,8 +755,8 @@ AVIF 在梯子上等着哪天有画布学会;服务端按魔数收下到达的�
 `major.feature.fix`. The current version lives in `src/version.ts` and shows up in the account menu and settings page. Bump it before each deploy.
 规则 `主版本.功能.修复`。当前版本在 `src/version.ts`,每次部署前更新。
 
-Release checklist / 发布清单: edit code → run `build-themes.mjs` if themes changed → `npm run typecheck` → `npm run deploy -- --token <token>` (it applies any new migrations first, and stops before publishing if one fails).
-改代码 → 动过主题就跑 `build-themes.mjs` → `npm run typecheck` → `npm run deploy -- --token <token>`(它会先跑新迁移;迁移失败就停在发布之前)。
+Release checklist / 发布清单: edit code → run `build-themes.mjs` if themes changed → `npm run typecheck` → `npm run deploy -- --token <token>` (it applies any new migrations first, and stops before publishing if one fails). Working on the code needs the full `npm install` — `typecheck` and `build-themes.mjs` live on dev dependencies. Forgetting the themes step is caught: `themes.css` carries a fingerprint of its sources, and the deploy stops if it no longer matches.
+改代码 → 动过主题就跑 `build-themes.mjs` → `npm run typecheck` → `npm run deploy -- --token <token>`(它会先跑新迁移;迁移失败就停在发布之前)。改代码需要完整的 `npm install` —— `typecheck` 和 `build-themes.mjs` 依赖 dev 依赖。忘跑主题这步会被拦住:`themes.css` 带着其来源的指纹,对不上时部署会停下。
 
 ---
 
@@ -782,7 +786,9 @@ public/                        # Gmail-style SPA, no bundler / 无打包无转�
   vendor/                      # third-party browser libs, not committed / 不入库
   tools/Export-Mailbox.ps1     # Microsoft 365 mailbox exporter / M365 导出脚本
 scripts/
-  sync-vendor.mjs              # sync public/vendor/ from node_modules (postinstall)
+  sync-vendor.mjs              # sync public/vendor/ from node_modules (postinstall); verifies the
+                               # committed builds (libav, themes) still match their sources
+                               # 同步 public/vendor/(postinstall);并校验入库构建(libav、主题)未漂移
   deploy.mjs                   # install and upgrade: resources, config, migrations, publish, mail routing
                                # 安装与升级:建资源、生成配置、跑迁移、发布、接收信
   wrangler-config.mjs          # reads wrangler.jsonc, feeds domains/zones to other scripts

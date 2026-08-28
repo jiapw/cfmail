@@ -626,9 +626,11 @@ step('Database migrations');
 step('Deploy the Worker');
 // Vendored browser libraries are copies of what is in node_modules; they must be refreshed
 // before the assets are uploaded or the deployed frontend can drift from the installed version.
+// --strict: a committed build (libav, themes) that no longer matches its sources stops the
+// publish here, instead of shipping the stale build and surfacing as a bug weeks later.
 {
-  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'sync-vendor.mjs')], { cwd: ROOT, stdio: 'inherit' });
-  if ((r.status ?? 1) !== 0) die('could not sync public/vendor/');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'sync-vendor.mjs'), '--strict'], { cwd: ROOT, stdio: 'inherit' });
+  if ((r.status ?? 1) !== 0) die('public/vendor/ could not be brought in sync -- the deploy stops before publishing.\n  The message above names what is stale and the command that fixes it.');
 }
 if (wrangler(['deploy', '-c', CONFIG]) !== 0) die('the deploy failed');
 
