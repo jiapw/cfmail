@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "Nothing here yet - upload a transparent PNG, or drop one in",
   pdfe_draw_clear: "Clear",
   pdfe_draw_hint: "Write your signature with the mouse",
+  pdfe_draw_width: "Stroke width",
   pdfe_save: "Save",
   pdfe_saved: "Saved as a new version",
   pdfe_undo: "Undo",

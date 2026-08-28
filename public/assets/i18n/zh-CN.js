@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "这里还空着 - 上传一张透明 PNG,或直接拖进来",
   pdfe_draw_clear: "清空",
   pdfe_draw_hint: "用鼠标写下你的签名",
+  pdfe_draw_width: "笔画粗细",
   pdfe_save: "保存",
   pdfe_saved: "已保存为新版本",
   pdfe_undo: "撤销",

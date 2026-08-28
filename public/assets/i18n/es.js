@@ -949,6 +949,7 @@ export default {
   pdfe_asset_empty: "Nada aqui todavia - sube un PNG transparente o arrastralo",
   pdfe_draw_clear: "Borrar",
   pdfe_draw_hint: "Escribe tu firma con el raton",
+  pdfe_draw_width: "Grosor del trazo",
   pdfe_save: "Guardar",
   pdfe_saved: "Guardado como una nueva versión",
   pdfe_undo: "Deshacer",

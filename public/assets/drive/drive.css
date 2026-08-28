@@ -1567,10 +1567,13 @@
 .pdfa-item {
   position: relative; border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
   padding: 8px; display: flex; align-items: center; justify-content: center; height: 84px;
-  /* Transparency needs something to be transparent against. / 透明,得衬着点什么才看得见。 */
+  /* Transparency needs something to be transparent against -- and that something is paper-light
+     in every theme, because paper is where these will land.
+     透明,得衬着点什么才看得见 —— 而这点什么在每个主题下都近于纸色,因为它们要落的正是纸面。 */
   background:
-    linear-gradient(45deg, rgba(128,128,128,.14) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.14) 75%) 0 0 / 14px 14px,
-    linear-gradient(45deg, rgba(128,128,128,.14) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.14) 75%) 7px 7px / 14px 14px;
+    linear-gradient(45deg, rgba(0,0,0,.06) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.06) 75%) 0 0 / 14px 14px,
+    linear-gradient(45deg, rgba(0,0,0,.06) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.06) 75%) 7px 7px / 14px 14px,
+    #fdfdfc;
 }
 .pdfa-item:hover { border-color: var(--primary); }
 .pdfa-item img { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -1587,3 +1590,10 @@
   background: #fff; border: 1px dashed var(--border); border-radius: 10px;
   cursor: crosshair; touch-action: none;
 }
+
+/* A page waiting for a placing click, and the pen sizes of the signature pad.
+   等着被点一下放东西的页面,以及签名板的笔号。 */
+.drv-pdf.editing .pdfe-layer.placing { cursor: crosshair; }
+.pdfa-pen { width: 30px; justify-content: center; }
+.pdfa-pen i { display: inline-block; border-radius: 50%; background: var(--text-2); }
+.pdfa-pen.on i { background: var(--primary); }
