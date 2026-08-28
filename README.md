@@ -55,6 +55,12 @@ Two peer subsystems behind one sign-in and one nav bar: **Mail** and **Drive**.
   从 Zoho / Outlook 等导入 `.eml`,也能把邮箱导出回本地。附带一个用 Microsoft Graph API 拉取 Microsoft 365 邮箱的 PowerShell 脚本。
 - **9 UI languages / 9 种界面语言**, 30 built-in themes, light/dark/auto, and a font picker for interface and body text.
   30 套内置主题,明暗自动切换,界面与正文字体可自选。
+- **A phone layout of its own / 手机有自己的版式** — drawers instead of sidebars, bottom action
+  sheets instead of context menus, an album-style photo viewer with edge-to-edge swiping, the
+  system share sheet for saving files, and a top bar that rides the scroll. Landscape is treated
+  as a phone, not a small desktop.
+  抽屉代替侧栏、底部动作单代替右键菜单、相册式看图左右滑、保存走系统分享面板、
+  顶栏跟着滚动收放。横屏按手机对待,而不是当成一台小桌面。
 
 ---
 
@@ -671,33 +677,59 @@ Chrome, Edge and Firefox there.
 不是把桌面挤小。iOS/iPadOS 上无论叫什么名字都是系统的 WebKit,所以 iPad 测一次,
 Safari / Chrome / Edge / Firefox 就都覆盖了。
 
-Two capabilities are not everywhere, and the interface says which is which rather than leaving a
-button that does nothing:
+### The phone layout / 手机版式
 
-有两项能力并非处处都有,界面会说明是哪一种,而不是留下一个按下去没反应的按钮:
+A phone is a phone in both orientations — landscape is not mistaken for a small desktop. The
+sidebars become drawers with a scrim; context menus rise from the foot of the screen as
+thumb-height action sheets; a tap opens what a double-click used to; the top bar slides away as
+you scroll down and back as you scroll up. Pictures open album-style — full screen, neighbours
+riding along with the drag, preloaded a pair ahead. Saving goes through the system share sheet
+("Save Image" / "Save to Files"), with a spinner while the bytes fetch and a toast when the
+sheet reports done; where the sheet is unavailable the plain download remains. The first screen
+costs 264 KB where it used to cost 974: dictionaries load one language at a time, and the
+composer and the admin console load when reached for. Navigation replaces only the content pane
+— the chrome is built once and stands still.
+
+手机横竖都是手机 —— 横屏不会被误当成一台小桌面。侧栏变成带遮罩的抽屉;右键菜单变成从屏幕
+脚下升起的拇指高动作单;过去要双击的,点一下就开;顶栏随下滚收起、随上滚拉回。图片按相册
+方式打开 —— 满屏、相邻的跟着拖动一起走、提前预载一对。保存走系统分享面板(「存储图像」/
+「存储到文件」),取字节时有转圈、面板办完有提示;没有分享面板的地方,普通下载仍在。
+首屏从 974 KB 降到 264 KB:词典按语言一次载一种,写信器和管理后台点到才加载。
+导航只替换内容区 —— 外壳建一次就站着不动。
+
+### What is not everywhere / 并非处处都有的能力
+
+Two capabilities are missing on some platforms, and the interface says which is which rather
+than leaving a button that does nothing:
+
+有两项能力在部分平台缺席,界面会说明是哪一种,而不是留下一个按下去没反应的按钮:
 
 - **Writing into a folder you choose** (File System Access) exists only in desktop Chromium.
   Exporting mailboxes, backup sync and the Gmail import say so and name a browser that can;
-  downloading several files falls back to one download each, and importing `.eml` falls back to a
-  file picker. Choosing a whole folder is unavailable on any tablet or phone at all.
+  downloading several files falls back to one download each. Importing `.eml` works everywhere:
+  it takes a multi-select of files, so a tablet or phone can feed it too.
   **写入你指定的目录**(File System Access)只有桌面 Chromium 有。导出邮箱、备份同步、Gmail
-  导入会说明并点名可用的浏览器;多文件下载退化为逐个下载,导入 `.eml` 退化为文件选择框。
-  选择整个文件夹在任何平板与手机上都做不到。
-- **Rebuilding a video's container in the browser** (MediaSource) is absent on iPhone — iPad has
-  it. An `.mkv` or `.avi` there reports that the format cannot be played rather than spinning;
-  formats the browser opens by itself are unaffected.
-  **在浏览器里重建视频容器**(MediaSource)在 iPhone 上没有 —— iPad 有。那里的 `.mkv` / `.avi`
-  会明确报"这个格式放不了",而不是一直转圈;浏览器自己就能打开的格式不受影响。
+  导入会说明并点名可用的浏览器;多文件下载退化为逐个下载。导入 `.eml` 则处处可用:
+  它收的是多选文件,平板和手机同样喂得进。
+- **Rebuilding a media stream in the browser** (MediaSource) is absent on iPhone — iPad has it.
+  An `.mkv` or a `.wma` there says the stream cannot be rebuilt and suggests downloading for a
+  local player, rather than spinning; formats the browser opens by itself are unaffected.
+  **在浏览器里重建媒体流**(MediaSource)在 iPhone 上没有 —— iPad 有。那里的 `.mkv` / `.wma`
+  会明确说"不支持流式重建,可下载后用本机播放器打开",而不是一直转圈;
+  浏览器自己就能打开的格式不受影响。
 
-Anything that had a substitute is substituted silently: the archive cache falls back to decoding
-per request where the browser cannot write to its private storage, and the text highlighter falls
-back to a wrapped span. Actions that a mouse reaches by hovering or right-clicking are reachable
-on a touch screen too — every row carries a menu button, and the Drive has a select mode that
-makes a tap add to the selection.
+Anything that had a substitute is substituted silently. The archive cache falls back to decoding
+per request where the browser cannot write to its private storage. Thumbnails are encoded down a
+format ladder — WebP where the canvas can encode it, JPEG where it cannot (Safari never learned
+WebP), AVIF ready the day a canvas learns it — and the server accepts whichever arrives by its
+magic bytes. Actions a mouse reaches by hovering or right-clicking are reachable on a touch
+screen too: every row carries a menu button, and the Drive has a select mode that makes a tap
+add to the selection.
 
-凡是有替代品的一律静默替换:浏览器写不了私有存储时,压缩包缓存退回按请求解码;
-文本高亮退回包一层 span。鼠标靠悬停和右键够到的动作,触摸屏上同样够得到 ——
-每一行都带一个菜单按钮,网盘还有一个"选择模式",让点一下变成加选。
+凡是有替代品的一律静默替换。浏览器写不了私有存储时,压缩包缓存退回按请求解码。
+缩略图沿一把格式梯子编码 —— 画布会编 WebP 就用 WebP,不会(Safari 从来没学会)就用 JPEG,
+AVIF 在梯子上等着哪天有画布学会;服务端按魔数收下到达的那种。鼠标靠悬停和右键够到的动作,
+触摸屏上同样够得到:每一行都带一个菜单按钮,网盘还有一个"选择模式",让点一下变成加选。
 
 ---
 
