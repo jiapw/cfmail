@@ -1630,3 +1630,6 @@
 .pdfe-pagegone button:hover { background: var(--hover); }
 .drv-pdf.editing .pdfe-layer .pdfe-pagectl, .drv-pdf.editing .pdfe-layer .pdfe-pagectl *,
 .drv-pdf.editing .pdfe-layer .pdfe-pagegone, .drv-pdf.editing .pdfe-layer .pdfe-pagegone * { pointer-events: auto; }
+
+/* The picture riding under the pointer, at the size it would land. / 骑在指针底下的那张图,尺寸即落下时的尺寸。 */
+.pdfe-place { position: absolute; opacity: .65; pointer-events: none; z-index: 3; filter: drop-shadow(0 2px 8px rgba(0,0,0,.35)); }

@@ -77,6 +77,8 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   let editing = null;                // the open inline editor, if any
   let align = 'left';                // where new text lines start: left | center | right
   let pendingImage = null;           // a picture picked and waiting for a click to place it
+  let placeEl = null;                // the live preview of it, riding under the pointer / 骑在指针下的实时预览
+  let placePage = 0;
   let drag = null;                   // { pageNo, obj, sx, sy, dx, dy, moved }
   let clickWasDrag = false;          // the click a finished drag leaves behind must not select
   let assetsVeil = null;             // the stamp/signature shelf, when it is open / 开着的图章签名架
@@ -160,7 +162,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     // Any other button means the typing is over; the box commits before the action runs.
     // 按下其余任何按钮,都表示字打完了;先让框落定,动作再执行。
     if (editing) await closeEditor(true);
-    if (b.dataset.tool) { tool = b.dataset.tool; pendingImage = null; select(null); paintBar(); return; }
+    if (b.dataset.tool) { tool = b.dataset.tool; clearPending(); select(null); paintBar(); return; }
     const act = b.dataset.act;
     if (act === 'delete') removeSelected();
     else if (act === 'rotate') rotateSelected();
@@ -252,12 +254,68 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: 'image/png', w: bmp.width, h: bmp.height };
   }
 
-  /** Hand a picture to the next click on a page. / 把一张图交给下一次在页面上的点击。 */
+  /** Hand a picture to the next click on a page. Until that click it rides under the pointer at
+   *  the exact size it would land, and Ctrl with the wheel grows or shrinks it in place.
+   *  把一张图交给下一次在页面上的点击。在那一下点击之前,它以将要落下的尺寸骑在指针底下;
+   *  按住 Ctrl 滚动滚轮,就地放大缩小。 */
   function usePending(img) {
+    clearPending();
     pendingImage = img;
+    pendingImage.scale = 1;
+    try {
+      pendingImage.url = URL.createObjectURL(new Blob([img.bytes], { type: img.mime }));
+    } catch { /* no preview is still placeable / 没有预览也照样放得下 */ }
     tool = 'image';
     select(null);
     paintBar();
+  }
+
+  function clearPending() {
+    if (pendingImage?.url) {
+      try { URL.revokeObjectURL(pendingImage.url); } catch { /* already gone / 已经没了 */ }
+    }
+    placeEl?.remove();
+    placeEl = null;
+    pendingImage = null;
+  }
+
+  /** The width the picture would land with, in page points -- one answer for the preview and
+   *  for the landing itself. / 这张图落下时会有的宽,按页面的点算 ——
+   *  预览与真正落下,用的是同一个答案。 */
+  function pendingWidth(st) {
+    const pageW = st.width || 612;
+    return Math.min(pendingImage.w * 0.75, pageW / 2) * (pendingImage.scale || 1);
+  }
+
+  /** Keep the preview under the pointer, on whichever page the pointer is over.
+   *  让预览一直待在指针底下,指针在哪一页,它就在哪一页。 */
+  function movePlace(pageNo, e) {
+    if (!pendingImage?.url) return;
+    const L = layers.get(pageNo);
+    const [x, y] = pointIn(pageNo, e);
+    const w = pendingWidth(L.st);
+    const h = (w * pendingImage.h) / pendingImage.w;
+    const r = rectOf(pageNo, [x - w / 2, y - h / 2, x + w / 2, y + h / 2]);
+    if (!placeEl) {
+      placeEl = document.createElement('img');
+      placeEl.className = 'pdfe-place';
+      placeEl.src = pendingImage.url;
+    }
+    placeEl.style.left = r.left + '%';
+    placeEl.style.top = r.top + '%';
+    placeEl.style.width = r.width + '%';
+    placeEl.style.height = r.height + '%';
+    placeEl.style.display = '';
+    if (placeEl.parentElement !== L.el) L.el.appendChild(placeEl);
+    placePage = pageNo;
+  }
+
+  function onWheel(pageNo, e) {
+    if (!(tool === 'image' && pendingImage) || !e.ctrlKey) return;
+    e.preventDefault();
+    const k = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    pendingImage.scale = Math.min(8, Math.max(0.1, (pendingImage.scale || 1) * k));
+    movePlace(pageNo, e);
   }
 
   async function pickImage() {
@@ -542,7 +600,12 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     }
     layers.set(pageNo, { el, holder, page: pageProxy, vp, st });
     el.onmousemove = (e) => onMove(pageNo, e);
-    el.onmouseleave = () => { hover = null; paintLayer(pageNo); };
+    el.onwheel = (e) => onWheel(pageNo, e);
+    el.onmouseleave = () => {
+      hover = null;
+      if (placeEl) placeEl.style.display = 'none';
+      paintLayer(pageNo);
+    };
     el.onmousedown = (e) => onDown(pageNo, e);
     el.onclick = (e) => onClick(pageNo, e);
     el.ondblclick = (e) => onDouble(pageNo, e);
@@ -639,6 +702,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     // 等着被点一下放东西的页面,由光标把这话说出来 —— 这里的沉默,
     // 正是让一次成功的上传看起来什么都没发生的原因。
     L.el.classList.toggle('placing', tool === 'text' || (tool === 'image' && !!pendingImage));
+    if (tool === 'image' && pendingImage) {
+      movePlace(pageNo, e);
+      return;
+    }
     if (tool !== 'pick' || editing || drag) return;
     const [x, y] = pointIn(pageNo, e);
     const hit = hitAt(L.st, x, y);
@@ -769,11 +836,10 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   function placeImage(pageNo, x, y) {
     const L = layers.get(pageNo);
     const img = pendingImage;
-    pendingImage = null;
-    tool = 'pick';
-    const pageW = L.st.width || 612;
-    const w = Math.min(img.w * 0.75, pageW / 2);
+    const w = pendingWidth(L.st);
     const h = (w * img.h) / img.w;
+    clearPending();
+    tool = 'pick';
     const edit = ed.addImage(L.st, { bytes: img.bytes, mime: img.mime, x: x - w / 2, y: y - h / 2, w, h });
     edit.fresh = true;
     selection = { pageNo, obj: ghostOf(edit) };
@@ -874,6 +940,9 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
       };
     });
     if (editing?.pageNo === pageNo) L.el.appendChild(editing.el);
+    // The placing preview survives a layer repaint the same way the typing box does.
+    // 放置预览挺过一次层重画的方式,和打字框一样。
+    if (placeEl && placePage === pageNo && tool === 'image' && pendingImage) L.el.appendChild(placeEl);
   }
 
   /** Turn, strike, or bring back one page. All three are ordinary notes underneath, so undo,
@@ -1119,6 +1188,7 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
     destroy() {
       clearTimeout(redrawTimer);
       closeAssets();
+      clearPending();
       document.removeEventListener('mousedown', onDocDown, true);
       document.removeEventListener('mousemove', onDragMove);
       document.removeEventListener('mouseup', onDragUp);
