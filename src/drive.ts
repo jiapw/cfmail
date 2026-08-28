@@ -1537,8 +1537,17 @@ driveApp.post('/files/:id/thumb', async (c) => {
   if (buf.byteLength > THUMB_MAX_BYTES) throw new HttpError(413, 'e_drive_part_too_big');
   const b = new Uint8Array(buf);
   const tag = (o: number) => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]);
-  if (b.length < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WEBP') throw new HttpError(400, 'e_bad_request');
-  await c.env.RAW.put(a.node.r2_key + THUMB_SUFFIX, buf, { httpMetadata: { contentType: 'image/webp' } });
+  // WebP where the canvas can encode it; JPEG from Safari, whose canvas never learned WebP.
+  // The magic bytes are the contract either way -- a thumbnail is whatever it declares itself
+  // to be at byte zero, never whatever a header claims.
+  // 画布会编 WebP 的地方收 WebP;Safari 的画布从没学会,收它的 JPEG。
+  // 两种都以魔数为凭 —— 缩略图是它在第零个字节自称的那种东西,而不是某个头声称的那种。
+  const isWebp = b.length >= 12 && tag(0) === 'RIFF' && tag(8) === 'WEBP';
+  const isJpeg = b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  if (!isWebp && !isJpeg) throw new HttpError(400, 'e_bad_request');
+  await c.env.RAW.put(a.node.r2_key + THUMB_SUFFIX, buf, {
+    httpMetadata: { contentType: isWebp ? 'image/webp' : 'image/jpeg' },
+  });
   await c.env.DB.prepare('UPDATE drive_nodes SET has_thumb=1 WHERE id=?1').bind(a.node.id).run();
   // The uploader's own stream cache may still say has_thumb=0 / 上传者自己的流缓存可能还记着没有缩略图
   accessCache.delete(c.get('user').id + ':' + a.node.id);
@@ -1554,7 +1563,9 @@ driveApp.get('/files/:id/thumb', async (c) => {
   if (!obj) throw new HttpError(404, 'e_drive_not_found');
   return new Response(obj.body, {
     headers: {
-      'Content-Type': 'image/webp',
+      // Stored with its true type at write time; old rows are all WebP and carry that.
+      // 写入时就带着真实类型;旧数据全是 WebP,带的也是它。
+      'Content-Type': obj.httpMetadata?.contentType || 'image/webp',
       'Content-Length': String(obj.size),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, max-age=86400',
@@ -2083,7 +2094,9 @@ drivePubApp.get('/:token/files/:id/thumb', async (c) => {
   if (!obj) throw new HttpError(404, 'e_drive_not_found');
   return new Response(obj.body, {
     headers: {
-      'Content-Type': 'image/webp',
+      // Stored with its true type at write time; old rows are all WebP and carry that.
+      // 写入时就带着真实类型;旧数据全是 WebP,带的也是它。
+      'Content-Type': obj.httpMetadata?.contentType || 'image/webp',
       'Content-Length': String(obj.size),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, max-age=86400',
