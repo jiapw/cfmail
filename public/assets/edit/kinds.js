@@ -47,6 +47,14 @@ export function editorFor(name) {
   return null;
 }
 
+/** The PDF editor answers by name as well, but apart from editorFor on purpose: that answer
+ *  doubles, in the new-file dialogs, as "this name already carries a text editor's suffix" --
+ *  and a name ending .pdf must not talk an empty text file into believing it is one.
+ *  PDF 编辑器同样按名字作答,但有意与 editorFor 分开:后者在新建文件的对话框里
+ *  兼任"这个名字已带文本编辑器后缀"的判据 ——
+ *  而一个以 .pdf 结尾的名字,不该哄一个空文本文件相信自己是一份 PDF。 */
+export const pdfEditorFor = (name) => (extOf(name) === 'pdf' ? 'pdf' : null);
+
 /** Where that editor lives, as an address. Editors are tabs, and a tab is a thing with a URL.
  *  那个编辑器住在哪儿,用地址表示。编辑器就是标签页,而标签页是有 URL 的东西。 */
 export const editorHash = (kind, id) => `#/${kind}/${encodeURIComponent(id)}`;

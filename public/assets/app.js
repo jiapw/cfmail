@@ -858,6 +858,13 @@ async function route() {
     const mod = await import('./code/code.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderCodeEditor(seg[1]);
   }
+  // A document that is not text at all, edited with the same standing: a tab with an address.
+  // 一份根本不是文本的文档,以同样的身份来编辑:一个有地址的标签页。
+  if (seg[0] === 'pdf' && seg[1]) {
+    if (!store.me.drive_enabled) return navigate('#/');
+    const mod = await import('./pdf/pdf.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderPdfEditor(seg[1]);
+  }
   if (seg[0] === 'drive') {
     // Drive loads on demand too, gated by the per-domain switch resolved in /api/me
     // 网盘同样按需加载。开关在 /api/me 里按域名解析
