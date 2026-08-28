@@ -717,6 +717,7 @@ export default {
   img_show_once: "Mostrar imágenes",
   img_trust_sender: "Confiar siempre en este remitente",
   img_trusted: "{0} marcado como de confianza",
+  imp_n_files: "{0} archivo(s) seleccionado(s)",
   imp_backup_hint: "El correo recién importado no entra por sí solo en los archivos de copia.",
   imp_backup_hint_go: "Ponerse al día en la pestaña Copias",
   imp_cancel: "Cancelar",

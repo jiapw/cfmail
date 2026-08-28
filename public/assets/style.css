@@ -1285,6 +1285,11 @@ body.impersonating .boot-loading { min-height: calc(100vh - 34px); min-height: c
 /* ---------- 备份:三级包的并列清单 ---------- */
 .bk-cols { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
 .bk-col { min-width: 250px; flex: 1; }
+/* Each archive tier gets a real heading. These wore the sidebar's whisper-small title before,
+   which under three columns of near-identical rows gave the eye nothing to anchor on.
+   每一档归档配一个像样的标题。之前穿的是侧栏那件耳语大小的小标题,
+   在三列几乎长得一样的行面前,眼睛没有可锚的东西。 */
+.bk-cap { font-size: 14.5px; font-weight: 600; color: var(--text); padding: 2px 2px 8px; }
 .bk-row {
   display: flex; align-items: center; gap: 10px;
   padding: 4px 8px; border-radius: 8px; font-size: 13px;
