@@ -467,7 +467,12 @@
   display: flex; flex-direction: column; color: #fff;
 }
 .drv-view-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
-.drv-view-head .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+/* The name yields rather than stretches, so what follows it -- the codepage selector -- sits
+   beside it; the size is what pushes the buttons to the far edge.
+   名字收敛而不撑开,于是跟在它后面的 —— 代码页选择器 —— 就挨着它;
+   把按钮们推到远端的,是那个大小。 */
+.drv-view-head .nm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.drv-view-head > .drv-dim { margin-left: auto; }
 .drv-view-head wa-button::part(base) { color: #fff; }
 .drv-view-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 64px 24px; position: relative; }
 .drv-view-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -1665,3 +1670,12 @@
 
 /* The picture riding under the pointer, at the size it would land. / 骑在指针底下的那张图,尺寸即落下时的尺寸。 */
 .pdfe-place { position: absolute; opacity: .65; pointer-events: none; z-index: 3; filter: drop-shadow(0 2px 8px rgba(0,0,0,.35)); }
+
+/* A page busy turning: dimmed under a spinner until the redraw lands.
+   正在转身的页:压暗、转圈,直到重画落地。 */
+.drv-pdf-page.pdfe-waiting canvas { opacity: .35; transition: opacity .15s; }
+.drv-pdf-page.pdfe-waiting::after {
+  content: ''; position: absolute; inset: 0; margin: auto; width: 30px; height: 30px;
+  border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%;
+  animation: drvspin .8s linear infinite; z-index: 6;
+}

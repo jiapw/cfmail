@@ -253,8 +253,8 @@ function shell() {
     <div class="md-head">
       <span class="md-name" id="md-name"></span>
       <span class="md-dot" id="md-dot" title=""></span>
-      <span class="md-sp"></span>
       <span id="md-enc"></span>
+      <span class="md-sp"></span>
       <span id="md-peers"></span>
       <wa-button class="icon pr-hide" appearance="plain" id="md-pen" aria-label="${esc(t('pr_pen'))}"
         title="${esc(t('pr_pen'))}">${icon('pencil', 18)}</wa-button>

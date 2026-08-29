@@ -102,8 +102,8 @@ function shell() {
     <div class="code-head">
       <span class="code-name" id="code-name"></span>
       <span class="code-dot" id="code-dot" title=""></span>
-      <span class="code-sp"></span>
       <span id="code-enc"></span>
+      <span class="code-sp"></span>
       <wa-button class="icon" appearance="plain" id="code-wrap" aria-label="${esc(t('md_wrap'))}"
         title="${esc(t('md_wrap'))}">${icon('wrapText', 18)}</wa-button>
       <wa-button size="small" variant="brand" id="code-save">${esc(t('md_save'))}</wa-button>
