@@ -992,10 +992,30 @@ export async function editSession({ box, bytes, viewer, ui, onDirty }) {
   function pageAction(pageNo, act) {
     const L = layers.get(pageNo);
     if (act === 'rot') {
-      const e = ed.rotatePage(L.st);
-      e.fresh = false;
+      ed.rotatePage(L.st);
       select(null);
-      changed(pageNo);
+      // A turn has no mark to stand in for it, so the page itself says it is working -- dimmed
+      // under a spinner until the redraw lands. And it skips the typing debounce: there is no
+      // burst here to batch, only one press waiting for its answer, which on a large document
+      // is the seconds a full rebuild takes. Silence for those seconds read as a dead button.
+      // 转页没有可以替它站岗的记号,于是让页面自己说"正在办" —— 压暗、转圈,直到重画落地。
+      // 它也跳过打字的合批延迟:这里没有连击要攒,只有一次按下在等它的回答,
+      // 而这个回答在大文件上就是完整重建的那几秒。那几秒的沉默,读起来就是一个坏掉的按钮。
+      const h = L.holder;
+      h.dataset.wait = (+h.dataset.wait || 0) + 1;
+      h.classList.add('pdfe-waiting');
+      dirtyPages.add(pageNo);
+      clearTimeout(redrawTimer);
+      paintBar();
+      redraw().finally(() => {
+        const left = (+h.dataset.wait || 1) - 1;
+        if (left <= 0) {
+          h.classList.remove('pdfe-waiting');
+          delete h.dataset.wait;
+        } else {
+          h.dataset.wait = left;
+        }
+      });
       return;
     }
     if (act === 'del') {
