@@ -927,21 +927,6 @@ text = text
   // one that does not exist fails the entire deploy, mail and all, with an error about a Worker
   // version that has nothing to do with the cause.
   //
-  // Before anything is added: bring what is already there into line with the account. An entry
-  // asking for a class that exists cannot be applied, and one deploy refused that way refuses
-  // every time after.
-  if (workerExists) {
-    // Said out loud, because the last two rounds of this were diagnosed from a log that did not
-    // contain it. What the account reports here decides everything below.
-    skip(`migrations: account is at ${appliedTag ? `tag "${appliedTag}"` : 'no tag'}`
-      + `, classes already there: ${doClasses.length ? doClasses.join(', ') : 'none'}`);
-    const fixed = withReconciledMigrations(text, { applied: appliedTag, existing: doClasses });
-    if (fixed !== text) {
-      text = fixed;
-      plan('migrations reconciled: entries creating classes this account already has were removed');
-    }
-  }
-
   const image = args['backup-image'] || await backupImage(text);
   if (image) {
     const withBk = withBackupContainer(text, image);
@@ -1011,6 +996,31 @@ if (orphans.length) {
   }
 }
 
+// --- Migrations, settled last ---------------------------------------------
+// Last, and that is the whole point. A migration that creates a class the account already has
+// cannot be applied, and Cloudflare refuses the entire deploy for it -- every time, forever.
+// Reconciling earlier does not work: the backup container writes its own migration entry, so
+// anything removed before that step was put straight back. Two fixes died that way.
+//
+// What wrangler will send decides what has to go: entries after the applied tag, or -- when the
+// account has no tag at all, which is what a deploy interrupted mid-upload leaves behind -- every
+// entry there is.
+if (workerExists) {
+  // Said out loud, because two rounds of this were diagnosed from logs that did not contain it.
+  log(`migrations: account is at ${appliedTag ? `tag "${appliedTag}"` : 'no tag'}`
+    + `, classes it already has: ${doClasses.length ? doClasses.join(', ') : 'none'}`);
+  const fixed = withReconciledMigrations(text, { applied: appliedTag, existing: doClasses });
+  if (fixed !== text) {
+    text = fixed;
+    const left = (JSON.parse(stripJsonc(fixed)).migrations || []).length;
+    plan(`migrations reconciled: dropped the entries that would recreate a class this account has`);
+    if (!left) {
+      log('  nothing is left to apply, so wrangler will warn that the Durable Objects have no');
+      log('  migration. That warning is expected here and the deploy goes through.');
+    }
+  }
+}
+
 if (DRY) {
   // Parse what would have been written, so a dry run proves the result is usable rather than
   // only describing the intent
@@ -1025,6 +1035,7 @@ if (DRY) {
   log(`    database_id  ${preview.d1_databases?.[0]?.database_id}`);
   log(`    APP_ORIGIN   ${preview.vars?.APP_ORIGIN}`);
   log(`    routes       ${(preview.routes || []).map((r) => r.pattern).join(', ') || '(none)'}`);
+  log(`    migrations   ${(preview.migrations || []).map((m) => m.tag + ' ' + [...(m.new_sqlite_classes || []), ...(m.new_classes || [])].join('/')).join(', ') || '(none)'}`);
 } else {
   let parsed;
   try {
@@ -1034,6 +1045,11 @@ if (DRY) {
   }
   if (parsed.account_id !== accountId) die('the configuration this produced has the wrong account_id; nothing was written');
   if (parsed.d1_databases?.[0]?.database_id !== databaseId) die('the configuration this produced has the wrong database_id; nothing was written');
+  if (workerExists && withReconciledMigrations(text, { applied: appliedTag, existing: doClasses }) !== text) {
+    die('this configuration still asks to create a Durable Object class the account already has.\n'
+      + '  Deploying it fails with error 10074 and takes the whole deploy with it, so nothing was\n'
+      + '  written. Something between the reconciliation and this check added a migration back.');
+  }
   fs.writeFileSync(CONFIG, text);
   log(`wrote ${CFG_NAME}`);
 }
