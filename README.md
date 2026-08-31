@@ -461,19 +461,28 @@ R2 的 S3 凭据是推导出来的(access key = token 的 id,secret = token valu
 
 ### Turning it on / 怎么开起来
 
-The image has to be built and pushed once. **This is the only step that needs Docker** -- ordinary
-deploys reference the image from the registry and do not.
+Give the deploy a backup token and it does the rest: it builds the image from `container/`,
+pushes it to your own account's registry, and writes the container into the configuration. **The
+build is the only step that wants Docker** — have Docker Desktop (or Docker Engine) running, and
+nothing else about it needs your attention. The image is tagged with a hash of `container/`, so
+it is rebuilt when that source changes and reused when it has not.
 
-镜像要先构建推送一次。**这是唯一需要 Docker 的一步** —— 日常部署引用仓库里的镜像,不需要 Docker。
+给部署一个备份 token,其余它自己来:用 `container/` 构建镜像、推到你自己账号的 registry、
+把容器写进配置。**只有构建这一步需要 Docker** —— 让 Docker Desktop(或 Docker Engine)跑着即可,
+别的不用管。镜像的 tag 是 `container/` 的哈希,所以那份源码变了就重建,没变就沿用。
 
 ```sh
-# 1. 构建并推送镜像(需要 Docker;Windows 上用 WSL 里的 Docker 也可以)
-npx wrangler containers build ./container \
-  --tag registry.cloudflare.com/<account-id>/cfmail-backup:1 --push
-
-# 2. 部署时带上备份用的 token,它会被存成 wrangler secret
 node scripts/deploy.mjs --token <deploy token> --backup-token <backup token>
 ```
+
+If Docker is not running the deploy says so and waits, rather than quietly leaving you without a
+backup. Two ways past it: `--backup-image <ref>` uses an image you built elsewhere, and
+`--no-backup` deploys without the backup — everything else works, the Backup tab says it is
+unavailable, and a later deploy with Docker running turns it on.
+
+Docker 没跑起来的话,部署会说出来并等你,而不是默默让你少了一份备份。两条绕过的路:
+`--backup-image <引用>` 用你在别处构建好的镜像,`--no-backup` 则不带备份部署 ——
+其余一切照常,后台「备份」页直说不可用,之后在 Docker 跑着时再部署一次就开起来了。
 
 `--backup-token` is separate from `--token` on purpose: the deploy token lives only in the memory
 of that one run, while the backup token stays in the Worker as a secret. Give the backup one only
@@ -483,21 +492,19 @@ of that one run, while the backup token stays in the Worker as a secret. Give th
 而备份 token 会作为 secret 长期留在 Worker 里。给它 **Account → D1 · Read** 和
 **Account → Workers R2 Storage · Edit** 就够,别的一概不需要。
 
-Without the token, the console says so and the switch stays off. Without `--backup-image` there
-is no container in the configuration at all: a container must name an image that exists, and one
-naming an image nobody pushed fails the whole deploy — mail and all — with an error about a
-Worker version that has nothing to do with the cause. So the container is written the first time
-you name a real image, along with the binding and the migration that go with it; until then the
-Backup tab says it is unavailable and nothing else notices.
+Without the token, the console says so and the switch stays off. The container is written into
+the configuration only once there is an image that really exists — one naming an image nobody
+pushed fails the whole deploy, mail and all, with an error about a Worker version that has
+nothing to do with the cause. The container, the binding and the migration are written together,
+the moment there is something for them to point at.
 
 Once the container is in the configuration, **`wrangler dev` wants an API token in the
 environment** even when you are not working on the backup. `.env.deploy` is enough; local
 development still needs no Docker.
 
-备份 token 没给,后台会直说,开关也开不起来。而**没有 `--backup-image` 时,配置里根本不会有容器**:
-容器必须指向一个真实存在的镜像,指向没人推送过的镜像会让**整个部署失败** —— 连收发信一起 ——
-报出来的还是一句关于 Worker 版本、与真正原因毫不相干的错。所以容器是在你第一次给出真实镜像时
-才写进去的,连同配套的绑定与 migration;在那之前后台「备份」页直说不可用,别处毫无察觉。
+备份 token 没给,后台会直说,开关也开不起来。而容器是**等到确实有一个存在的镜像**才写进配置的:
+指向没人推送过的镜像会让**整个部署失败** —— 连收发信一起 —— 报出来的还是一句关于 Worker 版本、
+与真正原因毫不相干的错。容器、绑定与 migration 三样一起写入,就在它们有东西可指的那一刻。
 
 容器一旦进了配置,**即使你不碰备份,`wrangler dev` 也要环境里有 API token**。
 有 `.env.deploy` 就够了;本地开发仍然不需要 Docker。

@@ -223,6 +223,60 @@ export function hasPlaceholderContainer(text) {
   return /"containers"\s*:\s*\[[\s\S]*?"BackupContainer"/.test(text) && !containerImage(text);
 }
 
+/**
+ * Take the backup container back out: the containers array, the binding, and the migration that
+ * created the class. For when there is no image and no way to build one -- a container naming an
+ * image that does not exist does not merely disable the backup, it fails the entire deploy.
+ *
+ * Editing JSONC by hand is how configurations get quietly mangled, so this does not trust itself:
+ * the result is parsed and inspected, and anything short of "valid, and exactly these three
+ * pieces gone" returns null for the caller to fall back on. Refusing is always available; a
+ * damaged wrangler.jsonc is not.
+ *
+ * 把备份容器整个取出来:containers 数组、绑定,以及创建该类的那条 migration。
+ * 用在既没有镜像、也无从构建的时候 —— 一个指向不存在镜像的容器不只是让备份不可用,
+ * 它会让整个部署失败。
+ *
+ * 手改 JSONC 正是配置被悄悄改坏的典型途径,所以这个函数不信任自己:
+ * 改完要解析、要核对,凡是达不到"合法,且恰好少了这三样"的一律返回 null 交给调用方兜底。
+ * 拒绝随时可以;一份被改坏的 wrangler.jsonc 不行。
+ */
+export function withoutBackupContainer(text) {
+  const before = (() => {
+    try { return JSON.parse(stripJsonc(text)); } catch { return null; }
+  })();
+  if (!before) return null;
+
+  let out = text;
+  // The containers array, whole, with the comma that followed it if it had one.
+  const cm = /[ \t]*"containers"\s*:\s*\[/.exec(out);
+  if (cm) {
+    const span = arraySpan(out, cm.index + cm[0].length - 1);
+    if (!span) return null;
+    let end = span.end + 1;
+    if (out[end] === ',') end += 1;
+    const lineStart = out.lastIndexOf('\n', cm.index) + 1;
+    out = out.slice(0, lineStart) + out.slice(end).replace(/^[ \t]*\n/, '');
+  }
+  // The binding line and the migration entry, each on its own line in every configuration this
+  // script has ever written.
+  out = out.replace(/^[ \t]*\{[^\n]*"BACKUP_CONTAINER"[^\n]*\n/m, '');
+  out = out.replace(/^[ \t]*\{[^\n]*"new_sqlite_classes"\s*:\s*\["BackupContainer"\][^\n]*\n/m, '');
+  // A list whose last entry has just been removed keeps a trailing comma behind it.
+  out = out.replace(/,(\s*\])/g, '$1');
+
+  let after;
+  try { after = JSON.parse(stripJsonc(out)); } catch { return null; }
+  const names = (c) => (c.durable_objects?.bindings || []).map((b) => b.name).sort().join(',');
+  const tags = (c) => (c.migrations || []).map((m) => (m.new_sqlite_classes || []).join('/')).sort().join(',');
+  const ok = !after.containers
+    && names(after) === names(before).split(',').filter((n) => n !== 'BACKUP_CONTAINER').join(',')
+    && tags(after) === tags(before).split(',').filter((t) => t !== 'BackupContainer').join(',')
+    && JSON.stringify(after.vars || {}) === JSON.stringify(before.vars || {})
+    && JSON.stringify(after.routes || []) === JSON.stringify(before.routes || []);
+  return ok ? out : null;
+}
+
 export function withBackupContainer(text, image, instanceType = 'standard-2') {
   // Each of the three pieces is decided on its own. One question standing for all of them would
   // let a half-finished configuration -- the binding written, the container not -- read as

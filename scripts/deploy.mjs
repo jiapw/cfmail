@@ -28,7 +28,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar } from './wrangler-config.mjs';
+import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar, withoutBackupContainer } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
@@ -134,10 +134,12 @@ Usage:
                   in the memory of this run. It needs Account D1 Read and Workers R2 Storage
                   Edit, and nothing else.
   --backup-image <ref>
-                  Image for the backup container. Defaults to
-                  registry.cloudflare.com/<account>/cfmail-backup:1.
-                  Build and push it once first -- the only step that wants Docker:
-                    wrangler containers build ./container --tag <ref> --push
+                  Use an image you built and pushed yourself, instead of the one this
+                  builds from container/ (tagged with that directory's hash, rebuilt
+                  when it changes). Building is the only step that wants Docker.
+  --no-backup     Deploy without the backup container. Everything else works; the
+                  Backup tab says it is unavailable, and a later deploy with Docker
+                  running turns it on.
                   The container is in the configuration whether or not backups are switched on,
                   so wrangler dev wants an API token in the environment either way.
   --prune-domains Let this deploy detach custom domains that are live but absent from the
@@ -581,6 +583,104 @@ async function ensurePermissions(zoneId) {
  * 所以被占下的这个名字上什么都访问不到。它必须存在,但不必好看。
  * 已经有名字的账号原样保留 —— 名字是全局的,可能有人正在用。
  */
+/** Is there a Docker daemon to build with? `docker version` answers both questions at once --
+ *  installed, and running -- which "is it on PATH" does not.
+ *  有没有一个能用来构建的 Docker?`docker version` 一次回答两件事:装了没、跑着没 ——
+ *  这是"PATH 上有没有"答不了的。 */
+function dockerAvailable() {
+  const bin = process.env.WRANGLER_DOCKER_BIN || 'docker';
+  const r = spawnSync(bin, ['version', '--format', '{{.Server.Version}}'], { stdio: 'ignore' });
+  return !r.error && (r.status ?? 1) === 0;
+}
+
+/** What is in container/, as twelve hex characters. It is the image's tag, so an image is
+ *  rebuilt when its source changes and reused when it has not.
+ *  container/ 里是什么,写成十二个十六进制字符。它就是镜像的 tag,
+ *  于是源码变了就重建,没变就沿用。 */
+function containerHash() {
+  const dir = path.join(ROOT, 'container');
+  const names = fs.readdirSync(dir).sort();
+  const h = crypto.createHash('sha256');
+  for (const n of names) {
+    h.update(n);
+    h.update(fs.readFileSync(path.join(dir, n)));
+  }
+  return h.digest('hex').slice(0, 12);
+}
+
+/**
+ * The image the backup container will run, built here if it has to be.
+ *
+ * A tag somebody chose by hand is left alone -- that is an operator managing their own image, and
+ * this has no business retagging it. A tag this script chose is the hash of container/, so it is
+ * rebuilt exactly when that source changes. And when there is no image at all, one is built now,
+ * because "go and build an image first, then come back" is not a step a deploy should make
+ * somebody perform.
+ *
+ * Without Docker it returns what it found -- possibly nothing -- and the caller leaves the
+ * container out. The backup is the one feature that needs it; everything else deploys.
+ *
+ * 备份容器要跑的那个镜像,必要时就在这里建出来。
+ *
+ * 人手选定的 tag 原样不动 —— 那是操作者在自己管镜像,轮不到这里改名。
+ * 本脚本选的 tag 是 container/ 的哈希,所以恰好在那份源码变了的时候重建。
+ * 而当根本没有镜像时,现在就建一个 —— "先去别处建个镜像再回来"不该是部署要求人做的一步。
+ *
+ * 没有 Docker 就把找到的东西原样返回(可能什么都没有),由调用方把容器留在配置之外。
+ * 需要它的只有备份这一个功能,其余照常部署。
+ */
+async function backupImage(text) {
+  if (args['no-backup']) return '';
+  const configured = containerImage(text);
+  const managed = /:[0-9a-f]{12}$/.test(configured);
+  if (configured && !managed) return configured;
+
+  const ref = `registry.cloudflare.com/${accountId}/cfmail-backup:${containerHash()}`;
+  if (configured === ref) return configured;
+  if (DRY) {
+    if (!configured) plan('build and push the backup image (--dry-run built nothing)');
+    return configured;
+  }
+
+  // Whatever is missing, say what it is and wait -- the same way a missing token permission is
+  // handled. An image that cannot be built is a thing somebody can fix in a minute and retry,
+  // and skipping it silently would leave a deployment quietly without its backup.
+  // 缺什么就说什么,然后等 —— 和缺 token 权限时的处理是同一套。
+  // 建不出来的镜像是一分钟就能修好再来一次的事,而默默跳过会让一套部署悄无声息地没有备份。
+  for (;;) {
+    if (!dockerAvailable()) {
+      const advice = 'Docker is not running, and the backup image is built with it.\n\n'
+        + '    macOS / Windows: install Docker Desktop and start it -- https://docs.docker.com/get-started/\n'
+        + '    Linux: install Docker Engine, then: sudo systemctl start docker\n\n'
+        + '  It is needed for this one step and never at run time. Two ways past it:\n'
+        + '    --backup-image <ref>  an image you built and pushed elsewhere\n'
+        + '    --no-backup           deploy without the backup; everything else works, and a later\n'
+        + '                          deploy with Docker running turns it on';
+      if (!INTERACTIVE) die(advice);
+      console.error('\n  ✗ ' + advice.replace(/\n/g, '\n  '));
+      if (!(await fixAndRetry('When Docker is running'))) {
+        stopped('No backup image, and nothing has been deployed. --no-backup deploys without it.');
+      }
+      continue;
+    }
+    step('Backup image');
+    log(`building ${ref}`);
+    log('(the one step that wants Docker; a minute or two the first time)');
+    if (wrangler(['containers', 'build', path.join(ROOT, 'container'), '--tag', ref, '--push', '-c', CONFIG]) === 0) {
+      return ref;
+    }
+    const advice = 'The backup image did not build -- wrangler said why above.\n\n'
+      + '  Common causes: Docker ran out of disk, the daemon stopped mid-build, or the registry\n'
+      + '  refused the push (the token needs Account -> Workers Scripts -> Edit).\n'
+      + '  --no-backup deploys without the backup instead.';
+    if (!INTERACTIVE) die(advice);
+    console.error('\n  ✗ ' + advice.replace(/\n/g, '\n  '));
+    if (!(await fixAndRetry('When that is fixed'))) {
+      stopped('No backup image, and nothing has been deployed. --no-backup deploys without it.');
+    }
+  }
+}
+
 async function ensureWorkersSubdomain() {
   const cur = await cf('GET', `/accounts/${accountId}/workers/subdomain`);
   const have = cur.ok && cur.data?.result?.subdomain;
@@ -860,38 +960,40 @@ text = text
 // deployment carries the container, and `wrangler dev` therefore wants an API token.
 //
 {
-  // Only an image somebody actually pushed gets written down. This used to invent one --
-  // registry.cloudflare.com/<this account>/cfmail-backup:1, whether or not anything had ever
-  // been built -- and a container pointing at nothing is worse than no container at all: the
-  // deploy takes the container path, waits for the Worker version the rollout would attach to,
-  // and dies with an error about a version rather than about an image nobody made.
+  // The backup needs a container, a container needs an image, and the image is built from
+  // container/ in this repository -- so the deploy builds it rather than asking somebody to go
+  // and do it first. What it will not do is write down an image nobody made: a container naming
+  // one that does not exist fails the entire deploy, mail and all, with an error about a Worker
+  // version that has nothing to do with the cause.
   //
-  // 只有真被推送过的镜像才会写进配置。从前这里会**编造**一个 ——
-  // registry.cloudflare.com/<本账号>/cfmail-backup:1,不管有没有人构建过 ——
-  // 而一个指向虚无的容器比没有容器更糟:部署会走上容器那条路,
-  // 去等 rollout 要挂靠的那个 Worker 版本,最后死在一句关于"版本"而不是关于"镜像"的报错上。
-  const image = args['backup-image'] || containerImage(text);
-  if (!image && hasPlaceholderContainer(text)) {
-    die('this configuration carries a backup container with no image:\n\n'
-      + '    ' + (/"image"\s*:\s*"([^"]*)"/.exec(text) || [, '?'])[1] + '\n\n'
-      + '  It was written by an older version of this script, which filled the image in with a\n'
-      + '  placeholder. Deploying it fails inside the container rollout, with an error about a\n'
-      + '  Worker version that has nothing to do with the cause. Either finish it or take it out:\n\n'
-      + '    finish it: build and push the image, then run this again with --backup-image <ref>\n'
-      + '               (see "Backups" in the README -- it is the one step that wants Docker)\n'
-      + `    take it out: delete these three from ${path.basename(CONFIG)} --\n`
-      + '               the "containers" array,\n'
-      + '               the { "name": "BACKUP_CONTAINER", ... } line under durable_objects,\n'
-      + '               and the migrations entry naming "BackupContainer"\n\n'
-      + '  Without the container everything else works; the Backup tab says it is unavailable.');
-  }
+  // 备份要容器,容器要镜像,而镜像就是用本仓库的 container/ 构建出来的 —— 所以由部署来建,
+  // 而不是先请人去别处做一遍。它唯一不肯做的事是写下一个没人造过的镜像:
+  // 指向不存在镜像的容器会让整个部署失败、连收发信一起,
+  // 报出来的还是一句关于 Worker 版本、与真正原因毫不相干的错。
+  const image = args['backup-image'] || await backupImage(text);
   if (image) {
     const withBk = withBackupContainer(text, image);
     if (withBk === null) log('⚠ no durable_objects / migrations in the configuration; skipping the backup container');
     else if (withBk !== text) { text = withBk; plan(`backup container -> ${image}`); }
+  } else if (hasPlaceholderContainer(text) || (args['no-backup'] && containerImage(text))) {
+    // Nothing to point the container at, and it is already written down: take it out, or the
+    // deploy fails on it. Refusing to edit is the fallback -- a mangled config is not.
+    // 容器已经写在那儿却无处可指:把它取出来,否则部署会栽在它上面。
+    // 改不动就明说 —— 宁可不改,也不能改坏。
+    const without = withoutBackupContainer(text);
+    if (without) { text = without; plan('backup container removed (no image, and none could be built)'); }
+    else {
+      die('this configuration carries a backup container with no image, and it could not be\n'
+        + '  removed automatically. Deploying it fails inside the container rollout, with an error\n'
+        + '  about a Worker version that has nothing to do with the cause.\n\n'
+        + `  Delete these three from ${path.basename(CONFIG)} by hand:\n`
+        + '    the "containers" array,\n'
+        + '    the { "name": "BACKUP_CONTAINER", ... } line under durable_objects,\n'
+        + '    and the migrations entry naming "BackupContainer"\n\n'
+        + '  Everything else then works; the Backup tab says the backup is unavailable.');
+    }
   } else {
-    skip('backup container: no image given, so none is configured'
-      + ' (--backup-image <ref> adds it; the Backup tab says it is unavailable until then)');
+    skip('backup container: not configured (Docker builds it -- see "Backups" in the README)');
   }
   const v1 = withVar(text, 'CF_ACCOUNT_ID', accountId);
   const v2 = v1 && withVar(v1, 'CF_D1_DATABASE_ID', databaseId);
