@@ -931,10 +931,14 @@ text = text
   // asking for a class that exists cannot be applied, and one deploy refused that way refuses
   // every time after.
   if (workerExists) {
+    // Said out loud, because the last two rounds of this were diagnosed from a log that did not
+    // contain it. What the account reports here decides everything below.
+    skip(`migrations: account is at ${appliedTag ? `tag "${appliedTag}"` : 'no tag'}`
+      + `, classes already there: ${doClasses.length ? doClasses.join(', ') : 'none'}`);
     const fixed = withReconciledMigrations(text, { applied: appliedTag, existing: doClasses });
     if (fixed !== text) {
       text = fixed;
-      plan('migrations reconciled with what this account has already applied');
+      plan('migrations reconciled: entries creating classes this account already has were removed');
     }
   }
 
