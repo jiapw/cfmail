@@ -3,6 +3,42 @@ import type { Addr } from './types';
 export const uid = () => crypto.randomUUID();
 export const now = () => Date.now();
 
+/**
+ * The label the web client is served under -- the "mail" in mail.example.com.
+ *
+ * It is not a constant. Whoever deployed this chose it (--entry) and it went into APP_ORIGIN, so
+ * that is where it is read back from. It used to be written out as "intl-mail" in half a dozen
+ * places, which is the subdomain this was developed under: every one of those places worked
+ * perfectly for the deployment they were written in and quietly did the wrong thing in anybody
+ * else's -- invite links pointing at a host that does not exist, branding that never resolved.
+ *
+ * 提供网页客户端的那一段标签 —— mail.example.com 里的 "mail"。
+ *
+ * 它不是常量。部署的人选了它(--entry),它进了 APP_ORIGIN,所以就从那儿读回来。
+ * 从前它以 "intl-mail" 的字面量散落在五六个地方 —— 那是本项目开发时用的子域:
+ * 每一处在写它的那套部署里都完美工作,而在别人的部署里悄悄做错事 ——
+ * 邀请链接指向一个不存在的主机、品牌永远解析不出来。
+ */
+export function entryLabel(env: { APP_ORIGIN?: string }): string {
+  try {
+    const host = new URL(env.APP_ORIGIN || '').hostname;
+    // A host with no dot is somebody's localhost, which has no entry label to speak of.
+    // 不带点的主机是某人的 localhost,谈不上入口标签。
+    return host.includes('.') ? host.split('.')[0] : '';
+  } catch {
+    return '';
+  }
+}
+
+/** The company domain whose entry host this is, or '' when the host is not one of them.
+ *  这个 Host 属于哪个企业域名;它若不是某个入口主机则返回 ''。 */
+export function domainFromHost(env: { APP_ORIGIN?: string }, host: string): string {
+  const entry = entryLabel(env);
+  const h = String(host || '').toLowerCase().split(':')[0];
+  if (!entry) return '';
+  return h.startsWith(entry + '.') ? h.slice(entry.length + 1) : '';
+}
+
 export function b64encode(bytes: Uint8Array): string {
   let bin = '';
   const CHUNK = 0x8000;

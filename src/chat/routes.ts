@@ -53,7 +53,7 @@ export const chatApp = new Hono<Ctx>();
 
 chatApp.use('*', requireAuth);
 // Read the switch and configuration for the domain being visited; anything but enabled is a 403
-// 按访问域名(intl-mail.<域名>)取该域的开关与配置,未开启一律 403
+// 按访问域名(<入口>.<域名>)取该域的开关与配置,未开启一律 403
 chatApp.use('*', async (c, next) => {
   const d = await chatDomainForHost(c.env, new URL(c.req.url).hostname);
   if (!d || !d.enabled) return c.json({ error: 'e_chat_disabled' }, 403);

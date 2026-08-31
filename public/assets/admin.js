@@ -8,14 +8,23 @@ import { pickFont, ensureFont } from './fontpicker.js';
 import { roleName } from './auth.js';
 import { THEMES } from './themes-meta.js';
 
+/** The label this console is being served under -- the "mail" of mail.example.com, or whatever
+ *  word the deployment chose. Read off the address bar rather than assumed, because assuming it
+ *  is how a deployment ends up quietly describing somebody else's.
+ *  当前后台是挂在哪一段标签下的 —— mail.example.com 的 "mail",或这套部署选定的任何词。
+ *  从地址栏读,而不是假定 —— 假定正是一套部署悄悄说着别人家事情的由来。 */
+const entryLabel = () => (location.hostname.includes('.') ? location.hostname.split('.')[0] : '');
+/** That entry, on a given company domain / 那个入口,套在给定的企业域名上 */
+const entryHost = (domain) => (entryLabel() ? `${entryLabel()}.${domain}` : domain);
+
 /**
  * Preselect whichever domain matches the entry host being visited.
  * In local development, or when visiting some other host, nothing matches and it falls back to the first.
- * 默认选中当前入口域名(intl-mail.<域名>)对应的那个。
+ * 默认选中当前入口域名(<入口>.<域名>)对应的那个。
  * 本地开发或访问的是别的 host 时匹配不上,回落到第一个。
  */
 function currentDomainId(domains) {
-  const host = location.hostname.replace(/^intl-mail\./, '');
+  const host = location.hostname.split('.').slice(1).join('.');
   return domains.find((d) => d.name === host)?.id || domains[0]?.id || '';
 }
 
@@ -229,7 +238,7 @@ async function renderDomainInfo(domainId) {
     : `<span class="dim">${esc(t('none'))}</span>`;
   box.innerHTML = `
     <section class="card">
-      <h3>${esc(t('brand_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('brand_note', brand.domain))}</span></h3>
+      <h3>${esc(t('brand_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('brand_note', entryHost(brand.domain)))}</span></h3>
       <form id="f-brand" class="form-row">
         <label>${esc(t('brand_name_label'))}</label>
         <input name="bname" type="text" value="${esc(brand.brand_name || '')}" placeholder="${esc(t('brand_name_ph'))}" style="width:260px">
@@ -1294,7 +1303,7 @@ async function renderAIDomain(domainId) {
     <div class="form-row">
       <label>${esc(t('ai_enable'))}</label>
       <wa-switch id="ai-enabled" ${data.enabled ? 'checked' : ''}></wa-switch>
-      <span class="dim">intl-mail.${esc(data.domain)}</span>
+      <span class="dim">${esc(entryHost(data.domain))}</span>
     </div>
   </section>
   <section class="card">

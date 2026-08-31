@@ -27,7 +27,7 @@ import { chatDomainForHost } from './chat/settings';
 import { driveAgentApp, driveApp, drivePubApp } from './drive';
 import { presentApp } from './present';
 import { VERSION } from './version';
-import { ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
+import { domainFromHost, ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
 import { FLAGGED, pickColor, pickIcon } from './labels';
 
 export const UI_LANGS = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'ru'];
@@ -72,10 +72,7 @@ app.route('/api/fonts', fontsApp);
 
 async function brandDomain(c: any, override?: string | null) {
   let dn = (override || '').toLowerCase().trim();
-  if (!dn) {
-    const host = new URL(c.req.url).hostname.toLowerCase();
-    if (host.startsWith('intl-mail.')) dn = host.slice('intl-mail.'.length);
-  }
+  if (!dn) dn = domainFromHost(c.env, new URL(c.req.url).hostname);
   if (!dn) return null;
   return await c.env.DB.prepare(
     'SELECT id, name, brand_name, brand_theme, brand_font, brand_logo_key, brand_logo_mime, brand_logo_mode FROM domains WHERE name=?1'
@@ -253,7 +250,7 @@ const RESET_TTL_MIN = 30;
 /** Which domain sends the mail and which branding shows: both follow the entry host the user visited
  *  用哪个域名发信、显示什么品牌:跟着用户访问的入口域名走 */
 async function brandForHost(env: Env, host: string): Promise<{ domain: string; brand: string }> {
-  const bare = host.replace(/^intl-mail\./, '').split(':')[0];
+  const bare = domainFromHost(env, host);
   let d: any = await env.DB.prepare('SELECT name, brand_name FROM domains WHERE name=?1').bind(bare).first();
   if (!d) d = await env.DB.prepare('SELECT name, brand_name FROM domains ORDER BY created_at LIMIT 1').first();
   return { domain: d?.name || '', brand: d?.brand_name || d?.name || 'CFMail' };
@@ -688,7 +685,7 @@ app.get('/api/me', async (c) => {
   const langRow = await c.env.DB.prepare('SELECT lang, appearance, ui_font, body_font, code_font FROM users WHERE id=?1')
     .bind(user.id).first<any>();
   // The AI assistant switch is per entry host
-  // AI 助手开关按访问域名生效(intl-mail.<域名>)
+  // AI 助手开关按访问域名生效(<入口>.<域名>)
   const chatDom = await chatDomainForHost(c.env, new URL(c.req.url).hostname).catch(() => null);
   // Drive follows the user, not the host: it is one cross-domain store per user,
   // available as soon as any of their domains switches it on
