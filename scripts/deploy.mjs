@@ -569,27 +569,16 @@ async function ensurePermissions(zoneId) {
  * at the name that is being taken. It has to exist; it does not have to be pretty. An account
  * that already has one keeps it -- the name is global and somebody may be using it.
  *
- * 替账号占下它的 workers.dev 子域(如果还从来没占过)。
  *
- * 每个账号有且只有一个 <名字>.workers.dev,而在账号取下这个名字之前,Cloudflare 根本不收 Worker ——
- * 全新账号第一次部署会停在 "You need a workers.dev subdomain in order to proceed"(10063)。
- * Dashboard 是在你第一次打开 Workers 页面时顺手替你占下的;让人专门去点这一下很奇怪,
- * 所以这里直接开口要。
  *
- * 名字本身在这里几乎无关紧要:这套部署从入口自定义域提供服务,Worker 自己的 workers.dev 路由是关着的,
- * 所以被占下的这个名字上什么都访问不到。它必须存在,但不必好看。
- * 已经有名字的账号原样保留 —— 名字是全局的,可能有人正在用。
  */
 /** What is in container/, as twelve hex characters -- the same twelve the publisher recorded, so
  *  the two can tell whether the published image still stands for the source in this checkout.
- *  container/ 里是什么,写成十二个十六进制字符 —— 与发布时记下的是同一串,
- *  于是两边能判断:那个已发布的镜像,是否仍代表本 checkout 里的源码。 */
+  */
 function containerHash() {
   const dir = path.join(ROOT, 'container');
   // published.json is a note about this hash, so it cannot be part of it -- writing the note
   // would change the answer it records, and the published image would never match again.
-  // published.json 是一张关于这个哈希的便条,所以它不能算进哈希里 ——
-  // 否则写下便条这个动作本身就会改掉它记录的那个答案,发布的镜像从此永远对不上。
   const names = fs.readdirSync(dir).filter((n) => n !== 'published.json').sort();
   const h = crypto.createHash('sha256');
   for (const n of names) {
@@ -608,12 +597,7 @@ function containerHash() {
  * image only while that still matches what is in this checkout: an image is a promise about
  * source, and the moment the source moves on, the promise is void and the deploy builds instead.
  *
- * 为所有人发布的那个镜像,以及它当初是用哪份 container/ 源码构建的。
  *
- * 公共镜像由 Cloudflare 自己去拉,所以引用它的部署既不需要 Docker、不需要镜像仓库账号,
- * 也不需要构建 —— 而让这一切成立的全部东西,就是下面这个文件。
- * 它记着推送镜像时 container/ 的哈希;只有当它仍然等于本 checkout 里的哈希时,部署才会用这个镜像:
- * 镜像是一句关于源码的承诺,源码一往前走,承诺即失效,部署改为自己构建。
  */
 function publishedImage() {
   try {
@@ -630,8 +614,6 @@ async function backupImage(text) {
   // An image this script put there is one it may replace -- that is the published reference, or
   // a tag it built back when it still built things. Anything else was chosen by a person and
   // stays chosen: an operator managing their own image does not want it renamed underneath them.
-  // 本脚本放进去的镜像,本脚本才可以替换 —— 那要么是发布引用,要么是它当年还自己构建时打的 tag。
-  // 除此之外的都是人挑的,就保持人挑的样子:自己管镜像的操作者不希望它在脚下被改名。
   const repo = published ? published.image.split(':')[0] : '';
   const ours = /:[0-9a-f]{12}$/.test(configured) || (repo && configured.startsWith(repo + ':'));
   if (configured && !ours) return configured;
@@ -644,8 +626,6 @@ async function backupImage(text) {
   // The published image is a claim about container/. When this checkout has moved on, the claim
   // is stale -- which matters to whoever changed it, not to somebody installing, so it is said
   // plainly and the install carries on with the image that does exist.
-  // 已发布的镜像是一句关于 container/ 的断言。本 checkout 若已往前走,这句断言就过期了 ——
-  // 这件事对改动它的人有意义,对装它的人没有,所以只是明说一句,安装照旧用那个确实存在的镜像。
   if (published.source !== containerHash()) {
     log('⚠ container/ differs from what the published image was built from.');
     log(`  Using ${published.image} anyway. To ship your own changes, publish them:`);
@@ -665,9 +645,6 @@ async function ensureWorkersSubdomain() {
   // Worker this account ever hosts is named under it. Nothing here is served from it, but the
   // next thing on the account might want to be, so in a terminal the choice is offered rather
   // than made -- with a name derived from the account id for anyone who does not care.
-  // 这个名字只能占一次:此后 API 拒绝更改(10036),而该账号今后的每个 Worker 都挂在它下面。
-  // 这套部署不从它提供任何服务,但账号上的下一个东西可能想 —— 所以在终端里把选择权交出去,
-  // 并给不在乎的人预备一个由账号 id 推出来的名字。
   const fallback = 'cfmail-' + accountId.slice(0, 12);
   let want = fallback;
   if (INTERACTIVE) {
@@ -941,10 +918,6 @@ text = text
   // one that does not exist fails the entire deploy, mail and all, with an error about a Worker
   // version that has nothing to do with the cause.
   //
-  // 备份要容器,容器要镜像,而镜像就是用本仓库的 container/ 构建出来的 —— 所以由部署来建,
-  // 而不是先请人去别处做一遍。它唯一不肯做的事是写下一个没人造过的镜像:
-  // 指向不存在镜像的容器会让整个部署失败、连收发信一起,
-  // 报出来的还是一句关于 Worker 版本、与真正原因毫不相干的错。
   const image = args['backup-image'] || await backupImage(text);
   if (image) {
     const withBk = withBackupContainer(text, image);
@@ -953,8 +926,6 @@ text = text
   } else if (hasPlaceholderContainer(text)) {
     // Nothing to point the container at, and it is already written down: take it out, or the
     // deploy fails on it. Refusing to edit is the fallback -- a mangled config is not.
-    // 容器已经写在那儿却无处可指:把它取出来,否则部署会栽在它上面。
-    // 改不动就明说 —— 宁可不改,也不能改坏。
     const without = withoutBackupContainer(text);
     if (without) { text = without; plan('backup container removed (no image to point it at)'); }
     else {
@@ -976,7 +947,6 @@ text = text
   const withDev = withDevContainersOff(text);
   if (withDev && withDev !== text) { text = withDev; plan('dev.enable_containers = false (local development will not pull the image)'); }
 }
-
 
 // APP_ORIGIN is what invite and password-reset links are built from. It is set from the first
 // entry host and never left as a placeholder -- a link pointing at "<entry-subdomain>" reaches
