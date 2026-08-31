@@ -284,6 +284,17 @@ Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom
 | Account | **Turnstile Sites** | Edit | Running `scripts/setup-turnstile.mjs`. The dashboard calls it "Turnstile Sites" / Dashboard 里就叫这个名字 |
 | Zone | **Zone WAF** | Edit | Running `scripts/push-ratelimit.mjs` |
 
+> A brand-new Cloudflare account has never taken its `<name>.workers.dev` subdomain, and
+> Cloudflare accepts no Worker at all until it does — the deploy would stop with *"You need a
+> workers.dev subdomain in order to proceed"* (10063). `npm run deploy` now takes it for you,
+> asking what to call it (the name is permanent and shared by everything else you later host on
+> that account; nothing of CFMail is served from it — the mail client lives on your own domain).
+>
+> 全新的 Cloudflare 账号还没占下自己的 `<名字>.workers.dev` 子域,而在占下它之前 Cloudflare
+> 根本不收 Worker —— 部署会停在 *"You need a workers.dev subdomain in order to proceed"*(10063)。
+> `npm run deploy` 现在会替你占,并问一句叫什么(这个名字是永久的,该账号今后托管的其他东西
+> 也共用它;CFMail 本身不从它提供任何服务 —— 邮件客户端住在你自己的域名上)。
+
 > Set **Zone Resources to All zones**, or at least every domain you plan to connect — zone-level permissions are needed each time you add one. Permission changes take about a minute to apply; don't retry immediately.
 >
 > **Zone Resources 选 All zones**,或至少包含你要接入的全部域名。改完权限约 1 分钟生效,别急着重试。
