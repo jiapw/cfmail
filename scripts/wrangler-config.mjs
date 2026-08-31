@@ -291,13 +291,10 @@ export function withoutBackupContainer(text) {
  * with the numbering the account applied long ago -- the same tag then means a different step on
  * each side.
  *
- * Both are answered the same way: an entry that would create a class the account already has is
- * stripped of its action and keeps its tag. A tag with nothing under it is a legal entry (the
- * schema asks only for the tag) and does nothing when it runs, which is exactly right for a step
- * that has already happened. Entries at or before the applied tag are never re-sent and are left
- * alone, so a healthy configuration is not rewritten. And when the applied tag appears nowhere in
- * the list -- the renumbering case -- it is put at the front, giving wrangler back its place in a
- * sequence it would otherwise not recognise.
+ * Both are answered the same way: among the entries wrangler would actually send, any that would
+ * create a class the account already has is taken out. Entries it will not send are left alone,
+ * so a healthy configuration is never rewritten -- and a first install, where nothing exists yet,
+ * is untouched by the same rule.
  *
  * 让 migrations 列表与账号上"实际已经应用"的状态对齐。
  *
@@ -309,11 +306,9 @@ export function withoutBackupContainer(text) {
  * 之间失败,于是类建好了、tag 却没往前走。二是配置从模板重建,拿到的是模板的编号,
  * 而它未必与这个账号很久以前应用过的编号一致 —— 同一个 tag 在两边指的就成了不同的步骤。
  *
- * 两者的答案是同一个:凡是"要创建一个账号上已经存在的类"的条目,去掉动作、保留 tag。
- * 只带 tag 的条目是合法的(schema 只要求 tag),运行时什么都不做 ——
- * 这正是"这一步已经发生过"该有的样子。位于已应用 tag 之前(含)的条目根本不会被重发,
- * 因此原样不动,健康的配置不会被改写。而当已应用的 tag 在列表里根本找不到时 ——
- * 也就是重新编号那种情况 —— 把它放到最前面,让 wrangler 在一个它本来认不出的序列里重新站定。
+ * 两者的答案是同一个:在 wrangler 真正会发出去的那些条目里,凡是"要创建一个账号上已经存在的类"的,
+ * 整条拿掉。它不会发的条目原样不动,所以健康的配置永远不会被改写 ——
+ * 而首次安装那里什么都还不存在,同一条规则下也一样毫发无损。
  */
 export function withReconciledMigrations(text, { applied = null, existing = [] } = {}) {
   const have = new Set(existing);
@@ -330,23 +325,29 @@ export function withReconciledMigrations(text, { applied = null, existing = [] }
   }
   if (!Array.isArray(entries) || !entries.length) return text;
 
-  let idx = applied ? entries.findIndex((e) => e.tag === applied) : entries.length - 1;
-  let out = entries;
-  let changed = false;
-  if (applied && idx < 0) {
-    out = [{ tag: applied }, ...entries];
-    idx = 0;
-    changed = true;
-  }
+  // Which entries wrangler will actually send, which is the only place a problem can arise. It
+  // sends what follows the tag the account recorded -- and when the account recorded no tag at
+  // all, it sends every one of them. That last case is the one that matters here: a deploy that
+  // died after creating the classes but before the tag was written leaves exactly that state,
+  // and from then on every step is offered again, including the ones that already happened.
+  // 哪些条目 wrangler 真的会发出去 —— 问题只可能出在这些条目上。它发的是"账号记下的那个 tag
+  // 之后的部分";而当账号根本没记下 tag 时,它把每一条都发出去。
+  // 要紧的正是后一种:部署在"类已创建、tag 未写入"之间死掉,留下的就是这个状态,
+  // 此后每一步都会被再提交一次,包括那些早已发生过的。
+  const idx = applied ? entries.findIndex((e) => e.tag === applied) : -1;
+  const firstSent = idx >= 0 ? idx + 1 : 0;
 
-  out = out.map((e, i) => {
-    if (i <= idx) return e;
+  // An entry that creates classes the account already has is dropped, not emptied: wrangler
+  // sends a step without its tag, so an entry left with only a tag would go out as {} -- a step
+  // that says nothing, which is not something to hand an API in place of a step.
+  // 要创建"账号已有的类"的条目会被整条删掉,而不是清空:wrangler 发送步骤时会把 tag 去掉,
+  // 于是只剩 tag 的条目发出去就是 {} —— 一个什么也没说的步骤,不该拿它去顶替一个步骤。
+  const out = entries.filter((e, i) => {
+    if (i < firstSent) return true;
     const makes = [...(e.new_sqlite_classes || []), ...(e.new_classes || [])];
-    if (!makes.length || !makes.every((c) => have.has(c))) return e;
-    changed = true;
-    return { tag: e.tag };
+    return !makes.length || !makes.every((c) => have.has(c));
   });
-  if (!changed) return text;
+  if (out.length === entries.length) return text;
 
   const indent = (text.slice(0, span.start).match(/\n([ \t]*)[^\n]*$/) || [, '  '])[1];
   const body = out.map((e) => `${indent}  ${JSON.stringify(e)}`).join(',\n');
