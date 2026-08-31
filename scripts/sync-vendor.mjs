@@ -692,3 +692,51 @@ if (flagged.length) {
 console.log(CHECK_ONLY
   ? '\n✓ public/vendor/ matches node_modules, and the committed builds match their sources'
   : `\n✓ vendor in sync${copied ? `: ${copied} file(s) updated` : ' (nothing changed)'}${removed ? `, ${removed} leftover(s) removed` : ''}`);
+
+/**
+ * The end of `npm install`, and the only place anybody is told the install is over.
+ *
+ * This runs as the postinstall hook, so npm prints its own audit and funding lines after it and
+ * has the last word on the screen no matter what. Hence the rule: say the one thing that has to
+ * survive being followed by noise -- what to run next -- and say it in a shape the eye finds
+ * again when it scrolls back.
+ *
+ * The next step is not the same for everybody, and the answer is on disk: a checkout with a
+ * wrangler.jsonc has been deployed before and wants the short form, one without it is a first
+ * install and needs the arguments spelled out. Guessing wrong here sends somebody to a command
+ * that fails, which is worse than saying nothing.
+ *
+ * `npm install` 的结尾,也是唯一一处告诉人"装完了"的地方。
+ *
+ * 它作为 postinstall 钩子运行,所以 npm 的 audit 与 funding 之类必定打印在它后面、
+ * 屏幕上的最后一句永远是 npm 的。于是规则很清楚:只说那句必须能在噪声之后依然成立的话 ——
+ * 下一步该跑什么 —— 并且说成一个人往回滚时眼睛能重新找到的形状。
+ *
+ * 下一步对每个人并不相同,而答案就在磁盘上:有 wrangler.jsonc 的 checkout 是部署过的,
+ * 给它简短形式;没有的是头一回装,参数要写全。这里猜错,等于把人指向一条注定失败的命令,
+ * 那比什么都不说更糟。
+ */
+if (!CHECK_ONLY && process.env.npm_lifecycle_event === 'postinstall') {
+  const deployed = fs.existsSync(path.join(ROOT, 'wrangler.jsonc'));
+  console.log('\n' + '─'.repeat(72));
+  console.log('  CFMail is installed. Nothing here needs Docker, and nothing else needs building.');
+  console.log('  CFMail 安装完成。这里不需要 Docker,也没有别的东西要构建。');
+  console.log('');
+  console.log('  Next / 下一步 — deploy it to your Cloudflare account:');
+  console.log(deployed
+    ? '      npm run deploy'
+    : '      node scripts/deploy.mjs --token <API token> --domain <your-domain> --entry mail');
+  if (!deployed) {
+    console.log('');
+    console.log('  It asks for anything it still needs, checks every permission before creating');
+    console.log('  a thing, and says what it is about to do at each step.');
+    console.log('  它会问你缺的东西、在动手之前把每项权限都验一遍,并且每一步都说明自己在做什么。');
+    console.log('');
+    console.log('  The token: Cloudflare dashboard -> My Profile -> API Tokens -> Create Token.');
+    console.log('  Which permissions it wants is in the README, and the deploy names any that');
+    console.log('  are missing rather than failing halfway.');
+    console.log('  token 在 Cloudflare 控制台 -> My Profile -> API Tokens -> Create Token 创建;');
+    console.log('  需要哪些权限见 README,缺了哪一项部署会直接点名,而不是跑到一半才失败。');
+  }
+  console.log('─'.repeat(72));
+}
