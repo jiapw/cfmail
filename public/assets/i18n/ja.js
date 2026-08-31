@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "{0} 通を消去しました",
   mb_purge_prog: "{0} / {1} 件削除",
   mb_purging: "{0} を消去中…",
-  mb_with_login: "ログインも作成",
+  mb_with_login: "アカウントなしでのログインを許可",
   mb_with_login_note: "このアドレスと自動生成の強力なパスワードでログインします。外部のメールアドレスは不要です。パスワードは一度だけ表示されます。",
   md_classic: "定番で安定：ツール呼び出しが成熟",
   md_code: "コード特化",

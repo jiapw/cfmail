@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "{0} Nachrichten gelöscht",
   mb_purge_prog: "{0} von {1} gelöscht",
   mb_purging: "{0} wird geleert…",
-  mb_with_login: "Zugang gleich mit anlegen",
+  mb_with_login: "Anmelden ohne eigenes Konto erlauben",
   mb_with_login_note: "Anmeldung mit dieser Adresse und einem starken Zufallspasswort -- eine private E-Mail-Adresse wird nirgends gebraucht. Das Passwort wird einmal angezeigt.",
   md_classic: "Klassisch und stabil: ausgereiftes Tool-Calling",
   md_code: "Auf Code spezialisiert",
