@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "Erased {0} messages",
   mb_purge_prog: "{0} of {1} deleted",
   mb_purging: "Erasing {0}…",
-  mb_with_login: "Create a login too",
+  mb_with_login: "Allow signing in without an account",
   mb_with_login_note: "Signs in with this address and a strong random password -- no personal email needed anywhere. The password is shown once.",
   md_classic: "Classic and steady: mature tool calling",
   md_code: "Specialised for code",

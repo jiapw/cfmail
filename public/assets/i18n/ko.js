@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "{0}통을 지웠습니다",
   mb_purge_prog: "{0} / {1} 삭제됨",
   mb_purging: "{0} 지우는 중…",
-  mb_with_login: "로그인도 생성",
+  mb_with_login: "계정 없이 로그인 허용",
   mb_with_login_note: "이 주소와 무작위 강력 비밀번호로 로그인합니다. 외부 이메일이 전혀 필요 없습니다. 비밀번호는 한 번만 표시됩니다.",
   md_classic: "안정적인 클래식: 성숙한 도구 호출",
   md_code: "코드 특화",

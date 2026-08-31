@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "Se borraron {0} mensajes",
   mb_purge_prog: "{0} de {1} eliminados",
   mb_purging: "Borrando {0}…",
-  mb_with_login: "Crear también el acceso",
+  mb_with_login: "Permitir iniciar sesión sin cuenta",
   mb_with_login_note: "Inicia sesión con esta dirección y una contraseña aleatoria fuerte: no hace falta ningún correo personal. La contraseña se muestra una sola vez.",
   md_classic: "Clásico y estable: llamada a herramientas madura",
   md_code: "Especializado en código",

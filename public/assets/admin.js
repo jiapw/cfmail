@@ -444,8 +444,8 @@ async function renderMailboxDetail(domainId) {
         <label>${esc(t('new_mailbox'))}</label>
         <input name="local" type="text" placeholder="${esc(t('local_ph'))}" required style="width:200px">
         <input name="dn" type="text" placeholder="${esc(t('display_ph'))}" style="width:200px">
-        <wa-checkbox id="mb-login" checked>${esc(t('mb_with_login'))}</wa-checkbox>
         <wa-button variant="brand" type="submit">${icon('plus', 16)} ${esc(t('new_mailbox'))}</wa-button>
+        <wa-checkbox id="mb-login" checked>${esc(t('mb_with_login'))}</wa-checkbox>
       </form>
       <p class="dim" style="margin:6px 0 0 130px">${esc(t('mb_with_login_note'))}</p>
     </section>

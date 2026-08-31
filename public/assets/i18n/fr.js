@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "{0} messages effacés",
   mb_purge_prog: "{0} sur {1} supprimés",
   mb_purging: "Effacement de {0}…",
-  mb_with_login: "Créer aussi un accès",
+  mb_with_login: "Autoriser la connexion sans compte",
   mb_with_login_note: "Connexion avec cette adresse et un mot de passe aléatoire fort -- aucune adresse personnelle n'est nécessaire. Le mot de passe est affiché une seule fois.",
   md_classic: "Classique et stable : appel d'outils mature",
   md_code: "Spécialisé pour le code",

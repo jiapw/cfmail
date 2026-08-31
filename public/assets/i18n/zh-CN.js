@@ -857,7 +857,7 @@ export default {
   mb_purge_done: "已清空 {0} 封邮件",
   mb_purge_prog: "已删除 {0} / {1}",
   mb_purging: "正在清空 {0}…",
-  mb_with_login: "同时创建登录",
+  mb_with_login: "允许无账号直登录",
   mb_with_login_note: "用这个邮箱地址加一个随机强密码登录,不需要任何外部邮箱。密码只显示一次。",
   md_classic: "经典稳定：工具调用成熟",
   md_code: "代码专精",
