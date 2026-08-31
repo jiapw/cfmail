@@ -7,7 +7,7 @@ import { beginImpersonation, createUser, hashPassword, requireAuth, revokeAllSes
 import { backupPending, backupStatus, setBackupSettings, startBackupNow } from './backup';
 import { createSystemFolders, ingestEml, type PreParsed } from './parse';
 import { HttpError, E } from './errors';
-import { isEmail, jsonTry, normalizeAddr, now, randomPassword, randomToken, sha256Hex, uid } from './util';
+import { entryLabel, isEmail, jsonTry, normalizeAddr, now, randomPassword, randomToken, sha256Hex, uid } from './util';
 import { chatAdminApp } from './chat/routes';
 // Circular on purpose (drive.ts imports adminScope back); both sides only use hoisted function declarations
 // 有意的循环引用(drive.ts 反向引 adminScope);两边用到的都是提升的函数声明,安全
@@ -59,10 +59,16 @@ adminApp.route('/chat', chatAdminApp);
 // 网盘设置(域管理员可管自己的域,内部自查权限范围)
 adminApp.route('/drive', driveAdminApp);
 
-/** Invite links live on the matching company domain's entry host; local development uses APP_ORIGIN
- *  邀请链接挂在对应企业域名的 intl-mail.<domain> 上;本地开发用 APP_ORIGIN */
+/** Invite links live on the matching company domain's entry host -- <entry>.<domain>, where the
+ *  entry is whatever this deployment was given, read back out of APP_ORIGIN. Local development,
+ *  and anything without a domain to point at, uses APP_ORIGIN itself.
+ *  邀请链接挂在对应企业域名的入口主机上 —— <入口>.<域名>,入口是这套部署当初被给定的那个词,
+ *  从 APP_ORIGIN 里读回来。本地开发、以及没有域名可指的情况,直接用 APP_ORIGIN。 */
 export function inviteUrl(env: Env, domainName: string | null, token: string): string {
-  const base = env.DEV_MODE === '1' || !domainName ? env.APP_ORIGIN : `https://intl-mail.${domainName}`;
+  const entry = entryLabel(env);
+  const base = env.DEV_MODE === '1' || !domainName || !entry
+    ? env.APP_ORIGIN
+    : `https://${entry}.${domainName}`;
   return `${base}/#/invite/${token}`;
 }
 
@@ -248,7 +254,7 @@ adminApp.post('/domains/:id/mailboxes', async (c) => {
 });
 
 // ---------- Branding (controlled by domain admins, applies to that domain's entry host) ----------
-// ---------- 品牌(域管理员控制,作用于 intl-mail.<域名> 入口) ----------
+// ---------- 品牌(域管理员控制,作用于 <入口>.<域名> 那个入口) ----------
 
 adminApp.get('/domains/:id/brand', async (c) => {
   const domainId = c.req.param('id');

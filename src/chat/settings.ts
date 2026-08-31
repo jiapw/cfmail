@@ -1,9 +1,9 @@
 // AI assistant settings, all stored per domain (domains.chat_*) and resolved from the request Host.
 // Every domain is independent: the switch, the list of selectable chat models, the default model, the search key, and the vision / ASR / TTS / image models.
-// AI 助手设置:全部按域名存储(domains.chat_*),跟随请求的 Host(intl-mail.<域名>)生效。
+// AI 助手设置:全部按域名存储(domains.chat_*),跟随请求的 Host(<入口>.<域名>)生效。
 // 每个域名独立:开关/允许的对话模型清单/默认模型/搜索 Key/识图/语音识别/语音合成/文生图。
 import type { Env } from '../types';
-import { jsonTry } from '../util';
+import { domainFromHost, jsonTry } from '../util';
 import {
   ASR_MODELS, CHAT_MODELS, DEFAULT_ASR, DEFAULT_IMAGE, DEFAULT_MODEL, DEFAULT_TTS, DEFAULT_VISION,
   IMAGE_MODELS, TTS_MODELS, VISION_MODELS, pickCap,
@@ -52,12 +52,13 @@ const COLS =
  *  Production is always <entry-subdomain>.<domain>; local development (localhost) falls back to the
  *  earliest created domain, the same "no match, take the first" idea as currentDomainId in admin.js.
  *  按访问 Host 解析当前域名的 chat 配置。
- *  生产恒为 intl-mail.<域名>;本地开发(localhost)回落到最早创建的域名,
+ *  生产恒为 <入口>.<域名>(入口由部署决定);本地开发(localhost)回落到最早创建的域名,
  *  与 admin.js currentDomainId 的"匹配不上回落第一个"同思路。 */
 export async function chatDomainForHost(env: Env, hostname: string): Promise<ChatDomain | null> {
   const h = (hostname || '').toLowerCase();
-  if (h.startsWith('intl-mail.')) {
-    const row = await env.DB.prepare(`SELECT ${COLS} FROM domains WHERE name=?1`).bind(h.slice('intl-mail.'.length)).first<any>();
+  const dn = domainFromHost(env, h);
+  if (dn) {
+    const row = await env.DB.prepare(`SELECT ${COLS} FROM domains WHERE name=?1`).bind(dn).first<any>();
     return normalizeRow(row);
   }
   if (h === 'localhost' || h === '127.0.0.1') {
