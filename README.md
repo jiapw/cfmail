@@ -483,13 +483,23 @@ of that one run, while the backup token stays in the Worker as a secret. Give th
 而备份 token 会作为 secret 长期留在 Worker 里。给它 **Account → D1 · Read** 和
 **Account → Workers R2 Storage · Edit** 就够,别的一概不需要。
 
-Without the image, or without the token, the console says so and the switch stays off. The
-container is in the configuration either way, though -- one shape of configuration rather than
-two -- which is why **`wrangler dev` wants an API token in the environment** even when you are not
-working on the backup. `.env.deploy` is enough; local development still needs no Docker.
+Without the token, the console says so and the switch stays off. Without `--backup-image` there
+is no container in the configuration at all: a container must name an image that exists, and one
+naming an image nobody pushed fails the whole deploy — mail and all — with an error about a
+Worker version that has nothing to do with the cause. So the container is written the first time
+you name a real image, along with the binding and the migration that go with it; until then the
+Backup tab says it is unavailable and nothing else notices.
 
-镜像没构建、或 token 没给,后台会直说,开关也开不起来。但容器**始终**在配置里 ——
-只有一种形状的配置,不是两种 —— 所以**即使你不碰备份,`wrangler dev` 也要环境里有 API token**。
+Once the container is in the configuration, **`wrangler dev` wants an API token in the
+environment** even when you are not working on the backup. `.env.deploy` is enough; local
+development still needs no Docker.
+
+备份 token 没给,后台会直说,开关也开不起来。而**没有 `--backup-image` 时,配置里根本不会有容器**:
+容器必须指向一个真实存在的镜像,指向没人推送过的镜像会让**整个部署失败** —— 连收发信一起 ——
+报出来的还是一句关于 Worker 版本、与真正原因毫不相干的错。所以容器是在你第一次给出真实镜像时
+才写进去的,连同配套的绑定与 migration;在那之前后台「备份」页直说不可用,别处毫无察觉。
+
+容器一旦进了配置,**即使你不碰备份,`wrangler dev` 也要环境里有 API token**。
 有 `.env.deploy` 就够了;本地开发仍然不需要 Docker。
 
 ### Restoring / 恢复

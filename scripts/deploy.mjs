@@ -28,7 +28,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar } from './wrangler-config.mjs';
+import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
@@ -860,11 +860,39 @@ text = text
 // deployment carries the container, and `wrangler dev` therefore wants an API token.
 //
 {
-  const image = args['backup-image']
-    || `registry.cloudflare.com/${accountId}/cfmail-backup:1`;
-  const withBk = withBackupContainer(text, image);
-  if (withBk === null) log('⚠ no durable_objects / migrations in the configuration; skipping the backup container');
-  else if (withBk !== text) { text = withBk; plan(`backup container -> ${image}`); }
+  // Only an image somebody actually pushed gets written down. This used to invent one --
+  // registry.cloudflare.com/<this account>/cfmail-backup:1, whether or not anything had ever
+  // been built -- and a container pointing at nothing is worse than no container at all: the
+  // deploy takes the container path, waits for the Worker version the rollout would attach to,
+  // and dies with an error about a version rather than about an image nobody made.
+  //
+  // 只有真被推送过的镜像才会写进配置。从前这里会**编造**一个 ——
+  // registry.cloudflare.com/<本账号>/cfmail-backup:1,不管有没有人构建过 ——
+  // 而一个指向虚无的容器比没有容器更糟:部署会走上容器那条路,
+  // 去等 rollout 要挂靠的那个 Worker 版本,最后死在一句关于"版本"而不是关于"镜像"的报错上。
+  const image = args['backup-image'] || containerImage(text);
+  if (!image && hasPlaceholderContainer(text)) {
+    die('this configuration carries a backup container with no image:\n\n'
+      + '    ' + (/"image"\s*:\s*"([^"]*)"/.exec(text) || [, '?'])[1] + '\n\n'
+      + '  It was written by an older version of this script, which filled the image in with a\n'
+      + '  placeholder. Deploying it fails inside the container rollout, with an error about a\n'
+      + '  Worker version that has nothing to do with the cause. Either finish it or take it out:\n\n'
+      + '    finish it: build and push the image, then run this again with --backup-image <ref>\n'
+      + '               (see "Backups" in the README -- it is the one step that wants Docker)\n'
+      + `    take it out: delete these three from ${path.basename(CONFIG)} --\n`
+      + '               the "containers" array,\n'
+      + '               the { "name": "BACKUP_CONTAINER", ... } line under durable_objects,\n'
+      + '               and the migrations entry naming "BackupContainer"\n\n'
+      + '  Without the container everything else works; the Backup tab says it is unavailable.');
+  }
+  if (image) {
+    const withBk = withBackupContainer(text, image);
+    if (withBk === null) log('⚠ no durable_objects / migrations in the configuration; skipping the backup container');
+    else if (withBk !== text) { text = withBk; plan(`backup container -> ${image}`); }
+  } else {
+    skip('backup container: no image given, so none is configured'
+      + ' (--backup-image <ref> adds it; the Backup tab says it is unavailable until then)');
+  }
   const v1 = withVar(text, 'CF_ACCOUNT_ID', accountId);
   const v2 = v1 && withVar(v1, 'CF_D1_DATABASE_ID', databaseId);
   if (v2) text = v2;

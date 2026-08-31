@@ -67,7 +67,6 @@
   "ai": { "binding": "AI" },
   "durable_objects": {
     "bindings": [
-      { "name": "BACKUP_CONTAINER", "class_name": "BackupContainer" },
       { "name": "CHAT_AGENT", "class_name": "ChatAgent" },
       // 每份正在被演示的文档一个房间。它什么都不存,最后一个人离开就销毁自己。
       // One room per document being presented. It stores nothing, and destroys itself
@@ -77,26 +76,28 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] },
-    { "tag": "v2", "new_sqlite_classes": ["BackupContainer"] },
-    { "tag": "v3", "new_sqlite_classes": ["PresentRoom"] }
+    { "tag": "v2", "new_sqlite_classes": ["PresentRoom"] }
   ],
 
   // 备份跑在容器里:那儿有 7-Zip、有磁盘、想跑多久跑多久,而 Worker 三样都没有。
-  // 镜像引用仓库地址而不是在此构建,所以部署不需要 Docker。
-  // Where the backup runs: 7-Zip, a disk, and as long as it takes. The image is referenced
-  // from the registry rather than built here, so a deploy needs no Docker.
+  // 这里没有 containers 块,是因为容器要指向一个真实存在的镜像,而镜像得先由你构建并推送 ——
+  // 一个指向不存在镜像的容器会让部署整个失败,连收发信都上不了线。
+  // 建好镜像后带上 --backup-image <引用> 再跑一次部署,它会把三样东西一起补进来:
+  // containers 块、durable_objects 里的 BACKUP_CONTAINER 绑定、以及对应的 migrations 条目。
+  // 在那之前后台「备份」页会直说它不可用,其余功能一切照常。
+  //
+  // Where the backup runs: 7-Zip, a disk, and as long as it takes, none of which a Worker has.
+  // There is no "containers" block here because a container must point at an image that really
+  // exists, and the image is yours to build and push -- one pointing at nothing fails the whole
+  // deploy, mail and all.
+  // Build it, then deploy again with --backup-image <ref>: that writes all three pieces at once
+  // -- the containers block, the BACKUP_CONTAINER binding under durable_objects, and the
+  // matching migrations entry. Until then the Backup tab says it is unavailable and nothing
+  // else is affected.
+  //
   // 本地开发不碰容器:否则 wrangler dev 会去拉镜像,那要求 Docker 跑着。
   // Local development leaves the container alone; pulling the image wants Docker.
   "dev": { "enable_containers": false },
-
-  "containers": [
-    {
-      "class_name": "BackupContainer",
-      "image": "registry.cloudflare.com/<account-id>/cfmail-backup:1",
-      "instance_type": "standard-2",
-      "max_instances": 1
-    }
-  ],
 
 
   // Cloudflare Email Sending (public beta). Sending to outside recipients
