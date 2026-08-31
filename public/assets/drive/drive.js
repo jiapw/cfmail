@@ -1292,12 +1292,23 @@ async function runSelAction(act) {
 }
 
 let menuEl = null;
+/** When the open menu appeared, so the gesture that opened it cannot also dismiss it.
+ *  当前菜单是什么时候出现的 —— 好让开它的那个手势不至于同时把它关掉。 */
+let menuOpenedAt = 0;
 function closeMenu() {
   menuEl?.remove();
   menuEl = null;
   cleanupSheet();
 }
-document.addEventListener('click', () => closeMenu());
+// The click a long press leaves behind belongs to the press, not to the world outside the menu:
+// taken as a dismissal it shuts the menu in the same instant it opened. Anything later is a
+// genuine click elsewhere and closes it as before.
+// 长按留下的那个 click 属于这一按,而不属于"菜单之外的世界":
+// 把它当成关闭指令,菜单开与关会发生在同一瞬间。晚于此的都是真正点在别处,照旧关闭。
+document.addEventListener('click', () => {
+  if (performance.now() - menuOpenedAt < 400) return;
+  closeMenu();
+});
 document.addEventListener('scroll', () => closeMenu(), true);
 // Navigation dismisses it too. Clicking a link happens to close it via the document click
 // above, but the back button and any programmatic navigation do not -- and the menu would then
@@ -1342,6 +1353,7 @@ window.addEventListener('keydown', (e) => {
  *  用上其余一切都在用的那份菜单、而不是自己另造一份的办法。 */
 function openMenu(x, y, nodes, own, above) {
   closeMenu();
+  menuOpenedAt = performance.now();
   const items = own || menuItems(nodes);
   if (!items.length) return;
   menuEl = document.createElement('div');

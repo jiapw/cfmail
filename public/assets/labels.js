@@ -105,7 +105,7 @@ let closer = null;
 export function closeLabelMenu() {
   if (menuEl) { menuEl.remove(); menuEl = null; }
   cleanupSheet();
-  if (closer) { document.removeEventListener('mousedown', closer, true); document.removeEventListener('keydown', closer, true); closer = null; }
+  if (closer) { document.removeEventListener('pointerdown', closer, true); document.removeEventListener('keydown', closer, true); closer = null; }
 }
 
 /**
@@ -169,12 +169,18 @@ export function openLabelMenu(x, y, { has, toggle, onDone } = {}) {
     onDone?.();
   });
 
+  // pointerdown rather than mousedown: a finger produces one natively, while the mouse events a
+  // touch may or may not be given afterwards are an emulation the browser is free to withhold --
+  // and a menu that cannot be dismissed is a page that has stopped working.
+  // 用 pointerdown 而不是 mousedown:手指会原生产生前者,
+  // 而触摸之后"可能有、也可能没有"的鼠标事件是一层模拟,浏览器有权不给 ——
+  // 一个关不掉的菜单,就是一个不动了的页面。
   closer = (e) => {
     if (e.type === 'keydown' && e.key !== 'Escape') return;
-    if (e.type === 'mousedown' && menuEl?.contains(e.target)) return;
+    if (e.type === 'pointerdown' && menuEl?.contains(e.target)) return;
     closeLabelMenu();
   };
-  document.addEventListener('mousedown', closer, true);
+  document.addEventListener('pointerdown', closer, true);
   document.addEventListener('keydown', closer, true);
 }
 
@@ -231,12 +237,18 @@ export function openLookPicker(x, y, { color, icon: ic, onPick } = {}) {
   menuEl.style.left = Math.min(x, window.innerWidth - r.width - 8) + 'px';
   menuEl.style.top = Math.min(y, window.innerHeight - r.height - 8) + 'px';
 
+  // pointerdown rather than mousedown: a finger produces one natively, while the mouse events a
+  // touch may or may not be given afterwards are an emulation the browser is free to withhold --
+  // and a menu that cannot be dismissed is a page that has stopped working.
+  // 用 pointerdown 而不是 mousedown:手指会原生产生前者,
+  // 而触摸之后"可能有、也可能没有"的鼠标事件是一层模拟,浏览器有权不给 ——
+  // 一个关不掉的菜单,就是一个不动了的页面。
   closer = (e) => {
     if (e.type === 'keydown' && e.key !== 'Escape') return;
-    if (e.type === 'mousedown' && menuEl?.contains(e.target)) return;
+    if (e.type === 'pointerdown' && menuEl?.contains(e.target)) return;
     closeLabelMenu();
   };
-  document.addEventListener('mousedown', closer, true);
+  document.addEventListener('pointerdown', closer, true);
   document.addEventListener('keydown', closer, true);
 }
 
