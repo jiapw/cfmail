@@ -482,14 +482,12 @@ That file also records the hash of `container/` as it was when the image was pus
 anything in `container/` and the deploy says the published image no longer stands for what is in
 your checkout — then carries on with it, because that is a message for whoever made the change
 rather than a reason to stop an install. `--backup-image <ref>` points at an image you built and
-published yourself; `--no-backup` deploys without the backup, and a later deploy turns it on.
-Nothing is ever built by the deploy.
+published yourself. Nothing is ever built by the deploy.
 
 那个文件还记着推送镜像时 `container/` 的哈希。你改动了 `container/` 里任何东西,
 部署会说一句"发布的镜像已不代表你 checkout 里的源码",然后照旧用它 ——
 因为那句话是说给改动它的人听的,不是让一次安装停下来的理由。
-`--backup-image <引用>` 指向你自己构建并发布的镜像;`--no-backup` 不带备份部署,之后再部署一次即可开启。
-**部署自己从不构建任何东西。**
+`--backup-image <引用>` 指向你自己构建并发布的镜像。**部署自己从不构建任何东西。**
 
 Publishing that image is a maintainer's job, done when `container/` changes:
 发布那个镜像是维护者的事,只在 `container/` 变动时做:

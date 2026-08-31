@@ -137,10 +137,8 @@ Usage:
   --backup-image <ref>
                   Use an image you built and pushed yourself, instead of the published
                   one that Cloudflare pulls. Nothing is built here either way.
-  --no-backup     Deploy without the backup container. Everything else works; the
-                  Backup tab says it is unavailable, and a later deploy turns it on.
-                  The container is in the configuration whether or not backups are switched on,
-                  so wrangler dev wants an API token in the environment either way.
+                  Once a container is in the configuration, wrangler dev wants an API
+                  token in the environment even when you are not working on the backup.
   --prune-domains Let this deploy detach custom domains that are live but absent from the
                   configuration. Without it they are kept.
   --dry-run       Report what would happen and change nothing.
@@ -627,7 +625,6 @@ function publishedImage() {
 }
 
 async function backupImage(text) {
-  if (args['no-backup']) return '';
   const configured = containerImage(text);
   const published = publishedImage();
   // An image this script put there is one it may replace -- that is the published reference, or
@@ -953,7 +950,7 @@ text = text
     const withBk = withBackupContainer(text, image);
     if (withBk === null) log('⚠ no durable_objects / migrations in the configuration; skipping the backup container');
     else if (withBk !== text) { text = withBk; plan(`backup container -> ${image}`); }
-  } else if (hasPlaceholderContainer(text) || (args['no-backup'] && containerImage(text))) {
+  } else if (hasPlaceholderContainer(text)) {
     // Nothing to point the container at, and it is already written down: take it out, or the
     // deploy fails on it. Refusing to edit is the fallback -- a mangled config is not.
     // 容器已经写在那儿却无处可指:把它取出来,否则部署会栽在它上面。
