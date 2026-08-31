@@ -296,11 +296,34 @@ function bindList(folder, q) {
         showRowMenu(r.left, r.bottom + 4, tid, folder, q);
       });
     }
+    // Whether a touch is in progress, whether it already opened something, and whether a context
+    // menu came out of it. Declared here because the context menu below has to reach them: a
+    // long-press is one gesture that produces two chances to open the message, and both are
+    // turned off from the same place.
+    // 一次触摸是否正在进行、它是否已经打开过东西、以及它是否呼出了上下文菜单。
+    // 声明放在这里是因为下面的上下文菜单要够得着它们:长按是一个动作、
+    // 却给了"打开这封信"两次机会,而两次都由同一处关掉。
+    let tapFrom = null;
+    let tapOpened = false;
+    let menuFromTouch = false;
+
     // Context menu (works in both modes)
     // 右键菜单(两种模式都支持)
     if (row.dataset.tid) {
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
+        // A long press was believed to cancel its own pointer, so the release could be left to
+        // take care of itself. On the phone this was reported from it does not: the menu came
+        // up, the finger lifted, and the message opened behind it. Nothing here depends on that
+        // any more -- the gesture that opened a menu is spent, and says so itself.
+        // 从前以为长按会自己取消掉那个指针,于是抬手一事可以不管。
+        // 报这个问题的那台手机上并非如此:菜单弹出来了,手指一抬,邮件在菜单背后打开了。
+        // 现在这里不再依赖那件事 —— 呼出了菜单的那个动作就此用尽,而且由它自己说出来。
+        if (tapFrom) {
+          tapFrom = null;
+          menuFromTouch = true;
+          setTimeout(() => { menuFromTouch = false; }, 700);
+        }
         const tid = row.dataset.tid;
         // Right-clicking an unselected row while in multi-select: select it first, then act on the whole selection
         // 多选模式下右键未选中项:先把它选上,再对整个选区操作
@@ -345,22 +368,21 @@ function bindList(folder, q) {
     // and a mail list is the worst place to lose to one: opening the message is the whole page.
     // So a clean touch tap -- little movement, not on a button, not on the label cell --
     // navigates from pointerup directly, and the synthetic click that may follow finds the flag
-    // and stands down. A long-press that opened the context menu cancels the pointer first, so
-    // it never arrives here. Mice never enter: their click path below is untouched.
+    // and stands down. A long press is not a tap: the context menu above disowns the touch, and
+    // both this and the click below check for that. Mice never enter: their click path is
+    // untouched.
     // 触摸端,第一击就打开 —— 在指针层面保证。移动浏览器会在手指与 click 事件之间跑各种
     // 判定(悬停模拟、双击窗口),而邮件列表是最输不起的地方:打开这封信就是这一页的全部。
     // 所以一次干净的触碰 —— 位移小、不在按钮上、不在标签位上 —— 直接从 pointerup 导航,
-    // 随后可能补来的合成 click 看到旗子就退下。长按呼出菜单的路径会先 cancel 掉指针,
-    // 根本到不了这里。鼠标从不进这条路:它下面那条 click 路径原封未动。
-    let tapFrom = null;
-    let tapOpened = false;
+    // 随后可能补来的合成 click 看到旗子就退下。长按不是触碰:上面那段上下文菜单会与这次触摸
+    // 断绝关系,而这里和下面的 click 都会查这一点。鼠标从不进这条路,它那条 click 原封未动。
     if (row.dataset.tid || row.dataset.draft) {
       row.addEventListener('pointerdown', (e) => {
         tapFrom = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY } : null;
       });
       row.addEventListener('pointercancel', () => { tapFrom = null; });
       row.addEventListener('pointerup', async (e) => {
-        if (!tapFrom || e.pointerType !== 'touch' || sel.active) return;
+        if (menuFromTouch || !tapFrom || e.pointerType !== 'touch' || sel.active) return;
         const moved = Math.abs(e.clientX - tapFrom.x) > 12 || Math.abs(e.clientY - tapFrom.y) > 12;
         tapFrom = null;
         if (moved) return;
@@ -379,7 +401,7 @@ function bindList(folder, q) {
     // Ordinary click
     // 普通点击
     row.addEventListener('click', async (e) => {
-      if (tapOpened) return;
+      if (tapOpened || menuFromTouch) return;
       const btn = e.target.closest('[data-act]');
       const draftId = row.dataset.draft;
       if (btn) {
@@ -492,7 +514,21 @@ function showRowMenu(x, y, tid, folder, q) {
     menu.style.top = Math.min(y, vh - rect.height - 8) + 'px';
   }
 
-  const close = () => { menu.hidden = true; cleanupSheet(); document.removeEventListener('click', close); document.removeEventListener('scroll', close, true); };
+  // A long press produces a menu and then, on some phones, a click -- the release of the very
+  // press that asked for the menu. Taken as a dismissal it closes the menu the instant it
+  // appears, which is what a person sees as the menu "flashing". So a click this soon after
+  // opening is the tail of the gesture, not an answer to it.
+  // 长按会先给出菜单,然后 —— 在某些手机上 —— 补一个 click,那正是"要来菜单"的那一按的抬手。
+  // 把它当成"点了外面",菜单就会在出现的瞬间关掉,人看到的就是它一闪而过。
+  // 所以开菜单之后这么短时间内的点击,是这个手势的尾巴,而不是对它的回答。
+  const openedAt = performance.now();
+  const close = (e) => {
+    if (e && e.type === 'click' && performance.now() - openedAt < 400) return;
+    menu.hidden = true;
+    cleanupSheet();
+    document.removeEventListener('click', close);
+    document.removeEventListener('scroll', close, true);
+  };
   menu.querySelectorAll('.ctx-item').forEach((b) =>
     b.addEventListener('click', async (ev) => {
       ev.stopPropagation();
