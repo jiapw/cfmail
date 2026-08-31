@@ -556,10 +556,70 @@ async function ensurePermissions(zoneId) {
   }
 }
 
+/**
+ * Claim the account's workers.dev subdomain, if it has never claimed one.
+ *
+ * Every account has exactly one <name>.workers.dev, and Cloudflare refuses to accept a Worker at
+ * all until the account has taken its name -- a brand-new account's first deploy stops with
+ * "You need a workers.dev subdomain in order to proceed" (10063). The dashboard claims it as a
+ * side effect of opening the Workers page for the first time, which is a strange thing to make
+ * somebody go and do, so this asks for it directly.
+ *
+ * The name is nearly beside the point here: this deployment serves the mail client from the entry
+ * hosts and leaves the Worker's own workers.dev route switched off, so nothing is ever reachable
+ * at the name that is being taken. It has to exist; it does not have to be pretty. An account
+ * that already has one keeps it -- the name is global and somebody may be using it.
+ *
+ * 替账号占下它的 workers.dev 子域(如果还从来没占过)。
+ *
+ * 每个账号有且只有一个 <名字>.workers.dev,而在账号取下这个名字之前,Cloudflare 根本不收 Worker ——
+ * 全新账号第一次部署会停在 "You need a workers.dev subdomain in order to proceed"(10063)。
+ * Dashboard 是在你第一次打开 Workers 页面时顺手替你占下的;让人专门去点这一下很奇怪,
+ * 所以这里直接开口要。
+ *
+ * 名字本身在这里几乎无关紧要:这套部署从入口自定义域提供服务,Worker 自己的 workers.dev 路由是关着的,
+ * 所以被占下的这个名字上什么都访问不到。它必须存在,但不必好看。
+ * 已经有名字的账号原样保留 —— 名字是全局的,可能有人正在用。
+ */
+async function ensureWorkersSubdomain() {
+  const cur = await cf('GET', `/accounts/${accountId}/workers/subdomain`);
+  const have = cur.ok && cur.data?.result?.subdomain;
+  if (have) return skip(`workers.dev subdomain: ${have}`);
+
+  // The name is taken once and kept: the API refuses to change it afterwards (10036), and every
+  // Worker this account ever hosts is named under it. Nothing here is served from it, but the
+  // next thing on the account might want to be, so in a terminal the choice is offered rather
+  // than made -- with a name derived from the account id for anyone who does not care.
+  // 这个名字只能占一次:此后 API 拒绝更改(10036),而该账号今后的每个 Worker 都挂在它下面。
+  // 这套部署不从它提供任何服务,但账号上的下一个东西可能想 —— 所以在终端里把选择权交出去,
+  // 并给不在乎的人预备一个由账号 id 推出来的名字。
+  const fallback = 'cfmail-' + accountId.slice(0, 12);
+  let want = fallback;
+  if (INTERACTIVE) {
+    log('This account has never taken its workers.dev subdomain, and Cloudflare will not accept');
+    log('a Worker until it does. The mail client is served from your own domain, so nothing will');
+    log('be reachable at this name -- but it is permanent, and shared by anything else you host');
+    log('on this account later.');
+    want = (await ask('workers.dev subdomain', fallback)).trim().toLowerCase() || fallback;
+  }
+  const res = await cf('PUT', `/accounts/${accountId}/workers/subdomain`, { subdomain: want });
+  if (res.ok) return plan(`workers.dev subdomain -> ${want} (nothing is served from it)`);
+
+  die('this account has no workers.dev subdomain, and claiming one failed: ' + why(res)
+    + `\n  Cloudflare will not accept a Worker until the account has one (error 10063).`
+    + `\n  Take one by hand -- either is enough, and both take a moment:`
+    + `\n    dashboard: Workers & Pages -> opening the page claims one automatically`
+    + `\n    or a name of your choosing: Workers & Pages -> Subdomain`
+    + `\n  Then run this again. Nothing has been created yet.`);
+}
+
 // --- 2. Existing state ----------------------------------------------------
 
 step('Token permissions');
 await ensurePermissions(null);
+
+step('Account setup');
+await ensureWorkersSubdomain();
 
 step('What the account already has');
 const readCfg = (file, label) => {
