@@ -32,6 +32,42 @@ export function randomToken(bytes = 32): string {
   return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
+/**
+ * A password for somebody who will read it off one screen and type it into another.
+ *
+ * So the alphabet leaves out the characters that are read wrong when that happens -- l and I and
+ * 1, O and 0 -- which costs a few bits and saves the support call. What is left still gives
+ * ninety-odd bits at this length, far past anything the login can be made to answer for: it is
+ * rate-limited, locked after five wrong tries, and hashed with a hundred thousand rounds.
+ *
+ * The draw is rejection-sampled rather than a modulo of a random byte. Taking 256 % 55 as a
+ * shortcut would make the first 36 letters of the alphabet slightly likelier than the rest --
+ * a small bias, cheaply avoided, and the sort that survives for years once written.
+ *
+ * 给人看着一块屏幕、往另一块屏幕上敲的密码。
+ *
+ * 所以字母表里去掉了在这个过程中会被认错的字符 —— l 和 I 和 1、O 和 0 —— 少几个比特,
+ * 省一通求助电话。剩下的在这个长度上仍有九十多比特,远超登录这道门能被逼问出来的极限:
+ * 它有限流、错五次锁定,而且哈希跑十万轮。
+ *
+ * 取值用拒绝采样,而不是拿随机字节对 55 取模。图省事那么写,会让字母表前 36 个字符
+ * 比其余的略微更常出现 —— 偏差不大、避开也不贵,而这种东西一旦写下就会活很多年。
+ */
+export function randomPassword(len = 16): string {
+  const ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const limit = 256 - (256 % ALPHABET.length);
+  let out = '';
+  while (out.length < len) {
+    const buf = crypto.getRandomValues(new Uint8Array(len));
+    for (const b of buf) {
+      if (b >= limit) continue;
+      out += ALPHABET[b % ALPHABET.length];
+      if (out.length === len) break;
+    }
+  }
+  return out;
+}
+
 const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
 export const isEmail = (s: string) => EMAIL_RE.test(s);
 

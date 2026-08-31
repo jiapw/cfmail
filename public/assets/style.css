@@ -1344,3 +1344,11 @@ body.impersonating .boot-loading { min-height: calc(100vh - 34px); min-height: c
    flex:none 就是这条线本身。在横滚的条里,1px 的弹性子项是收缩第一个下手的对象,
    剩下两侧的 margin 围着一个不存在的东西站着 —— 该有线的地方只剩一道空隙。 */
 .tab-sep { flex: none; width: 1px; align-self: stretch; background: var(--border); margin: 6px 8px; }
+
+/* 登录信息里的地址与密码:等宽、可选中,给"抄下来"这件事让路 */
+/* The address and password, monospaced and selectable -- this exists to be copied off a screen */
+.pw-box {
+  font-family: var(--font-code); font-size: 14px; letter-spacing: 0.02em;
+  padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--hover); color: var(--text); user-select: all;
+}

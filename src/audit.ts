@@ -7,6 +7,7 @@ import { now, uid } from './util';
  *  审计动作名。集中列出来,免得各处拼字符串拼出错别字 */
 export type AuditAction =
   | 'mailbox.create' | 'mailbox.update' | 'mailbox.purge' | 'mailbox.delete'
+  | 'mailbox.login_create' | 'mailbox.login_reset'
   | 'alias.create' | 'alias.delete'
   | 'grant.add' | 'grant.remove'
   | 'user.status' | 'user.delete' | 'user.logout_all' | 'user.impersonate' | 'user.impersonate_end'
