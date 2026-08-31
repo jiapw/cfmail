@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar, withoutBackupContainer } from './wrangler-config.mjs';
