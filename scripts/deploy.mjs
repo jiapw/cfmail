@@ -29,7 +29,7 @@ import readline from 'node:readline/promises';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withVar, withoutBackupContainer } from './wrangler-config.mjs';
+import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withReconciledMigrations, withVar, withoutBackupContainer } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
@@ -699,6 +699,15 @@ const haveConfig = !!existing;
 
 const svc = await cf('GET', `/accounts/${accountId}/workers/services/${WORKER}`);
 const workerExists = svc.status !== 404 && svc.ok;
+// The tag this account last applied, and the Durable Object classes it already has. A migration
+// that creates a class can run once; knowing which ones are done is what keeps a configuration
+// from asking for them twice, which Cloudflare refuses -- permanently, and for the whole deploy.
+const appliedTag = svc.data?.result?.default_environment?.script?.migration_tag || null;
+const doClasses = workerExists
+  ? ((await cf('GET', `/accounts/${accountId}/workers/durable_objects/namespaces`)).data?.result || [])
+    .filter((n) => n.script === WORKER)
+    .map((n) => n.class)
+  : [];
 
 const d1list = await cf('GET', `/accounts/${accountId}/d1/database?name=${D1_NAME}`);
 if (!d1list.ok) die('could not list D1 databases: ' + why(d1list));
@@ -918,6 +927,17 @@ text = text
   // one that does not exist fails the entire deploy, mail and all, with an error about a Worker
   // version that has nothing to do with the cause.
   //
+  // Before anything is added: bring what is already there into line with the account. An entry
+  // asking for a class that exists cannot be applied, and one deploy refused that way refuses
+  // every time after.
+  if (workerExists) {
+    const fixed = withReconciledMigrations(text, { applied: appliedTag, existing: doClasses });
+    if (fixed !== text) {
+      text = fixed;
+      plan('migrations reconciled with what this account has already applied');
+    }
+  }
+
   const image = args['backup-image'] || await backupImage(text);
   if (image) {
     const withBk = withBackupContainer(text, image);
