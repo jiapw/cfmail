@@ -3,11 +3,11 @@ import PostalMime from 'postal-mime';
 import type { Env, User } from './types';
 import { THEME_NAMES } from './themes-list';
 import { isKnownFont } from './fonts';
-import { beginImpersonation, requireAuth, revokeAllSessions } from './auth';
+import { beginImpersonation, createUser, hashPassword, requireAuth, revokeAllSessions } from './auth';
 import { backupPending, backupStatus, setBackupSettings, startBackupNow } from './backup';
 import { createSystemFolders, ingestEml, type PreParsed } from './parse';
 import { HttpError, E } from './errors';
-import { isEmail, jsonTry, normalizeAddr, now, randomToken, sha256Hex, uid } from './util';
+import { isEmail, jsonTry, normalizeAddr, now, randomPassword, randomToken, sha256Hex, uid } from './util';
 import { chatAdminApp } from './chat/routes';
 // Circular on purpose (drive.ts imports adminScope back); both sides only use hoisted function declarations
 // 有意的循环引用(drive.ts 反向引 adminScope);两边用到的都是提升的函数声明,安全
@@ -234,6 +234,16 @@ adminApp.post('/domains/:id/mailboxes', async (c) => {
   ).bind(id, domainId, local, String(body.display_name || '').slice(0, 80), now()).run();
   await createSystemFolders(c.env, id);
   await audit(c.env, c.get('user'), 'mailbox.create', await addrOf(c.env, { local_part: local, domain_id: domainId }), undefined, domainId);
+  // A colleague who has no address anywhere else can be given one and a way in, in one step --
+  // which is the whole point of the option: no invitation, no personal mailbox, no waiting.
+  // 一位在别处没有任何地址的同事,可以在同一步里既拿到地址、又拿到进门的方式 ——
+  // 这正是这个选项的意义:不必邀请、不必有私人邮箱、不必等。
+  if (body.with_login) {
+    const mb = { id, domain_id: domainId, local_part: local, display_name: body.display_name };
+    const r = await giveMailboxLogin(c, mb);
+    await audit(c.env, c.get('user'), 'mailbox.login_create', r.address, { role: r.role }, domainId);
+    return c.json({ id, login: r });
+  }
   return c.json({ id });
 });
 
@@ -510,6 +520,69 @@ adminApp.delete('/mailboxes/:id', async (c) => {
 
   await audit(c.env, c.get('user'), 'mailbox.delete', addr, { removed_users: removedUsers }, mb.domain_id);
   return c.json({ ok: true, removed_users: removedUsers });
+});
+
+/**
+ * Give a mailbox an account of its own: the address is the login, and there is no personal
+ * mailbox anywhere else in the story.
+ *
+ * The account is an ordinary row in users, with the company address where a registration address
+ * would otherwise be -- so signing in, sessions, the lockout after five wrong tries and every
+ * other thing that has ever been made to work about logging in goes on working, unchanged and
+ * untested-again. Nothing distinguishes this account except where its address came from.
+ *
+ * The password is generated here and returned once. It is stored as a hash like any other, so
+ * this is the only moment it exists in readable form: a second look means a second reset.
+ * Resetting also ends every session the account has open, because the reason to reset is usually
+ * that somebody should stop being signed in.
+ *
+ * 给邮箱本身一个账号:地址就是登录名,整件事里不再需要另一个私人邮箱。
+ *
+ * 这个账号就是 users 表里一条普通的行,只是本该放注册邮箱的位置放的是企业地址 ——
+ * 于是登录、会话、错五次锁定,以及"登录"这件事上一切曾被调通过的东西,都照旧成立,
+ * 不必重新验证一遍。除了地址的来历,这个账号没有任何特别之处。
+ *
+ * 密码在这里生成、只返回这一次。它和别的密码一样只存哈希,所以这是它以可读形式存在的唯一时刻:
+ * 想再看一眼,就得再重置一次。重置同时结束该账号所有会话 ——
+ * 因为要重置的理由,通常正是"某人该退出登录了"。
+ */
+async function giveMailboxLogin(c: any, mb: any): Promise<{ address: string; password: string; created: boolean; role: string }> {
+  const address = await addrOf(c.env, mb);
+  const password = randomPassword();
+  const existing: any = await c.env.DB.prepare('SELECT id FROM users WHERE email=?1').bind(address).first();
+  if (existing) {
+    await c.env.DB.prepare('UPDATE users SET pw_hash=?2, failed_logins=0, locked_until=NULL WHERE id=?1')
+      .bind(existing.id, await hashPassword(password)).run();
+    await revokeAllSessions(c.env, existing.id);
+    const g: any = await c.env.DB.prepare('SELECT role FROM grants WHERE user_id=?1 AND mailbox_id=?2')
+      .bind(existing.id, mb.id).first();
+    return { address, password, created: false, role: g?.role || 'owner' };
+  }
+  const userId = await createUser(c.env, address, String(mb.display_name || mb.local_part || ''), password);
+  // One mailbox, one owner: an address that already belongs to somebody keeps belonging to them,
+  // and the account made here joins as a member rather than quietly taking it over.
+  // 一个邮箱一个所有者:已经属于某人的地址仍然属于那个人,
+  // 这里建的账号以成员身份加入,而不是悄悄把它接管过去。
+  const owner: any = await c.env.DB.prepare("SELECT user_id FROM grants WHERE mailbox_id=?1 AND role='owner'")
+    .bind(mb.id).first();
+  const role = owner ? 'member' : 'owner';
+  await c.env.DB.prepare('INSERT INTO grants (user_id, mailbox_id, role, created_at) VALUES (?1,?2,?3,?4)')
+    .bind(userId, mb.id, role, now()).run();
+  return { address, password, created: true, role };
+}
+
+/** Set or reset the password of the account that signs in as this mailbox, making one if there
+ *  is none. The password comes back in the reply and is never readable again.
+ *  设置/重置"以这个邮箱身份登录"的那个账号的密码,没有就建一个。
+ *  密码随应答返回,此后再也读不到。 */
+adminApp.post('/mailboxes/:id/login', async (c) => {
+  const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
+  if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
+  await checkDomainScope(c, mb.domain_id);
+  const r = await giveMailboxLogin(c, mb);
+  await audit(c.env, c.get('user'), r.created ? 'mailbox.login_create' : 'mailbox.login_reset',
+    r.address, { role: r.role }, mb.domain_id);
+  return c.json(r);
 });
 
 adminApp.post('/mailboxes/:id/grants', async (c) => {

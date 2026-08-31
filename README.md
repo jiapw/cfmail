@@ -374,8 +374,9 @@ Open `https://<entry-subdomain>.<your-domain>/#/admin`.
 
 ### As a user / 普通用户
 
-Sign in with **either** the personal email used at signup **or** a company address you own — both share one password.
+Sign in with **either** the personal email used at signup **or** a company address you own — both share one password. Colleagues who have no address to sign up with do not need one: an administrator creates the mailbox with a login, and the company address itself is the account.
 用**注册时的个人邮箱**或**你作为所有者的企业邮箱**登录都行 —— 两者共用同一个密码。
+没有邮箱可用来注册的同事不必去弄一个:管理员建邮箱时一并建登录,企业地址本身就是账号。
 
 Beyond ordinary mail: full-text search, conversation threading, rich-text composing with client-side image resizing, per-user interface and body fonts, light/dark/auto, 9 interface languages.
 除常规收发外:全文搜索、会话聚合、富文本编辑(图片在浏览器端缩放)、每用户可选字体、明暗自动、9 种界面语言。
@@ -592,6 +593,15 @@ users(用既有个人邮箱注册)                            grants(所有者/�
   一个用户可挂多个企业邮箱;一个邮箱可授权多人。
 - Login identifier is the signup email **or** a company address you own — one password either way.
   登录标识符 = 注册邮箱**或**本人作为所有者的企业邮箱,共用同一份密码。
+- A mailbox can be given a login of its own, with no personal email involved: creating one with
+  **Create a login too**, or **Reset password** on an existing one, makes an account whose name is
+  the company address and hands you a generated password once. Resetting ends that account's open
+  sessions. There is no self-service recovery for such an account — its own reset mail would be
+  delivered to the mailbox it cannot open — so recovery is an administrator resetting it again.
+  邮箱可以拥有自己的登录,整件事不牵涉任何私人邮箱:新建时勾「同时创建登录」,
+  或对已有邮箱点「重置密码」,就会得到一个以企业地址为账号名的账户,并把生成的密码给你看一次。
+  重置会同时结束该账号所有会话。这类账号**没有自助找回** —— 找回信会投进它自己打不开的那个邮箱 ——
+  所以找回的方式是让管理员再重置一次。
 - One global admin (created at setup) plus per-domain admins.
   一个全局管理员 + 每域名的域管理员。
 

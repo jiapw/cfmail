@@ -416,6 +416,7 @@ async function renderMailboxDetail(domainId) {
       <td>${fmtSize(m.bytes)}</td>
       <td class="nowrap">
         <wa-button appearance="plain" size="small" data-grant="${esc(m.id)}">${esc(t('grant_member'))}</wa-button>
+        <wa-button appearance="plain" size="small" data-login="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_login_reset'))}</wa-button>
         <wa-button appearance="plain" size="small" data-toggle="${esc(m.id)}:${m.disabled ? 0 : 1}">${esc(m.disabled ? t('enable') : t('disable'))}</wa-button>
         <wa-button appearance="plain" size="small" class="danger-btn" data-purge="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_purge'))}</wa-button>
         <wa-button appearance="plain" size="small" class="danger-btn" data-dropmb="${esc(m.id)}:${esc(m.local_part)}">${esc(t('mb_drop'))}</wa-button>
@@ -434,8 +435,10 @@ async function renderMailboxDetail(domainId) {
         <label>${esc(t('new_mailbox'))}</label>
         <input name="local" type="text" placeholder="${esc(t('local_ph'))}" required style="width:200px">
         <input name="dn" type="text" placeholder="${esc(t('display_ph'))}" style="width:200px">
+        <wa-checkbox id="mb-login" checked>${esc(t('mb_with_login'))}</wa-checkbox>
         <wa-button variant="brand" type="submit">${icon('plus', 16)} ${esc(t('new_mailbox'))}</wa-button>
       </form>
+      <p class="dim" style="margin:6px 0 0 130px">${esc(t('mb_with_login_note'))}</p>
     </section>
     <section class="card">
       <h3>${esc(t('alias_title'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('alias_note'))}</span></h3>
@@ -460,9 +463,12 @@ async function renderMailboxDetail(domainId) {
     e.preventDefault();
     const fd = new FormData(e.target);
     try {
-      await api('POST', `/api/admin/domains/${domainId}/mailboxes`, { local_part: fd.get('local'), display_name: fd.get('dn') });
+      const r = await api('POST', `/api/admin/domains/${domainId}/mailboxes`, {
+        local_part: fd.get('local'), display_name: fd.get('dn'), with_login: !!qs('#mb-login')?.checked,
+      });
       toast(t('t_mb_created'));
       renderMailboxDetail(domainId);
+      if (r.login) showLogin(r.login);
     } catch (err) {
       toast(err.message, true);
     }
@@ -486,6 +492,19 @@ async function renderMailboxDetail(domainId) {
       const [id, dis] = tg.dataset.toggle.split(':');
       await api('POST', `/api/admin/mailboxes/${id}`, { disabled: dis === '1' });
       renderMailboxDetail(domainId);
+      return;
+    }
+    const lg = e.target.closest('[data-login]');
+    if (lg) {
+      const [id, name] = lg.dataset.login.split(':');
+      if (await confirmDialog(t('mb_login_reset_confirm', name), t('mb_login_reset'))) {
+        try {
+          showLogin(await api('POST', `/api/admin/mailboxes/${id}/login`, {}));
+          renderMailboxDetail(domainId);
+        } catch (err) {
+          toast(err.message, true);
+        }
+      }
       return;
     }
     const pg = e.target.closest('[data-purge]');
@@ -517,6 +536,33 @@ async function renderMailboxDetail(domainId) {
       }
     }
   });
+}
+
+/**
+ * The one moment the password exists in readable form. It is stored as a hash, so this dialog is
+ * not showing a copy of something -- it is showing the only copy, and closing it destroys it.
+ * Hence the warning, the copy button, and no "show it again" anywhere: a second look is a second
+ * reset, which is the honest answer rather than a convenient one.
+ *
+ * 密码以可读形式存在的唯一时刻。它只以哈希保存,所以这个对话框展示的不是某物的副本 ——
+ * 它就是唯一的那一份,关掉即销毁。于是有这句警告、有复制按钮,
+ * 而任何地方都没有"再看一次":想再看就得再重置一次 —— 这是诚实的答案,不是方便的那个。
+ */
+function showLogin(info) {
+  const m = showModal(`
+    <h3 style="margin:0 0 4px">${esc(t(info.created ? 'mb_login_created' : 'mb_login_was_reset'))}</h3>
+    <p class="dim" style="margin:0 0 14px">${esc(t('mb_login_once'))}</p>
+    <div class="form-row"><label>${esc(t('mb_login_addr'))}</label><code class="pw-box">${esc(info.address)}</code></div>
+    <div class="form-row"><label>${esc(t('mb_login_pw'))}</label><code class="pw-box">${esc(info.password)}</code></div>
+    <div class="modal-foot">
+      <wa-button appearance="outlined" id="pw-copy">${esc(t('mb_login_copy'))}</wa-button>
+      <wa-button variant="brand" id="pw-done">${esc(t('close'))}</wa-button>
+    </div>`);
+  m.querySelector('#pw-copy').onclick = () => {
+    copyText(`${info.address}\n${info.password}`);
+    toast(t('t_copied'));
+  };
+  m.querySelector('#pw-done').onclick = closeModal;
 }
 
 function grantModal(mailboxId, domainId) {
