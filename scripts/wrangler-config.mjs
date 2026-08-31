@@ -277,6 +277,88 @@ export function withoutBackupContainer(text) {
   return ok ? out : null;
 }
 
+/**
+ * Bring the migrations list into line with what the account has actually applied.
+ *
+ * A migration that creates a Durable Object class can only ever run once. Send it again and
+ * Cloudflare refuses the whole deploy -- "cannot apply new-sqlite-class migration to class X that
+ * is already depended on by existing Durable Objects" -- and the deploy stays refused every time
+ * after, because nothing about the situation changes on its own.
+ *
+ * Two things put a checkout in that position. A deploy can fail after the script was uploaded but
+ * before the account recorded the new tag, leaving the class created and the tag behind. And a
+ * configuration rebuilt from the template gets the template's numbering, which need not agree
+ * with the numbering the account applied long ago -- the same tag then means a different step on
+ * each side.
+ *
+ * Both are answered the same way: an entry that would create a class the account already has is
+ * stripped of its action and keeps its tag. A tag with nothing under it is a legal entry (the
+ * schema asks only for the tag) and does nothing when it runs, which is exactly right for a step
+ * that has already happened. Entries at or before the applied tag are never re-sent and are left
+ * alone, so a healthy configuration is not rewritten. And when the applied tag appears nowhere in
+ * the list -- the renumbering case -- it is put at the front, giving wrangler back its place in a
+ * sequence it would otherwise not recognise.
+ *
+ * 让 migrations 列表与账号上"实际已经应用"的状态对齐。
+ *
+ * 创建 Durable Object 类的 migration 只能跑一次。再发一次,Cloudflare 会拒掉整个部署 ——
+ * "cannot apply new-sqlite-class migration to class X that is already depended on by existing
+ * Durable Objects" —— 而且此后每次都拒,因为这个局面不会自己好转。
+ *
+ * 有两种情况会把一份 checkout 推到这个位置。一是部署在"脚本已上传、但账号还没记下新 tag"
+ * 之间失败,于是类建好了、tag 却没往前走。二是配置从模板重建,拿到的是模板的编号,
+ * 而它未必与这个账号很久以前应用过的编号一致 —— 同一个 tag 在两边指的就成了不同的步骤。
+ *
+ * 两者的答案是同一个:凡是"要创建一个账号上已经存在的类"的条目,去掉动作、保留 tag。
+ * 只带 tag 的条目是合法的(schema 只要求 tag),运行时什么都不做 ——
+ * 这正是"这一步已经发生过"该有的样子。位于已应用 tag 之前(含)的条目根本不会被重发,
+ * 因此原样不动,健康的配置不会被改写。而当已应用的 tag 在列表里根本找不到时 ——
+ * 也就是重新编号那种情况 —— 把它放到最前面,让 wrangler 在一个它本来认不出的序列里重新站定。
+ */
+export function withReconciledMigrations(text, { applied = null, existing = [] } = {}) {
+  const have = new Set(existing);
+  const m = /"migrations"\s*:\s*\[/.exec(text);
+  if (!m) return text;
+  const span = arraySpan(text, m.index + m[0].length - 1);
+  if (!span) return text;
+
+  let entries;
+  try {
+    entries = JSON.parse(stripJsonc(text)).migrations;
+  } catch {
+    return text;
+  }
+  if (!Array.isArray(entries) || !entries.length) return text;
+
+  let idx = applied ? entries.findIndex((e) => e.tag === applied) : entries.length - 1;
+  let out = entries;
+  let changed = false;
+  if (applied && idx < 0) {
+    out = [{ tag: applied }, ...entries];
+    idx = 0;
+    changed = true;
+  }
+
+  out = out.map((e, i) => {
+    if (i <= idx) return e;
+    const makes = [...(e.new_sqlite_classes || []), ...(e.new_classes || [])];
+    if (!makes.length || !makes.every((c) => have.has(c))) return e;
+    changed = true;
+    return { tag: e.tag };
+  });
+  if (!changed) return text;
+
+  const indent = (text.slice(0, span.start).match(/\n([ \t]*)[^\n]*$/) || [, '  '])[1];
+  const body = out.map((e) => `${indent}  ${JSON.stringify(e)}`).join(',\n');
+  const next = text.slice(0, span.start + 1) + '\n' + body + '\n' + indent + text.slice(span.end);
+  try {
+    JSON.parse(stripJsonc(next));
+  } catch {
+    return text;
+  }
+  return next;
+}
+
 export function withBackupContainer(text, image, instanceType = 'standard-2') {
   // Each of the three pieces is decided on its own. One question standing for all of them would
   // let a half-finished configuration -- the binding written, the container not -- read as
