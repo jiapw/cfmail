@@ -462,28 +462,40 @@ R2 的 S3 凭据是推导出来的(access key = token 的 id,secret = token valu
 
 ### Turning it on / 怎么开起来
 
-Give the deploy a backup token and it does the rest: it builds the image from `container/`,
-pushes it to your own account's registry, and writes the container into the configuration. **The
-build is the only step that wants Docker** — have Docker Desktop (or Docker Engine) running, and
-nothing else about it needs your attention. The image is tagged with a hash of `container/`, so
-it is rebuilt when that source changes and reused when it has not.
+Give the deploy a backup token and it does the rest:
 
-给部署一个备份 token,其余它自己来:用 `container/` 构建镜像、推到你自己账号的 registry、
-把容器写进配置。**只有构建这一步需要 Docker** —— 让 Docker Desktop(或 Docker Engine)跑着即可,
-别的不用管。镜像的 tag 是 `container/` 的哈希,所以那份源码变了就重建,没变就沿用。
+给部署一个备份 token,其余它自己来:
 
 ```sh
 node scripts/deploy.mjs --token <deploy token> --backup-token <backup token>
 ```
 
-If Docker is not running the deploy says so and waits, rather than quietly leaving you without a
-backup. Two ways past it: `--backup-image <ref>` uses an image you built elsewhere, and
-`--no-backup` deploys without the backup — everything else works, the Backup tab says it is
-unavailable, and a later deploy with Docker running turns it on.
+**No Docker, no registry account, nothing to build.** The container image is published for
+everybody at the reference in `container/published.json`, and Cloudflare pulls it itself — public
+images need no credentials, and the pull happens on Cloudflare's machines, not yours.
 
-Docker 没跑起来的话,部署会说出来并等你,而不是默默让你少了一份备份。两条绕过的路:
-`--backup-image <引用>` 用你在别处构建好的镜像,`--no-backup` 则不带备份部署 ——
-其余一切照常,后台「备份」页直说不可用,之后在 Docker 跑着时再部署一次就开起来了。
+**不需要 Docker、不需要镜像仓库账号、没有东西要构建。** 容器镜像已经为所有人发布好了,
+引用写在 `container/published.json` 里,由 Cloudflare 自己去拉 ——
+公共镜像不需要任何凭据,而且拉取发生在 Cloudflare 的机器上,不在你这里。
+
+That file also records the hash of `container/` as it was when the image was pushed, and the
+deploy uses the published image only while that still matches this checkout. Change anything in
+`container/` and the promise no longer holds, so the deploy builds instead — which is the one
+case that wants Docker, and it says so and waits rather than quietly leaving you without a
+backup. `--backup-image <ref>` uses an image you built and pushed yourself; `--no-backup` deploys
+without the backup, and a later deploy turns it on.
+
+那个文件还记着推送镜像时 `container/` 的哈希,部署只在它仍等于本 checkout 的哈希时才用发布镜像。
+你改动了 `container/` 里任何东西,这句承诺就不再成立,部署会改为自己构建 ——
+那是唯一需要 Docker 的情形,而且它会明说并等你,不会默默让你少一份备份。
+`--backup-image <引用>` 用你自己构建推送的镜像;`--no-backup` 不带备份部署,之后再部署一次即可开启。
+
+Publishing that image is a maintainer's job, done when `container/` changes:
+发布那个镜像是维护者的事,只在 `container/` 变动时做:
+
+```sh
+node scripts/publish-image.mjs --repo docker.io/<namespace>/cfmail-backup
+```
 
 `--backup-token` is separate from `--token` on purpose: the deploy token lives only in the memory
 of that one run, while the backup token stays in the Worker as a secret. Give the backup one only
