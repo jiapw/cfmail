@@ -195,13 +195,48 @@ export function withDevContainersOff(text) {
     + text.slice(lineStart);
 }
 
+/**
+ * The image the configuration names for the backup container, or '' if it names none -- and a
+ * reference that still carries a <placeholder> counts as none.
+ *
+ * That distinction is the whole point of this function. A configuration containing the words
+ * "BackupContainer" was once taken to mean the container was set up, and a template shipping a
+ * placeholder image therefore read as finished: the deploy left it alone, and Cloudflare was
+ * handed a container pointing at an image nobody had ever pushed.
+ *
+ * 配置里给备份容器写的镜像;没有则返回 ''—— 引用里还带着 <占位符> 的,一律算没有。
+ *
+ * 这个区分正是本函数存在的理由。从前只要配置里出现 "BackupContainer" 就算容器已配好,
+ * 于是模板里那个占位镜像被读成"已完成":部署不再管它,交给 Cloudflare 的是一个
+ * 指向从没有人推送过的镜像的容器。
+ */
+export function containerImage(text) {
+  const m = /"containers"\s*:\s*\[[\s\S]*?"image"\s*:\s*"([^"]*)"/.exec(text);
+  const image = m ? m[1] : '';
+  return image.includes('<') ? '' : image;
+}
+
+/** Does the configuration carry a backup container that names nowhere? That is the shape an
+ *  older version of this script left behind, and it cannot be deployed.
+ *  配置里那个备份容器指向的是个"哪儿也不是"吗?这是本脚本旧版本留下的形状,部署不了。 */
+export function hasPlaceholderContainer(text) {
+  return /"containers"\s*:\s*\[[\s\S]*?"BackupContainer"/.test(text) && !containerImage(text);
+}
+
 export function withBackupContainer(text, image, instanceType = 'standard-2') {
   // Each of the three pieces is decided on its own. One question standing for all of them would
   // let a half-finished configuration -- the binding written, the container not -- read as
   // complete, and no later deploy would ever go back and finish it.
   const hasBinding = /"name"\s*:\s*"BACKUP_CONTAINER"/.test(text);
-  const hasContainer = /"containers"\s*:\s*\[[\s\S]*?"BackupContainer"/.test(text);
+  const hasContainer = !!containerImage(text);
   let out = text;
+
+  // A container that was left pointing at a placeholder is finished here rather than duplicated:
+  // the block is already in the right place, only the image was never filled in.
+  // 指向占位符的容器在这里补完,而不是再写一个:块本身位置就对,只是镜像从来没填上。
+  if (!hasContainer && hasPlaceholderContainer(text)) {
+    return text.replace(/("containers"\s*:\s*\[[\s\S]*?"image"\s*:\s*")([^"]*)(")/, `$1${image}$3`);
+  }
 
   if (!hasBinding) {
     const dob = /("durable_objects"\s*:\s*\{\s*"bindings"\s*:\s*\[)/.exec(out);
