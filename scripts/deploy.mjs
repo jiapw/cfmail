@@ -600,7 +600,11 @@ function dockerAvailable() {
  *  于是源码变了就重建,没变就沿用。 */
 function containerHash() {
   const dir = path.join(ROOT, 'container');
-  const names = fs.readdirSync(dir).sort();
+  // published.json is a note about this hash, so it cannot be part of it -- writing the note
+  // would change the answer it records, and the published image would never match again.
+  // published.json 是一张关于这个哈希的便条,所以它不能算进哈希里 ——
+  // 否则写下便条这个动作本身就会改掉它记录的那个答案,发布的镜像从此永远对不上。
+  const names = fs.readdirSync(dir).filter((n) => n !== 'published.json').sort();
   const h = crypto.createHash('sha256');
   for (const n of names) {
     h.update(n);
@@ -630,13 +634,52 @@ function containerHash() {
  * 没有 Docker 就把找到的东西原样返回(可能什么都没有),由调用方把容器留在配置之外。
  * 需要它的只有备份这一个功能,其余照常部署。
  */
+/**
+ * The image published for everybody, and the container sources it was built from.
+ *
+ * Cloudflare pulls public images itself, so an installation referencing one needs no Docker, no
+ * registry account and no build -- the file below is the whole of what makes that true. It
+ * records the hash of container/ as it was when the image was pushed, and a deploy uses the
+ * image only while that still matches what is in this checkout: an image is a promise about
+ * source, and the moment the source moves on, the promise is void and the deploy builds instead.
+ *
+ * 为所有人发布的那个镜像,以及它当初是用哪份 container/ 源码构建的。
+ *
+ * 公共镜像由 Cloudflare 自己去拉,所以引用它的部署既不需要 Docker、不需要镜像仓库账号,
+ * 也不需要构建 —— 而让这一切成立的全部东西,就是下面这个文件。
+ * 它记着推送镜像时 container/ 的哈希;只有当它仍然等于本 checkout 里的哈希时,部署才会用这个镜像:
+ * 镜像是一句关于源码的承诺,源码一往前走,承诺即失效,部署改为自己构建。
+ */
+function publishedImage() {
+  try {
+    const p = JSON.parse(fs.readFileSync(path.join(ROOT, 'container', 'published.json'), 'utf8'));
+    return p && typeof p.image === 'string' && typeof p.source === 'string' ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 async function backupImage(text) {
   if (args['no-backup']) return '';
   const configured = containerImage(text);
-  const managed = /:[0-9a-f]{12}$/.test(configured);
-  if (configured && !managed) return configured;
+  const published = publishedImage();
+  const hash = containerHash();
+  // An image this script put there is one it may replace: the ones it writes are either tagged
+  // with the source hash or are the published reference. Anything else was chosen by a person.
+  // 本脚本放进去的镜像,本脚本才可以替换:它写的引用要么以源码哈希为 tag,要么就是那个发布引用。
+  // 除此之外的都是人挑的。
+  const repo = published ? published.image.split(':')[0] : '';
+  const ours = /:[0-9a-f]{12}$/.test(configured) || (repo && configured.startsWith(repo + ':'));
+  if (configured && !ours) return configured;
 
-  const ref = `registry.cloudflare.com/${accountId}/cfmail-backup:${containerHash()}`;
+  // The published image, while it still stands for the container/ in this checkout.
+  // 发布的那个镜像 —— 只要它仍然代表本 checkout 里的 container/。
+  if (published && published.source === hash) {
+    if (configured !== published.image) plan(`backup image -> ${published.image} (published; no Docker needed)`);
+    return published.image;
+  }
+
+  const ref = `registry.cloudflare.com/${accountId}/cfmail-backup:${hash}`;
   if (configured === ref) return configured;
   if (DRY) {
     if (!configured) plan('build and push the backup image (--dry-run built nothing)');
