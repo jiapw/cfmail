@@ -116,9 +116,6 @@ const SPECS = [
     // one self-contained module with the wasm embedded, loaded only when a password is met or
     // asked for. It decrypts an opened file into bytes the editing pipeline can hold, and
     // encrypts the built document on the way back out.
-    // PDF 密码 —— pdf.js 和 pdf-lib 都"写"不了它:qpdf 的命令行编译成 WASM,
-    // 一个自含 wasm 的独立模块,只在遇到或要设密码时才加载。它把打开的文件解成
-    // 编辑管线拿得住的字节,再在出门的路上把搭好的文档加密回去。
     name: 'qpdf',
     from: 'qpdf-wasm-esm-embedded',
     to: 'qpdf',
@@ -339,15 +336,8 @@ async function buildCodeMirror() {
  * Flat rather than split: there is one entry and everything in it is reached the moment the
  * editor opens, so chunking would buy an extra request and no laziness.
  *
- * pdf-lib 与 fontkit —— 用来编辑一份 PDF,而不只是画一份出来。
  *
- * 单独的 pdf-lib 本身就发浏览器可用的 ESM,本可以像其他库一样直接拷。fontkit 不行:
- * 它的浏览器构建开头就是十个指向自身依赖树的裸导入,而浏览器跟不过去。
- * 所以两者从同一个入口一起打包,而两者之间的适配器也住在那里 ——
- * 为什么用 fontkit 2 而不是 pdf-lib 期待的那个分支,见 scripts/pdfedit.entry.js。
  *
- * 打平而不拆分:只有一个入口,里面的东西在编辑器打开的那一刻全都要用上,
- * 拆块只会多换来一次请求,换不来任何惰性。
  */
 async function buildPdfEdit() {
   const entry = path.join(ROOT, 'scripts', 'pdfedit.entry.js');
@@ -374,8 +364,6 @@ async function buildPdfEdit() {
     plugins: [{
       // fontkit reaches for brotli only to open WOFF2, which nothing here produces or consumes.
       // Dropping it takes a dependency out of the bundle and a licence question with it.
-      // fontkit 找 brotli 只为打开 WOFF2,而这里既不产生也不消费这种东西。
-      // 去掉它,既从包里拿走一个依赖,也带走了一个许可证问题。
       name: 'no-woff2',
       setup(build) {
         const stub = path.join(ROOT, 'scripts', 'pdfedit.nowoff2.js');
@@ -460,9 +448,6 @@ function writeBundleLicense(out, metafile) {
     // reproduced, because upstream never wrote one down -- and inventing a copyright line to fill
     // the gap would be worse than the gap. What can be recorded truthfully is recorded: what the
     // package says its licence is, which version went in, and where it came from.
-    // 有几个小包声明了许可证却不发正文。那份声明无法被复述,
-    // 因为上游从未写下过 —— 而编一行版权声明来填这个缺口,比缺口本身更糟。
-    // 能如实记下的就如实记下:包自称的许可证、进去的是哪个版本、以及它从哪里来。
     if (!text) {
       let declared = '';
       let repo = '';
@@ -601,9 +586,6 @@ function checkLibavFull() {
  * the committed output is the only truth there is, and using it as-is is correct -- so the
  * check is skipped, and says so rather than failing a deploy-only checkout.
  *
- * 入库的主题产物,与入库的 libav 构建同一个标准对待。
- * @radix-ui/colors 是 devDependency:没装它(--omit=dev)时,入库产物就是唯一的真相,
- * 照用即对 —— 所以跳过校验并说明,而不是让一个纯部署 checkout 挂掉。
  */
 function checkThemes() {
   const want = themesFingerprint(ROOT);
@@ -706,23 +688,15 @@ console.log(CHECK_ONLY
  * install and needs the arguments spelled out. Guessing wrong here sends somebody to a command
  * that fails, which is worse than saying nothing.
  *
- * `npm install` 的结尾,也是唯一一处告诉人"装完了"的地方。
  *
- * 它作为 postinstall 钩子运行,所以 npm 的 audit 与 funding 之类必定打印在它后面、
- * 屏幕上的最后一句永远是 npm 的。于是规则很清楚:只说那句必须能在噪声之后依然成立的话 ——
- * 下一步该跑什么 —— 并且说成一个人往回滚时眼睛能重新找到的形状。
  *
- * 下一步对每个人并不相同,而答案就在磁盘上:有 wrangler.jsonc 的 checkout 是部署过的,
- * 给它简短形式;没有的是头一回装,参数要写全。这里猜错,等于把人指向一条注定失败的命令,
- * 那比什么都不说更糟。
  */
 if (!CHECK_ONLY && process.env.npm_lifecycle_event === 'postinstall') {
   const deployed = fs.existsSync(path.join(ROOT, 'wrangler.jsonc'));
   console.log('\n' + '─'.repeat(72));
   console.log('  CFMail is installed. Nothing here needs Docker, and nothing else needs building.');
-  console.log('  CFMail 安装完成。这里不需要 Docker,也没有别的东西要构建。');
   console.log('');
-  console.log('  Next / 下一步 — deploy it to your Cloudflare account:');
+  console.log('  Next -- deploy it to your Cloudflare account:');
   console.log(deployed
     ? '      npm run deploy'
     : '      node scripts/deploy.mjs --token <API token> --domain <your-domain> --entry mail');
@@ -730,13 +704,10 @@ if (!CHECK_ONLY && process.env.npm_lifecycle_event === 'postinstall') {
     console.log('');
     console.log('  It asks for anything it still needs, checks every permission before creating');
     console.log('  a thing, and says what it is about to do at each step.');
-    console.log('  它会问你缺的东西、在动手之前把每项权限都验一遍,并且每一步都说明自己在做什么。');
     console.log('');
     console.log('  The token: Cloudflare dashboard -> My Profile -> API Tokens -> Create Token.');
     console.log('  Which permissions it wants is in the README, and the deploy names any that');
     console.log('  are missing rather than failing halfway.');
-    console.log('  token 在 Cloudflare 控制台 -> My Profile -> API Tokens -> Create Token 创建;');
-    console.log('  需要哪些权限见 README,缺了哪一项部署会直接点名,而不是跑到一半才失败。');
   }
   console.log('─'.repeat(72));
 }
