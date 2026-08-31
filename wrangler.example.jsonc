@@ -80,20 +80,16 @@
   ],
 
   // 备份跑在容器里:那儿有 7-Zip、有磁盘、想跑多久跑多久,而 Worker 三样都没有。
-  // 这里没有 containers 块,是因为容器要指向一个真实存在的镜像,而镜像得先由你构建并推送 ——
-  // 一个指向不存在镜像的容器会让部署整个失败,连收发信都上不了线。
-  // 建好镜像后带上 --backup-image <引用> 再跑一次部署,它会把三样东西一起补进来:
-  // containers 块、durable_objects 里的 BACKUP_CONTAINER 绑定、以及对应的 migrations 条目。
-  // 在那之前后台「备份」页会直说它不可用,其余功能一切照常。
+  // 这里没有 containers 块,是因为它由部署写入:部署会读 container/published.json 里那个
+  // 公开镜像,把三样东西一起补进来 —— containers 块、durable_objects 里的
+  // BACKUP_CONTAINER 绑定、以及对应的 migrations 条目。镜像由 Cloudflare 自己去拉,
+  // 你这边既不需要 Docker,也不需要镜像仓库账号。
   //
   // Where the backup runs: 7-Zip, a disk, and as long as it takes, none of which a Worker has.
-  // There is no "containers" block here because a container must point at an image that really
-  // exists, and the image is yours to build and push -- one pointing at nothing fails the whole
-  // deploy, mail and all.
-  // Build it, then deploy again with --backup-image <ref>: that writes all three pieces at once
-  // -- the containers block, the BACKUP_CONTAINER binding under durable_objects, and the
-  // matching migrations entry. Until then the Backup tab says it is unavailable and nothing
-  // else is affected.
+  // There is no "containers" block here because the deploy writes one: it reads the public image
+  // named in container/published.json and adds all three pieces at once -- the containers block,
+  // the BACKUP_CONTAINER binding under durable_objects, and the matching migrations entry.
+  // Cloudflare pulls the image itself; you need neither Docker nor a registry account.
   //
   // 本地开发不碰容器:否则 wrangler dev 会去拉镜像,那要求 Docker 跑着。
   // Local development leaves the container alone; pulling the image wants Docker.

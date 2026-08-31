@@ -135,12 +135,10 @@ Usage:
                   in the memory of this run. It needs Account D1 Read and Workers R2 Storage
                   Edit, and nothing else.
   --backup-image <ref>
-                  Use an image you built and pushed yourself, instead of the one this
-                  builds from container/ (tagged with that directory's hash, rebuilt
-                  when it changes). Building is the only step that wants Docker.
+                  Use an image you built and pushed yourself, instead of the published
+                  one that Cloudflare pulls. Nothing is built here either way.
   --no-backup     Deploy without the backup container. Everything else works; the
-                  Backup tab says it is unavailable, and a later deploy with Docker
-                  running turns it on.
+                  Backup tab says it is unavailable, and a later deploy turns it on.
                   The container is in the configuration whether or not backups are switched on,
                   so wrangler dev wants an API token in the environment either way.
   --prune-domains Let this deploy detach custom domains that are live but absent from the
@@ -584,20 +582,10 @@ async function ensurePermissions(zoneId) {
  * 所以被占下的这个名字上什么都访问不到。它必须存在,但不必好看。
  * 已经有名字的账号原样保留 —— 名字是全局的,可能有人正在用。
  */
-/** Is there a Docker daemon to build with? `docker version` answers both questions at once --
- *  installed, and running -- which "is it on PATH" does not.
- *  有没有一个能用来构建的 Docker?`docker version` 一次回答两件事:装了没、跑着没 ——
- *  这是"PATH 上有没有"答不了的。 */
-function dockerAvailable() {
-  const bin = process.env.WRANGLER_DOCKER_BIN || 'docker';
-  const r = spawnSync(bin, ['version', '--format', '{{.Server.Version}}'], { stdio: 'ignore' });
-  return !r.error && (r.status ?? 1) === 0;
-}
-
-/** What is in container/, as twelve hex characters. It is the image's tag, so an image is
- *  rebuilt when its source changes and reused when it has not.
- *  container/ 里是什么,写成十二个十六进制字符。它就是镜像的 tag,
- *  于是源码变了就重建,没变就沿用。 */
+/** What is in container/, as twelve hex characters -- the same twelve the publisher recorded, so
+ *  the two can tell whether the published image still stands for the source in this checkout.
+ *  container/ 里是什么,写成十二个十六进制字符 —— 与发布时记下的是同一串,
+ *  于是两边能判断:那个已发布的镜像,是否仍代表本 checkout 里的源码。 */
 function containerHash() {
   const dir = path.join(ROOT, 'container');
   // published.json is a note about this hash, so it cannot be part of it -- writing the note
@@ -613,27 +601,6 @@ function containerHash() {
   return h.digest('hex').slice(0, 12);
 }
 
-/**
- * The image the backup container will run, built here if it has to be.
- *
- * A tag somebody chose by hand is left alone -- that is an operator managing their own image, and
- * this has no business retagging it. A tag this script chose is the hash of container/, so it is
- * rebuilt exactly when that source changes. And when there is no image at all, one is built now,
- * because "go and build an image first, then come back" is not a step a deploy should make
- * somebody perform.
- *
- * Without Docker it returns what it found -- possibly nothing -- and the caller leaves the
- * container out. The backup is the one feature that needs it; everything else deploys.
- *
- * 备份容器要跑的那个镜像,必要时就在这里建出来。
- *
- * 人手选定的 tag 原样不动 —— 那是操作者在自己管镜像,轮不到这里改名。
- * 本脚本选的 tag 是 container/ 的哈希,所以恰好在那份源码变了的时候重建。
- * 而当根本没有镜像时,现在就建一个 —— "先去别处建个镜像再回来"不该是部署要求人做的一步。
- *
- * 没有 Docker 就把找到的东西原样返回(可能什么都没有),由调用方把容器留在配置之外。
- * 需要它的只有备份这一个功能,其余照常部署。
- */
 /**
  * The image published for everybody, and the container sources it was built from.
  *
@@ -663,66 +630,33 @@ async function backupImage(text) {
   if (args['no-backup']) return '';
   const configured = containerImage(text);
   const published = publishedImage();
-  const hash = containerHash();
-  // An image this script put there is one it may replace: the ones it writes are either tagged
-  // with the source hash or are the published reference. Anything else was chosen by a person.
-  // 本脚本放进去的镜像,本脚本才可以替换:它写的引用要么以源码哈希为 tag,要么就是那个发布引用。
-  // 除此之外的都是人挑的。
+  // An image this script put there is one it may replace -- that is the published reference, or
+  // a tag it built back when it still built things. Anything else was chosen by a person and
+  // stays chosen: an operator managing their own image does not want it renamed underneath them.
+  // 本脚本放进去的镜像,本脚本才可以替换 —— 那要么是发布引用,要么是它当年还自己构建时打的 tag。
+  // 除此之外的都是人挑的,就保持人挑的样子:自己管镜像的操作者不希望它在脚下被改名。
   const repo = published ? published.image.split(':')[0] : '';
   const ours = /:[0-9a-f]{12}$/.test(configured) || (repo && configured.startsWith(repo + ':'));
   if (configured && !ours) return configured;
 
-  // The published image, while it still stands for the container/ in this checkout.
-  // 发布的那个镜像 —— 只要它仍然代表本 checkout 里的 container/。
-  if (published && published.source === hash) {
-    if (configured !== published.image) plan(`backup image -> ${published.image} (published; no Docker needed)`);
-    return published.image;
+  if (!published) {
+    log('⚠ container/published.json is missing, so there is no image to point the backup at.');
+    log('  Everything else installs; the Backup tab will say the backup is unavailable.');
+    return '';
   }
-
-  const ref = `registry.cloudflare.com/${accountId}/cfmail-backup:${hash}`;
-  if (configured === ref) return configured;
-  if (DRY) {
-    if (!configured) plan('build and push the backup image (--dry-run built nothing)');
-    return configured;
+  // The published image is a claim about container/. When this checkout has moved on, the claim
+  // is stale -- which matters to whoever changed it, not to somebody installing, so it is said
+  // plainly and the install carries on with the image that does exist.
+  // 已发布的镜像是一句关于 container/ 的断言。本 checkout 若已往前走,这句断言就过期了 ——
+  // 这件事对改动它的人有意义,对装它的人没有,所以只是明说一句,安装照旧用那个确实存在的镜像。
+  if (published.source !== containerHash()) {
+    log('⚠ container/ differs from what the published image was built from.');
+    log(`  Using ${published.image} anyway. To ship your own changes, publish them:`);
+    log('    node scripts/publish-image.mjs --repo <your public repository>');
+    log('  or pass --backup-image <ref> to point at an image you built yourself.');
   }
-
-  // Whatever is missing, say what it is and wait -- the same way a missing token permission is
-  // handled. An image that cannot be built is a thing somebody can fix in a minute and retry,
-  // and skipping it silently would leave a deployment quietly without its backup.
-  // 缺什么就说什么,然后等 —— 和缺 token 权限时的处理是同一套。
-  // 建不出来的镜像是一分钟就能修好再来一次的事,而默默跳过会让一套部署悄无声息地没有备份。
-  for (;;) {
-    if (!dockerAvailable()) {
-      const advice = 'Docker is not running, and the backup image is built with it.\n\n'
-        + '    macOS / Windows: install Docker Desktop and start it -- https://docs.docker.com/get-started/\n'
-        + '    Linux: install Docker Engine, then: sudo systemctl start docker\n\n'
-        + '  It is needed for this one step and never at run time. Two ways past it:\n'
-        + '    --backup-image <ref>  an image you built and pushed elsewhere\n'
-        + '    --no-backup           deploy without the backup; everything else works, and a later\n'
-        + '                          deploy with Docker running turns it on';
-      if (!INTERACTIVE) die(advice);
-      console.error('\n  ✗ ' + advice.replace(/\n/g, '\n  '));
-      if (!(await fixAndRetry('When Docker is running'))) {
-        stopped('No backup image, and nothing has been deployed. --no-backup deploys without it.');
-      }
-      continue;
-    }
-    step('Backup image');
-    log(`building ${ref}`);
-    log('(the one step that wants Docker; a minute or two the first time)');
-    if (wrangler(['containers', 'build', path.join(ROOT, 'container'), '--tag', ref, '--push', '-c', CONFIG]) === 0) {
-      return ref;
-    }
-    const advice = 'The backup image did not build -- wrangler said why above.\n\n'
-      + '  Common causes: Docker ran out of disk, the daemon stopped mid-build, or the registry\n'
-      + '  refused the push (the token needs Account -> Workers Scripts -> Edit).\n'
-      + '  --no-backup deploys without the backup instead.';
-    if (!INTERACTIVE) die(advice);
-    console.error('\n  ✗ ' + advice.replace(/\n/g, '\n  '));
-    if (!(await fixAndRetry('When that is fixed'))) {
-      stopped('No backup image, and nothing has been deployed. --no-backup deploys without it.');
-    }
-  }
+  if (configured !== published.image) plan(`backup image -> ${published.image} (pulled by Cloudflare; no Docker here)`);
+  return published.image;
 }
 
 async function ensureWorkersSubdomain() {
@@ -1025,7 +959,7 @@ text = text
     // 容器已经写在那儿却无处可指:把它取出来,否则部署会栽在它上面。
     // 改不动就明说 —— 宁可不改,也不能改坏。
     const without = withoutBackupContainer(text);
-    if (without) { text = without; plan('backup container removed (no image, and none could be built)'); }
+    if (without) { text = without; plan('backup container removed (no image to point it at)'); }
     else {
       die('this configuration carries a backup container with no image, and it could not be\n'
         + '  removed automatically. Deploying it fails inside the container rollout, with an error\n'
@@ -1037,7 +971,7 @@ text = text
         + '  Everything else then works; the Backup tab says the backup is unavailable.');
     }
   } else {
-    skip('backup container: not configured (Docker builds it -- see "Backups" in the README)');
+    skip('backup container: not configured (see "Backups" in the README)');
   }
   const v1 = withVar(text, 'CF_ACCOUNT_ID', accountId);
   const v2 = v1 && withVar(v1, 'CF_D1_DATABASE_ID', databaseId);
