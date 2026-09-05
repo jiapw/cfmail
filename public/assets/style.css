@@ -34,6 +34,24 @@ html, body { overscroll-behavior: none; }
    开了 viewport-fit=cover 后,带刘海的手机横过来视口直抵两边;这两行让文档流里的内容躲开
    两只耳朵,而背景铺满。其它任何地方这两个值都是零。fixed 浮层不吃这份内边距,各自另带。 */
 html { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+/* The top inset is zero everywhere this app is meant to run -- the status bar is opaque and the
+   page starts below it. It is honoured anyway, and the full-height shells below subtract it,
+   for the one case where it is not zero: iOS, after the native video player is dismissed, may
+   hand the page back extending under the status bar and report the overlap here. Then the
+   content steps down out of it instead of hiding under the clock.
+   顶部内边距在这个应用该跑的每个地方都是零 —— 状态栏不透明,页面从它下面开始。
+   但仍然照收,下面那些占满整屏的外壳也照减,只为那一种不为零的情形:iOS 在原生视频播放器
+   收起之后,可能把页面交还成伸到状态栏底下的样子,并在这里报出重叠的高度。
+   那时内容会退下来让开,而不是藏在时钟下面。 */
+:root { --sat: env(safe-area-inset-top, 0px); }
+html { padding-top: var(--sat); }
+/* A component that is not yet defined is not drawn: without this an undefined <wa-button> is a
+   run of bare text for a frame, before its definition arrives and gives it a shape. The common
+   ones are defined before anything is drawn (see index.html); this catches the rest.
+   尚未定义的组件不画:不加这条,一个未定义的 <wa-button> 会先以一串光秃秃的文字出现一帧,
+   等定义到了才有形状。常用的几种在画任何东西之前就已定义(见 index.html);这条兜住其余的。 */
+wa-button:not(:defined), wa-select:not(:defined), wa-dropdown:not(:defined), wa-switch:not(:defined),
+wa-checkbox:not(:defined), wa-dialog:not(:defined), wa-spinner:not(:defined), wa-icon:not(:defined) { visibility: hidden; }
 @media (hover: none) {
   html { touch-action: pan-x pan-y; }
   .row, .drv-row, .drv-card, .side-item, .drv-nav-item, .list-toolbar, .topbar, .tabs {
@@ -90,7 +108,7 @@ a { color: var(--link); text-decoration: none; }
   flex: 1; margin: auto; min-height: 160px;
 }
 /* The app's first frame belongs to the company, so it fills the viewport / 应用的第一帧属于企业,占满视口 */
-.boot-loading { min-height: 100vh; min-height: 100dvh; }
+.boot-loading { min-height: calc(100vh - var(--sat)); min-height: calc(100dvh - var(--sat)); }
 /* Spinner above the word for a list, below the lockup for the boot screen: in both, the moving
    part sits between the reader and what they are waiting for.
    列表里动画在文字之上,启动屏里在品牌组合之下:两处都让"动着的那个"处在
@@ -196,7 +214,7 @@ select.enc-sel option { background: var(--panel); color: var(--text); }
 }
 
 /* ---------- 顶栏 ---------- */
-.shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+.shell { display: flex; flex-direction: column; height: calc(100vh - var(--sat)); height: calc(100dvh - var(--sat)); }
 /* 上留白比下多 8px:下方还有"写邮件"按钮自己的 margin,这样两侧看起来才一样宽 */
 .topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px 6px; height: 60px; flex: none; }
 .logo { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 20px; margin-right: 24px; user-select: none; }
@@ -732,7 +750,7 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 }
 
 /* ---------- 登录/邀请 ---------- */
-.auth-wrap { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+.auth-wrap { min-height: calc(100vh - var(--sat)); min-height: calc(100dvh - var(--sat)); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
 .auth-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 24px;
   width: min(420px, 100%); padding: 40px 40px 32px;
@@ -753,7 +771,7 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
 }
 
 /* ---------- 独立页面(设置/管理) ---------- */
-.page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.page { min-height: calc(100vh - var(--sat)); min-height: calc(100dvh - var(--sat)); display: flex; flex-direction: column; }
 .page-head {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
@@ -1291,16 +1309,31 @@ html[data-webawesome].wa-dark {
 }
 .actas-bar wa-button::part(base):hover { background: color-mix(in srgb, #000 30%, transparent); }
 body.impersonating { padding-top: 34px; }
-body.impersonating .shell { height: calc(100vh - 34px); height: calc(100dvh - 34px); }
-body.impersonating .chat-shell { height: calc(100vh - 34px); height: calc(100dvh - 34px); }
+body.impersonating .shell { height: calc(100vh - 34px - var(--sat)); height: calc(100dvh - 34px - var(--sat)); }
+body.impersonating .chat-shell { height: calc(100vh - 34px - var(--sat)); height: calc(100dvh - 34px - var(--sat)); }
 body.impersonating .page,
 body.impersonating .auth-wrap,
-body.impersonating .boot-loading { min-height: calc(100vh - 34px); min-height: calc(100dvh - 34px); }
+body.impersonating .boot-loading { min-height: calc(100vh - 34px - var(--sat)); min-height: calc(100dvh - 34px - var(--sat)); }
 @media (max-width: 900px) {
   body.impersonating .sidebar { top: 94px; }
 }
 
 /* ---------- 备份:三级包的并列清单 ---------- */
+/* The console's Models page: the prompt box, its inputs, and the try-it output
+   后台「大模型」页:提示词框、输入框、试一试的输出 */
+.llm-prompt, .llm-in {
+  border: 1px solid var(--border-2); border-radius: 8px; box-sizing: border-box;
+  font: inherit; font-size: 13.5px; outline: none; background: var(--panel); color: var(--text);
+}
+.llm-in { height: 34px; padding: 0 11px; }
+.llm-prompt { width: 100%; padding: 8px 11px; line-height: 1.5; resize: vertical; font-family: var(--font-code), ui-monospace, Consolas, monospace; font-size: 13px; }
+.llm-prompt:focus, .llm-in:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--accent-soft); }
+.llm-out {
+  margin: 12px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--hover);
+  font-family: var(--font-code), ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word; max-width: 760px;
+}
+
 .bk-cols { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
 .bk-col { min-width: 250px; flex: 1; }
 /* Each archive tier gets a real heading. These wore the sidebar's whisper-small title before,

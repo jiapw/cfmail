@@ -14,8 +14,8 @@ MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
 
 ## What you get / 功能
 
-Two peer subsystems behind one sign-in and one nav bar: **Mail** and **Drive**.
-一次登录、一条导航栏,后面是两个平级的子系统:**邮件**和**网盘**。
+Three peer subsystems behind one sign-in and one nav bar: **Mail**, **Forms** and **Drive**.
+一次登录、一条导航栏,后面是三个平级的子系统:**邮件**、**表单**和**网盘**。
 
 ### Mail / 邮件
 
@@ -46,6 +46,23 @@ Two peer subsystems behind one sign-in and one nav bar: **Mail** and **Drive**.
   按所选内容生成链接:**内部**(需登录,可限定单一域名,只读或可编辑)或**公开**(无需账号,恒为只读)。可设过期、备注、随时撤销;内部链接还会列出哪些同事已加入,可逐个移除。
 - **Thumbnails for everything / 全类型缩略图** — images, video frames, PDF first pages and text files all get one, generated in the browser at upload time.
   图片、视频抽帧、PDF 首页、文本文件都有缩略图,上传时在浏览器里生成。
+
+### Forms / 表单
+
+- **Surveys and feedback sheets, answered by mail / 问卷与反馈表,答复以邮件送达** — design a form, hand out one permanent link, and every answer arrives in the inboxes you named as a message from the person who filled it in: their local time and time zone, the form version, their IP address with the country and city Cloudflare resolves it to, and every question with its answer. Nothing is stored anywhere else.
+  设计一份表单、发出一条永久链接,每份答复都以填写者的名义作为一封邮件送达你指定的收件箱:本地时间与时区、表单版本、IP 及 Cloudflare 解析出的国家和城市,以及每道题与答案。答复不另存于任何地方。
+- **Fourteen question types / 十四种题型** — short and long text, yes/no, single and multiple choice (each option with its own explanation), whole and decimal numbers, date, country, address, one or several files, one or several images. Every question can carry an explanation behind a **?** button.
+  单行/多行文本、是/否、单选/多选(每个选项可带解释)、整数/小数、日期、国家、地址、单个/多个文件、单张/多张图片。每道题都可以带一个点 **?** 展开的解释。
+- **Public or internal / 公开或内部** — a public form takes a name and an email address, optionally proven by a code at submit time; an internal form is for signed-in members and fills their address in for them.
+  公开表单填姓名和邮箱,可选在提交时用验证码证明地址;内部表单仅限登录成员,地址自动填入。
+- **Subject templates / 主题模板** — `{sender}`, `{email}`, `{form}`, `{version}` and the key of any short-answer question, so the inbox sorts itself.
+  主题可引用 `{sender}`、`{email}`、`{form}`、`{version}` 和任何短答题的标识,收件箱自然就分好了类。
+- **Where the answers go / 答复保存方式** — per form: mail only (nothing kept), keep in CFMail with a link in the mail, or keep and mail everything. Kept answers, files included, open from the form's own list for the designer and for whoever holds a recipient mailbox, and stay until deleted.
+  按表单选择:只发邮件(不保存)、保存在 CFMail 且邮件只带链接、或保存并把完整内容发邮件。保存的答复(含文件)由设计者和持有接收邮箱的人从表单列表打开,一直保留到删除。
+- **Multilingual by itself / 自动多语言** — tick the languages to offer; a Workers AI model translates your texts (which model and which prompt is set once, under Admin → Models), the fill page opens in the visitor's browser language and lets them switch, and links can pre-fill answers (`#/f/<token>?name=…&q1=…`).
+  勾选要提供的语言,由 Workers AI 模型翻译你的文本(用哪个模型、什么提示词在 后台 → 大模型 里统一设定);填写页按访问者浏览器语言打开、可切换;链接可带参数预填(`#/f/<token>?name=…&q1=…`)。
+- **Versions, on/off, permanent links / 版本、停用、永久链接** — every saved change bumps the version and the answer mail says which one it was written against; a disabled form shows a notice at the same link; deleting is the only thing that ends a link. The fill page opens in the designer's light/dark mode and the visitor can flip it.
+  每次保存改动都递增版本号,答复邮件写明对应版本;停用后同一链接显示停用提示;只有删除才会让链接失效。填写页默认跟随设计者的明暗模式,访问者可自行切换。
 
 ### Both / 两边共用
 

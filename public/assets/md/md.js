@@ -18,7 +18,8 @@ import { esc, icon, qs, toast, confirmDialog, fmtDateTime } from '../ui.js';
 import { store, setTitle } from '../app.js';
 import { openDoc, saveDoc, mergeDoc, draft, refreshThumb } from '../edit/session.js';
 import { encSelectHtml, pickEnc, confirmLossy, lossyText } from '../edit/codepage.js';
-import { joinPresentation, renderRoster } from '../edit/present.js';
+import { joinPresentation } from '../edit/present.js';
+import { attachPresentBar } from '../edit/prbar.js';
 import { attachInk } from '../edit/annot.js';
 import { attachMarks } from '../edit/mark.js';
 import { lerp, measure, scanBlocks, tagLines } from './anchor.js';
@@ -255,11 +256,6 @@ function shell() {
       <span class="md-dot" id="md-dot" title=""></span>
       <span id="md-enc"></span>
       <span class="md-sp"></span>
-      <span id="md-peers"></span>
-      <wa-button class="icon pr-hide" appearance="plain" id="md-pen" aria-label="${esc(t('pr_pen'))}"
-        title="${esc(t('pr_pen'))}">${icon('pencil', 18)}</wa-button>
-      <wa-button class="icon pr-hide" appearance="plain" id="md-rect" aria-label="${esc(t('pr_rect'))}"
-        title="${esc(t('pr_rect'))}">${icon('select', 18)}</wa-button>
       <wa-button class="icon" appearance="plain" id="md-otoggle" aria-label="${esc(t('md_outline'))}"
         title="${esc(t('md_outline'))}">${icon('outline', 18)}</wa-button>
       <wa-button class="icon" appearance="plain" id="md-wtoggle" aria-label="${esc(t('md_wrap'))}"
@@ -269,8 +265,6 @@ function shell() {
         <button data-mode="split">${esc(t('md_mode_split'))}</button>
         <button data-mode="view">${esc(t('md_mode_view'))}</button>
       </div>
-      <wa-button size="small" appearance="outlined" class="pr-hide" id="md-claim">${esc(t('pr_claim'))}</wa-button>
-      <wa-button size="small" appearance="outlined" class="pr-hide" id="md-solo">${esc(t('pr_solo'))}</wa-button>
       <wa-button size="small" variant="brand" id="md-save">${esc(t('md_save'))}</wa-button>
     </div>
     <div class="md-body" id="md-body">
@@ -282,7 +276,6 @@ function shell() {
         </div>
         <div class="md-gutter" id="md-gutter"></div>
         <div class="md-viewpane"><article class="md-doc" id="md-doc"></article></div>
-        <button type="button" class="pr-back" id="md-back">${icon('eye', 15)}${esc(t('pr_back'))}</button>
       </div>
     </div>
   </div>`;
@@ -362,12 +355,6 @@ function saveDraft() {
 
 async function doSave() {
   if (!md || md.saving) return;
-  // A watcher's copy is being written by somebody else keystroke by keystroke; saving it would
-  // write their half-finished sentence to the file under their name. The button is already
-  // disabled -- this is for the keyboard shortcut, which does not know about buttons.
-  // 旁观者手上那份正被别人一个键一个键地改写;保存它,等于把别人写了一半的句子
-  // 用他的名义写进文件。按钮已经禁用了 —— 这一条是为快捷键准备的,它不知道有按钮这回事。
-  if (pres && pres.state.live && pres.state.seat !== 'presenter') return;
   md.saving = true;
   try {
     let text = md.ta.value;
@@ -472,36 +459,20 @@ async function conflict() {
 
 // ---------- Presenting ----------
 // ---------- 演示 ----------
+//
+// Presenting is entered on purpose, from the file list's Present entry, and the address says so:
+// #/md/<id>/present. Plain editing carries none of this -- no room is joined, no bar appears,
+// and the editor is exactly the editor it was before presenting existed. Only the presenter's
+// side lives here at all: everybody watching is on the watcher surface, never in an editor.
+//
+// 演示是特意进入的 —— 从文件列表的「演示」入口 —— 而且地址会这么说:#/md/<id>/present。
+// 普通的编辑不带任何这些:不进房间、不出现浮动条,编辑器就是演示功能存在之前的那个编辑器。
+// 这里住的只有演示者这一侧:所有观看的人都在旁观界面上,从不在编辑器里。
 
 let pres = null;
 let inkLayer = null;
 let markLayer = null;
-
-/** A tab that deliberately does not join the room.
- *
- *  It exists for the second person with the right to edit. They arrive, find somebody already
- *  presenting, and are given the pen instead of the keyboard -- which is right for the meeting and
- *  wrong for them if what they actually wanted was to change something. This is the way out: the
- *  same document in a tab of its own, edited the way it has always been edited, saved the way it
- *  has always been saved, and merged on the way in if somebody got there first. Their original tab
- *  stays in the room, so the people in the call do not see them leave.
- *
- *  一个刻意不加入房间的标签页。
- *
- *  它是为"第二个有编辑权的人"存在的。他来了,发现已经有人在演示,于是拿到的是笔而不是键盘 ——
- *  这对会议是对的,而如果他真正想做的是改点东西,这对他就是错的。
- *  这就是那条出路:同一份文档,在它自己的标签页里,按它一直以来被编辑的方式编辑、
- *  按它一直以来被保存的方式保存,进来时若有人抢先,就照旧合并。
- *  他原来那个标签页还留在房间里,所以通话里的人不会看见他离开。 */
-const soloTab = () => {
-  try { return new URLSearchParams(location.search).get('solo') === '1'; } catch { return false; }
-};
-
-function openSolo() {
-  const u = new URL(location.href);
-  u.searchParams.set('solo', '1');
-  window.open(u.toString(), '_blank', 'noopener');
-}
+let presBar = null;
 
 /** How this editor is reached from the protocol. Every one of these is a thing md.js already knew
  *  how to do for its own two panes; presenting only asks the same questions from further away.
@@ -512,10 +483,6 @@ const presAdapter = {
   applyContent(text) {
     if (!md || md.ta.value === text) return;
     md.ta.value = text;
-    // The watcher is reading the rendered side, so the text landing in the box is only half of
-    // arriving. Scheduling rather than painting keeps a fast typist from repainting per keystroke.
-    // 旁观者读的是渲染出来的那一侧,所以文字落进框里只算到了一半。
-    // 用排期而不是直接重画,免得手快的人每敲一个键就重画一次。
     schedulePaint();
     saveDraft();
   },
@@ -532,18 +499,9 @@ const presAdapter = {
     }
     return srcLineForY(md.ta.scrollTop);
   },
-  scrollToAnchor(line) {
-    if (!md || typeof line !== 'number') return;
-    const view = qs('.md-viewpane');
-    // Borrow the flag the two panes already use on each other. Without it this scroll would look
-    // to syncFromView exactly like a person scrolling, and the two would push each other around.
-    // 借用两个面板本来就在彼此身上用的那个标志。没有它,这次滚动在 syncFromView 看来
-    // 与一个人在滚没有分别,于是两者会互相推搡。
-    syncing = true;
-    if (view && md.marks?.length) view.scrollTop = lerp(md.marks, 'line', 'top', line);
-    md.ta.scrollTop = srcYForLine(line);
-    releaseSync();
-  },
+  // The presenter is the one place scroll comes FROM; nobody scrolls a presenter.
+  // 演示者是滚动的来处;没有人去滚演示者。
+  scrollToAnchor() {},
 };
 
 const inkAdapter = {
@@ -552,68 +510,6 @@ const inkAdapter = {
   lineAt: (y) => (md?.marks?.length ? lerp(md.marks, 'top', 'line', y) : null),
   topOf: (line) => (md?.marks?.length ? lerp(md.marks, 'line', 'top', line) : 0),
 };
-
-/** Put the window into the shape the seat calls for. Called on every roster change, because a
- *  seat is not something this tab decides -- the presenter leaving makes a chair free, and
- *  somebody else arriving does not.
- *  把窗口摆成这个座位所要求的样子。每次名册变动都调用,因为座位不是这个标签页说了算的 ——
- *  演示者离开会空出一把椅子,而另一个人到来不会。 */
-function applySeat(st) {
-  const app = qs('.md-app');
-  if (!app || !md) return;
-  const room = st.live && st.peers.length > 1;
-  const watching = room && st.seat !== 'presenter';
-  app.classList.toggle('watching', watching);
-
-  // A watcher's box is not disabled, it is read-only: disabled text cannot be selected, and
-  // copying a line out of what somebody is presenting is a perfectly ordinary thing to want.
-  // 旁观者的框不是被禁用,而是只读:禁用的文本没法选中,
-  // 而从别人正在演示的东西里拷一行出来,是个再正常不过的需求。
-  md.ta.readOnly = watching;
-  const save = qs('#md-save');
-  if (save) save.disabled = watching;
-
-  renderRoster(qs('#md-peers'), st);
-  const back = qs('#md-back');
-  if (back) back.classList.toggle('on', watching && !st.following);
-
-  // The pen appears as soon as there is a room to draw into, not once somebody else is in it.
-  // Waiting for company would mean the one moment you cannot try the pen is before the meeting
-  // starts -- which is exactly when a person wants to find out how it behaves.
-  // 只要有房间可画,笔就出现,而不是等到房间里有了别人。
-  // 等人来,意味着"唯一不能试笔的时刻"恰好是会议开始之前 ——
-  // 而那正是一个人想弄明白它是怎么回事的时候。
-  const showInk = st.live && st.canInk;
-  const show = {
-    '#md-pen': showInk,
-    '#md-rect': showInk,
-    // Offered only when the chair is actually free. A button that would be refused is worse than
-    // no button: it says the thing is available when the room has already said it is not.
-    // 只在椅子真的空着时才提供。一个按下去会被拒绝的按钮,比没有这个按钮更糟 ——
-    // 它在说这件事可以做,而房间已经说过不可以。
-    '#md-claim': watching && st.canEdit && !st.presenter,
-    '#md-solo': watching && st.canEdit,
-    // With company in the room the text on screen is shared state, patched keystroke by
-    // keystroke; re-reading the bytes another way would fork it. The selector waits outside.
-    // 房间里有了别人,屏幕上的文本就是共享状态,一个键一个键地打补丁;
-    // 把字节按别的方式重读会让它分叉。选择器在场外等。
-    '#md-enc': !room,
-  };
-  for (const [sel, on] of Object.entries(show)) qs(sel)?.classList.toggle('pr-hide', !on);
-  if (!showInk && inkLayer) inkLayer.setTool(null);
-  paintInkButtons();
-
-  // Said once, when it becomes true. A person who opened a document they may edit and cannot
-  // needs to be told why, and told where the keyboard went.
-  // 在它成真的那一刻说一次。一个打开了自己有权编辑的文档、却编辑不了的人,
-  // 需要被告知为什么,以及键盘去哪儿了。
-  if (watching && st.canEdit && !applySeat.told) {
-    applySeat.told = true;
-    const lead = st.peers.find((p) => p.seat === 'presenter');
-    toast(t('pr_watch_mode', lead?.name || t('pr_guest')), true);
-  }
-  if (!watching) applySeat.told = false;
-}
 
 /** Show the document one of the three ways.
  *
@@ -634,58 +530,61 @@ function setMode(mode) {
   if (mode !== 'src') paint();
 }
 
-function paintInkButtons() {
-  const cur = inkLayer?.tool() || null;
-  qs('#md-pen')?.classList.toggle('on', cur === 'pen');
-  qs('#md-rect')?.classList.toggle('on', cur === 'rect');
-}
-
-function pickTool(k) {
-  if (!inkLayer) return;
-  const on = inkLayer.setTool(inkLayer.tool() === k ? null : k);
-  // The ink goes over the rendered document, so in source-only view there is nothing to draw on.
-  // Picking up a pen is a clear enough statement of intent to act on: show the thing it draws on.
-  // 墨水盖在渲染出来的文档上,所以纯源码视图里没有可画的东西。
-  // "拿起笔"这个意图已经足够明确,可以照做:把它要画的那样东西显示出来。
-  if (on && qs('.md-app')?.classList.contains('mode-src')) setMode('split');
-  paintInkButtons();
-}
-
-/** Join, and wire the three streams to the three places they belong.
- *  加入,并把三条流接到它们各自所属的三个地方。 */
+/** Start presenting this document. The chair is asked for, not assumed: somebody else may have
+ *  pressed Present a breath earlier, and first-come is the rule -- so if the chair is taken by
+ *  the time the room answers, this tab turns itself into a watcher and goes to the watcher's
+ *  surface, which is where watching is done.
+ *  开始演示这份文档。椅子是问来的,不是当然的:可能有人早一口气按了「演示」,
+ *  而规矩是先到先得 —— 所以等房间作答时椅子已被坐上的话,这个标签页就把自己变成旁观者,
+ *  去旁观该去的界面。 */
 async function startPresenting(id) {
-  if (soloTab()) return;
-  // No name is sent: a signed-in visitor is named by their account, and the room takes that name
-  // from the session rather than from anything this tab claims about itself.
-  // 不发名字:登录的访问者由他的账号命名,而房间从会话里取那个名字,
-  // 不从这个标签页对自己的任何声称里取。
-  const s = await joinPresentation({ id, adapter: presAdapter, version: store.brand?.version || '' });
-  // The editor may have been closed, or moved to another document, while the stylesheet was on
-  // its way. Joining a room for a document nobody is looking at would leave a socket open for a
-  // tab that has already gone.
-  // 样式表还在路上的时候,编辑器可能已经被关掉、或者已经换了另一份文档。
-  // 为一份没人在看的文档加入房间,会给一个已经离开的标签页留下一条开着的 socket。
+  const s = await joinPresentation({
+    id, lead: true, adapter: presAdapter, version: store.brand?.version || '',
+  });
   if (!md || md.id !== id) { s.leave(); return; }
   pres = s;
-  pres.on('state', applySeat);
-  // The file was written by whoever is presenting, so this tab's token is now stale. Nothing is
-  // done about it here: the next save will be refused and merged, which is the path that has
-  // always existed and is the one that handles it correctly.
-  // 文件被正在演示的那个人写下去了,于是这个标签页的令牌过期了。这里不做任何处理:
-  // 下一次保存会被拒绝、然后合并 —— 那条路一直都在,而且它处理得正确。
-  pres.on('saved', () => { if (pres?.state.seat !== 'presenter') toast(t('pr_saved_elsewhere')); });
   inkLayer = attachInk(pres, inkAdapter);
   markLayer = attachMarks(pres, { box: () => qs('#md-doc'), source: () => md?.ta });
+  presBar = attachPresentBar(pres, {
+    ink: inkLayer,
+    guestPath: 'watch',
+    onStop: stopPresenting,
+    // The ink goes over the rendered document; in source-only view there is nothing to draw on.
+    // Picking up a pen is a clear enough statement of intent to act on.
+    // 墨水盖在渲染出来的文档上;纯源码视图里没有可画的东西。
+    // "拿起笔"这个意图已经足够明确,可以照做。
+    onToolPicked: () => { if (qs('.md-app')?.classList.contains('mode-src')) setMode('split'); },
+  });
+  pres.on('state', (st) => {
+    if (!st.live) return;
+    // Beaten to the chair. Watching is done on the watcher surface, not in an editor whose whole
+    // posture is that its text is yours to change.
+    // 椅子被人抢先了。旁观去旁观的界面做 —— 编辑器整个姿态都是"这些文字归你改",
+    // 它不适合用来旁观。
+    if (st.seat !== 'presenter') {
+      toast(t('pr_taken'), true);
+      location.replace(`#/watch/${encodeURIComponent(id)}`);
+    }
+  });
 }
 
+/** Stop, and become a plain editor again. The address is rewritten without a navigation: the
+ *  router re-renders on hash changes, and stopping a presentation should not reload the document
+ *  under the person who was just presenting it.
+ *  停下,变回普通编辑器。地址改写但不导航:路由器在 hash 变化时会整个重画,
+ *  而结束一场演示,不该把文档在刚演示完它的人手底下重新加载一遍。 */
 function stopPresenting() {
+  presBar?.destroy();
+  presBar = null;
   markLayer?.destroy();
   markLayer = null;
   inkLayer?.destroy();
   inkLayer = null;
   pres?.leave();
   pres = null;
-  applySeat.told = false;
+  if (md?.id && location.hash.endsWith('/present')) {
+    history.replaceState(null, '', location.pathname + `#/md/${encodeURIComponent(md.id)}`);
+  }
 }
 
 // ---------- Loading ----------
@@ -736,7 +635,7 @@ async function load(id) {
 // ---------- Entry ----------
 // ---------- 入口 ----------
 
-export async function renderMdEditor(id) {
+export async function renderMdEditor(id, present) {
   // Nothing is painted until the stylesheet is here: the frame and the document are both styled
   // by it, so painting early shows the whole window unstyled for one round trip.
   // 样式表到齐之前什么都不画:框架与文档都由它来排,
@@ -786,22 +685,6 @@ export async function renderMdEditor(id) {
   setWrap(localStorage.getItem(WRAP_KEY) === '1');
   md.ta.addEventListener('scroll', syncFromSource, { passive: true });
   qs('.md-viewpane').addEventListener('scroll', syncFromView, { passive: true });
-  // Scrolling for yourself is how you say you want to look somewhere else, and it is the only
-  // way anybody says it. `syncing` is already true for every scroll this program caused, which
-  // is exactly the set of scrolls that must not count.
-  // 自己滚,就是在说"我想看别处",而且这是唯一的说法。
-  // 本程序引起的每一次滚动,`syncing` 都已经是真 —— 而那恰好就是不该算数的那一组滚动。
-  const unfollow = () => {
-    if (syncing || !pres) return;
-    if (pres.state.seat !== 'presenter' && pres.state.following) pres.follow(false);
-  };
-  md.ta.addEventListener('scroll', unfollow, { passive: true });
-  qs('.md-viewpane').addEventListener('scroll', unfollow, { passive: true });
-  qs('#md-back').addEventListener('click', () => pres?.follow(true));
-  qs('#md-pen').addEventListener('click', () => pickTool('pen'));
-  qs('#md-rect').addEventListener('click', () => pickTool('rect'));
-  qs('#md-claim').addEventListener('click', () => pres?.claim());
-  qs('#md-solo').addEventListener('click', openSolo);
   // A picture that arrives late moves everything under it, so what was measured before it landed
   // is no longer where things are.
   // 一张迟到的图片会把它底下的一切挪走,于是在它落地之前量出来的位置,已经不是东西所在的位置。
@@ -830,11 +713,14 @@ export async function renderMdEditor(id) {
     return;
   }
   applySplit();
-  // Joined only after the document is on screen. Joining first would mean answering a request for
-  // the whole text with an empty box, which is a worse answer than a moment of silence.
-  // 文档上了屏才加入。先加入意味着有可能拿一个空框去回答"整份文本"的请求 ——
-  // 那是个比沉默一会儿更糟的答案。
-  await startPresenting(id);
+  // Presenting is a way this editor can be OPENED, never something it slides into: only the
+  // Present entry appends the segment, and a plain #/md/<id> is an editor and nothing more.
+  // Joined only after the document is on screen -- joining first could mean answering a request
+  // for the whole text with an empty box.
+  // 演示是这个编辑器被"打开"的一种方式,绝不是它自己滑进去的一种状态:
+  // 只有「演示」入口会附上那个路径段,而普通的 #/md/<id> 就是编辑器,别无其他。
+  // 文档上了屏才加入 —— 先加入,可能拿一个空框去回答"整份文本"的请求。
+  if (present) await startPresenting(id);
 }
 
 function onKey(e) {

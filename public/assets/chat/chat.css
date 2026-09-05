@@ -2,8 +2,8 @@
 
 .chat-shell {
   display: flex;
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--sat, 0px));
+  height: calc(100dvh - var(--sat, 0px));
   background: var(--bg);
   overflow: hidden;
 }

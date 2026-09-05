@@ -55,6 +55,11 @@ html.wa-dark {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 12px; color: var(--text-2);
   max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* The presenter's ring is drawn as a box-shadow, which overflow:hidden clips at the box edge.
+     The padding buys the ring the 4px it extends past the dot on every clipped side.
+     演示者那个环是用 box-shadow 画的,而 overflow:hidden 会沿盒边把它裁掉。
+     这圈内边距,买回环在每个被裁的方向上超出色点的那 4px。 */
+  padding: 4px 2px 4px 5px;
 }
 .pr-peer.lead { color: var(--text); font-weight: 600; }
 /* Somebody with no pen gets no colour, and says so by being quiet rather than by being labelled.
@@ -117,6 +122,66 @@ html.wa-dark { --sel-wash: rgba(255, 197, 61, .26); }
   box-shadow: 0 0 0 4px var(--sel-wash);
 }
 
+/* ---------- The floating bar ---------- */
+/* ---------- 浮动条 ---------- */
+
+/* One bar over every surface a meeting happens on. Bottom-centre, where meeting controls live
+   everywhere else people meet; hidden entirely until there is a meeting to control.
+   一条,浮在会议发生的每一种界面之上。底部居中 —— 人们开会的其他地方,控制件都住在那儿;
+   在有会可控之前,整条都不存在于视野里。 */
+.pr-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  /* Above every surface a meeting floats over -- the editors (60) and the preview overlay (950)
+     alike -- and below the context menu (1000), which is transient and deserves the top.
+     压过会议所浮的每一种界面 —— 编辑器(60)与预览浮层(950)都在内 ——
+     让给右键菜单(1000):它转瞬即逝,配得上最上层。 */
+  z-index: 980;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .18);
+  max-width: min(92vw, 720px);
+}
+.pr-bar.on { display: inline-flex; }
+.pr-bar-peers { display: inline-flex; min-width: 0; }
+.pr-bar-sep { width: 1px; height: 18px; background: var(--border); flex: none; }
+.pr-bar .icon.on { color: var(--peer-lead); background: var(--hover); }
+.pr-bar-open { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.pr-bar-open input { accent-color: var(--primary); }
+.pr-bar-name { width: 9ch; }
+
+/* The invite link, shown above the bar when asked for. Absolute against the bar itself, so it
+   travels with it and never fights the surface underneath for layout.
+   邀请链接,要看时显示在条的上方。相对条本身绝对定位,随条而动,
+   绝不与下面的界面争布局。 */
+.pr-bar-pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 88vw);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .18);
+}
+.pr-bar-pop-row { display: flex; gap: 8px; }
+.pr-bar-pop-row input {
+  flex: 1; min-width: 0; font: inherit; font-size: 12.5px;
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text);
+}
+.pr-bar-pop-hint { margin: 7px 0 0; font-size: 12px; color: var(--text-3); }
+
 /* ---------- Controls ---------- */
 /* ---------- 控件 ---------- */
 
@@ -131,35 +196,6 @@ html.wa-dark { --sel-wash: rgba(255, 197, 61, .26); }
 /* The pen currently in hand. / 此刻拿在手上的那支笔。 */
 #md-pen.on, #md-rect.on { color: var(--peer-lead); background: var(--hover); }
 
-/* The way back when the document has moved somewhere you did not ask it to go. Sits over the
-   document rather than in the toolbar: it is about where you are looking, so it belongs where
-   you are looking.
-   当文档跑到了你没让它去的地方时,回来的那条路。它压在文档上而不是待在工具栏里:
-   它说的是"你在看哪儿"这件事,所以它属于你正在看的地方。 */
-/* The panes box is what "over the document" is measured against. Position only -- it changes
-   nothing about the flex layout inside it.
-   面板盒是"压在文档上"所参照的那个东西。只给定位 —— 它不改变里面 flex 布局的任何一点。 */
-.md-panes { position: relative; }
-
-.pr-back {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  z-index: 7;
-  display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, .16);
-}
-.pr-back.on { display: inline-flex; }
-.pr-back:hover { background: var(--hover); }
 
 /* A watcher's editor is not a broken editor -- it is one whose text is somebody else's to change.
    Dimming the source pane says that without a banner having to.

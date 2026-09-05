@@ -30,7 +30,8 @@
 
 /**
  * @param {object} o
- * @param {Element} o.root      the scrolling container / 滚动容器
+ * @param {Element|null} o.root the scrolling container, or null when the page itself scrolls and
+ *                              the window is the viewport / 滚动容器;页面自身滚动时传 null,视口即窗口
  * @param {Element[]} o.items   one element per page, in document order / 每页一个元素,按文档顺序
  * @param {(el: Element, i: number) => Promise<any>} o.render
  * @param {number} [o.margin]   how far outside the viewport still counts as worth building / 视口外多远仍值得构建
@@ -57,7 +58,7 @@ export function lazyPages({ root, items, render, margin = 600, concurrency = 2 }
    *  离视口中线最近、且尚未构建的那一页;射程内都建好了就返回 null。
    *  用二分法找,于是一份千页文档花十次测量而不是一千次。 */
   const pick = () => {
-    const r = root.getBoundingClientRect();
+    const r = root ? root.getBoundingClientRect() : { top: 0, height: window.innerHeight };
     const centre = r.top + r.height / 2;
     const limit = r.height / 2 + margin;
     let lo = 0;
@@ -107,17 +108,22 @@ export function lazyPages({ root, items, render, margin = 600, concurrency = 2 }
 
   // The observer is a nudge, not a record: it says "things moved, look again".
   // 观察器只是一记提醒,而不是一份记录:它说的是"有东西动了,再看一眼"。
-  const io = new IntersectionObserver(() => pump(), { root, rootMargin: `${margin}px` });
+  // A null root hands the observer the browser viewport, which is exactly what page-level
+  // scrolling means; the scroll events then come from the window for the same reason.
+  // root 为 null 时,观察器拿到的就是浏览器视口 —— 页面级滚动的意思正是如此;
+  // 同理,滚动事件这时来自窗口。
+  const io = new IntersectionObserver(() => pump(), { root: root || null, rootMargin: `${margin}px` });
   for (const el of items) io.observe(el);
   const onScroll = () => pump();
-  root.addEventListener('scroll', onScroll, { passive: true });
+  const st = root || window;
+  st.addEventListener('scroll', onScroll, { passive: true });
   pump();
 
   return {
     destroy() {
       dead = true;
       io.disconnect();
-      root.removeEventListener('scroll', onScroll);
+      st.removeEventListener('scroll', onScroll);
     },
   };
 }

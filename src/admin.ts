@@ -1,3 +1,4 @@
+import { llmAdminApp } from './llm';
 import { Hono } from 'hono';
 import PostalMime from 'postal-mime';
 import type { Env, User } from './types';
@@ -58,6 +59,10 @@ adminApp.route('/chat', chatAdminApp);
 // Drive settings (domain admins manage their own domains; scoping inside)
 // 网盘设置(域管理员可管自己的域,内部自查权限范围)
 adminApp.route('/drive', driveAdminApp);
+
+// Large-model settings for the one-off uses (form translation); global admins only, checked inside
+// 一次性用途(表单翻译)的大模型设置;仅全局管理员,内部自查
+adminApp.route('/llm', llmAdminApp);
 
 /** Invite links live on the matching company domain's entry host -- <entry>.<domain>, where the
  *  entry is whatever this deployment was given, read back out of APP_ORIGIN. Local development,

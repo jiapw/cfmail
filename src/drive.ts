@@ -185,12 +185,6 @@ interface Access {
    *  共享成员可见范围的顶点 —— 他们的一切操作都被圈在这棵子树里。 */
   shareRoot: string | null;
   chain: NodeRow[];
-  /** Whether some share along the way carries the meeting pen. It is not a level of access to the
-   *  file -- see migration 0035 -- so it rides beside `level` rather than inside it, and every
-   *  existing test of `level` goes on meaning exactly what it meant.
-   *  沿途是否有某条共享带着那支会议的笔。它不是对文件的权限档次(见 0035 迁移),
-   *  所以它与 level 并列而不住在里面 —— 现有每一处对 level 的判断,含义分毫未变。 */
-  meet: boolean;
 }
 
 /** Resolve what the current user may do with a node. Owners always pass (even in the trash);
@@ -203,7 +197,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   const chain = await chainOf(c.env, nodeId);
   if (!chain.length) throw new HttpError(404, 'e_drive_not_found');
   const node = chain[0];
-  if (node.owner_id === user.id) return { node, level: 'owner', shareRoot: null, chain, meet: true };
+  if (node.owner_id === user.id) return { node, level: 'owner', shareRoot: null, chain };
   if (need === 'owner') throw new HttpError(404, 'e_drive_not_found');
   if (chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
   const ids = chain.map((n) => n.id);
@@ -228,8 +222,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   // 单独一行写错也绝无可能发出写权限。
   const rows = await c.env.DB.prepare(
     `SELECT si.node_id,
-            CASE WHEN s.audience='public' THEN 'viewer' ELSE s.role END AS role,
-            s.meet AS meet
+            CASE WHEN s.audience='public' THEN 'viewer' ELSE s.role END AS role
        FROM drive_shares s
        JOIN drive_share_items si ON si.share_id = s.id
        JOIN drive_share_members m ON m.share_id = s.id
@@ -240,7 +233,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
           WHERE g.user_id=?1 AND mb.domain_id = s.domain_id))
        AND si.node_id IN (${ids.map((_, i) => '?' + (i + 3)).join(',')})`
   ).bind(user.id, now(), ...ids).all();
-  const hits = (rows.results || []) as { node_id: string; role: string; meet: number }[];
+  const hits = (rows.results || []) as { node_id: string; role: string }[];
   if (!hits.length) throw new HttpError(404, 'e_drive_not_found');
   const level = hits.some((h) => h.role === 'editor') ? 'editor' : 'viewer';
   if (need === 'edit' && level !== 'editor') throw new HttpError(403, 'e_drive_forbidden');
@@ -249,7 +242,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   const best = hits
     .filter((h) => level === 'viewer' || h.role === 'editor')
     .sort((a, b) => ids.indexOf(b.node_id) - ids.indexOf(a.node_id))[0];
-  return { node, level, shareRoot: best.node_id, chain, meet: hits.some((h) => !!h.meet) };
+  return { node, level, shareRoot: best.node_id, chain };
 }
 
 function cleanName(v: unknown): string {
@@ -1759,14 +1752,12 @@ driveApp.post('/shares', async (c) => {
   if (!ids.length || ids.length > SHARE_MAX_ITEMS) throw new HttpError(400, 'e_bad_request');
   const audience = SHARE_AUDIENCES.includes(body.audience) ? body.audience : 'internal';
   const role = audience === 'public' ? 'viewer' : (SHARE_ROLES.includes(body.role) ? body.role : 'viewer');
-  // The meeting pen, which a public link is allowed to carry. It looks like an exception to the
-  // rule above and is not: that rule is about writing the file, and this is about drawing on a
-  // screen for five seconds. The people who most need the pen are the ones in the call who were
-  // handed a link and no account, and withholding it from exactly them would leave it useful to
-  // nobody.
-  // 那支会议的笔,公开链接也可以带。它看着像是上面那条规则的例外,其实不是:
-  // 那条管的是写文件,这支管的是在屏幕上画五秒钟。最需要这支笔的,
-  // 正是通话里那些只拿到一条链接、没有账号的人 —— 偏偏不给他们,这支笔就对谁都没用了。
+  // Marks a link minted by the Present flow, so a second Present of the same file finds and
+  // reuses it instead of littering the owner's link list. It grants nothing: whether anyone may
+  // draw is the presenter's live decision, made inside the room.
+  // 标记一条由"演示"流程铸出的链接,好让同一文件的下一次演示找到并复用它,
+  // 而不是在所有者的链接列表里越积越多。它不授予任何东西:
+  // 谁能画,是演示者在房间里当场做的决定。
   const meet = body.meet ? 1 : 0;
   let domainId: string | null = null;
   if (audience === 'internal' && body.domain_id) {
@@ -1914,14 +1905,6 @@ driveApp.put('/shares/:id', async (c) => {
     if (s.audience === 'public' && body.role !== 'viewer') throw new HttpError(400, 'e_drive_share_public_readonly');
     sets.push(`role=?${sets.length + 1}`);
     args.push(body.role);
-  }
-  // The pen can be handed over or taken back without reissuing the link, because it says nothing
-  // about the file: a meeting ends, and the link that outlives it should stop carrying a pen.
-  // 那支笔可以随时交出或收回,无需重发链接 —— 因为它对文件什么也没说:
-  // 会议会结束,而活过会议的那条链接,不该继续带着一支笔。
-  if (body.meet !== undefined) {
-    sets.push(`meet=?${sets.length + 1}`);
-    args.push(body.meet ? 1 : 0);
   }
   // Same rule on update: a duration from the caller, an instant from this clock.
   // 更新时同理:调用方给时长,时刻由本机时钟决定。
@@ -2107,11 +2090,9 @@ drivePubApp.get('/:token', async (c) => {
   // 管理员或分享者事后改什么都不会动它 —— 想让一条已经发出去的链接不再显示地址,请撤销它。
   return c.json({
     role: 'viewer',
-    // Whether this link came with the meeting pen. The visitor's own page needs the answer in
-    // order to decide whether to offer a pen at all -- and the answer is asked again, of the
-    // server, before a single stroke reaches anybody.
-    // 这条链接是否带着那支会议的笔。访问者自己的页面需要这个答案,才知道要不要提供一支笔 ——
-    // 而在任何一笔真的到达别人之前,这个问题会再向服务端问一次。
+    // Whether this link was minted for a presentation. Purely descriptive: capabilities are
+    // decided in the room, not read off the link.
+    // 这条链接是否为一场演示而铸。纯描述:能做什么在房间里定,不从链接上读。
     meet: s.meet ? 1 : 0,
     note: s.note,
     expires_at: s.expires_at,
@@ -3309,7 +3290,14 @@ export interface PresentSeat {
   user: string;
   name: string;
   canEdit: boolean;
-  canInk: boolean;
+  /** May take the presenter's chair when it is empty. A statement about accountability, not
+   *  ability: presenting needs somebody signed in to hold responsible, so link holders may not.
+   *  Whether anyone may DRAW is not decided here at all -- the presenter opens and closes the
+   *  room's pens live, during the meeting.
+   *  能否在椅子空着时坐上去。这说的是可问责,不是能力:演示需要一个登了录、
+   *  可以被指认的人,所以持链接者不行。而"谁能画"根本不在这里决定 ——
+   *  演示者在会议进行中随时放开或收起这间房的笔。 */
+  lead: boolean;
   /** Nobody signed in, so the name is self-declared. The interface says so next to it: in a room
    *  where one name came from an account and another came from a text box, not marking which is
    *  which would be the more misleading of the two choices.
@@ -3339,10 +3327,10 @@ export async function presentSeat(c: any, nodeId: string, token: string, wantNam
       // Control characters would travel intact and land in somebody's roster as a broken line.
       // 控制字符会一路完好地抵达,然后以一行断掉的名册落在别人屏幕上。
       name: String(wantName || '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 32),
-      // A public link is read-only and stays read-only. The pen changes nothing about that.
-      // 公开链接只读,并且继续只读。那支笔不改变这一点分毫。
+      // A public link is read-only and stays read-only, and its holder never leads.
+      // 公开链接只读,并且继续只读;它的持有者也永远不做主持。
       canEdit: false,
-      canInk: !!s.meet,
+      lead: false,
       guest: true,
     };
   }
@@ -3355,7 +3343,7 @@ export async function presentSeat(c: any, nodeId: string, token: string, wantNam
     user: user.id,
     name: user.name || user.email || '',
     canEdit: writable,
-    canInk: writable || a.meet,
+    lead: true,
     guest: false,
   };
 }

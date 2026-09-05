@@ -18,7 +18,7 @@
 //
 // 除了布局之外这换来的是:每个平台上同一种行为,一个"把跳转变成 currentTime"的唯一地点,
 // 以及给这个应用真正拥有的那些控件留出的位置。
-import { icon, fmtSize } from '../ui.js';
+import { icon, fmtSize, settleAfterFullscreen } from '../ui.js';
 import { t } from '../i18n.js';
 
 const QUIET_AFTER = 2600;
@@ -285,6 +285,9 @@ export function mountPlayer(video, box, opts = {}) {
   // iPhone 上两种拼法的元素全屏都没有;它有的是视频自己的原生全屏 ——
   // 这套控件会丢,但片子放大了,而那才是这个按钮存在的目的。
   const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  // Shared with the full-window preview: see settleAfterFullscreen in ui.js.
+  // 与全窗预览共用:见 ui.js 的 settleAfterFullscreen。
+  const settle = settleAfterFullscreen;
   const fullscreen = () => {
     if (fsEl() === box) {
       (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
@@ -387,8 +390,11 @@ export function mountPlayer(video, box, opts = {}) {
     on(video, 'canplay', stallUp), on(video, 'stalled', stallUp),
     on(video, 'resize', place),
     on(box, 'mousemove', wake), on(box, 'mouseenter', wake),
-    on(document, 'fullscreenchange', () => { paint(); place(); wake(); }),
-    on(document, 'webkitfullscreenchange', () => { paint(); place(); wake(); }),
+    on(document, 'fullscreenchange', () => { paint(); place(); wake(); if (!fsEl()) settle(); }),
+    on(document, 'webkitfullscreenchange', () => { paint(); place(); wake(); if (!fsEl()) settle(); }),
+    // The iPhone's native player says goodbye on the video itself, not on the document
+    // iPhone 的原生播放器是在 video 元素上、而不是在 document 上道别的
+    on(video, 'webkitendfullscreen', settle),
     on(document, 'pointerdown', (e) => { if (!vol.contains(e.target)) openVol(false); }),
     on(window, 'resize', place),
   ];

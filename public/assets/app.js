@@ -105,6 +105,10 @@ function routeTitle(seg) {
     case 'settings': return t('settings');
     case 'admin': return t('admin');
     case 'chat': return t('c_title');
+    case 'forms': return t('fm_title');
+    // A fill page names itself once the form is loaded; nothing to say before that.
+    // 填写页等表单加载完自己起名;在那之前无话可说。
+    case 'f': return '';
     case 'drive': {
       const v = seg[1];
       if (!v || v === 'folder') return t('drv_my');
@@ -551,7 +555,7 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
   const brandName = store.brand?.name || 'CFMail';
   // The logo goes to this subsystem's own home, never to the other one
   // 品牌 logo 回本子系统的首页,不会跳到对方那边
-  const home = page === 'drive' ? '#/drive' : '#/';
+  const home = page === 'drive' ? '#/drive' : page === 'forms' ? '#/forms' : '#/';
   /**
    * Both subsystems are listed on both pages, so the pair reads as one switcher rather than
    * as "you are here, and there is a way out". A plain click switches in place; because these
@@ -567,7 +571,11 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
        ${current ? 'aria-current="page"' : ''}
        aria-label="${esc(label)}" title="${esc(label)}">${icon(ic, 20)}</wa-button>`;
   };
+  // Forms sit between mail and drive, and unlike drive they have no switch: every signed-in
+  // person may design one.
+  // 表单排在邮件与网盘之间;与网盘不同,它没有开关:每个登录的人都可以设计。
   const cross = entry('mail', '#/', t('mail_title'), 'mail')
+    + entry('forms', '#/forms', t('fm_title'), 'fileText')
     + (me.drive_enabled ? entry('drive', '#/drive', t('drv_title'), 'cloud') : '');
   // On a phone the bar keeps three things: the menu, the search, and the person. The brand and
   // the mail/drive switcher move into the account menu -- the .um-nav/.um-brand rows below,
@@ -600,6 +608,7 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
             <div><div class="um-name">${esc(me.user.name)}</div><div class="um-mail">${esc(me.user.email)}</div></div>
           </div>
           <wa-dropdown-item class="um-nav" value="mail">${icon('mail', 18)} ${esc(t('mail_title'))}</wa-dropdown-item>
+          <wa-dropdown-item class="um-nav" value="forms">${icon('fileText', 18)} ${esc(t('fm_title'))}</wa-dropdown-item>
           ${me.drive_enabled ? `<wa-dropdown-item class="um-nav" value="drive">${icon('cloud', 18)} ${esc(t('drv_title'))}</wa-dropdown-item>` : ''}
           <wa-dropdown-item value="settings">${icon('gear', 18)} ${esc(t('settings'))}</wa-dropdown-item>
           ${canAdmin ? `<wa-dropdown-item value="admin">${icon('shield', 18)} ${esc(t('admin'))}</wa-dropdown-item>` : ''}
@@ -637,7 +646,9 @@ const NARROW = '(max-width: 900px)';
  */
 export function syncSidebar() {
   const sheet = qs('.sidebar');
-  const rail = qs('.drv-nav');
+  // The forms page's rail is the drive's rail in every respect that matters here.
+  // 表单页的导轨,在这里要紧的每一点上都与网盘的导轨相同。
+  const rail = qs('.drv-nav, .fm-nav');
   // The Drive's rail is two different objects at two widths. On a tablet it is a 68px column of
   // icons that pushes the listing aside and covers nothing -- there it keeps its own state, read
   // back from the DOM, and arriving never closes it. On a phone the stylesheet floats it over
@@ -666,7 +677,7 @@ export function syncSidebar() {
 
 function setSidebar(hidden) {
   store.sidebarHidden = hidden;
-  qs('.drv-nav')?.classList.toggle('hidden', hidden);
+  qs('.drv-nav, .fm-nav')?.classList.toggle('hidden', hidden);
   syncSidebar();
 }
 
@@ -738,6 +749,7 @@ export function bindTopbar() {
   qs('#user-dd')?.addEventListener('wa-select', async (e) => {
     const v = e.detail?.item?.value;
     if (v === 'mail') navigate('#/');
+    else if (v === 'forms') navigate('#/forms');
     else if (v === 'drive') navigate('#/drive');
     else if (v === 'settings') navigate('#/settings');
     else if (v === 'admin') navigate('#/admin');
@@ -808,6 +820,14 @@ async function route() {
     const mod = await import('./drive/pub.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderPubShare(seg[1], seg.slice(2));
   }
+  // A form's fill page, likewise reachable without an account. The token may carry a query
+  // (#/f/<token>?name=...) that pre-fills answers; the module takes it apart itself.
+  // 表单的填写页,同样无需账号即可抵达。token 后面可以跟一段查询(#/f/<token>?name=...)
+  // 用来预填答案;由模块自己拆解。
+  if (seg[0] === 'f' && seg[1]) {
+    const mod = await import('./forms/fill.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderFill(seg.slice(1).join('/'));
+  }
 
   if (!store.me) await refreshMe();
   if (!store.me) {
@@ -822,6 +842,12 @@ async function route() {
     // 那是一张白页,不是一次失败的请求。
     const b = await api('GET', '/api/bootstrap').catch(() => null);
     if (b?.needs_setup) return renderSetup();
+    // A link to a kept form answer, followed while signed out, is worth coming back to after
+    // signing in; the sign-in page reads this note once and clears it.
+    // 登出状态下点开的、指向保留答复的链接,登录之后值得回去;登录页读一次这条记录即清。
+    if (/^#\/forms\/sub\//.test(location.hash)) {
+      try { sessionStorage.setItem('cf_after_login', location.hash); } catch {}
+    }
     return renderLogin();
   }
 
@@ -841,6 +867,12 @@ async function route() {
     const mod = await import('./chat/chat.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderChat(seg[1] || null);
   }
+  // Forms: the designer's side. No switch to check -- it is open to every signed-in person.
+  // 表单:设计者一侧。没有开关可查 —— 对每个登录的人开放。
+  if (seg[0] === 'forms') {
+    const mod = await import('./forms/forms.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderForms(seg.slice(1));
+  }
   // The Markdown editor is its own address rather than a state of the Drive, which is what lets
   // it be opened as a tab: a tab is a thing with a URL, and a document being edited is a thing you
   // want to be able to leave open, reload, and come back to.
@@ -849,7 +881,27 @@ async function route() {
   if (seg[0] === 'md' && seg[1]) {
     if (!store.me.drive_enabled) return navigate('#/');
     const mod = await import('./md/md.js?v=' + encodeURIComponent(store.brand?.version || ''));
-    return mod.renderMdEditor(seg[1]);
+    // The third segment turns the same editor into a presenting one. It is part of the address
+    // on purpose: a presenter who reloads is still presenting.
+    // 第三段路径让同一个编辑器变成"正在演示的"。特意放进地址里:
+    // 演示者刷新之后,仍然在演示。
+    return mod.renderMdEditor(seg[1], seg[2] === 'present');
+  }
+  // The watcher surface, through the drive's own door -- and, with the flag, the pure-present
+  // door for prose someone may only read.
+  // 旁观界面,走网盘自己的门 —— 带上标记,就是"只可读的散文"的纯演示之门。
+  if (seg[0] === 'watch' && seg[1]) {
+    if (!store.me.drive_enabled) return navigate('#/');
+    const mod = await import('./drive/watch.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderWatch('', seg[1], seg[2] === 'present');
+  }
+  // Any preview, given the whole window; with the flag, the place everything that is not prose
+  // is presented from.
+  // 任何预览,给它整扇窗;带上标记,就是一切"不是散文"的东西被演示的地方。
+  if (seg[0] === 'view' && seg[1]) {
+    if (!store.me.drive_enabled) return navigate('#/');
+    const mod = await import('./drive/fullview.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderFullView('', seg[1], seg[2] === 'present');
   }
   // Source, configuration, data and plain text -- everything that is text and is not prose.
   // 源码、配置、数据与纯文本 —— 一切"是文本、却不是散文"的东西。

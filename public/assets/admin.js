@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser } from './ui.js';
+import { esc, icon, qs, qsa, toast, fmtSize, fmtDateTime, confirmDialog, showModal, closeModal, copyText, CAP, needsBrowser, loadCss } from './ui.js';
 import { t } from './i18n.js';
 import { tabImport } from './admin-import.js';
 import { tabExport } from './admin-export.js';
@@ -7,6 +7,7 @@ import { store, navigate, show, applyTheme, applyFonts, refreshMe, setTitle } fr
 import { pickFont, ensureFont } from './fontpicker.js';
 import { roleName } from './auth.js';
 import { THEMES } from './themes-meta.js';
+import { tabLlm } from './admin-llm.js';
 
 /** The label this console is being served under -- the "mail" of mail.example.com, or whatever
  *  word the deployment chose. Read off the address bar rather than assumed, because assuming it
@@ -45,6 +46,7 @@ const TABS = () => [
   { key: 'export', name: t('a_export') },
   { sep: true },
   { key: 'ai', name: t('a_ai') },
+  { key: 'llm', name: t('a_llm'), globalOnly: true },
 ];
 
 export async function renderAdmin(tab) {
@@ -105,6 +107,7 @@ export async function renderAdmin(tab) {
     else if (tab === 'ai') await tabAI(body);
     else if (tab === 'drive') await tabDrive(body);
     else if (tab === 'backup') await tabBackup(body);
+    else if (tab === 'llm') await tabLlm(body);
   } catch (e) {
     body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
@@ -1245,12 +1248,7 @@ async function tabAI(body) {
   }
   // Needs the statistics styles from chat.css (with a version query to defeat a stale cache)
   // 需要 chat.css 里的统计样式(带版本号防旧缓存)
-  if (!qs('link[href^="/assets/chat/chat.css"]')) {
-    const l = document.createElement('link');
-    l.rel = 'stylesheet';
-    l.href = '/assets/chat/chat.css?v=' + encodeURIComponent(store.brand?.version || '');
-    document.head.appendChild(l);
-  }
+  await loadCss('/assets/chat/chat.css?v=' + encodeURIComponent(store.brand?.version || ''));
   const sel = currentDomainId(domains);
   const domOptions = domains
     .map((d) => `<option value="${esc(d.id)}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`)

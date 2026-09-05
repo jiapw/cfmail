@@ -81,7 +81,16 @@ export function renderLogin() {
     try {
       await api('POST', '/api/auth/login', payload);
       await refreshMe();
-      navigate('#/');
+      // A page that sent the visitor here to sign in (an internal form's fill page) gets them
+      // back. Read once and cleared, so a stale note cannot redirect a later, unrelated sign-in.
+      // 把访问者送来登录的那一页(内部表单的填写页)把他接回去。读一次即清,
+      // 免得一条过期的记录把之后某次无关的登录也带偏。
+      let back = '';
+      try { back = sessionStorage.getItem('cf_after_login') || ''; sessionStorage.removeItem('cf_after_login'); } catch {}
+      // Two kinds of page send people here: a form's fill page, and the link in an answer's
+      // mail to a kept answer. Anything else goes to the inbox.
+      // 两种页面会把人送来登录:表单的填写页,以及答复邮件里指向保留答复的链接。其余都回收件箱。
+      navigate(/^#\/(f|forms\/sub)\//.test(back) ? back : '#/');
     } catch (err) {
       cap?.reset();
       qs('#login-err').textContent = err.message;

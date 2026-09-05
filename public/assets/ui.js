@@ -441,6 +441,63 @@ export function cleanupSheet() {
  *  can stand in for it. One sentence, naming a browser that can -- an apology explains nothing.
  *  当有人伸手去够一样这个浏览器没有、而这里也没有东西能替它站的能力时说的话。
  *  一句话,并且点名一个够得着的浏览器 —— 道歉什么也说明不了。 */
+/**
+ * Put the page back where it belongs after fullscreen ends on an Apple device.
+ *
+ * iPhone and iPad alike, after their native or element fullscreen is dismissed, can hand the web
+ * view back sitting a status bar too high -- its top row under the clock and the battery. WebKit
+ * restores the page's frame and scroll asynchronously and, in a home-screen app especially, gets
+ * the offset wrong. Once it has settled, a scroll to the top and a one-frame change to the root's
+ * box make it re-place the page. Two passes, because the first often lands before WebKit has
+ * finished moving things. Harmless everywhere else: the document does not scroll, and a frame of
+ * an extra hundredth of a percent changes nothing visible.
+ *
+ * 苹果设备上全屏结束后,把页面放回它该在的位置。
+ *
+ * iPhone 与 iPad 一样,原生或元素全屏收起之后,WebView 交还回来时可能高出一个状态栏 ——
+ * 顶上一行被时间和电量盖住。WebKit 是异步恢复页面框架与滚动的,尤其在主屏应用里会把偏移算错。
+ * 等它稳定后,滚回顶部、再让根元素的盒子变一帧,它就会把页面重新摆好。做两遍,
+ * 因为第一遍常常落在 WebKit 还没搬完的时候。在别处无害:文档本就不滚,多百分之零点零一的一帧也看不出来。
+ */
+/**
+ * Load a stylesheet and say when it is in. A page drawn before its own stylesheet has arrived
+ * is laid out by the base styles alone -- a flash of the wrong shape, straightened the moment
+ * the file lands -- so a subsystem awaits this before its first paint. Asked twice for the same
+ * file, it answers with the same promise; an error or a stall resolves rather than rejects,
+ * since a page without its polish is better than no page.
+ * 加载一份样式表,并说出它何时就位。在自己的样式表到达之前画出的页面,只由基础样式排版 ——
+ * 闪一下错的形状,文件一到又摆正 —— 所以子系统在第一次绘制之前先等它。
+ * 同一个文件问两次,答的是同一个 promise;出错或迟迟不到也算兑现而不是拒绝,
+ * 因为没有修饰的页面好过没有页面。
+ */
+const cssLoads = new Map();
+export function loadCss(href) {
+  if (cssLoads.has(href)) return cssLoads.get(href);
+  const p = new Promise((resolve) => {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = href;
+    const done = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(done, 4000);
+    l.addEventListener('load', done, { once: true });
+    l.addEventListener('error', done, { once: true });
+    document.head.appendChild(l);
+  });
+  cssLoads.set(href, p);
+  return p;
+}
+
+export function settleAfterFullscreen() {
+  const nudge = () => {
+    window.scrollTo(0, 0);
+    const h = document.documentElement;
+    h.style.setProperty('min-height', '100.01%');
+    requestAnimationFrame(() => { h.style.removeProperty('min-height'); window.scrollTo(0, 0); });
+  };
+  requestAnimationFrame(nudge);
+  setTimeout(nudge, 400);
+}
+
 export function needsBrowser(msgKey = 'exp_unsupported') {
   toast(t(msgKey), true);
   return false;
