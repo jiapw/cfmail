@@ -448,7 +448,10 @@ export async function renderPreview(node, box, kind, inlineUrl) {
             : `transform:${turn}`;
           el.appendChild(img);
         };
-        const pager = lazyPages({ root: box.firstElementChild, items: shots, margin: 900, render: fill });
+        const pager = lazyPages({
+          root: document.body.classList.contains('fv-solo') ? null : box.firstElementChild,
+          items: shots, margin: 900, render: fill,
+        });
         urls.push({ revoke: () => pager.destroy() });
       }
       return { destroy };
@@ -499,7 +502,10 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       // that swept past are dropped and the one the reader stopped on is taken first.
       // 下一页建哪一页是一项决策,而不是一条队列:快速滚动中掠过的那些页被丢掉,
       // 读者停下来看的那一页最先被取。
-      const pager = lazyPages({ root: w, items: [...w.children], margin: 900, render: fill });
+      const pager = lazyPages({
+        root: document.body.classList.contains('fv-solo') ? null : w,
+        items: [...w.children], margin: 900, render: fill,
+      });
       urls.push({ revoke: () => pager.destroy() });
       return { destroy };
     }
@@ -539,7 +545,11 @@ export async function renderPreview(node, box, kind, inlineUrl) {
       }
       box.innerHTML = win('');
       const w = box.firstElementChild;
-      const width = Math.min(Math.max(320, (box.clientWidth || 900) - 110), 1700);
+      // Same rule as the PDF pages: in the full-window tab the drawing takes the whole width.
+      // 与 PDF 页同一条规矩:全窗标签页里,图占满整个宽度。
+      const width = document.body.classList.contains('fv-solo')
+        ? (box.clientWidth || 900)
+        : Math.min(Math.max(320, (box.clientWidth || 900) - 110), 1700);
       let drew = false;
       for (const page of pages) {
         const wrap = document.createElement('div');

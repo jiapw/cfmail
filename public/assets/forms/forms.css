@@ -1,0 +1,432 @@
+/* Forms: the designer's list and editor (.fm-page) and the public fill page (.fm-fill).
+   Everything follows the theme variables from themes.css; nothing here has a colour of its own.
+   表单:设计者的列表与编辑器(.fm-page),以及公开的填写页(.fm-fill)。
+   一切取 themes.css 的主题变量;这里没有任何自己的颜色。 */
+
+/* Icon and text on one centre line in every button of the designer and the fill page. Without
+   this the icon sits on the text baseline and rides a few pixels high of the words beside it --
+   the same fix the compose button carries in style.css, applied to every button here.
+   设计器与填写页里每个按钮的图标与文字都在同一条中线上。不加这条,图标坐在文字基线上,
+   会比旁边的字高出几个像素 —— 与 style.css 里写邮件按钮的那条修法相同,这里用到所有按钮上。 */
+.fm-page wa-button:not(.icon)::part(label), .fm-fill wa-button:not(.icon)::part(label) {
+  display: inline-flex; align-items: center; gap: 7px; line-height: 1;
+}
+.fm-page wa-button wa-icon, .fm-fill wa-button wa-icon { flex: none; }
+/* The number badge, the type select and the row's buttons share one centre line too
+   题号徽标、题型下拉和这一行的按钮也共一条中线 */
+.fm-qhead > * { align-self: center; }
+
+/* ---------- Shell ---------- */
+/* ---------- 外壳 ---------- */
+.fm-page { height: calc(100vh - var(--sat, 0px)); height: calc(100dvh - var(--sat, 0px)); }
+.fm-body { display: flex; flex: 1; min-height: 0; }
+
+/* The rail is the drive's rail: same widths, same phone behaviour. Kept as its own class so
+   this stylesheet does not have to load the drive's.
+   导轨就是网盘的导轨:同样的宽度、同样的手机行为。单列一个类,免得这份样式表要去加载网盘的。 */
+.fm-nav {
+  width: 256px; flex: none; padding: 0 8px 16px 8px;
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+.fm-nav.hidden { display: none; }
+.fm-new { width: fit-content; margin: 8px 8px 16px 4px; }
+.fm-nav-item {
+  display: flex; align-items: center; gap: 14px;
+  height: 36px; padding: 0 12px 0 14px; margin-right: 8px;
+  overflow: hidden; white-space: nowrap;
+  border-radius: 0 999px 999px 0; color: var(--text); text-decoration: none;
+  font-size: 14px; cursor: pointer; user-select: none;
+}
+.fm-nav-item:hover { background: var(--hover); }
+.fm-nav-item.active { background: var(--selected); color: var(--accent-text); font-weight: 600; }
+
+/* No top padding: the editor's action bar sticks to this container's content edge, and any
+   padding here would show as a slit above the bar with the page scrolling through it.
+   顶部不留内边距:编辑器的操作条贴的是这个容器的内容边缘,这里留多少,
+   条的上方就会漏出多宽的一条缝,页面从缝里滚过去。 */
+.fm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 0 24px 40px 8px; }
+.fm-main .loading { padding: 40px; }
+.fm-listhead { display: flex; align-items: baseline; gap: 10px; padding: 10px 8px 12px; }
+.fm-listhead h2 { margin: 0; font-size: 20px; font-weight: 500; }
+
+@media (max-width: 900px) {
+  .fm-nav { width: 68px; padding-left: 6px; }
+  .fm-nav-item .lbl, .fm-new span { display: none; }
+  .fm-nav-item { justify-content: center; padding: 10px; border-radius: 12px; }
+  .fm-main { padding: 0 12px 40px 8px; }
+}
+@media (max-width: 640px), ((hover: none) and (max-height: 500px)) {
+  .fm-nav {
+    position: fixed; left: env(safe-area-inset-left, 0px); top: 60px; bottom: 0; z-index: 150;
+    width: 256px; padding: 0 8px 16px 8px;
+    background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
+  }
+  body.impersonating .fm-nav { top: 94px; }
+  .fm-nav-item .lbl { display: block; }
+  .fm-new span { display: inline; }
+  .fm-nav-item { justify-content: flex-start; padding: 0 12px 0 14px; border-radius: 0 999px 999px 0; }
+  .fm-main { padding: 0 8px 40px; }
+}
+
+/* ---------- List ---------- */
+/* ---------- 列表 ---------- */
+.fm-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 6px 12px; }
+.fm-table td { vertical-align: middle; }
+.fm-t { color: var(--text); font-weight: 500; text-decoration: none; }
+.fm-t:hover { text-decoration: underline; }
+.fm-sub { margin-top: 2px; }
+.fm-acts { white-space: nowrap; text-align: right; }
+/* The count and the time of the last answer on one line, a breath apart
+   计数与最近一次答复的时间同行,中间留一口气 */
+.fm-subs-cell { white-space: nowrap; }
+.fm-subs-when { margin-left: 10px; }
+.fm-nowrap { white-space: nowrap; }
+.fm-acts wa-button { vertical-align: middle; }
+.fm-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 72px 24px; text-align: center; color: var(--text-2);
+}
+.fm-empty wa-icon { font-size: 48px; opacity: .5; }
+.fm-empty-t { font-size: 17px; color: var(--text); }
+.fm-listhead { align-items: center; }
+.fm-listhead .sp { flex: 1; }
+.fm-subj { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-more { display: flex; justify-content: center; padding: 14px; }
+
+/* ---------- One kept answer ---------- */
+/* ---------- 一份保留的答复 ---------- */
+.fm-subview { padding: 18px 22px; }
+.fm-submeta {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 20px;
+  font-size: 13px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.fm-submeta .k { color: var(--text-2); margin-right: 8px; }
+.fm-qa { width: 100%; border-collapse: collapse; font-size: 14px; }
+.fm-qa td { padding: 9px 10px; border-top: 1px solid var(--border); vertical-align: top; }
+.fm-qa td.q { width: 34%; color: var(--text-2); }
+.fm-ul { margin: 0; padding-left: 18px; }
+.fm-sfiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.fm-sfile {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); text-decoration: none; font-size: 13px;
+}
+.fm-sfile:hover { background: var(--hover); }
+.fm-sfile .nm { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-sfile.img { position: relative; height: auto; padding: 0; border: none; background: none; }
+.fm-sfile.img img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; display: block; background: var(--hover); }
+
+/* Three ways for the answers to go, side by side / 答复的三种去处,并排 */
+/* Two class names, because the audience row's own .fm-radios rule (1fr auto 1fr, centred) is
+   declared later in this file and would otherwise win.
+   写两层类名,因为受众行自己的 .fm-radios 规则(1fr auto 1fr、居中)声明在本文件更靠后处,否则会赢。 */
+.fm-radios.fm-radios-3 { grid-template-columns: 1fr 1fr 1fr; align-items: stretch; }
+.fm-radios-3 .fm-radio { box-sizing: border-box; }
+@media (max-width: 900px) { .fm-radios.fm-radios-3 { grid-template-columns: 1fr; } }
+
+/* ---------- Editor ---------- */
+/* ---------- 编辑器 ---------- */
+.fm-ed { max-width: 960px; margin: 0 auto; --wa-form-control-height: 34px; }
+.fm-edhead {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 4px 14px; position: sticky; top: 0; z-index: 5;
+  background: var(--bg);
+}
+.fm-edhead h2 { margin: 0; font-size: 20px; font-weight: 500; }
+.fm-edmeta { display: inline-flex; gap: 6px; }
+.sp { flex: 1; }
+/* Each section stands off the page: the raised surface (a step lighter than the panel in dark
+   mode), the stronger border, and a soft shadow. On the plain panel colour the sections in dark
+   mode all but vanished into the page.
+   每个栏目从页面上凸起来:抬高一档的表面色(暗色下比面板色亮一级)、更重的边框、一层浅影。
+   用普通面板色时,暗色模式下各栏目几乎融进页面里。 */
+.fm-ed .card {
+  padding: 18px 22px; background: var(--panel-2); border-color: var(--border-2);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 8%, transparent), 0 4px 14px color-mix(in srgb, #000 6%, transparent);
+}
+.fm-ed .card h3 { margin-bottom: 12px; }
+.fm-fld { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--text-2); margin-bottom: 12px; }
+.fm-fld > span { font-size: 13px; }
+.fm-fld small { font-size: 12px; }
+.fm-fld-short { max-width: 320px; }
+.fm-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 640px) { .fm-grid2 { grid-template-columns: 1fr; } }
+
+/* Native controls, sized like the settings page's */
+/* 原生控件,尺寸与设置页一致 */
+.fm-ed input:not([type=checkbox]):not([type=radio]), .fm-ed textarea, .fm-ed .fm-select,
+.fm-fill input:not([type=checkbox]):not([type=radio]):not([type=file]), .fm-fill textarea, .fm-fill .fm-select {
+  border: 1px solid var(--border-2); border-radius: 8px; padding: 0 11px; height: 36px; box-sizing: border-box;
+  font: inherit; font-size: 14px; outline: none; background: var(--panel); color: var(--text); width: 100%;
+  margin: 0;
+}
+.fm-ed textarea, .fm-fill textarea { height: auto; padding: 8px 11px; line-height: 1.45; resize: vertical; }
+.fm-ed input:focus, .fm-ed textarea:focus, .fm-ed .fm-select:focus,
+.fm-fill input:focus, .fm-fill textarea:focus, .fm-fill .fm-select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* Our own chevron, so the select can carry the same padding on both sides: the browser's arrow
+   sits hard against the right edge and no padding moves it. The glyph is drawn twice, once per
+   mode, because a data URI cannot take the text colour.
+   自己画下拉箭头,选择框两边才能有同样的内边距:浏览器自带的箭头紧贴右缘,内边距推不动它。
+   图形画两份、明暗各一,因为 data URI 拿不到文字色。 */
+/* Our own chevron, so a select can carry the same padding on both sides: the browser's arrow
+   sits hard against the right edge and no padding moves it. It is a bordered triangle on a
+   wrapper's pseudo-element rather than a background image -- an image cannot take the theme's
+   text colour, and a data-URI SVG's own fill was found to be ignored on the control.
+   自己画下拉箭头,选择框两边才能有同样的内边距:浏览器自带的箭头紧贴右缘,内边距推不动它。
+   用容器伪元素上的边框三角,而不是背景图 —— 图片拿不到主题的文字色,
+   而 data URI 里 SVG 自己的填充色在这个控件上实测被忽略。 */
+.fm-fill .fm-select, .fm-ed .fm-select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 34px;
+}
+.fm-selw { position: relative; display: block; }
+.fm-selw.inline { display: inline-block; }
+.fm-selw.inline .fm-select { width: auto; }
+.fm-selw::after {
+  content: ''; position: absolute; right: 13px; top: 50%; margin-top: -2px; pointer-events: none;
+  width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 5px solid var(--text-2);
+}
+.fm-select option { background: var(--panel); color: var(--text); }
+input.mono, .mono { font-family: var(--font-code), ui-monospace, Consolas, monospace; }
+
+.fm-check { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; color: var(--text); cursor: pointer; margin: 6px 0 12px; }
+.fm-check input { margin: 3px 0 0; accent-color: var(--primary); width: 16px; height: 16px; flex: none; }
+.fm-check small { display: block; }
+/* Internal, then public, then -- beside the card it belongs to, on its centre line -- the
+   verification checkbox. It keeps its column when it does not apply (internal chosen): hidden,
+   not removed, so choosing an audience never reflows the row.
+   内部、公开,然后 —— 挨着它所属的那张卡片、在其中线上 —— 是邮箱验证的复选框。
+   不适用时(选了内部)它仍占着那一列:隐藏而不移除,于是选受众从不让这一行重排。 */
+.fm-radios { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px 14px; align-items: center; margin-bottom: 12px; }
+/* Its own name: .fm-verify is the fill page's code panel, and shares nothing with this checkbox.
+   单独起名:.fm-verify 是填写页的验证码面板,与这个复选框毫无共通之处。 */
+.fm-verify-cb { margin: 0; max-width: 230px; align-self: center; }
+.fm-verify-cb.off { visibility: hidden; }
+.fm-verify-cb small { display: block; font-size: 12px; margin-top: 2px; }
+@media (max-width: 640px) {
+  .fm-radios { grid-template-columns: 1fr; }
+  .fm-verify-cb { order: 3; max-width: none; }
+}
+
+/* The recipients' completion list, under the field it completes
+   收件人补全列表,挂在它所补全的那个框下面 */
+.fm-ac-host { position: relative; }
+.fm-ac {
+  position: absolute; left: 0; right: 0; z-index: 20;
+  background: var(--panel); border: 1px solid var(--border-2); border-radius: 10px;
+  box-shadow: 0 6px 20px color-mix(in srgb, #000 16%, transparent); padding: 4px; margin-top: 4px;
+  max-height: 260px; overflow-y: auto;
+}
+.fm-ac[hidden] { display: none; }
+.fm-ac-it { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: 13.5px; }
+.fm-ac-it .ad { font-family: var(--font-code), ui-monospace, monospace; font-size: 12.5px; }
+.fm-ac-it:hover, .fm-ac-it.on { background: var(--selected); color: var(--accent-text); }
+.fm-radio {
+  display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 12px; cursor: pointer; font-size: 14px;
+}
+.fm-radio:has(input:checked) { border-color: var(--primary); background: var(--accent-soft); }
+.fm-radio input { margin: 3px 0 0; accent-color: var(--primary); flex: none; }
+.fm-radio b { display: block; font-weight: 500; }
+.fm-radio small { color: var(--text-2); font-size: 12.5px; }
+.fm-langs { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; }
+.fm-langcb { margin: 4px 0; }
+.fm-note { margin: 8px 0 0; font-size: 12.5px; }
+.fm-vars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.fm-var {
+  border: 1px solid var(--border); background: var(--hover); color: var(--text); border-radius: 999px;
+  padding: 3px 10px; font: inherit; font-size: 12.5px; font-family: var(--font-code), ui-monospace, monospace; cursor: pointer;
+}
+.fm-var:hover { background: var(--selected); }
+.fm-qshead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.fm-qshead h3 { margin: 0; }
+.fm-noq { padding: 20px; text-align: center; }
+/* The second "add question" menu, under the list, aligned with the one in the head
+   列表底下的第二个「添加题目」菜单,与头部那个对齐 */
+.fm-qs-foot { display: flex; justify-content: flex-end; }
+.fm-qs-foot:empty { display: none; }
+.fm-q { border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px 6px; margin-bottom: 12px; background: var(--bg); }
+.fm-qhead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fm-qn {
+  width: 26px; height: 26px; border-radius: 50%; background: var(--selected); color: var(--accent-text);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; flex: none;
+}
+.fm-ed .fm-qtype { width: auto; min-width: 180px; height: 32px; }
+.rot180 wa-icon, .rot180 svg { transform: rotate(180deg); }
+.fm-opts-ed { border-top: 1px dashed var(--border); padding-top: 10px; margin: 4px 0 10px; }
+.fm-opts-t { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.fm-opt-row { display: grid; grid-template-columns: 120px 1fr 1fr 32px; gap: 8px; align-items: center; margin-bottom: 8px; }
+@media (max-width: 640px) { .fm-opt-row { grid-template-columns: 1fr 1fr; } .fm-opt-row input[data-o=help] { grid-column: 1 / 3; } }
+
+/* ---------- Saving in progress ---------- */
+/* ---------- 保存进行中 ---------- */
+.fm-busy {
+  position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+}
+.fm-busy-card {
+  min-width: 300px; max-width: 420px; padding: 18px 22px; border-radius: 14px;
+  background: var(--panel-2); border: 1px solid var(--border-2);
+  box-shadow: 0 10px 40px color-mix(in srgb, #000 22%, transparent);
+}
+.fm-busy-head { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 500; }
+.fm-busy-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 13.5px; }
+.fm-busy-list:empty { display: none; }
+.fm-busy-row { display: flex; align-items: center; gap: 10px; }
+.fm-busy-row.pending { color: var(--text-3); }
+.fm-busy-mark { width: 18px; text-align: center; font-weight: 700; }
+.fm-busy-mark.ok { color: var(--wa-color-success-on-quiet); }
+.fm-busy-mark.bad { color: var(--wa-color-danger-on-quiet); }
+.fm-busy-hint { margin-top: 10px; font-size: 12px; }
+.fm-spin {
+  width: 22px; height: 22px; flex: none; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--primary);
+  animation: fm-spin .8s linear infinite;
+}
+.fm-spin.sm { width: 14px; height: 14px; border-width: 2px; margin: 0 2px; }
+@keyframes fm-spin { to { transform: rotate(360deg); } }
+
+/* ---------- Fill page ---------- */
+/* ---------- 填写页 ---------- */
+.fm-fill { min-height: calc(100vh - var(--sat, 0px)); min-height: calc(100dvh - var(--sat, 0px)); display: flex; flex-direction: column; align-items: center; padding: 0 16px 32px; box-sizing: border-box; }
+.fm-fill-top { width: min(760px, 100%); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 0 18px; }
+/* The lockup yields before the tools do: a long company name is clipped with an ellipsis, the
+   language switch and the mode button keep their size, and the two never overlap.
+   品牌组合先让步:过长的企业名以省略号截断,语言切换与明暗按钮保持尺寸,两者永不重叠。 */
+.fm-brand { font-size: 22px; min-width: 0; }
+.fm-brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-brand wa-icon { color: var(--primary); flex: none; }
+.fm-fill-tools { display: flex; align-items: center; gap: 8px; flex: none; }
+@media (max-width: 640px) { .fm-brand { font-size: 18px; } }
+.fm-fill .fm-langsel { width: auto; height: 34px; font-size: 13.5px; }
+.fm-card-w {
+  width: min(760px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
+  padding: 28px 32px 30px; box-sizing: border-box;
+}
+@media (max-width: 640px) { .fm-card-w { padding: 20px 18px 24px; } }
+.fm-kind { font-size: 12.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.fm-h1 { margin: 4px 0 8px; font-size: 26px; font-weight: 600; line-height: 1.25; }
+/* Half again the body size: the description is what the page says to the person before any
+   question does, and it is read at a distance the questions are not.
+   比正文大一半:说明是这一页在任何题目之前对人说的话,读它的距离和读题目不一样。 */
+.fm-desc { margin: 0 0 18px; color: var(--text-2); font-size: 21.75px; line-height: 1.5; }
+.fm-sender { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 2px; margin: 8px 0 18px; background: var(--bg); }
+.fm-sender-t { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.fm-field { padding: 14px 0; border-top: 1px solid var(--border); }
+.fm-field:first-of-type { border-top: none; }
+/* A short answer on the question's own line: the question takes a third, the control the rest,
+   and an opened explanation or an error runs the full width beneath.
+   短答案与题目同行:题目占三分之一,控件占其余;展开的解释或报错在下面通栏。 */
+.fm-field.inline { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; column-gap: 14px; align-items: center; }
+.fm-field.inline .fm-label { margin: 0; }
+.fm-field.inline .fm-help, .fm-field.inline .fm-err { grid-column: 1 / -1; }
+.fm-field.inline .fm-help { margin: 8px 0 0; }
+.fm-label { font-size: 15px; font-weight: 500; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fm-req { color: var(--wa-color-danger-on-quiet); margin-left: -2px; }
+.fm-help-btn {
+  width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border-2); background: transparent;
+  color: var(--text-2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fm-help-btn:hover { background: var(--hover); color: var(--text); }
+.fm-help { font-size: 13px; color: var(--text-2); background: var(--hover); border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; line-height: 1.5; }
+.fm-opts { display: flex; flex-direction: column; gap: 2px; }
+.fm-opt { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 14.5px; }
+.fm-opt:hover { background: var(--hover); }
+.fm-opt input { accent-color: var(--primary); width: 17px; height: 17px; margin: 0; flex: none; }
+/* Yes / no side by side: two words do not need a column each
+   是 / 否并排:两个词不必各占一行 */
+.fm-yn { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
+.fm-yn .fm-opt { padding-right: 16px; }
+.fm-opt span { flex: 1; }
+.fm-fill .fm-check { margin: 2px 0 0; font-size: 14.5px; align-items: center; }
+.fm-fill .fm-check input { margin: 0; width: 17px; height: 17px; }
+.fm-addr { display: flex; flex-direction: column; gap: 8px; }
+/* City, region, postal code and country on one line; two to a line on a narrow screen
+   城市、地区、邮编、国家同一行;窄屏一行两个 */
+.fm-addr-row { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 1.3fr; gap: 8px; }
+@media (max-width: 640px) { .fm-addr-row { grid-template-columns: 1fr 1fr; } }
+
+/* File questions: our own button, and the picked files as chips. One file sits on the button's
+   line; several stack below it.
+   文件题:自绘的按钮,选好的文件做成小条。单个文件与按钮同行;多个在按钮下面排开。 */
+.fm-filebox { display: flex; flex-direction: column; gap: 8px; }
+.fm-file-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Items hug their content -- a stacked list must not stretch each chip across the row. A plain
+   file's chip is exactly the button's height (32px) so the two read as one line; a picture's
+   chip is as tall as its thumbnail.
+   条目贴着自己的内容 —— 竖排的清单不能把每一条撑满整行。普通文件的条与按钮等高(32px),
+   两者读起来在同一条线上;图片的条随缩略图的高度。 */
+.fm-files { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.fm-files:empty { display: none; }
+.fm-files.inline { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Pictures flow like tiles and wrap where the row ends; only plain files stack.
+   图片像瓷砖一样横着排、到行尾自然折行;只有普通文件竖着排。 */
+.fm-files.wrap { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.fm-file {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; box-sizing: border-box;
+  height: 32px; padding: 0 4px 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 13px;
+}
+.fm-file wa-icon { color: var(--text-2); flex: none; }
+.fm-file .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.fm-file .sz { white-space: nowrap; }
+/* A picture tile: the thumbnail, its size printed on its foot, and the remove button beside it.
+   The thumbnail opens full-size on click.
+   图片瓷砖:缩略图、印在图脚上的大小、旁边的移除按钮。点缩略图看大图。 */
+/* The tile IS the thumbnail: the remove button sits on its top-right corner and the size on its
+   bottom-right, each on a translucent plate so they read on any picture.
+   瓷砖就是缩略图本身:移除按钮压在右上角、大小压在右下角,各自垫一块半透明底板,任何图片上都看得清。 */
+.fm-file.img { position: relative; height: auto; padding: 0; border: none; background: none; gap: 0; }
+.fm-thumbw { position: relative; width: 80px; height: 80px; flex: none; }
+.fm-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; display: block; background: var(--hover); cursor: zoom-in; }
+.fm-thumb-none { display: flex; align-items: center; justify-content: center; color: var(--text-2); cursor: default; border: 1px solid var(--border); box-sizing: border-box; }
+.fm-thumb-sz {
+  position: absolute; right: 4px; bottom: 4px; padding: 2px 5px; pointer-events: none;
+  font-size: 11px; line-height: 1.2; color: #fff; background: rgba(0, 0, 0, .78); border-radius: 4px;
+}
+/* The badge rides the picture's corner rather than sitting inside it: half on, half off, which
+   keeps it clear of the picture itself and out of the way of a small subject in the frame.
+   That overhang is 6px and the tiles are 8px apart, so it never reaches its neighbour.
+   角标骑在图片的角上,而不是待在图片里面:一半在上一半在外,既离开画面本身,
+   也不挡住取景框里靠边的小主体。外探 6px,而瓷砖之间隔 8px,所以够不着邻居。 */
+.fm-file.img .fm-file-x {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(0, 0, 0, .78); color: #fff; font-size: 15px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .22);
+}
+.fm-file.img .fm-file-x:hover { background: rgba(0, 0, 0, .92); color: #fff; }
+/* The picture at full size, over everything, until clicked away
+   全尺寸的图片,盖在一切之上,点一下即走 */
+.fm-lightbox {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .86); cursor: zoom-out; padding: 24px; box-sizing: border-box;
+}
+.fm-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+.fm-lightbox .cap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; color: #ddd; font-size: 13px; }
+/* A fixed 24px square, centred on the chip's axis. Sized explicitly because a native button
+   inherits a control height from the framework's reset that is taller than the chip itself.
+   固定 24px 见方,落在条目的中轴上。尺寸写死,因为原生按钮会从框架的重置样式继承一个比条目还高的控件高度。 */
+.fm-file-x {
+  border: none; background: none; color: var(--text-2); cursor: pointer; font: inherit; font-size: 16px; line-height: 1;
+  width: 24px; height: 24px; min-height: 0; padding: 0; margin: 0; border-radius: 5px; flex: none; align-self: center;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fm-file-x:hover { color: var(--text); background: var(--hover); }
+.fm-err { color: var(--wa-color-danger-on-quiet); font-size: 12.5px; margin-top: 6px; }
+.fm-field.invalid input, .fm-field.invalid textarea, .fm-field.invalid .fm-select,
+.fm-sender.invalid input { border-color: var(--wa-color-danger-on-quiet); }
+.fm-sender .fm-err { margin: 0 0 10px; }
+.fm-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); }
+.fm-actions wa-button::part(base) { min-width: 140px; }
+.fm-req-note { font-size: 12.5px; }
+.fm-verify { border: 1px solid var(--primary); background: var(--accent-soft); border-radius: 12px; padding: 14px 16px; margin-top: 18px; }
+.fm-verify-t { font-weight: 500; margin-bottom: 4px; }
+.fm-verify-p { margin: 0 0 10px; font-size: 13.5px; color: var(--text-2); }
+.fm-verify-row { display: flex; gap: 8px; }
+.fm-verify-row input { max-width: 180px; letter-spacing: .12em; font-family: var(--font-code), ui-monospace, monospace; }
+.fm-verify-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; }
+.fm-thanks, .fm-notice { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 36px 12px; }
+.fm-thanks wa-icon { color: var(--primary); font-size: 52px; }
+.fm-notice wa-icon { color: var(--text-2); font-size: 44px; opacity: .8; }
+.fm-thanks h2, .fm-notice h2 { margin: 4px 0 0; font-size: 22px; font-weight: 500; }
+.fm-thanks p, .fm-notice p { margin: 0 0 12px; color: var(--text-2); max-width: 460px; }
+.fm-foot { margin-top: 22px; color: var(--text-2); font-size: 12.5px; }

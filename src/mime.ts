@@ -61,6 +61,14 @@ export interface BuildMimeOptions {
   inlineImages?: MimeAttachment[];
   domain: string;       // 用于生成 Message-ID
   date?: Date;
+  /** Where a reply should go when that is not the From address -- a form filled in by an
+   *  outsider arrives "from" them, and answering it must reach them.
+   *  回信该去哪儿(当那不是 From 地址时)—— 外部人员填的表单以他的名义寄到,回复必须能找到他。 */
+  replyTo?: Addr[];
+  /** Extra top-level headers, X-* by convention. Names and values are written as given, so the
+   *  caller keeps them to printable ASCII.
+   *  额外的顶层头,按惯例是 X-*。名字与值按原样写出,由调用方保证只含可打印 ASCII。 */
+  headers?: Record<string, string>;
 }
 
 export interface BuiltMime {
@@ -126,6 +134,14 @@ export function buildMime(o: BuildMimeOptions): BuiltMime {
   head.push(`Message-ID: ${messageId}`);
   if (o.inReplyTo) head.push(`In-Reply-To: ${o.inReplyTo}`);
   if (o.references) head.push(`References: ${o.references}`);
+  if (o.replyTo && o.replyTo.length) head.push(`Reply-To: ${fmtAddrList(o.replyTo)}`);
+  for (const [k, v] of Object.entries(o.headers || {})) {
+    // A header is one line: anything that could start another is dropped rather than obeyed.
+    // 一个头只占一行:任何可能另起一行的字符一律丢弃,而不是照办。
+    const name = k.replace(/[^A-Za-z0-9-]/g, '');
+    const val = String(v).replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
+    if (name && val) head.push(`${name}: ${val}`);
+  }
   head.push('MIME-Version: 1.0');
   head.push('X-Mailer: cfmail');
 

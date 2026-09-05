@@ -169,7 +169,7 @@ const VIEW_MS = 100;
  *
  *  adapter 是这个文件在不知道对方是谁的情况下伸进编辑器的手:上面六件事。 */
 export async function joinPresentation(opts) {
-  const { id, share = '', name = '', adapter, version = '' } = opts || {};
+  const { id, share = '', name = '', lead = false, adapter, version = '' } = opts || {};
   await ensureCss(version);
 
   const st = {
@@ -177,6 +177,10 @@ export async function joinPresentation(opts) {
     seat: 'viewer',
     color: -1,
     canEdit: false,
+    canLead: false,
+    /** Whether the presenter has the room's pens out. Changes mid-meeting; canInk follows it.
+     *  演示者放没放开这间房的笔。会中随时会变;canInk 跟着它走。 */
+    inkOpen: false,
     canInk: false,
     me: '',
     peers: [],
@@ -209,6 +213,10 @@ export async function joinPresentation(opts) {
   let viewTimer = null;
   const handlers = { state: [], ink: [], saved: [], sel: [] };
 
+  /** The presenter always holds a pen; everybody else holds one while the presenter says so.
+   *  演示者手里始终有笔;其余人有笔,只在演示者说有的那段时间里。 */
+  const deriveInk = () => { st.canInk = st.seat === 'presenter' || st.inkOpen; };
+
   const fire = (k, v) => { for (const fn of handlers[k] || []) { try { fn(v); } catch { /* one listener must not stop the rest / 一个监听器不该拖住其余的 */ } } };
   const send = (m) => { if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(m)); } catch { /* going away / 正在离场 */ } } };
 
@@ -218,6 +226,7 @@ export async function joinPresentation(opts) {
     const q = new URLSearchParams();
     if (share) q.set('share', share);
     if (name) q.set('name', name);
+    if (lead) q.set('lead', '1');
     ws = new WebSocket(`${proto}//${location.host}/api/present/${encodeURIComponent(id)}/ws?${q}`);
 
     ws.onopen = () => { tries = 0; };
@@ -231,7 +240,9 @@ export async function joinPresentation(opts) {
           st.seat = m.you.seat;
           st.color = m.you.color;
           st.canEdit = !!m.you.canEdit;
-          st.canInk = !!m.you.canInk;
+          st.canLead = !!m.you.canLead;
+          st.inkOpen = !!m.ink_open;
+          deriveInk();
           st.peers = m.peers || [];
           st.presenter = m.presenter || null;
           st.live = true;
@@ -254,6 +265,7 @@ export async function joinPresentation(opts) {
         case 'seat':
           st.seat = m.seat;
           st.color = m.color;
+          deriveInk();
           if (st.seat === 'presenter') { sent = adapter.getContent(); synced = true; }
           fire('state', st);
           break;
@@ -299,6 +311,12 @@ export async function joinPresentation(opts) {
 
         case 'sel':
           if (st.seat !== 'presenter') fire('sel', m);
+          break;
+
+        case 'ink_open':
+          st.inkOpen = !!m.on;
+          deriveInk();
+          fire('state', st);
           break;
 
         case 'saved':
@@ -393,6 +411,9 @@ export async function joinPresentation(opts) {
     /** Say what part of the document is being talked about. Only the presenter is heard.
      *  说出正在谈论的是文档的哪一部分。只有演示者说得出声。 */
     sel(m) { if (st.seat === 'presenter') send({ t: 'sel', ...m }); },
+    /** Put the room's pens out, or away. The presenter's live decision, not anybody's setting.
+     *  放开这间房的笔,或收起来。这是演示者的临场决定,不是谁的设置项。 */
+    setInkOpen(on) { if (st.seat === 'presenter') send({ t: 'ink_open', on: !!on }); },
     follow(on) {
       st.following = !!on;
       fire('state', st);
@@ -421,10 +442,9 @@ export function renderRoster(box, st) {
   if (!st.live || !st.peers.length) { box.innerHTML = ''; return; }
   const bits = st.peers.map((p) => {
     const lead = p.seat === 'presenter';
-    const style = p.color >= 0 || lead ? ` style="--dot:${inkColour(p.seat, p.color)}"` : '';
     const who = p.peer === st.me ? t('pr_you') : (p.name || t('pr_guest'));
-    const what = lead ? t('pr_presenting') : p.seat === 'annotator' ? t('pr_can_draw') : t('pr_watching');
-    return `<span class="pr-peer${lead ? ' lead' : ''}${p.seat === 'viewer' ? ' mute' : ''}"${style}
+    const what = lead ? t('pr_presenting') : t('pr_watching');
+    return `<span class="pr-peer${lead ? ' lead' : ''}" style="--dot:${inkColour(p.seat, p.color)}"
       title="${esc(who)} — ${esc(what)}"><i class="pr-dot"></i>${esc(who)}</span>`;
   });
   box.innerHTML = `<span class="pr-row">${bits.join('')}</span>`;

@@ -6,7 +6,7 @@
    itself never grows a scrollbar that would poke into the preview overlay.
    把页面钉在视口高度。滚动全部发生在 .drv-scroll 内部,文档自身永远不长出滚动条,
    预览层打开时也就不会有一条页面滚动条戳在旁边。 */
-.drv-page { height: 100vh; height: 100dvh; }
+.drv-page { height: calc(100vh - var(--sat)); height: calc(100dvh - var(--sat)); }
 .drv-body { display: flex; flex: 1; min-height: 0; }
 
 /* ---------- Left rail ---------- */
@@ -1679,3 +1679,104 @@
   border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%;
   animation: drvspin .8s linear infinite; z-index: 6;
 }
+
+/* A preview with the window to itself (the #/view/ tab, see fullview.js).
+
+   Over a file list the overlay wears a frame: a veil for the page beneath, side padding for the
+   paging arrows, an inner window that does its own scrolling. In a tab of its own none of that
+   applies -- there is no beneath, no arrows, and the natural scrollbar is the WINDOW's. So here
+   the overlay becomes the page: the head pins to the window top, the document flows in normal
+   layout, and the page-level scrollbar carries it.
+
+   独占窗口的预览(#/view/ 标签页,见 fullview.js)。
+
+   浮在文件列表之上时,浮层穿着一圈外框:罩住底下页面的纱、两侧给翻页箭头的留白、
+   一扇自己滚动的内窗。在自己的标签页里这些都不成立 —— 没有"底下"、没有箭头,
+   而天然的滚动条是"窗口"的那一根。所以在这里,浮层就是页面:
+   顶栏钉在窗口顶部,文档按普通布局排下去,页面级滚动条承载它。 */
+body.fv-solo { overflow: auto; }
+body.fv-solo .drv-view { position: static; display: block; background: var(--bg); min-height: 100vh; }
+body.fv-solo .drv-view-head {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 12;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+body.fv-solo .drv-view-head wa-button::part(base) { color: var(--text); }
+body.fv-solo .drv-view-body { display: block; padding: 58px 0 0; }
+/* No plate. The document column takes the whole page width -- no 960px cap, no side gutters --
+   and the window inside it drops the card dress: no border, no rounding, no drop shadow on the
+   paper. What is left is the document itself, edge to edge, with the page scrolling under it.
+   没有底板。文档栏占满整页宽度 —— 没有 960px 的上限、没有两侧的沟 ——
+   它里面那扇窗也脱下卡片装:无边框、无圆角、纸面不再投影。
+   剩下的就是文档本身,一边到另一边,页面在它底下滚。 */
+body.fv-solo .drv-view-body .drv-doc { height: auto; min-height: 0; display: block; margin: 0; width: 100%; max-width: 100%; }
+body.fv-solo .drv-docc { display: block; }
+body.fv-solo .drv-docwin { border: none; border-radius: 0; }
+body.fv-solo .drv-sheet { border-radius: 0; box-shadow: none; margin: 0; }
+/* Width grips adjust a column that no longer exists here. / 宽度手柄调的那根栏,在这里已不存在。 */
+body.fv-solo .drv-rsz { display: none; }
+/* And the same undressing for every other renderer: slides and PDF pages lose the card look
+   (rounding, drop shadow), prose loses its reading-column cap. Full window means full window.
+   其余每个渲染器同样脱掉行头:幻灯片与 PDF 页去掉卡片装(圆角、投影),
+   散文去掉阅读栏的宽度上限。全窗就是全窗。 */
+body.fv-solo .drv-slide { border-radius: 0; box-shadow: none; }
+body.fv-solo .drv-pdf-page { border-radius: 0; box-shadow: none; }
+body.fv-solo .drv-pdf-page canvas { border-radius: 0; }
+body.fv-solo .drv-mdwin .md-doc { max-width: none; }
+/* The inner windows stop scrolling for themselves; the page does it for everything.
+   内窗不再各自滚动;整页替所有东西滚。 */
+body.fv-solo .drv-docwin { overflow: visible; }
+body.fv-solo .drv-gridwrap { overflow: visible; }
+/* Media centres itself in the flow instead of being flex-centred by a fixed box. DIRECT children
+   only: that is where a picture-file or film-file preview puts its element. Pictures INSIDE a
+   rendered document (a docx figure, a slide) are laid out by their renderer -- a docx image fills
+   an aspect-ratio box, and a blanket height:auto here is exactly what squashes it.
+   媒体在文档流里自己居中,而不是被一个定高的盒子 flex 居中。只限**直接子元素**:
+   图片文件、影片文件的预览就把元素放在那儿。而"文档里面"的图片(docx 插图、幻灯片)
+   由各自的渲染器排布 —— docx 的图片靠填满一个 aspect-ratio 盒子定形,
+   在这里一刀切的 height:auto,恰恰就是把它压扁的那只手。 */
+body.fv-solo .drv-view-body > img,
+body.fv-solo .drv-view-body > video { display: block; margin: 18px auto; max-width: min(100%, 96vw); height: auto; }
+
+/* Fullscreen inside the solo tab: the document alone on the screen. The head slides away and
+   peeks back at the top edge; pages -- where a document HAS pages -- each fit the screen whole,
+   and the arrow keys walk them.
+   独占标签页里的全屏:屏幕上只有文档。顶栏滑走,指针到顶缘再探出;
+   有"页"的文档,每一页整页适配屏幕,方向键逐页走。 */
+body.fv-fs .drv-view-head {
+  transform: translateY(-100%);
+  transition: transform .18s ease;
+}
+body.fv-fs.fv-peek .drv-view-head,
+body.fv-fs .drv-view-head:hover { transform: none; }
+body.fv-fs .drv-view-body { padding: 0; }
+
+/* One PDF page, one screen. The canvas is a replaced element with an intrinsic ratio, so the
+   two max constraints scale it without distortion; the holder's inline size from render time
+   is overruled -- inline style yields only to !important.
+   一页 PDF,一屏。canvas 是有固有比例的替换元素,两个 max 约束等比缩放不会变形;
+   占位时写下的行内尺寸在此作废 —— 行内样式只让位于 !important。 */
+body.fv-fs .drv-pdf-page {
+  width: auto !important; height: auto !important;
+  min-height: 100vh; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; box-shadow: none;
+}
+body.fv-fs .drv-pdf-page canvas { max-width: 100vw; max-height: 100vh; width: auto; height: auto; }
+
+/* One slide, one screen, by the deck's own ratio (--fs-sar, read off the first slide).
+   一张幻灯片,一屏,按这套片子自己的比例(--fs-sar,从第一张上读来)。 */
+body.fv-fs .drv-slidewrap {
+  margin: 0; height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+}
+body.fv-fs .drv-slide {
+  height: min(100vh, calc(100vw / var(--fs-sar, 1.7778)));
+  width: auto;
+}
+
+/* drawio pages: same replaced-element fit as PDF. / drawio 页:与 PDF 同一套替换元素适配。 */
+body.fv-fs .drv-canvaspage {
+  min-height: 100vh; margin: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+body.fv-fs .drv-canvaspage canvas { max-width: 100vw; max-height: 92vh; width: auto; height: auto; }

@@ -7,10 +7,10 @@ import { api } from '../api.js';
 import { t, tErr, lang } from '../i18n.js';
 import {
   esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
-  copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, isPhone, phoneSheet, asSheet, cleanupSheet,
+  copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, isPhone, phoneSheet, asSheet, cleanupSheet, loadCss,
 } from '../ui.js';
 import { bindTopbar, bindCollapsingTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle, syncSidebar } from '../app.js';
-import { arcSeed, dlUrl, DRIVE_CHANNEL, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
+import { arcSeed, dlUrl, DRIVE_CHANNEL, fsrc, isPub, setPreviewOpener, thumbUrl, useDriveSource, verUrl } from './fsrc.js';
 import { editorFor, editorHash, pdfEditorFor } from '../edit/kinds.js';
 import { hearing, verdict } from './remux.js';
 import { codeOf, cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
@@ -76,12 +76,10 @@ const dst = {
 // ---------- Entry ----------
 // ---------- 入口 ----------
 
+/** Resolves once the stylesheet is in; awaited before the first paint (see loadCss in ui.js).
+ *  样式表就位后兑现;第一次绘制之前先等它(见 ui.js 的 loadCss)。 */
 function ensureCss() {
-  if (qs('link[href^="/assets/drive/drive.css"]')) return;
-  const l = document.createElement('link');
-  l.rel = 'stylesheet';
-  l.href = '/assets/drive/drive.css?v=' + encodeURIComponent(store.brand?.version || '');
-  document.head.appendChild(l);
+  return loadCss('/assets/drive/drive.css?v=' + encodeURIComponent(store.brand?.version || ''));
 }
 
 export async function renderDrive(seg) {
@@ -91,7 +89,7 @@ export async function renderDrive(seg) {
   // 从这里起,读取走登录态那扇门。公开分享页把同一套机器指向 /api/pub/<token>,
   // 因此不论上一次跑的是哪个视图,进来时都要把它认领回来。
   useDriveSource();
-  ensureCss();
+  await ensureCss();
   closePreview(); // navigation never leaves a stray player behind / 路由变化不留悬空播放器
   if (seg[0] === 's' && seg[1]) return joinShare(seg[1]);
   dst.q = '';
@@ -1482,6 +1480,13 @@ function menuItems(nodes) {
         fn: () => window.open(`${location.pathname}${editorHash(editor, single.id)}`, '_blank', 'noopener'),
       });
     }
+    // Presenting: on purpose, from here, never a side effect of opening a file. Editable prose
+    // presents from its editor; everything else presents from the full-window preview.
+    // 演示:特意从这里进入,绝不是打开文件的副作用。可编辑的散文从它的编辑器演示;
+    // 其余一切从全窗预览演示。
+    if (single.kind === 'file') {
+      out.push({ ic: 'play', label: t('pr_present'), fn: () => startPresent(single, dst.access) });
+    }
     out.push({ ic: 'download', label: t('drv_download'), fn: () => downloadFiles([single]) });
     // The views that answer from everywhere at once owe you the address. In a folder you are
     // already standing in it, so the offer would be to go where you are.
@@ -2304,6 +2309,22 @@ const segDisable = (root, id, off) => qs('#' + id, root)?.classList.toggle('off'
  *  shares at once, so there is no longer one canonical link to edit.
  *  分享选中的任意内容 —— 单个文件、单个目录,或任意混装。对话框每次组一条新链接,
  *  而不是编辑某个节点"那条"链接:一个节点如今可同时存在于多条共享里,已无唯一可编辑的链接。 */
+/** Straight into presenting -- no dialog on the way. Which surface depends on the file: prose
+ *  someone may edit presents from its editor, prose they may only read presents from the watcher
+ *  surface, everything else from the full-window preview. The guest link is NOT minted here: it
+ *  is a button on the presenter's floating bar, minted the first time it is asked for.
+ *  直接开始演示 —— 路上没有对话框。用哪个界面取决于文件:可编辑的散文从它的编辑器演示,
+ *  只可读的散文从旁观界面演示,其余一切从全窗预览演示。访客链接不在这里铸:
+ *  它是演示者浮动条上的一个按钮,第一次被要到时才铸。 */
+function startPresent(node, access) {
+  const md = editorFor(node.name) === 'md';
+  const canEdit = access !== 'viewer';
+  const dest = md && canEdit ? `#/md/${encodeURIComponent(node.id)}/present`
+    : md ? `#/watch/${encodeURIComponent(node.id)}/present`
+    : `#/view/${encodeURIComponent(node.id)}/present`;
+  window.open(`${location.pathname}${dest}`, '_blank', 'noopener');
+}
+
 async function shareDialog(nodes) {
   const list = Array.isArray(nodes) ? nodes : [nodes];
   if (!list.length) return;
@@ -2378,11 +2399,6 @@ async function shareDialog(nodes) {
       </div>
     </div>
 
-    <div class="f" id="f-meet" style="margin-top:14px">
-      <wa-switch id="sh-meet">${esc(t('share_meet'))}</wa-switch>
-      <p class="drv-dim" style="margin:6px 0 0;font-size:12.5px">${esc(t('share_meet_hint'))}</p>
-    </div>
-
     <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
 
   // Public links are read-only, full stop: nobody is authenticated on the other end, so there
@@ -2420,11 +2436,6 @@ async function shareDialog(nodes) {
       nodes: list.map((n) => n.id),
       audience,
       role: audience === 'public' ? 'viewer' : segGet(d, 'sh-role'),
-      // The meeting pen, which is not a role and so is not forced to anything by the audience.
-      // A public link may carry it: drawing on a screen for five seconds is not writing a file.
-      // 那支会议的笔。它不是一种角色,所以不会被受众强制成任何值。
-      // 公开链接也可以带着它:在屏幕上画五秒钟,不是写一个文件。
-      meet: qs('#sh-meet', d)?.checked ? 1 : 0,
       domain_id: audience === 'internal' ? (qs('#sh-dom', d).value || null) : null,
       expires_days: parseInt(qs('#sh-exp', d).value, 10) || 0,
       // Carry the look along with the link. The palette is a company setting the public page can
@@ -2834,6 +2845,12 @@ const PVW_KEY = 'cf_drive_pvw';
 const pvwClamp = (w) => Math.max(480, Math.min(Math.round(w), innerWidth - 64));
 
 function applyPreviewWidth(doc) {
+  // The remembered width belongs to the popup, where the column is adjustable. In the
+  // full-window tab there is no column to adjust -- the document IS the page -- and an inline
+  // width remembered from some past drag would silently cap it under every stylesheet rule.
+  // 记住的宽度属于弹层:那里的栏是可调的。全窗标签页里没有可调的栏 —— 文档就是页面 ——
+  // 而某次过去拖拽记下的行内宽度,会压过所有样式表规则,悄悄把它箍住。
+  if (document.body.classList.contains('fv-solo')) return;
   const w = parseInt(localStorage.getItem(PVW_KEY) || '', 10);
   if (Number.isFinite(w) && w >= 480) doc.style.width = pvwClamp(w) + 'px';
 }
@@ -3013,7 +3030,14 @@ async function renderPdfPreview(node, box) {
       task.destroy().catch(() => {});
       return;
     }
-    const width = Math.min(Math.max(360, box.clientWidth - 60), 1800);
+    // Full-window tab: the page IS the column, so the raster width is the container's width --
+    // no side margin, no 1800px ceiling. The cap exists for the popup, where a page wider than
+    // the overlay would fight the paging arrows.
+    // 全窗标签页:页面就是那根栏,光栅宽度就取容器宽 —— 不留边、不设 1800px 顶。
+    // 那个上限是给弹层用的:在弹层里,比浮层还宽的页面会跟翻页箭头打架。
+    const width = document.body.classList.contains('fv-solo')
+      ? box.clientWidth
+      : Math.min(Math.max(360, box.clientWidth - 60), 1800);
     const p1 = await doc.getPage(1);
     const vp1 = p1.getViewport({ scale: 1 });
     const estH = Math.round((width * vp1.height) / vp1.width);
@@ -3086,7 +3110,13 @@ async function renderPdfPreview(node, box) {
     // 读者停下来看的那一页最先被取。
     const { lazyPages } = await import('./lazypage.js?v=' + encodeURIComponent(store.brand?.version || ''));
     if (pvPdf !== my || my.gen !== gen || !box.isConnected) return;
-    my.pager = lazyPages({ root: box, items: [...box.children], margin: 600, render: renderPage });
+    // In the solo tab the pages scroll with the WINDOW; the box has grown to the whole
+    // document's height, and measuring reach against it would put every page "in view" --
+    // which is the lazy loader building everything at once, i.e. not being lazy at all.
+    // 独占标签页里,页面随"窗口"滚动;box 已长到整份文档的高度,
+    // 拿它量射程会让每一页都"在视野里" —— 懒加载一口气全建,也就是根本不懒了。
+    const lazyRoot = document.body.classList.contains('fv-solo') ? null : box;
+    my.pager = lazyPages({ root: lazyRoot, items: [...box.children], margin: 600, render: renderPage });
   } catch {
     if (pvPdf === my && box.isConnected) {
       box.innerHTML = `<div class="noprev" style="margin-top:60px">${fileIcon(node.name, 72)}<div>${esc(t('drv_no_preview'))}</div></div>`;
@@ -3389,6 +3419,9 @@ function paintPvShell(n, body) {
       <span class="drv-pv-enc"></span>
       <span class="drv-dim" style="color:#aaa;font-size:12.5px">${fmtSize(vn.size)}</span>
       ${pvCanEditPdf(n) ? `<wa-button class="icon" appearance="plain" data-pdfedit aria-label="${esc(t('pdfe_open'))}">${icon('pencil', 20)}</wa-button>` : ''}
+      ${document.body.classList.contains('fv-solo')
+        ? `<wa-button class="icon" appearance="plain" data-fs aria-label="${esc(t('drv_pl_fullscreen'))}" title="${esc(t('drv_pl_fullscreen'))}">${icon('fullscreen', 20)}</wa-button>`
+        : `<wa-button class="icon" appearance="plain" data-pop aria-label="${esc(t('pr_popout'))}" title="${esc(t('pr_popout'))}">${icon('fullscreen', 20)}</wa-button>`}
       <wa-button class="icon" appearance="plain" data-dl aria-label="${esc(t('drv_download'))}">${icon('download', 20)}</wa-button>
     </div>
     ${pvVerPickHtml()}
@@ -3410,6 +3443,23 @@ function paintPvShell(n, body) {
     // 你正在看的就是你会拿到的 —— 这个按钮下载的是选中的那一版,而不是碰巧最新的那一版。
     else if (e.target.closest('[data-dl]')) downloadFile(n, pv?.verSel || '');
     else if (e.target.closest('[data-pdfedit]')) window.open(`${location.pathname}${editorHash('pdf', n.id)}`, '_blank', 'noopener');
+    // The same preview, given the whole window and an address of its own. Which door depends on
+    // which door this page itself came through.
+    // 同一个预览,给它整扇窗和一个自己的地址。走哪扇门,取决于本页自己是从哪扇门进来的。
+    // The solo tab is already a window of its own; the same button there goes one step further,
+    // to the actual screen. Toggled, because the way in should read as the way out.
+    // 独占标签页本来就是一扇自己的窗;同一个按钮在那里再进一步,直达真正的屏幕。
+    // 做成开关:进来的那条路,读起来就该是出去的那条。
+    else if (e.target.closest('[data-fs]')) {
+      if (document.fullscreenElement) document.exitFullscreen?.();
+      else document.documentElement.requestFullscreen?.();
+    }
+    else if (e.target.closest('[data-pop]')) {
+      const dest = fsrc.token
+        ? `#/p/${encodeURIComponent(fsrc.token)}/view/${encodeURIComponent(n.id)}`
+        : `#/view/${encodeURIComponent(n.id)}`;
+      window.open(`${location.pathname}${dest}`, '_blank', 'noopener');
+    }
     else if (vrow) pickVersion(vrow.dataset.ver);
     else if (e.target.closest('[data-nav]')) pvStep(parseInt(e.target.closest('[data-nav]').dataset.nav, 10));
     // A picture is left by clicking away from it, which is how every viewer works. A film is
@@ -3418,7 +3468,13 @@ function paintPvShell(n, body) {
     // 一张图片,靠"点开它旁边"来离开,所有看图的东西都是这么做的。一部片子不是:
     // 片子旁边那片空处,是人在两个小时的观看里搁手的地方,而那里一次无心的点击不该结束这部片子。
     // 出口是关闭按钮,以及 Escape。
-    else if (e.target === pv.el.querySelector('.drv-view-body')
+    // ...and none of that in a full-window tab, where the preview is not a popup floating over
+    // a list but the page itself. Clicking beside the document there is just clicking the page,
+    // and a page does not dismiss itself.
+    // …而在全窗标签页里这条完全不适用:那里的预览不是浮在列表上的弹层,它就是页面本身。
+    // 在那里点文档旁边,只是点了一下页面 —— 页面不会把自己关掉。
+    else if (!document.body.classList.contains('fv-solo')
+      && e.target === pv.el.querySelector('.drv-view-body')
       && !pv.el.querySelector('.drv-view-body video, .drv-view-body audio')) closePreview();
   };
 }

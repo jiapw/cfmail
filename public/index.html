@@ -42,6 +42,25 @@
   <script type="module">
     import { registerIconLibrary } from '/vendor/wa/webawesome.loader.js';
     import { iconDataUri } from '/assets/icons.js';
+    // The elements every shell is built from, defined before any shell is drawn. Left to the
+    // autoloader they arrive after the first paint: a bar of bare text and empty icons for a
+    // frame, then the real buttons -- the "flash" on every reload. Defined up front, the
+    // markup is created already upgraded and the first frame is the right one. These few
+    // fetch in parallel with the sign-in and bootstrap requests, so nothing waits on them.
+    // 每个外壳都由这几种元素组成,在画任何外壳之前先定义好。交给自动加载器的话它们在首帧之后才到:
+    // 先是一帧光秃秃的文字和空图标,然后才是真正的按钮 —— 每次刷新都闪的就是这个。
+    // 提前定义,标记一创建就是升级后的形态,首帧就是对的那一帧。这几个文件与登录、
+    // 引导请求并行取回,没有任何东西在等它们。
+    import '/vendor/wa/components/button/button.js';
+    import '/vendor/wa/components/icon/icon.js';
+    import '/vendor/wa/components/dropdown/dropdown.js';
+    import '/vendor/wa/components/dropdown-item/dropdown-item.js';
+    import '/vendor/wa/components/select/select.js';
+    import '/vendor/wa/components/option/option.js';
+    import '/vendor/wa/components/switch/switch.js';
+    import '/vendor/wa/components/checkbox/checkbox.js';
+    import '/vendor/wa/components/spinner/spinner.js';
+    import '/vendor/wa/components/toast/toast.js';
     registerIconLibrary('default', { resolver: (name) => iconDataUri(name) });
   </script>
 </head>

@@ -15,6 +15,7 @@ export type AuditAction =
   | 'domain.create' | 'domain.admin_add' | 'domain.admin_remove'
   | 'brand.update'
   | 'chat.settings'
+  | 'llm.settings'
   | 'drive.settings' | 'drive.quota' | 'drive.versioning'
   | 'mail.import' | 'mail.export'
   | 'backup.settings' | 'backup.run'

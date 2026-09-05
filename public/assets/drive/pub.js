@@ -18,18 +18,14 @@
 // 品牌组合、这条分享的条款,以及一个没有选择、没有菜单、无处可写的列表。
 
 import { t, tErr, setLang, dictReady } from '../i18n.js';
-import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon, toast } from '../ui.js';
+import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon, toast, loadCss } from '../ui.js';
 import { store, navigate, setTitle, pathTitle } from '../app.js';
 import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './fsrc.js';
 
-let cssDone = false;
+/** Resolves once the stylesheet is in; awaited before the first paint (see loadCss in ui.js).
+ *  样式表就位后兑现;第一次绘制之前先等它(见 ui.js 的 loadCss)。 */
 function ensureCss() {
-  if (cssDone) return;
-  cssDone = true;
-  const l = document.createElement('link');
-  l.rel = 'stylesheet';
-  l.href = '/assets/drive/drive.css?v=' + encodeURIComponent(store.brand?.version || '');
-  document.head.appendChild(l);
+  return loadCss('/assets/drive/drive.css?v=' + encodeURIComponent(store.brand?.version || ''));
 }
 
 const api = async (path) => {
@@ -48,14 +44,6 @@ const loadArc = () => import('./arc.js?v=' + v());
 const effSize = (n) => (n.kind === 'file' ? n.size || 0 : n.tree_bytes || 0);
 const extOf = (name) => (/\.([A-Za-z0-9]{1,12})$/.exec(String(name || '')) || ['', ''])[1].toLowerCase();
 const ARC_EXTS = new Set(['zip', 'jar', 'apk', 'epub', '7z']);
-const MD_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd']);
-/** The address of one document opened to be watched. A route of its own rather than a mode of
- *  the preview, for the same reason the editor is a tab rather than an overlay: it is somewhere
- *  you stay, and somewhere you should be able to send somebody straight to.
- *  一份"打开来看演示"的文档的地址。它是一条自己的路由,而不是预览的一种模式 ——
- *  与编辑器是标签页而不是浮层同一个理由:它是你会待下去的地方,
- *  也是应该能把人直接送到的地方。 */
-const watchHash = (token, id) => `#/p/${encodeURIComponent(token)}/watch/${encodeURIComponent(id)}`;
 const IMG_RE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/;
 
 // ---------- Look and feel ----------
@@ -282,7 +270,7 @@ function errorPage(app, head, e) {
 
 /** @param {string} token @param {string[]} rest path segments below the share root */
 export async function renderPubShare(token, rest) {
-  ensureCss();
+  await ensureCss();
   usePubSource(token);
   const app = qs('#app');
   const segs = rest || [];
@@ -306,7 +294,14 @@ export async function renderPubShare(token, rest) {
     if (segs[0] === 'watch' && segs[1]) {
       await applyShareLook(head);
       const mod = await import(`./watch.js?v=${v()}`);
-      return mod.renderPubWatch(token, segs[1], head);
+      return mod.renderPubWatch(token, segs[1]);
+    }
+    // The full-window preview, reached from a presentation link for anything that is not prose.
+    // 全窗预览 —— 一切"不是散文"的东西,其演示链接开到这里。
+    if (segs[0] === 'view' && segs[1]) {
+      await applyShareLook(head);
+      const mod = await import(`./fullview.js?v=${v()}`);
+      return mod.renderFullView(token, segs[1], false);
     }
     data = await api(`/api/pub/${encodeURIComponent(token)}/list${parent ? '?parent=' + encodeURIComponent(parent) : ''}`);
   } catch (e) {
@@ -349,11 +344,6 @@ export async function renderPubShare(token, rest) {
     // browser a /meta round-trip and gives it the breadcrumb it should show above the zip.
     // 压缩包像在网盘里一样以目录形式打开。种子省掉一次 /meta 往返,
     // 并把该显示在 zip 之上的面包屑交给它。
-    // A link made for a meeting opens its documents into the meeting. Without the pen the same
-    // file is just a file, and the preview -- which is what a reader wants from a file -- is right.
-    // 为一场会议而做的链接,把它的文档打开到那场会议里。没有那支笔,同一个文件就只是个文件,
-    // 而预览 —— 读者从一个文件那里想要的正是它 —— 才是对的。
-    if (head.meet && MD_EXTS.has(extOf(n.name))) return navigate(watchHash(token, n.id));
     if (ARC_EXTS.has(extOf(n.name))) {
       arcSeed.set(n.id, {
         name: n.name, size: n.size, access: 'viewer',

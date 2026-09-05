@@ -35,6 +35,15 @@ const FADE = 1200;
  *  "看着它长出来"正是它之所以是个手势的大半原因。 */
 const FLUSH_MS = 50;
 
+/** A host may be an ordinary scroll container, or the page itself (document.body) when the
+ *  surface scrolls at window level. The three differences -- where scrollTop lives, what size
+ *  the sheet is, and who emits scroll events -- are settled here so the rest never asks.
+ *  host 可以是普通滚动容器,也可以是页面本身(document.body)—— 当界面用窗口级滚动时。
+ *  三处不同 —— scrollTop 在哪、这张膜多大、滚动事件谁发 —— 都在这里定夺,其余代码不再过问。 */
+const isPage = (h) => h === document.body;
+const scrollTopOf = (h) => (isPage(h) ? (document.scrollingElement || document.documentElement).scrollTop : h.scrollTop);
+const scrollTarget = (h) => (isPage(h) ? window : h);
+
 /** Draw ink over an editor's rendered document.
  *
  *  `ink` is how this reaches into an editor without knowing which one it is:
@@ -59,7 +68,11 @@ export function attachInk(session, ink) {
   function fit() {
     const host = ink.host();
     if (!host || !canvas) return;
-    const r = host.getBoundingClientRect();
+    // The page host's "window onto the content" is the viewport itself.
+    // 页面宿主的"看向内容的窗口",就是视口本身。
+    const r = isPage(host)
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : host.getBoundingClientRect();
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     const w = Math.max(1, Math.round(r.width * dpr));
     const h = Math.max(1, Math.round(r.height * dpr));
@@ -71,7 +84,7 @@ export function attachInk(session, ink) {
     const cssH = Math.round(r.height);
     canvas.style.width = Math.round(r.width) + 'px';
     canvas.style.height = cssH + 'px';
-    canvas.style.marginBottom = -cssH + 'px';
+    canvas.style.marginBottom = isPage(host) ? '' : -cssH + 'px';
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -86,7 +99,7 @@ export function attachInk(session, ink) {
     const hr = host.getBoundingClientRect(), br = box.getBoundingClientRect();
     const bw = br.width || 1;
     return {
-      x: (br.left - hr.left) + s.a.x * bw,
+      x: (br.left - (isPage(host) ? 0 : hr.left)) + s.a.x * bw,
       // The line, plus however far past it the pen actually was.
       //
       // A line number alone cannot say "here" everywhere on the page. The map only knows where
@@ -105,7 +118,7 @@ export function attachInk(session, ink) {
       //
       // 带上剩下的那段距离既修好了它,又顺带买到另一样东西:
       // 笔迹钉在它所对着的那个块上,文档重排时跟着一起走。
-      y: ink.topOf(s.a.line) + (s.a.dy || 0) - host.scrollTop,
+      y: ink.topOf(s.a.line) + (s.a.dy || 0) - scrollTopOf(host),
       // The author's box may have been a different width from this one. Scaling by the ratio
       // keeps the shape of the gesture; it is the shape that carries the meaning.
       // 作者那边的盒子宽度可能与这边不同。按比例缩放,保住手势的形状 —— 承载意思的正是形状。
@@ -252,7 +265,7 @@ export function attachInk(session, ink) {
     const host = ink.host(), box = ink.box();
     if (!host || !box) return;
     const hr = host.getBoundingClientRect(), br = box.getBoundingClientRect();
-    const cyc = e.clientY - hr.top + host.scrollTop;
+    const cyc = e.clientY - hr.top + (isPage(host) ? 0 : host.scrollTop);
     const cxc = e.clientX - br.left;
     const line = ink.lineAt(cyc);
     if (line === null || line === undefined) return;
@@ -284,7 +297,7 @@ export function attachInk(session, ink) {
     // Content-space, so that a document scrolling under a moving pen does not bend the line.
     // 用内容坐标,于是"笔在动、文档在底下滚"不会把线画弯。
     const dx = (e.clientX - br.left) - sx;
-    const dy = (e.clientY - hr.top + host.scrollTop) - sy;
+    const dy = (e.clientY - hr.top + (isPage(host) ? 0 : host.scrollTop)) - sy;
     const pt = [Math.round(dx), Math.round(dy)];
     if (s.k === 'rect') s.pts = [pt];
     else s.pts.push(pt);
@@ -312,10 +325,17 @@ export function attachInk(session, ink) {
     canvas = document.createElement('canvas');
     canvas.className = 'pr-ink';
     cx = canvas.getContext('2d');
-    // First child, because a sticky element only holds still once the scroll has reached it --
-    // and this one has to hold still from the top of the document.
-    // 放在第一个,因为 sticky 元素要等滚动到达它才开始不动 —— 而这一张,从文档顶部起就得不动。
-    host.insertBefore(canvas, host.firstChild);
+    // A page host gets a viewport-fixed sheet; a container gets the sticky first child that
+    // holds still from the top of its document.
+    // 页面宿主拿到一张固定在视口上的膜;容器拿到那个从它文档顶部起就不动的 sticky 首子元素。
+    if (isPage(host)) {
+      canvas.style.position = 'fixed';
+      canvas.style.top = '0';
+      canvas.style.left = '0';
+      document.body.appendChild(canvas);
+    } else {
+      host.insertBefore(canvas, host.firstChild);
+    }
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
@@ -328,7 +348,8 @@ export function attachInk(session, ink) {
   // The ink is anchored to the document, so anything that moves the document moves the ink.
   // 墨水锚在文档上,于是任何让文档移动的事,都会让墨水跟着移动。
   const onScroll = () => wake();
-  ink.host()?.addEventListener('scroll', onScroll, { passive: true });
+  const st = ink.host() ? scrollTarget(ink.host()) : null;
+  st?.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', onScroll);
 
   return {
@@ -343,7 +364,7 @@ export function attachInk(session, ink) {
     destroy() {
       cancelAnimationFrame(raf);
       clearTimeout(flushTimer);
-      ink.host()?.removeEventListener('scroll', onScroll);
+      st?.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
       canvas?.remove();
       canvas = null; cx = null;

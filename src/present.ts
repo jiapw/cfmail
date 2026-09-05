@@ -42,7 +42,7 @@ import type { Env, User } from './types';
  *  ever accepted, and are carried alongside. This is what the person is doing right now.
  *  某人坐在哪儿。它不是权限 —— 权限在 socket 被接受之前就已了结,并随行携带。
  *  这里说的是此刻这个人正在做什么。 */
-export type Seat = 'presenter' | 'annotator' | 'viewer';
+export type Seat = 'presenter' | 'viewer';
 
 /** Everything about one connection, kept on the socket so hibernation cannot lose it.
  *  一条连接的全部,存在 socket 上,好让休眠带不走它。 */
@@ -51,11 +51,21 @@ interface Who {
   user: string;
   name: string;
   seat: Seat;
-  /** Index into the palette the browser holds. -1 for somebody who cannot draw and needs no colour.
-   *  浏览器手上那份调色板的下标。画不了的人不需要颜色,记 -1。 */
+  /** Index into the palette the browser holds. Everybody gets one on arrival: whether a person
+   *  may draw is decided later, live, by the presenter -- and a colour handed out at the moment
+   *  the pen is granted would repaint their dot in front of everyone.
+   *  浏览器手上那份调色板的下标。每个人进门就分到:一个人能不能画,是之后由演示者
+   *  当场决定的 —— 若等到给笔那一刻才发颜色,他的色点会当着所有人的面变色。 */
   color: number;
   canEdit: boolean;
-  canInk: boolean;
+  /** May take the empty chair. Settled at the door: signed-in people may, link holders may not.
+   *  能否坐那把空椅子。进门时定好:登录的人可以,持链接的人不行。 */
+  lead: boolean;
+  /** On the presenter's attachment only: whether the room's pens are out. It lives on the chair,
+   *  not in storage, so it leaves with the presenter -- a new presenter starts with pens away.
+   *  只存在演示者的 attachment 上:这间房的笔是否放开了。它住在椅子上,不住在存储里,
+   *  所以随演示者一起离开 —— 新的演示者从"笔收着"开始。 */
+  inkOpen?: boolean;
 }
 
 /** How many people can be told apart by colour at once. Past this everybody still gets in; they
@@ -112,6 +122,14 @@ export class PresentRoom extends DurableObject<Env> {
     return this.seats(except).find((s) => s.who.seat === 'presenter') || null;
   }
 
+  /** Whether the room's pens are out. Read off the chair every time rather than cached: the
+   *  chair's attachment survives hibernation, and a cache of it would be one more thing to wake.
+   *  这间房的笔放没放开。每次都从椅子上读,不做缓存:椅子的 attachment 熬得过休眠,
+   *  而它的缓存只是又一样醒来时要恢复的东西。 */
+  private inkOpen(): boolean {
+    return !!this.presenter()?.who.inkOpen;
+  }
+
   /** Tell the room who is in it. Sent whenever anything about the roster changes, as one whole
    *  list rather than a join/leave delta: a client that missed one delta would be wrong until it
    *  reconnected, and the list is a few dozen bytes.
@@ -143,7 +161,12 @@ export class PresentRoom extends DurableObject<Env> {
     // 这些 header 由我们自己的路由在问过之后写下。这个对象在 Worker 之外无法寻址,
     // 因此不存在别人能写下它们。
     const canEdit = req.headers.get('x-present-edit') === '1';
-    const canInk = canEdit || req.headers.get('x-present-ink') === '1';
+    const lead = req.headers.get('x-present-lead') === '1';
+    // Arriving to present, not merely to watch. Intent, distinct from permission: a watcher with
+    // every right to present did not thereby ask to.
+    // 是来演示的,不只是来看的。这是意图,与权限是两回事:
+    // 一个完全有权演示的旁观者,并没有因此就提出过要演示。
+    const take = lead && req.headers.get('x-present-take') === '1';
     const who: Who = {
       peer: crypto.randomUUID().slice(0, 8),
       user: req.headers.get('x-present-user') || '',
@@ -151,34 +174,33 @@ export class PresentRoom extends DurableObject<Env> {
       // 显示名是人自己写的文本,原样过不了 header。
       name: decodeURIComponent(req.headers.get('x-present-name') || '').slice(0, 64),
       seat: 'viewer',
-      color: -1,
+      color: 0,
       canEdit,
-      canInk,
+      lead,
     };
 
     const here = this.seats();
-    // The second person with the right to edit does not get to edit. Somebody is already
-    // presenting this document to a room, and two people typing into one presentation is the
-    // thing this whole design exists to not be. They are given the pen instead, and the way back
-    // to editing is a separate tab holding a separate copy -- which the client offers by name.
-    // 第二个有编辑权的人,不会拿到编辑权。已经有人正在把这份文档演示给一屋子人,
-    // 而"两个人往同一场演示里打字"正是这整套设计存在所要避免的。
-    // 他拿到的是那支笔;回到编辑的路是另开一个标签页、另持一份副本 —— 客户端会指名提供它。
+    // The chair is first-come: somebody already presenting is not unseated by the next arrival,
+    // whatever their rights. The latecomer's own surface notices and turns into a watcher.
+    // 椅子先到先得:已经有人在演示,后来的人不论有什么权利都掀不动它。
+    // 后来者自己的界面会察觉,并转成旁观。
     const taken = here.some((s) => s.who.seat === 'presenter');
-    who.seat = canEdit && !taken ? 'presenter' : canInk ? 'annotator' : 'viewer';
-    if (who.seat !== 'viewer') who.color = this.freeColour(here);
+    who.seat = take && !taken ? 'presenter' : 'viewer';
+    who.color = this.freeColour(here);
 
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
     pair[1].serializeAttachment(who);
 
-    // Said to the newcomer alone: who they turned out to be, and who was already here.
-    // 只对新来的人说:他成了谁,以及原本谁在这儿。
+    // Said to the newcomer alone: who they turned out to be, who was already here, and whether
+    // the room's pens are currently out.
+    // 只对新来的人说:他成了谁、原本谁在这儿,以及这间房的笔此刻放没放开。
     this.send(pair[1], {
       t: 'welcome',
-      you: { peer: who.peer, seat: who.seat, color: who.color, canEdit: who.canEdit, canInk: who.canInk },
+      you: { peer: who.peer, seat: who.seat, color: who.color, canEdit: who.canEdit, canLead: who.lead },
       peers: this.roster(),
       presenter: this.presenter()?.who.peer || null,
+      ink_open: this.inkOpen(),
     });
     this.announce();
 
@@ -216,7 +238,16 @@ export class PresentRoom extends DurableObject<Env> {
     // 正在演示的那个人,是文档内容与"正在看哪里"的唯一来源。
     // 在这里问这一次,是为了让其余每个分支都不必记得去问。
     if (PRESENTER_ONLY.has(t) && who.seat !== 'presenter') return;
-    if (INK_MESSAGES.has(t) && !who.canInk) return;
+    // The presenter always holds a pen; everybody else holds one exactly while the presenter
+    // says so. Asked per message, not per join: the answer changes mid-meeting.
+    // 演示者手里始终有笔;其余人有笔,恰恰只在演示者说有的那段时间里。
+    // 按消息问而不是按进门问:这个答案会在会议中途改变。
+    if (INK_MESSAGES.has(t) && who.seat !== 'presenter' && !this.inkOpen()) return;
+    // The text stream writes onto everybody's screen, and only somebody who could write the FILE
+    // gets to write the screen. A presenter without edit rights presents by pointing, not typing.
+    // 文本流写的是所有人的屏幕,而只有写得了"文件"的人才配写屏幕。
+    // 没有编辑权的演示者,靠指,不靠打字。
+    if ((t === 'text' || t === 'full') && !who.canEdit) return;
 
     switch (t) {
       case 'text':
@@ -279,11 +310,23 @@ export class PresentRoom extends DurableObject<Env> {
         // something a second person gets to end by pressing a button.
         // 坐上那把空椅子。永远只能是空的那把:一场正在进行的演示,
         // 不是第二个人按一下按钮就能结束的东西。
-        if (!who.canEdit || this.presenter()) return;
+        if (!who.lead || this.presenter()) return;
         who.seat = 'presenter';
         ws.serializeAttachment(who);
         this.send(ws, { t: 'seat', seat: who.seat, color: who.color });
         this.announce();
+        break;
+      }
+
+      case 'ink_open': {
+        // The presenter decides, mid-meeting, whether everybody else's pens are out. It is a fact
+        // about the session, so it lives on the chair: when the presenter goes, it goes.
+        // 演示者在会议中途决定其他人的笔放不放开。这是关于这场会话的事实,
+        // 所以它住在椅子上:演示者走,它跟着走。
+        if (who.seat !== 'presenter') return;
+        who.inkOpen = !!m.on;
+        ws.serializeAttachment(who);
+        this.tell({ t: 'ink_open', on: who.inkOpen });
         break;
       }
 
@@ -363,7 +406,11 @@ presentApp.get('/:id/ws', async (c) => {
   // 显示名是人自己写的文本,而 header 只运得了 ASCII。
   h.set('x-present-name', encodeURIComponent(seat.name));
   h.set('x-present-edit', seat.canEdit ? '1' : '0');
-  h.set('x-present-ink', seat.canInk ? '1' : '0');
+  h.set('x-present-lead', seat.lead ? '1' : '0');
+  // Intent from the URL, honoured only when the permission is real. A guest asking to lead is
+  // asking for something the door has already said no to.
+  // 意图来自 URL,只在权限属实时作数。访客要求主持,要的是门口已经说过"不行"的东西。
+  h.set('x-present-take', seat.lead && c.req.query('lead') === '1' ? '1' : '0');
   return stub.fetch(new Request(c.req.raw.url, { method: 'GET', headers: h }));
 });
 
@@ -377,5 +424,5 @@ presentApp.get('/:id/seat', async (c) => {
   const user = await userFromRequest(c);
   if (user) c.set('user', user);
   const seat = await presentSeat(c, id, c.req.query('share') || '', '');
-  return c.json({ can_edit: seat.canEdit, can_ink: seat.canInk, guest: seat.guest, name: seat.name });
+  return c.json({ can_edit: seat.canEdit, can_lead: seat.lead, guest: seat.guest, name: seat.name });
 });

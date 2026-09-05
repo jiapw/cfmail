@@ -3,7 +3,7 @@
 // AI 助手界面:左侧会话列表(分组),右侧消息流 + 输入框(选模型/附件/停止)
 // 流式协议:POST /api/chat/sessions/:id/send 返回 SSE,事件见 src/chat/agent.ts
 import { api } from '../api.js';
-import { esc, icon, qs, toast, confirmDialog, showModal, closeModal, fmtDate, fileIcon, copyText } from '../ui.js';
+import { esc, icon, qs, toast, confirmDialog, showModal, closeModal, fmtDate, fileIcon, copyText, loadCss } from '../ui.js';
 import { t, tErr, lang } from '../i18n.js';
 import { store, navigate, show, setTitle } from '../app.js';
 import { renderMarkdown } from './markdown.js';
@@ -22,15 +22,10 @@ const cs = {
 };
 
 let cssLoaded = false;
+/** Resolves once the stylesheet is in; awaited before the first paint (see loadCss in ui.js).
+ *  样式表就位后兑现;第一次绘制之前先等它(见 ui.js 的 loadCss)。 */
 function ensureCss() {
-  if (cssLoaded || qs('link[href^="/assets/chat/chat.css"]')) return;
-  const l = document.createElement('link');
-  l.rel = 'stylesheet';
-  // The version query stops the browser's heuristic cache handing back stale styles
-  // 带版本号防浏览器启发式缓存拿到旧样式
-  l.href = '/assets/chat/chat.css?v=' + encodeURIComponent(store.brand?.version || '');
-  document.head.appendChild(l);
-  cssLoaded = true;
+  return loadCss('/assets/chat/chat.css?v=' + encodeURIComponent(store.brand?.version || ''));
 }
 
 function modelOf(id) {
@@ -45,7 +40,7 @@ function currentModel() {
 
 export async function renderChat(sid) {
   if (!store.me?.chat_enabled) return navigate('#/');
-  ensureCss();
+  await ensureCss();
   if (!cs.config) {
     try {
       cs.config = await api('GET', '/api/chat/config');

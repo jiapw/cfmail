@@ -26,6 +26,7 @@ import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
 import { driveAgentApp, driveApp, drivePubApp } from './drive';
 import { presentApp } from './present';
+import { fillApp, formsApp } from './forms';
 import { VERSION } from './version';
 import { domainFromHost, ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
 import { FLAGGED, pickColor, pickIcon } from './labels';
@@ -1697,6 +1698,14 @@ app.route('/api/pub', drivePubApp);
 // 演示一份文档。同样不挂在 requireAuth 之后:持有带会议笔的链接的人同样没有账号,
 // 而"他能做什么"这个问题在里面按访问者逐一提问,对着他真正持有的那条链接。
 app.route('/api/present', presentApp);
+
+// Web forms: the designer's side behind the session, the fill page's side open -- a public form
+// is filled by people with no account here, and what they may do is enumerated and rate-limited
+// inside (see forms.ts).
+// 网页表单:设计者一侧在会话之后,填写页一侧开放 —— 公开表单由在此没有账号的人来填,
+// 他们能做什么在里面逐一列明并各自限速(见 forms.ts)。
+app.route('/api/forms', formsApp);
+app.route('/api/fill', fillApp);
 
 // Agent access links: no session, no Origin check, no /api prefix. The caller is a program that
 // was handed one URL and nothing else, and everything it may do is expressed in that URL --
