@@ -29,6 +29,45 @@ function currentDomainId(domains) {
   return domains.find((d) => d.name === host)?.id || domains[0]?.id || '';
 }
 
+/**
+ * Everyone this administrator may name, asked for once per visit to the console. Where the line
+ * falls is the server's business -- every registrant for a global administrator, the people in
+ * one's own domains otherwise -- so one answer serves every field that wants a person.
+ * 这位管理员可以指名的人,每进一次后台取一次。线划在哪儿是服务端的事 ——
+ * 全局管理员是所有注册人,否则只有自己那些域里的人 —— 所以一次结果供所有要人的输入框用。
+ */
+let peopleReq = null;
+const forgetPeople = () => { peopleReq = null; };
+function people() {
+  if (!peopleReq) peopleReq = api('GET', '/api/admin/user-options').then((r) => r.users || []).catch(() => []);
+  return peopleReq;
+}
+
+let pickerSeq = 0;
+/**
+ * An email field with that list hanging off it -- the one control for every place that asks
+ * whose registration email this is.
+ *
+ * A registration email is the address nobody has any reason to remember: people know their
+ * company address, and typing that where the registration one is wanted simply fails to match.
+ * So the option carries the name beside the address, because the address alone is the half
+ * nobody recognises. The list suggests and never restricts -- free text still goes through,
+ * which is what an invitation addressed to somebody not yet registered needs.
+ *
+ * 一个挂着那份名单的邮箱输入框 —— 凡是问"这是谁的注册邮箱"的地方,都用这一个控件。
+ *
+ * 注册邮箱正是没人有理由记住的那个地址:大家记得的是自己的企业地址,
+ * 而把企业地址填到要注册邮箱的地方,根本匹配不上。所以选项里把姓名摆在地址旁边 ——
+ * 光一个地址,正是谁都认不出来的那一半。名单只是建议,从不限制:自由输入照样有效,
+ * 而这正是"邀请一个还没注册的人"所需要的。
+ */
+function userPicker(list, { name = 'email', id = '', placeholder = '', required = false, width = '' } = {}) {
+  const listId = `ul-${++pickerSeq}`;
+  return `<input ${id ? `id="${esc(id)}" ` : ''}${name ? `name="${esc(name)}" ` : ''}type="email" list="${listId}"
+        placeholder="${esc(placeholder || t('reg_email_ph'))}" autocomplete="off"${required ? ' required' : ''}${width ? ` style="width:${esc(width)}"` : ''}>
+      <datalist id="${listId}">${list.map((u) => `<option value="${esc(u.email)}">${esc(u.name ? `${u.name} — ${u.email}` : u.email)}</option>`).join('')}</datalist>`;
+}
+
 const TABS = () => [
   { key: 'overview', name: t('a_overview') },
   { sep: true },
@@ -51,6 +90,9 @@ const TABS = () => [
 
 export async function renderAdmin(tab) {
   const me = store.me;
+  // A visit gets one look at who exists; somebody registering while the console sits open is
+  // seen on the next visit. / 一次访问看一次名单;开着后台期间有人注册,下次进来才看得到。
+  forgetPeople();
   if (!me.user.is_admin && !(me.domain_admin_of || []).length) {
     navigate('#/');
     return;
@@ -211,8 +253,8 @@ async function tabDomains(body) {
 async function renderDomainInfo(domainId) {
   const box = qs('#dom-detail');
   box.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
-  const [{ mailboxes }, { admins }, brand] = await Promise.all([
-    api('GET', `/api/admin/domains/${domainId}/mailboxes`),
+  const [everyone, { admins }, brand] = await Promise.all([
+    people(),
     api('GET', `/api/admin/domains/${domainId}/admins`),
     api('GET', `/api/admin/domains/${domainId}/brand`),
   ]);
@@ -221,21 +263,10 @@ async function renderDomainInfo(domainId) {
   // 谁能任命域管理员由服务端说了算;界面只是不再提供注定 403 的操作 ——
   // 域管理员看得到名单,但没有改动它的控件。
   const isGlobal = !!store.me.user.is_admin;
-  // The field wants a registration email, which is not something anyone can be expected to
-  // remember -- and a company address typed in its place simply fails to match. So offer the
-  // people already in this domain, by the address the lookup actually uses.
-  // 这个框要的是注册邮箱,而注册邮箱不是谁都记得住的 —— 填成企业地址则根本匹配不上。
-  // 所以把本域已有的人列出来,用接口真正拿去查的那个地址。
-  const seen = new Set(admins.map((a) => a.id));
-  const candidates = [];
-  for (const m of mailboxes) {
-    for (const g of m.members || []) {
-      if (seen.has(g.user_id)) continue;
-      seen.add(g.user_id);
-      candidates.push({ email: g.email, name: g.name });
-    }
-  }
-  candidates.sort((a, b) => a.email.localeCompare(b.email));
+  // Whoever already holds the seat is not worth offering again.
+  // 已经在位的人,没必要再列一遍。
+  const seated = new Set(admins.map((a) => a.id));
+  const candidates = everyone.filter((u) => !seated.has(u.id));
   const logoPreview = brand.has_logo
     ? `<img class="brand-logo" data-logo-mode="${esc(brand.logo_mode || 'light')}" src="/api/brand/logo?d=${encodeURIComponent(brand.domain)}&ts=${Date.now()}" style="height:40px;border-radius:8px;border:1px solid var(--border);padding:2px">`
     : `<span class="dim">${esc(t('none'))}</span>`;
@@ -278,9 +309,7 @@ async function renderDomainInfo(domainId) {
       ${isGlobal ? `
       <form id="f-da" class="form-row" style="margin-top:12px">
         <label>${esc(t('add_da'))}</label>
-        <input name="email" type="email" list="da-cands" placeholder="${esc(t('reg_email_ph'))}"
-               autocomplete="off" required style="width:260px">
-        <datalist id="da-cands">${candidates.map((u) => `<option value="${esc(u.email)}">${esc(u.name ? `${u.name} — ${u.email}` : u.email)}</option>`).join('')}</datalist>
+        ${userPicker(candidates, { required: true, width: '260px' })}
         <wa-button appearance="outlined" type="submit">${esc(t('add_da'))}</wa-button>
       </form>
       ${candidates.length ? '' : `<p class="dim">${esc(t('da_no_candidates'))}</p>`}`
@@ -412,10 +441,11 @@ async function tabMailboxes(body) {
 async function renderMailboxDetail(domainId) {
   const box = qs('#mb-detail');
   box.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
-  const [{ mailboxes }, aliasData, optData] = await Promise.all([
+  const [{ mailboxes }, aliasData, optData, everyone] = await Promise.all([
     api('GET', `/api/admin/domains/${domainId}/mailboxes`),
     api('GET', `/api/admin/domains/${domainId}/aliases`),
     api('GET', '/api/admin/mailbox-options'),
+    people(),
   ]);
   const rows = mailboxes
     .map(
@@ -498,7 +528,12 @@ async function renderMailboxDetail(domainId) {
   });
   box.addEventListener('click', async (e) => {
     const g = e.target.closest('[data-grant]');
-    if (g) return grantModal(g.dataset.grant, domainId);
+    if (g) {
+      // Whoever is already on this mailbox is left off the list -- adding them again is the one
+      // thing this form cannot do. / 已经在这个邮箱上的人不列出来 —— 再加一次正是这个表单做不到的事。
+      const on = new Set((mailboxes.find((m) => m.id === g.dataset.grant)?.members || []).map((x) => x.user_id));
+      return grantModal(g.dataset.grant, domainId, everyone.filter((u) => !on.has(u.id)));
+    }
     const tg = e.target.closest('[data-toggle]');
     if (tg) {
       const [id, dis] = tg.dataset.toggle.split(':');
@@ -577,11 +612,11 @@ function showLogin(info) {
   m.querySelector('#pw-done').onclick = closeModal;
 }
 
-function grantModal(mailboxId, domainId) {
+function grantModal(mailboxId, domainId, candidates) {
   const m = showModal(`
     <h3 style="margin:0 0 12px">${esc(t('grant_title'))}</h3>
     <form id="f-grant" class="form-col">
-      <input name="email" type="email" placeholder="${esc(t('reg_email_ph'))}" required>
+      ${userPicker(candidates, { required: true })}
       <select name="role">
         <option value="member">${esc(t('role_member_full'))}</option>
         <option value="owner">${esc(t('role_owner'))}</option>
@@ -1082,9 +1117,10 @@ async function viewUnrouted(id) {
 
 async function tabInvites(body) {
   const me = store.me;
-  const [{ domains }, invData] = await Promise.all([
+  const [{ domains }, invData, everyone] = await Promise.all([
     api('GET', '/api/admin/domains'),
     api('GET', '/api/admin/invites'),
+    people(),
   ]);
   // Invites no longer hang off an existing mailbox, so there is no need to pull each domain's mailbox list
   // 邀请不再挂在"已存在的邮箱"上,所以不用再把每个域名的邮箱列表拉下来
@@ -1146,7 +1182,7 @@ async function tabInvites(body) {
         </div>
         <div class="form-row" id="row-email">
           <label>${esc(t('limit_email'))}</label>
-          <input id="inv-email" type="email" placeholder="only-this@example.com" style="width:260px">
+          ${userPicker(everyone, { name: '', id: 'inv-email', placeholder: 'only-this@example.com', width: '260px' })}
         </div>
         <div class="form-row">
           <label>${esc(t('validity'))}</label>

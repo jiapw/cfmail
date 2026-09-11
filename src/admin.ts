@@ -392,6 +392,42 @@ adminApp.get('/mailbox-options', async (c) => {
   return c.json({ mailboxes: list.map((m: any) => ({ id: m.id, address: `${m.local_part}@${m.domain_name}` })) });
 });
 
+/**
+ * The people this administrator may name: everyone, for a global administrator; otherwise the
+ * registrants of the administrator's own domains -- anyone holding a mailbox there, plus anyone
+ * who administers it without holding one.
+ *
+ * It exists because every field that asks for a "registration email" asks for something nobody
+ * has any reason to remember. The company address is the one people know, and typing that where
+ * a registration email is wanted simply fails to match -- so the address the lookup actually
+ * uses has to be offered rather than recalled.
+ *
+ * 这位管理员可以指名的人:全局管理员是所有人;否则是他自己那些域里的注册人 ——
+ * 在域里有邮箱的,加上管着这个域却没在里面开邮箱的。
+ *
+ * 之所以要有它:每一个要"注册邮箱"的输入框,要的都是没人有理由记得住的东西。
+ * 大家记得的是企业地址,而把企业地址填到要注册邮箱的地方,根本匹配不上 ——
+ * 所以接口真正拿去查的那个地址,得摆出来给人选,而不是靠人想起来。
+ */
+adminApp.get('/user-options', async (c) => {
+  const scope = await adminScope(c);
+  const rows = await c.env.DB.prepare('SELECT id, email, name FROM users ORDER BY email').all<any>();
+  let list = rows.results || [];
+  if (scope) {
+    // The same reach as the members list: a mailbox in one of these domains, or a seat
+    // administering one. / 与成员名单同样的范围:在这些域里有邮箱,或管着其中一个域。
+    const reach = new Set<string>();
+    const g = await c.env.DB.prepare(
+      'SELECT g.user_id, mb.domain_id FROM grants g JOIN mailboxes mb ON mb.id=g.mailbox_id'
+    ).all<any>();
+    for (const r of g.results || []) if (scope.has(r.domain_id)) reach.add(r.user_id);
+    const da = await c.env.DB.prepare('SELECT user_id, domain_id FROM domain_admins').all<any>();
+    for (const r of da.results || []) if (scope.has(r.domain_id)) reach.add(r.user_id);
+    list = list.filter((u: any) => reach.has(u.id));
+  }
+  return c.json({ users: list.map((u: any) => ({ id: u.id, email: u.email, name: u.name })) });
+});
+
 adminApp.post('/mailboxes/:id', async (c) => {
   const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(c.req.param('id')).first<any>();
   if (!mb) throw new HttpError(404, 'e_mailbox_not_found');
