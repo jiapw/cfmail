@@ -2,25 +2,26 @@
 //
 // Reached without an account, so it touches nothing that assumes a signed-in session: no
 // store.me, no /api/forms/*. It reads one design from /api/fill/<token>, draws it, and posts one
-// set of answers back. Its look -- palette, light or dark, language -- is borrowed for the
-// duration and given back on leaving: a visitor who also has an account here must not find their
-// own app repainted by a stranger's form. The visitor's two choices (language, light/dark) are
-// remembered in this browser under keys of their own, so that a second form opens the way the
-// first was left, and neither touches the app's own settings.
+// set of answers back. It looks the way the designer decided -- palette, light or dark, typeface,
+// text size -- and that look is borrowed for the duration and given back on leaving: a visitor
+// who also has an account here must not find their own app repainted by a stranger's form. The
+// one thing the visitor chooses is the language, remembered in this browser under a key of its
+// own, so that a second form opens in the language the first was read in, and the app's own
+// setting is never touched.
 //
 // 表单链接打开的那一页。
 //
 // 无账号即可抵达,因此不碰任何以"已登录会话"为前提的东西:没有 store.me,不用 /api/forms/*。
-// 它从 /api/fill/<token> 读一份设计、画出来、把一组答复寄回去。它的观感 —— 配色、明暗、语言 ——
-// 都是借来的,离开时归还:一个在本处也有账号的访问者,不该发现自己的应用被陌生人的表单重新粉刷。
-// 访问者自己的两个选择(语言、明暗)以专属的键记在这个浏览器里,好让第二份表单以第一份离开时的
-// 样子打开,而且哪一个都不碰应用自己的设置。
+// 它从 /api/fill/<token> 读一份设计、画出来、把一组答复寄回去。它长成设计者定下的样子 ——
+// 配色、明暗、字体、字号 —— 这份观感是借来的,离开时归还:一个在本处也有账号的访问者,
+// 不该发现自己的应用被陌生人的表单重新粉刷。访问者唯一选择的是语言,以专属的键记在这个浏览器里,
+// 好让第二份表单以第一份阅读时的语言打开,而应用自己的设置从不被碰。
 import { t, tErr, setLang, dictReady, lang, LANG_OPTIONS } from '../i18n.js';
 import { esc, icon, qs, qsa, toast, fmtSize, loadCss } from '../ui.js';
 import { store, navigate, setTitle, show } from '../app.js';
 import { countryOptions } from './countries.js';
+import { ensureFont, fontStack } from '../fontpicker.js';
 
-const MODE_KEY = 'cf_form_mode';
 const LANG_KEY = 'cf_form_lang';
 const LANG_LABEL = Object.fromEntries(LANG_OPTIONS);
 const FILE_TYPES = new Set(['file', 'files', 'image', 'images']);
@@ -46,6 +47,9 @@ function applyLook(theme, dark) {
   if (theme) h.dataset.theme = theme;
   h.classList.toggle('wa-dark', dark);
   h.classList.toggle('wa-light', !dark);
+  // The class that lets the chosen colour reach the page's own surfaces, not just its buttons
+  // 让选定的颜色染到页面自身表面(而不只是按钮)的那个类
+  h.classList.add('fm-fill-look');
 }
 
 /** Remember how this browser looked before the form touched it, and put it back the moment the
@@ -60,6 +64,7 @@ function armGuard() {
     h.dataset.theme = saved.theme || 'blue';
     h.classList.toggle('wa-dark', saved.dark);
     h.classList.toggle('wa-light', !saved.dark);
+    h.classList.remove('fm-fill-look');
     setLang(saved.lang, false);
     window.removeEventListener('hashchange', guard);
     guard = null;
@@ -113,10 +118,8 @@ export async function renderFill(rest) {
   fs = { token, head, prefill, urlPrefill: { ...prefill }, files: {}, codeId: null, codeEmail: '', verified: false, lang: pickLang(head), timer: null };
   setLang(fs.lang, false);
   await dictReady();
-  let savedMode = '';
-  try { savedMode = localStorage.getItem(MODE_KEY) || ''; } catch {}
-  const dark = savedMode ? savedMode === 'dark' : head.mode ? head.mode === 'dark' : document.documentElement.classList.contains('wa-dark');
-  applyLook(head.theme, dark);
+  applyLook(head.theme, head.mode === 'dark');
+  if (head.font) ensureFont(head.font);
   render();
 }
 
@@ -134,7 +137,6 @@ function brandHtml() {
 
 function topHtml(head) {
   const langs = head?.langs?.length > 1 ? head.langs : null;
-  const dark = document.documentElement.classList.contains('wa-dark');
   return `
   <header class="fm-fill-top">
     ${brandHtml()}
@@ -142,7 +144,6 @@ function topHtml(head) {
       ${langs ? `<span class="fm-selw inline"><select id="ff-lang" class="fm-select fm-langsel" aria-label="${esc(t('language'))}">
         ${langs.map((l) => `<option value="${l}" ${l === fs.lang ? 'selected' : ''}>${esc(LANG_LABEL[l] || l)}</option>`).join('')}
       </select></span>` : ''}
-      <wa-button class="icon" appearance="plain" id="ff-mode" title="${esc(t('fm_mode_toggle'))}" aria-label="${esc(t('fm_mode_toggle'))}">${icon(dark ? 'sun' : 'moon', 20)}</wa-button>
     </div>
   </header>`;
 }
@@ -161,8 +162,11 @@ function render() {
   } else {
     body = formHtml();
   }
-  show(`<div class="fm-fill">${topHtml(h)}${body}
-    <div class="fm-foot">${esc(store.brand?.name ? `${store.brand.name} · Powered by CFMail` : t('powered'))}</div></div>`);
+  // The typeface and the size live on an inner wrapper: the size is a zoom, and zooming the
+  // full-height shell itself would scale its viewport-high minimum along with everything else.
+  // 字体与字号放在内层容器上:字号是 zoom,直接缩放整页高度的外壳会连它那视口高的最小高度一起缩放。
+  show(`<div class="fm-fill"><div class="fm-zoom fm-size-${esc(h.text_size || 'md')}" style="--fm-font:${esc(fontStack(h.font || ''))}">${topHtml(h)}${body}
+    <div class="fm-foot">${esc(store.brand?.name ? `${store.brand.name} · Powered by CFMail` : t('powered'))}</div></div></div>`);
   bind();
 }
 
@@ -335,13 +339,6 @@ function fieldHtml(f) {
 
 function bind() {
   qs('#ff-lang')?.addEventListener('change', (e) => switchLang(e.target.value));
-  qs('#ff-mode')?.addEventListener('click', () => {
-    const dark = !document.documentElement.classList.contains('wa-dark');
-    applyLook(null, dark);
-    try { localStorage.setItem(MODE_KEY, dark ? 'dark' : 'light'); } catch {}
-    const b = qs('#ff-mode');
-    if (b) b.innerHTML = icon(dark ? 'sun' : 'moon', 20);
-  });
   qs('#ff-login')?.addEventListener('click', () => {
     try { sessionStorage.setItem('cf_after_login', location.hash); } catch {}
     navigate('#/login');
