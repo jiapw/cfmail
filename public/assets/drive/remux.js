@@ -143,21 +143,48 @@ const told = (hi) => hi !== NOPTS_HI;
  *  EAGAIN 与 EWOULDBLOCK:一次因为被叫停而停下的读,那不是结束。 */
 const paused = (res) => res === -6 || res === -11;
 
-/** What a browser can decode once the box is open. Names as libav spells them.
+/** What an MP4 can carry as it is, by the name libav gives it, and the name it goes by when the
+ *  browser is asked about it.
  *
  *  This is the second half of the same idea the container list is the first half of. Opening the
  *  box gets you nothing if what is inside is a codec nobody here can read, and a film is two of
  *  those questions rather than one: a picture the browser knows and a sound it does not is very
  *  common, because the sound on a disc rip is usually DTS or AC-3 and no browser decodes either.
  *
- *  盒子打开之后浏览器解得了什么。名字按 libav 的拼法。
+ *  What is listed is what the box will hold, not what browsers play: that is asked of the browser
+ *  in hand, each time, in plays(). A list of the second kind was here once, and it said mp3 --
+ *  which every browser decodes and which Chrome's MediaSource nonetheless refuses inside an MP4,
+ *  so every film with mp3 sound was carried across whole and then turned away at the door.
+ *
+ *  MP4 能原样装下什么,按 libav 给它的名字,以及去问浏览器时它叫什么。
  *
  *  这是同一个想法的后半段,容器名单是它的前半段。若盒子里装的是这里没人读得懂的编码,
  *  那把盒子打开也一无所获;而一部片子要问的是两个这样的问题而不是一个:
  *  "画面浏览器认得、声音它不认得"极其常见 —— 因为碟版片源的声音通常是 DTS 或 AC-3,
- *  而这两样没有浏览器解得了。 */
-const PLAYS_VIDEO = new Set(['h264', 'hevc', 'vp8', 'vp9', 'av1']);
-const PLAYS_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac', 'alac']);
+ *  而这两样没有浏览器解得了。
+ *
+ *  列出的是盒子装得下的,不是浏览器会放的:后者每次都去问手上这个浏览器,在 plays() 里。
+ *  这里曾经放过一份第二种名单,上面写着 mp3 —— 每个浏览器都解得了它,
+ *  而 Chrome 的 MediaSource 却不收装在 MP4 里的它,于是每一部 mp3 配音的片子都被原样搬过去,再在门口被拒。 */
+const IN_MP4 = {
+  video: { h264: 'avc1.42E01E', hevc: 'hvc1.1.6.L93.B0', vp9: 'vp09.00.10.08', av1: 'av01.0.01M.08' },
+  audio: { aac: 'mp4a.40.2', mp3: 'mp4a.6b', opus: 'opus', flac: 'flac', alac: 'alac', vorbis: 'mp4a.dd' },
+};
+
+/** Whether the browser in hand will play this encoding out of an MP4 it is fed a piece at a time.
+ *  Asked, not assumed, because the answer differs by browser: Safari plays ALAC and Chrome does
+ *  not, Chrome refuses mp3 in this box and Safari may not. Where there is no MediaSource to ask
+ *  there is nothing to feed either, and the list alone is the answer.
+ *  手上这个浏览器,肯不肯把这种编码从一个一块一块喂给它的 MP4 里放出来。
+ *  问出来的,不是假定的,因为答案因浏览器而异:Safari 放 ALAC 而 Chrome 不放,
+ *  Chrome 不收装在这个盒子里的 mp3 而 Safari 未必。没有 MediaSource 可问的地方也没有东西可喂,
+ *  那时名单本身就是答案。 */
+function plays(kind, name) {
+  const said = IN_MP4[kind][name];
+  if (!said) return false;
+  if (typeof MediaSource === 'undefined' || typeof MediaSource.isTypeSupported !== 'function') return true;
+  return MediaSource.isTypeSupported(`${kind}/mp4; codecs="${said}"`);
+}
 
 /** What the sound is turned into when it arrives as something a browser will not play.
  *
@@ -231,8 +258,8 @@ async function choose(av, streams) {
   // 但它们也不是被扔掉。它们是字,在包里就已经是字了;
   // 而它们的去处,是一条可以叫播放器显示出来的轨。
   const words = named.filter((x) => x.s.codec_type === AV_SUBTITLE && SUB_CODECS.has(x.name));
-  const first = (type, ok) => named.find((x) => x.s.codec_type === type && ok.has(x.name));
-  const v = first(AV_VIDEO, PLAYS_VIDEO);
+  const first = (type, kind) => named.find((x) => x.s.codec_type === type && plays(kind, x.name));
+  const v = first(AV_VIDEO, 'video');
   let redraw = null;
   if (!v) {
     // Not one the browser plays. It may still be one this build decodes, and if the browser will
@@ -256,7 +283,7 @@ async function choose(av, streams) {
     redraw = any;
   }
   const keep = v ? [v] : [];
-  const a = first(AV_AUDIO, PLAYS_AUDIO);
+  const a = first(AV_AUDIO, 'audio');
   if (a) return { take: [...keep, a], convert: null, silent: '', words, redraw };
 
   // Sound the browser will not play. Whether anything can be done about it is asked of the build
@@ -842,6 +869,7 @@ function picture(av, track, fps, make = webcodecsEncoder) {
   let w = 0; let h = 0;
   let count = 0;
   let came = [];
+  let lastAt = -1;
   const tbn = track.s.time_base_num || 1;
   const tbd = track.s.time_base_den || 1;
   const perTick = (US * tbn) / tbd;
@@ -871,6 +899,13 @@ function picture(av, track, fps, make = webcodecsEncoder) {
             data.push(await av.copyout_u8(await av.AVFrame_data_a(f, i), ls * rows));
             stride.push(ls);
           }
+          // A picture stamped earlier than the one already shown cannot be shown. A DivX that packs
+          // its B-frames hands over exactly one such at the very end -- the decoder's last,
+          // delayed frame resolving out of order -- and the muxer would drop it anyway, out loud.
+          // 一张时间戳早于已显示那张的画面,是显示不出来的。把 B 帧打包存放的 DivX 会在最末尾恰好交出
+          // 这么一张 —— 解码器最后那帧被延迟的画面乱序地落定 —— 而 muxer 反正会把它丢掉,还要出声说一句。
+          if (at <= lastAt) continue;
+          lastAt = at;
           if (!enc) enc = make(w, h, fps, (c) => came.push(c));
           enc.push({ data, stride, w, h, at }, count % every === 0);
           count++;
@@ -901,9 +936,15 @@ function picture(av, track, fps, make = webcodecsEncoder) {
       }
       const out = came;
       came = [];
+      // Each picture says how long it is shown. Left unsaid, the muxer guesses the last one in
+      // every fragment from its neighbours and says so each time; one picture is one tick of the
+      // rate, stated in the microseconds the stream is counted in.
+      // 每一帧都说明自己显示多久。不说的话,muxer 会拿邻居去猜每一块里最后那一帧,而且每次都要说一句;
+      // 一帧就是帧率的一拍,按这条流所使用的微秒来说。
+      const [dlo, dhi] = av.f64toi64(Math.round(US / fps));
       return out.map((c) => {
         const [lo, up] = av.f64toi64(c.at);
-        return { data: c.data, pts: lo, ptshi: up, dts: lo, dtshi: up, flags: c.key ? 1 : 0 };
+        return { data: c.data, pts: lo, ptshi: up, dts: lo, dtshi: up, duration: dlo, durationhi: dhi, flags: c.key ? 1 : 0 };
       });
     },
     async close() {
