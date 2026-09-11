@@ -64,7 +64,8 @@ import { assDialogue, SUB_CODECS } from './subs.js';
 
 const V = () => encodeURIComponent(store.brand?.version || '');
 const BASE = '/vendor/libav-full';
-const ENTRY = `${BASE}/libav-6.10.9.0-cfmail.mjs`;
+const BUILD = 'libav-6.10.9.0-cfmail';
+const ENTRY = `${BASE}/${BUILD}.mjs`;
 
 /** What a browser plays without help. Kept as the one list, because two lists would eventually
  *  disagree about .mov and somebody would get a converted file they did not need.
@@ -128,7 +129,19 @@ async function libav() {
   // isolated. It is not, so the plain build is the one that ships and the one asked for here.
   // 线程版需要 SharedArrayBuffer,而那需要整个站点处于跨源隔离状态。它不是,
   // 所以发出去的是普通构建,这里要的也是它。
-  lib = await (LibAV.LibAV || LibAV)({ base: BASE, nothreads: true, variant: 'cfmail' });
+  // Everything under /vendor/ is cached for a day, by browsers and by the edge alike. The entry
+  // module carries the release in its URL and so is fetched afresh with each one -- but the worker
+  // script and the wasm it loads were asked for by name alone, so a release that rebuilt the wasm
+  // left every returning browser running the previous one for up to a day, beside the code of the
+  // new. The two carry the release too now, and the three change together or not at all.
+  // /vendor/ 下的一切都会被缓存一天,浏览器和边缘节点都一样。入口模块的 URL 里带着版本号,
+  // 于是每次发布都会重新取 —— 可 worker 脚本和它加载的 wasm 一直只按名字要,于是一次重建了 wasm 的发布,
+  // 会让每个回头的浏览器在新代码旁边继续跑着上一份 wasm,最长一天。现在这两样也带上版本号,三者要么一起换,要么都不换。
+  lib = await (LibAV.LibAV || LibAV)({
+    base: BASE, nothreads: true, variant: 'cfmail',
+    toImport: `${BASE}/${BUILD}.wasm.mjs?v=${V()}`,
+    wasmurl: `${BASE}/${BUILD}.wasm.wasm?v=${V()}`,
+  });
   return lib;
 }
 
@@ -1629,7 +1642,16 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
       const opening = [];
       const early = [];
       let seen = 0;
-      while (!eof && (seen < OPENING || (snd && !snd.par) || (pic && !pic.par))) {
+      // A sound or a picture that has not appeared by now is not going to. A decoder that takes
+      // the stream at all answers within its first few packets; the alternative to giving up here
+      // is reading on to the end of the file in search of a first frame that never comes -- four
+      // hours of it, every picture decoded and encoded and kept -- behind a spinner that never
+      // stops. Twenty seconds of film is more than any real sound track keeps anyone waiting.
+      // 到现在还没出现的声音或画面,就不会出现了。一个真收这条流的解码器,头几个包之内就会有回应;
+      // 而不在这里放弃的另一条路,是一路读到文件末尾去找一个永远不来的第一帧 —— 整整四个小时,
+      // 每一帧都解、都编、都留着 —— 藏在一个永远不停的转圈后面。二十秒的片子,比任何真实的声轨让人等的都多。
+      const ENOUGH = 600;
+      while (!eof && (seen < OPENING || (snd && !snd.par && seen < ENOUGH) || (pic && !pic.par && seen < ENOUGH))) {
         const raw = trim(await round());
         if (!raw.length) break;
         for (const p of raw) if (p.stream_index === vid.index) { seen++; early.push(p); }

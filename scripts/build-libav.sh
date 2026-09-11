@@ -55,6 +55,11 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   ape, tta, wavpack    the lossless formats a Chinese-language music collection is kept in.
 #                        Each needs its demuxer as well as its decoder: these are their own
 #                        containers, not codecs inside somebody else's.
+#   parser-mpegaudio     an AVI from the DivX years stores its mp3 as a byte stream cut into
+#                        chunks wherever the muxer felt like it -- one chunk in forty begins on
+#                        a frame -- and the decoder takes whole frames only. The parser is what
+#                        turns the stream back into frames. ffmpeg has it built in, which is why
+#                        ffmpeg played such a file and this, decoder and all, refused every packet.
 #
 # 各个片段,以及每一个为什么在这里。
 #
@@ -77,6 +82,10 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   decoder-alac         .m4a 里的 Apple Lossless,给那些不肯收它的浏览器。
 #   ape, tta, wavpack    一个中文音乐收藏所使用的那几种无损格式。每一种都既要解码器也要解复用器:
 #                        它们是自己的容器,不是别人容器里的编码。
+#   parser-mpegaudio     DivX 年代的 AVI 把 mp3 当字节流存,在 muxer 随手落刀的地方切成块 ——
+#                        四十块里只有一块从帧头开始 —— 而解码器只收整帧。把字节流重新拼回帧的,
+#                        就是这个解析器。ffmpeg 内建了它,所以 ffmpeg 放得了这样的文件,
+#                        而这里有解码器却拒掉了每一个包。
 FRAGMENTS='[
   "avformat","avcodec","avfilter","swresample",
   "format-ogg","format-webm","format-mp4",
@@ -90,7 +99,7 @@ FRAGMENTS='[
   "encoder-aac","audio-filters",
   "decoder-mpeg4","decoder-msmpeg4v3",
   "decoder-wmav1","decoder-wmav2","decoder-wmapro","decoder-wmalossless",
-  "decoder-mp3","decoder-alac",
+  "decoder-mp3","parser-mpegaudio","decoder-alac",
   "demuxer-ape","decoder-ape",
   "demuxer-tta","decoder-tta",
   "demuxer-wavpack","decoder-wavpack"
@@ -150,7 +159,12 @@ docker run --rm -v "$PWD:/src" -w /src/configs emscripten/emsdk \
   node ./mkconfig.js "$VARIANT" "$(echo "$FRAGMENTS" | tr -d '\n ')"
 
 echo "▸ 构建 / building — this takes a while"
-docker build -f Dockerfile.development -t libavjs-build .
+# The image is made once and kept. Making it again asks Docker Hub for the Dockerfile frontend,
+# and a registry that cannot be reached today -- a proxy, a rate limit, a token that expired --
+# is not a reason to fail a build whose environment is already sitting here.
+# 镜像做一次就留着。再做一次会去向 Docker Hub 要那个 Dockerfile 前端,
+# 而一个今天连不上的仓库 —— 代理、限流、过期的令牌 —— 不该让一次环境早就在这里的构建失败。
+docker image inspect libavjs-build >/dev/null 2>&1 || docker build -f Dockerfile.development -t libavjs-build .
 docker run --rm -v "$PWD:/src" -w /src libavjs-build \
   bash -c "make build-$VARIANT -j\$(nproc)"
 
