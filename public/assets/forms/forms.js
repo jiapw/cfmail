@@ -7,6 +7,8 @@ import { api } from '../api.js';
 import { t, lang, LANG_OPTIONS } from '../i18n.js';
 import { esc, icon, qs, qsa, toast, fmtDateTime, fmtSize, confirmDialog, copyText, loadCss } from '../ui.js';
 import { bindTopbar, store, navigate, show, topbarHtml, setTitle, syncSidebar } from '../app.js';
+import { THEMES } from '../themes-meta.js';
+import { pickFont, ensureFont, fontStack } from '../fontpicker.js';
 
 /** Question types, in the order the "add" menu offers them. Names live in fm_type_<type>.
  *  题型,按「添加」菜单的顺序。名字在 fm_type_<type>。 */
@@ -17,6 +19,10 @@ const OPT_TYPES = new Set(['single', 'multi']);
 const SUBJECT_TYPES = new Set(['text', 'int', 'float', 'date', 'single', 'country']);
 const KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const RESERVED = new Set(['name', 'email', 'sender', 'form', 'version', 'lang']);
+/** The subject placeholders every form has; the rest name questions of one particular form
+ *  每份表单都有的主题占位符;其余的指向某一份表单自己的题目 */
+const FIXED_VARS = new Set(['sender', 'email', 'form', 'version']);
+const TEXT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
 const st = { view: 'all', q: '', forms: [] };
 /** The form being edited, in the shape the editor binds to. Null on the list.
@@ -241,7 +247,31 @@ function blank() {
     id: null, token: null, link: null, version: 0, disabled: false, submissions: 0,
     kind: 'survey', title: '', description: '', audience: 'public', verify_email: false,
     src_lang: l, langs: [l], fields: [], subject_tpl: '{form} - {sender}', recipients: '', store: 'mail',
+    // The look starts as the designer's own; the editor's look card is where it is changed
+    // 观感从设计者自己的开始;要改,在编辑器的外观栏
+    theme: document.documentElement.dataset.theme || 'blue',
+    mode: document.documentElement.classList.contains('wa-dark') ? 'dark' : 'light',
+    font: '', text_size: 'md',
+    /** Title of the form whose settings a new one was started from / 新表单套用了谁的配置:那份表单的标题 */
+    from_last: '',
   };
+}
+
+/** A new form takes everything but its content from the designer's most recent one: audience,
+ *  where the answers go, languages, recipients and look. The subject template comes along only
+ *  when it is generic: one that named the other form's questions was written for that form, and
+ *  with those placeholders blanked it would read as a broken sentence.
+ *  新表单从设计者最近的一份那里接过除内容以外的一切:受众、答复去向、语言、收件人与观感。
+ *  主题模板只在它是通用的时候才一起过来:点名了那份表单题目的模板是为那份表单写的,
+ *  把那些占位符抹掉之后,读起来就是一句残句。 */
+function inheritFrom(last) {
+  const l = fromServer(last);
+  const generic = [...l.subject_tpl.matchAll(/\{([a-z][a-z0-9_]*)\}/g)].every((m) => FIXED_VARS.has(m[1]));
+  Object.assign(ed, {
+    audience: l.audience, verify_email: l.verify_email, store: l.store, src_lang: l.src_lang, langs: l.langs,
+    subject_tpl: generic && l.subject_tpl.trim() ? l.subject_tpl : '{form} - {sender}', recipients: l.recipients,
+    theme: l.theme, mode: l.mode, font: l.font, text_size: l.text_size, from_last: l.title,
+  });
 }
 
 /** The fill page's address, on the host this browser is using -- the designer copies the link
@@ -255,6 +285,8 @@ function fromServer(f) {
     kind: f.kind, title: f.title, description: f.description, audience: f.audience, verify_email: !!f.verify_email,
     src_lang: f.src_lang, langs: f.langs || [f.src_lang], fields: (f.fields || []).map((q) => ({ ...q, options: q.options || [] })),
     subject_tpl: f.subject_tpl || '', recipients: (f.recipients || []).join('\n'), store: f.store || 'mail',
+    theme: f.theme || 'blue', mode: f.mode === 'dark' ? 'dark' : 'light', font: f.font || '',
+    text_size: TEXT_SIZES.includes(f.text_size) ? f.text_size : 'md', from_last: '',
   };
 }
 
@@ -271,11 +303,30 @@ async function renderEditor(id) {
     }
   } else {
     ed = blank();
+    try {
+      const { form: last } = await api('GET', '/api/forms/last');
+      if (last) inheritFrom(last);
+    } catch {}
   }
   setTitle(ed.id ? ed.title : t('fm_new_title'));
   syncRail();
   main.innerHTML = editorHtml();
   drawQuestions();
+  ensureFont(ed.font);
+  qs('#fm-themes')?.addEventListener('click', (e) => {
+    const b = e.target.closest('.theme-swatch');
+    if (!b) return;
+    ed.theme = b.dataset.theme;
+    qsa('.theme-swatch', qs('#fm-themes')).forEach((x) => x.classList.toggle('active', x === b));
+  });
+  qs('#fm-font')?.addEventListener('click', async () => {
+    const picked = await pickFont(ed.font, t('fm_look_font'), '');
+    if (picked === null) return;
+    ed.font = picked;
+    ensureFont(picked);
+    const lab = qs('#fm-font .fb-label');
+    if (lab) { lab.style.fontFamily = fontStack(picked); lab.textContent = picked || t('font_default'); }
+  });
   qs('#fm-save')?.addEventListener('click', () => save());
   qs('#fm-retr')?.addEventListener('click', () => save({ retranslate: true }));
   qs('#fm-addq')?.addEventListener('wa-select', (e) => addQuestion(e.detail?.item?.value));
@@ -570,6 +621,30 @@ function editorHtml() {
       </section>
 
       <section class="card">
+        <h3>${esc(t('fm_look'))}</h3>
+        <div class="fm-look">
+          <div class="fm-fld"><span>${esc(t('fm_look_mode'))}</span>
+            <div class="fm-seg">
+              <label class="fm-check"><input type="radio" name="fm-mode" value="light" ${ed.mode !== 'dark' ? 'checked' : ''}><span>${esc(t('mode_light'))}</span></label>
+              <label class="fm-check"><input type="radio" name="fm-mode" value="dark" ${ed.mode === 'dark' ? 'checked' : ''}><span>${esc(t('mode_dark'))}</span></label>
+            </div>
+          </div>
+          <div class="fm-fld"><span>${esc(t('fm_look_theme'))}</span>
+            <div class="theme-grid fm-themes" id="fm-themes">${THEMES.map((th) => `<button type="button" class="theme-swatch ${ed.theme === th.name ? 'active' : ''}" data-theme="${esc(th.name)}" title="${esc(th.name)}"><span class="dot" style="background:${th.solid}"></span></button>`).join('')}</div>
+          </div>
+          <div class="fm-grid2">
+            <div class="fm-fld"><span>${esc(t('fm_look_font'))}</span>
+              <wa-button class="font-btn" appearance="outlined" id="fm-font"><span class="fb-label" style="font-family:${esc(fontStack(ed.font))}">${esc(ed.font || t('font_default'))}</span></wa-button>
+            </div>
+            <label class="fm-fld">${esc(t('fm_look_size'))}<span class="fm-selw"><select id="fm-size" class="fm-select">
+              ${TEXT_SIZES.map((z) => `<option value="${z}" ${ed.text_size === z ? 'selected' : ''}>${esc(t('fm_size_' + z))}</option>`).join('')}
+            </select></span></label>
+          </div>
+        </div>
+        <p class="dim fm-note">${esc(t('fm_look_note'))}</p>
+      </section>
+
+      <section class="card">
         <h3>${esc(t('fm_languages'))}</h3>
         <label class="fm-fld fm-fld-short">${esc(t('fm_src_lang'))}<span class="fm-selw"><select id="fm-src" class="fm-select">${langOpts}</select></span></label>
         <div class="fm-fld"><span>${esc(t('fm_langs_offered'))}</span><div class="fm-langs" id="fm-langs">${langChecks}</div></div>
@@ -597,7 +672,7 @@ function editorHtml() {
 }
 
 function edMetaHtml() {
-  if (!ed.id) return '';
+  if (!ed.id) return ed.from_last ? `<span class="chip">${esc(t('fm_from_last', ed.from_last))}</span>` : '';
   return `<span class="chip">${esc(t('fm_version', ed.version))}</span>` +
     (ed.disabled ? `<span class="chip chip-warn">${esc(t('fm_status_off'))}</span>` : '');
 }
@@ -742,6 +817,8 @@ function onEditorInput(e) {
     return;
   }
   if (el.name === 'fm-store') { ed.store = el.value; return; }
+  if (el.name === 'fm-mode') { ed.mode = el.value; return; }
+  if (el.id === 'fm-size') { ed.text_size = el.value; return; }
   if (el.id === 'fm-src') {
     ed.src_lang = el.value;
     if (!ed.langs.includes(ed.src_lang)) ed.langs.push(ed.src_lang);
@@ -860,15 +937,14 @@ function showBusy(title) {
 
 async function save(extra = {}) {
   if (!validate()) return;
-  const h = document.documentElement;
   const body = {
     kind: ed.kind, title: ed.title, description: ed.description, audience: ed.audience, verify_email: ed.verify_email,
     src_lang: ed.src_lang, langs: ed.langs, fields: ed.fields, subject_tpl: ed.subject_tpl,
     recipients: ed.recipients.split(/[\s,;]+/).filter(Boolean),
     store: ed.store,
-    // The look the fill page opens with, unless the visitor picks otherwise
-    // 填写页默认以此观感打开,除非访问者另选
-    theme: h.dataset.theme || '', mode: h.classList.contains('wa-dark') ? 'dark' : 'light',
+    // The look the fill page is shown in, to everyone
+    // 填写页对每个人呈现的观感
+    theme: ed.theme, mode: ed.mode, font: ed.font, text_size: ed.text_size,
     ...extra,
   };
   const btn = qs('#fm-save');

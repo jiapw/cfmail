@@ -24,6 +24,8 @@
 import { Hono } from 'hono';
 import type { Addr, Env, User } from './types';
 import { requireAuth, userFromRequest } from './auth';
+import { THEME_NAMES } from './themes-list';
+import { isKnownFont } from './fonts';
 import { HttpError, E } from './errors';
 import { buildMime, type MimeAttachment } from './mime';
 import { findMailboxByAddress, ingestEml } from './parse';
@@ -154,13 +156,20 @@ async function cleanRecipients(env: Env, body: any): Promise<string[]> {
   return out;
 }
 
-/** The look the designer had when saving; the fill page opens the same way by default.
- *  设计者保存时的观感;填写页默认以同样的样子打开。 */
-function cleanLook(body: any): { theme: string | null; mode: string | null } {
-  return {
-    theme: String(body.theme || '').slice(0, 32) || null,
-    mode: body.mode === 'dark' ? 'dark' : body.mode === 'light' ? 'light' : null,
-  };
+/** The look the fill page is shown in: the designer's decision, made in the editor and kept with
+ *  the form. The palette and the typeface are checked against what this server can render -- a
+ *  visitor gets no switch, so a value nobody can draw would be a page nobody can read.
+ *  填写页呈现的观感:设计者在编辑器里定下、随表单保存。配色与字体都对照本服务器画得出来的东西检查 ——
+ *  访问者没有开关,一个谁也画不出来的值,就是一页谁也读不了的页面。 */
+interface Look { theme: string | null; mode: string; font: string; text_size: string }
+const TEXT_SIZES = new Set(['sm', 'md', 'lg', 'xl']);
+function cleanLook(body: any): Look {
+  const theme = String(body.theme || '').slice(0, 32);
+  if (theme && !THEME_NAMES.includes(theme)) throw new HttpError(400, 'e_unknown_theme');
+  const font = String(body.font || '').slice(0, 80);
+  if (font && !isKnownFont(font)) throw new HttpError(400, 'e_unknown_font');
+  const size = String(body.text_size || 'md');
+  return { theme: theme || null, mode: body.mode === 'dark' ? 'dark' : 'light', font, text_size: TEXT_SIZES.has(size) ? size : 'md' };
 }
 
 // ---------- Translation ----------
@@ -257,6 +266,8 @@ interface FormRow {
   last_submit_at: number | null; created_at: number; updated_at: number;
   /** Where answers go: mail | store | both (see migration 0038) / 答复去哪儿:mail | store | both(见 0038 迁移) */
   store: string;
+  /** The fill page's typeface and text size (see migration 0039) / 填写页的字体与字号(见 0039 迁移) */
+  font: string; text_size: string;
 }
 
 const STORE_MODES = new Set(['mail', 'store', 'both']);
@@ -299,8 +310,14 @@ function summary(c: any, row: FormRow) {
   };
 }
 
+/** The look as the fill page receives it. A row from before 0039 has no font and the normal size.
+ *  填写页收到的观感。0039 之前的行没有字体,字号为标准。 */
+const lookOf = (row: FormRow): Look => ({
+  theme: row.theme, mode: row.mode === 'dark' ? 'dark' : 'light', font: row.font || '', text_size: TEXT_SIZES.has(row.text_size) ? row.text_size : 'md',
+});
+
 function full(c: any, row: FormRow) {
-  return { ...summary(c, row), ...specOf(row), i18n: i18nOf(row).tr, theme: row.theme, mode: row.mode };
+  return { ...summary(c, row), ...specOf(row), i18n: i18nOf(row).tr, ...lookOf(row) };
 }
 
 async function ownForm(c: any): Promise<FormRow> {
@@ -354,6 +371,17 @@ formsApp.get('/directory', async (c) => {
   });
 });
 
+/** The designer's most recent form: a new one starts from its settings, so that the second
+ *  form for the same company is not set up from nothing. Registered before /:id, which would
+ *  otherwise read "last" as an id.
+ *  设计者最近的一份表单:新表单从它的设置起步,同一家公司的第二份表单不必从零配起。
+ *  注册在 /:id 之前,否则 "last" 会被当成一个 id。 */
+formsApp.get('/last', async (c) => {
+  const row = await c.env.DB.prepare('SELECT * FROM forms WHERE owner_id=?1 ORDER BY updated_at DESC LIMIT 1')
+    .bind(c.get('user').id).first() as FormRow | null;
+  return c.json({ form: row ? full(c, row) : null });
+});
+
 formsApp.post('/', async (c) => {
   const user = c.get('user');
   const body = await c.req.json<any>();
@@ -369,12 +397,12 @@ formsApp.post('/', async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO forms (id, token, owner_id, domain_id, kind, title, description, audience, verify_email, src_lang, langs_json,
-         fields_json, i18n_json, subject_tpl, recipients_json, theme, mode, store, version, disabled, submissions, created_at, updated_at)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,1,0,0,?19,?19)`
+         fields_json, i18n_json, subject_tpl, recipients_json, theme, mode, store, font, text_size, version, disabled, submissions, created_at, updated_at)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?20,?21,1,0,0,?19,?19)`
     ).bind(
       id, token, user.id, dom?.id || null, spec.kind, spec.title, spec.description, spec.audience, spec.verify_email ? 1 : 0,
       spec.src_lang, JSON.stringify(spec.langs), JSON.stringify(spec.fields), JSON.stringify(i18n), spec.subject_tpl,
-      JSON.stringify(recipients), look.theme, look.mode, storeOf(body.store), t
+      JSON.stringify(recipients), look.theme, look.mode, storeOf(body.store), t, look.font, look.text_size
     ),
     c.env.DB.prepare('INSERT INTO form_versions (form_id, version, spec_json, created_at) VALUES (?1,1,?2,?3)')
       .bind(id, JSON.stringify(spec), t),
@@ -404,12 +432,12 @@ formsApp.put('/:id', async (c) => {
   const stmts = [
     c.env.DB.prepare(
       `UPDATE forms SET domain_id=?2, kind=?3, title=?4, description=?5, audience=?6, verify_email=?7, src_lang=?8, langs_json=?9,
-         fields_json=?10, i18n_json=?11, subject_tpl=?12, recipients_json=?13, theme=?14, mode=?15, version=?16, updated_at=?17, store=?18
+         fields_json=?10, i18n_json=?11, subject_tpl=?12, recipients_json=?13, theme=?14, mode=?15, version=?16, updated_at=?17, store=?18, font=?19, text_size=?20
        WHERE id=?1`
     ).bind(
       row.id, domainId, spec.kind, spec.title, spec.description, spec.audience, spec.verify_email ? 1 : 0, spec.src_lang,
       JSON.stringify(spec.langs), JSON.stringify(spec.fields), JSON.stringify(i18n), spec.subject_tpl,
-      JSON.stringify(recipients), look.theme, look.mode, version, t, storeOf(body.store ?? row.store)
+      JSON.stringify(recipients), look.theme, look.mode, version, t, storeOf(body.store ?? row.store), look.font, look.text_size
     ),
   ];
   if (changed) {
@@ -668,7 +696,7 @@ async function memberIdentity(env: Env, user: User) {
 fillApp.get('/:token', async (c) => {
   const row = await liveForm(c);
   const spec = specOf(row);
-  const look = { theme: row.theme, mode: row.mode, kind: row.kind, title: row.title, src_lang: row.src_lang, langs: spec.langs, i18n: i18nOf(row).tr };
+  const look = { ...lookOf(row), kind: row.kind, title: row.title, src_lang: row.src_lang, langs: spec.langs, i18n: i18nOf(row).tr };
   // The company named on the page is the one whose host is being visited, as on every other
   // page; the form's own domain only fills in for a host that is not one of them (localhost).
   // 页面上写的公司是正被访问的那个主机的,与其余每一页相同;

@@ -61,7 +61,7 @@ Three peer subsystems behind one sign-in and one nav bar: **Mail**, **Forms** an
   按表单选择:只发邮件(不保存)、保存在 CFMail 且邮件只带链接、或保存并把完整内容发邮件。保存的答复(含文件)由设计者和持有接收邮箱的人从表单列表打开,一直保留到删除。
 - **Multilingual by itself / 自动多语言** — tick the languages to offer; a Workers AI model translates your texts (which model and which prompt is set once, under Admin → Models), the fill page opens in the visitor's browser language and lets them switch, and links can pre-fill answers (`#/f/<token>?name=…&q1=…`).
   勾选要提供的语言,由 Workers AI 模型翻译你的文本(用哪个模型、什么提示词在 后台 → 大模型 里统一设定);填写页按访问者浏览器语言打开、可切换;链接可带参数预填(`#/f/<token>?name=…&q1=…`)。
-- **Versions, on/off, permanent links / 版本、停用、永久链接** — every saved change bumps the version and the answer mail says which one it was written against; a disabled form shows a notice at the same link; deleting is the only thing that ends a link. The fill page opens in the designer's light/dark mode and the visitor can flip it.
+- **Versions, on/off, permanent links / 版本、停用、永久链接** — every saved change bumps the version and the answer mail says which one it was written against; a disabled form shows a notice at the same link; deleting is the only thing that ends a link. The fill page is shown in the look the designer chose -- palette, light or dark, typeface, text size -- and visitors pick only their language. A new form starts with the settings of the one made before it.
   每次保存改动都递增版本号,答复邮件写明对应版本;停用后同一链接显示停用提示;只有删除才会让链接失效。填写页默认跟随设计者的明暗模式,访问者可自行切换。
 
 ### Both / 两边共用

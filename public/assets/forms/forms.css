@@ -151,6 +151,17 @@
 .fm-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 640px) { .fm-grid2 { grid-template-columns: 1fr; } }
 
+/* The look card: light/dark side by side, the palette as a row of small swatches (the settings
+   page's, a size down), the font button filling its column like the size picker beside it.
+   外观栏:明暗并排,配色是一排小色块(设置页那种,小一号),字体按钮与旁边的字号选择器一样占满一列。 */
+.fm-look .fm-seg { display: flex; gap: 22px; flex-wrap: wrap; }
+.fm-look .fm-check { margin: 3px 0 6px; align-items: center; font-size: 14px; }
+.fm-look .fm-check input { margin: 0; }
+.fm-themes { margin-top: 2px; gap: 4px; }
+.fm-themes .theme-swatch { width: 30px; height: 30px; }
+.fm-themes .theme-swatch .dot { width: 20px; height: 20px; }
+.fm-look .font-btn, .fm-look .font-btn::part(base) { width: 100%; }
+
 /* Native controls, sized like the settings page's */
 /* 原生控件,尺寸与设置页一致 */
 .fm-ed input:not([type=checkbox]):not([type=radio]), .fm-ed textarea, .fm-ed .fm-select,
@@ -287,17 +298,65 @@ input.mono, .mono { font-family: var(--font-code), ui-monospace, Consolas, monos
 
 /* ---------- Fill page ---------- */
 /* ---------- 填写页 ---------- */
+/* The colour the designer chose has to be the page's colour, not merely its buttons'. Light
+   palettes already tint their background this way; dark ones do not -- every theme's dark
+   neutrals sit within a shade of one another, so a page built from them looked identical
+   whichever colour was picked, and the choice showed up only on the submit button. Here the page
+   and the card come off the accent scale in both modes. It is set on the root element, so that
+   the canvas behind the page -- and the strip beneath a phone's status bar -- is painted too;
+   fill.js puts the class on with the rest of the look and its guard takes it off on the way out.
+   The name is not the editor card's .fm-look: one is a section of the designer's page, this is the
+   whole document of the visitor's.
+   设计者选的颜色必须是这一页的颜色,而不只是它按钮的颜色。浅色调色板本来就是这样给背景上色的,
+   深色则不然 —— 各主题的深色中性阶彼此只差一两度,于是由它们搭出来的页面,选什么颜色看上去都一样,
+   那个选择只在提交按钮上露了个面。这里两种模式下页面与卡片都取自强调色阶。它挂在根元素上,
+   好让页面背后的画布 —— 以及手机状态栏底下那一条 —— 一并染上;
+   fill.js 与观感的其余部分一起挂上这个类,由它的还原器在离开时摘掉。
+   这个名字不是编辑器卡片的 .fm-look:那个是设计者页面里的一栏,这个是访问者页面的整份文档。 */
+html[data-webawesome].fm-fill-look {
+  --bg: var(--x-a2);
+  --panel: var(--x-a1);
+  --panel-2: var(--x-a3);
+  --hover: var(--x-a3);
+  --hover-2: var(--x-a4);
+  --active: var(--x-a5);
+  --border: var(--x-a6);
+  --border-2: var(--x-a7);
+}
+/* Dark reverses which of the first two steps is the deeper: the page takes the deeper one and
+   the card sits a step above it, the same relation the light rule above has the other way round.
+   深色下前两级的深浅正好相反:页面取更深的那一级,卡片高它一级 —— 与上面浅色那条是同一种关系的反面。 */
+html[data-webawesome].fm-fill-look.wa-dark {
+  --bg: var(--x-a1);
+  --panel: var(--x-a2);
+}
 .fm-fill { min-height: calc(100vh - var(--sat, 0px)); min-height: calc(100dvh - var(--sat, 0px)); display: flex; flex-direction: column; align-items: center; padding: 0 16px 32px; box-sizing: border-box; }
 .fm-fill-top { width: min(760px, 100%); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 0 18px; }
 /* The lockup yields before the tools do: a long company name is clipped with an ellipsis, the
-   language switch and the mode button keep their size, and the two never overlap.
-   品牌组合先让步:过长的企业名以省略号截断,语言切换与明暗按钮保持尺寸,两者永不重叠。 */
+   language switch keeps its size, and the two never overlap.
+   品牌组合先让步:过长的企业名以省略号截断,语言切换保持尺寸,两者永不重叠。 */
 .fm-brand { font-size: 22px; min-width: 0; }
 .fm-brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-brand wa-icon { color: var(--primary); flex: none; }
 .fm-fill-tools { display: flex; align-items: center; gap: 8px; flex: none; }
 @media (max-width: 640px) { .fm-brand { font-size: 18px; } }
 .fm-fill .fm-langsel { width: auto; height: 34px; font-size: 13.5px; }
+/* The designer's typeface and text size. The typeface is a variable so that the buttons, which
+   render in their own shadow trees, take it through --wa-font-family-body; the size is a zoom on
+   this wrapper, which scales every pixel measurement in the page at once instead of asking each
+   rule to know about four sizes.
+   设计者的字体与字号。字体走变量,好让在自己影子树里渲染的按钮经 --wa-font-family-body 取到它;
+   字号是这层容器上的 zoom,一次缩放页面里的每个像素尺寸,而不必让每条规则都知道有四种字号。 */
+.fm-zoom {
+  width: 100%; flex: 1; display: flex; flex-direction: column; align-items: center;
+  font-family: var(--fm-font); --wa-font-family-body: var(--fm-font); --wa-font-family-heading: var(--fm-font);
+}
+/* The headings would otherwise take the theme's heading face from the Web Awesome native styles
+   标题否则会从 Web Awesome 的原生样式取主题的标题字体 */
+.fm-zoom h1, .fm-zoom h2, .fm-zoom h3 { font-family: inherit; }
+.fm-zoom.fm-size-sm { zoom: .9; }
+.fm-zoom.fm-size-lg { zoom: 1.15; }
+.fm-zoom.fm-size-xl { zoom: 1.3; }
 .fm-card-w {
   width: min(760px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
   padding: 28px 32px 30px; box-sizing: border-box;
