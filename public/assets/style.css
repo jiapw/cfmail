@@ -45,6 +45,14 @@ html { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-are
    那时内容会退下来让开,而不是藏在时钟下面。 */
 :root { --sat: env(safe-area-inset-top, 0px); }
 html { padding-top: var(--sat); }
+/* That padding moves only what is in the flow. A layer that is position: fixed measures from
+   the viewport itself and never sees it -- so every such layer that touches the top edge steps
+   down by the same amount on its own, wherever it is declared. Found the hard way: after the
+   padding alone, the page's own top bar stepped down and the preview's head stayed under the
+   clock.
+   那份内边距只挪得动文档流里的东西。position: fixed 的层是从视口本身量起的,根本看不见它 ——
+   所以每一个贴着顶边的这种层,都在各自声明的地方往下退同样一段。这是吃过亏才知道的:
+   只加了内边距之后,页面自己的顶栏退下来了,预览的头部还压在时钟底下。 */
 /* A component that is not yet defined is not drawn: without this an undefined <wa-button> is a
    run of bare text for a frame, before its definition arrives and gives it a shape. The common
    ones are defined before anything is drawn (see index.html); this catches the rest.
@@ -777,23 +785,42 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
   padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 10;
 }
-.page-head h1 { font-size: 20px; font-weight: 500; margin: 0; }
-.tabs { display: flex; gap: 4px; margin-left: 24px; }
-/* Nine tabs come to eleven hundred pixels, which no phone has. They scroll sideways as a strip
-   rather than wrapping into three rows or pushing the page along with them -- a row of tabs that
-   moves under the thumb is a familiar thing, and three rows of them is a different navigation.
-   The rule is narrow-only: above the breakpoint they fit, and a scroll container there would
-   only clip whatever a tab wants to open.
-   九个页签加起来一千一百像素,没有哪台手机有这么宽。它们作为一条横向滚动,
-   而不是折成三行、也不是把整页一起推走 —— 一排能在拇指下移动的页签是件熟悉的东西,
-   三排页签则是另一种导航。这条规则只在窄屏:断点以上它们放得下,
-   而在那里放一个滚动容器,只会裁掉某个页签想打开的东西。 */
-@media (max-width: 900px) {
-  .tabs { margin-left: 8px; overflow-x: auto; scrollbar-width: none; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab { flex: none; }
+/* The title neither shrinks nor wraps. It sits beside a strip that asks for far more width
+   than there is, and a flex item that may shrink will: the Japanese title was squeezed from
+   140px to 79px and broke over three lines -- CJK wraps between any two characters, so there
+   is no long word to stop it -- which made the header taller than the page it heads.
+   标题既不收缩也不折行。它旁边是一条要得比现有宽度多得多的页签条，
+   而一个允许收缩的 flex 项就会被收缩：日文标题被从 140px 挤到 79px，
+   断成三行 —— CJK 在任意两字之间都能折，没有一个长单词拦得住它 ——
+   于是头部比它所领的那一页还高。 */
+.page-head h1 { font-size: 20px; font-weight: 500; margin: 0; flex: none; white-space: nowrap; }
+.tabs {
+  display: flex; gap: 4px; margin-left: 24px;
+  flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
 }
-.tab { padding: 8px 16px; border-radius: 999px; color: var(--text-2); font-size: 14px; }
+.tabs::-webkit-scrollbar { display: none; }
+/* Thirteen tabs are wider than any screen this runs on, a landscape iPad included, so the strip
+   scrolls as a strip at every width rather than wrapping into rows or pushing the page along
+   with it -- a row of tabs that moves under the thumb is a familiar thing; two rows of them is
+   a different navigation, and a page that slides sideways is neither.
+   Two things make that work and both are easy to lose. The tabs neither shrink nor wrap, so the
+   longest name in any language stays on one line. And the strip is allowed to be narrower than
+   what it holds: without min-width: 0 it is a flex item whose floor is everything inside it, so
+   the header grows past the window and the whole page scrolls sideways -- navigation and body
+   together, which is the one arrangement nobody asked for.
+   十三个页签比这套东西会跑的任何屏幕都宽，横放的 iPad 也在内，
+   所以这条在任何宽度下都作为一条横向滚动，而不是折行、也不是把整页一起推走
+   —— 一排能在拇指下移动的页签是件熟悉的东西；两排页签是另一种导航，
+   而一整页往旁边滑，两样都不是。
+   让它成立的有两点，而且两点都容易丢。页签既不收缩也不折行，
+   于是任何语言里最长的那个名字都留在一行。以及这条允许比它装的东西窄：
+   没有 min-width: 0，它就是一个以“里面所有东西”为下限的 flex 项，
+   头部因此撑出窗口，整页跟着横向滑动 —— 导航连着主体一起滑，
+   而那正是谁都没有要过的那种摆法。 */
+@media (max-width: 900px) {
+  .tabs { margin-left: 8px; }
+}
+.tab { flex: none; white-space: nowrap; padding: 8px 16px; border-radius: 999px; color: var(--text-2); font-size: 14px; }
 .tab:hover { background: var(--hover); }
 .tab.active { background: var(--selected); color: var(--accent-text); font-weight: 500; }
 /* 后台/设置页统一:控件基准高度 34px(原生控件与 WA 组件共用这个令牌) */
@@ -1000,14 +1027,14 @@ wa-dialog.unrouted-dlg { --width: min(900px, 94vw); }
    这是人们从用过的每一个抽屉那里就已经预期的动作。由 app.js 只在需要时创建,
    所以宽屏上任何东西都不会被一层透明的浮层横盖着。 */
 .side-backdrop {
-  position: fixed; inset: 60px 0 0 0; z-index: 149;
+  position: fixed; inset: calc(60px + var(--sat)) 0 0 0; z-index: 149;
   background: color-mix(in srgb, #000 26%, transparent);
 }
-body.impersonating .side-backdrop { inset: 94px 0 0 0; }
+body.impersonating .side-backdrop { inset: calc(94px + var(--sat)) 0 0 0; }
 
 @media (max-width: 900px) {
   .sidebar {
-    position: fixed; left: env(safe-area-inset-left, 0px); top: 60px; bottom: 0; z-index: 150;
+    position: fixed; left: env(safe-area-inset-left, 0px); top: calc(60px + var(--sat)); bottom: 0; z-index: 150;
     background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
   }
   .sidebar.hidden { display: none; }
@@ -1117,7 +1144,6 @@ body.impersonating .side-backdrop { inset: 94px 0 0 0; }
   .msg-right { gap: 4px; }
 
   .page-head { flex-wrap: wrap; padding: 10px 12px; row-gap: 2px; }
-  .page-head h1 { white-space: nowrap; }
   .page-head .tabs { flex: 1 0 100%; margin-left: 0; }
   .page-body { padding: 16px 10px 60px; }
   .form-row, .row-flex { flex-wrap: wrap; row-gap: 6px; }
@@ -1295,7 +1321,7 @@ html[data-webawesome].wa-dark {
    固定在视口顶端,并且实实在在占掉一条:下面几个外壳都是 100vh 高,
    所以这条的高度是从它们身上减掉的,而不是把整页往下顶出屏幕。 */
 .actas-bar {
-  position: fixed; inset: 0 0 auto 0; height: 34px; z-index: 300;
+  position: fixed; inset: var(--sat) 0 auto 0; height: 34px; z-index: 300;
   display: flex; align-items: center; justify-content: center; gap: 10px;
   padding: 0 12px; font-size: 13px;
   background: var(--wa-color-warning-fill-loud); color: var(--wa-color-warning-on-loud);
@@ -1315,7 +1341,7 @@ body.impersonating .page,
 body.impersonating .auth-wrap,
 body.impersonating .boot-loading { min-height: calc(100vh - 34px - var(--sat)); min-height: calc(100dvh - 34px - var(--sat)); }
 @media (max-width: 900px) {
-  body.impersonating .sidebar { top: 94px; }
+  body.impersonating .sidebar { top: calc(94px + var(--sat)); }
 }
 
 /* ---------- 备份:三级包的并列清单 ---------- */

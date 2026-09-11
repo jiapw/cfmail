@@ -465,6 +465,9 @@
 .drv-view {
   position: fixed; inset: 0; z-index: 950; background: rgba(15, 15, 18, .92);
   display: flex; flex-direction: column; color: #fff;
+  /* The backdrop still reaches the top edge; only what is in it steps down (see --sat in style.css).
+     底色仍然抵到顶边;退下来的只是里面的东西(见 style.css 的 --sat)。 */
+  padding-top: var(--sat);
 }
 .drv-view-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
 /* The name yields rather than stretches, so what follows it -- the codepage selector -- sits
@@ -788,8 +791,9 @@
 .drv-piclb {
   position: fixed; inset: 0; z-index: 960; background: rgba(10, 10, 12, .93);
   display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+  padding-top: var(--sat);
 }
-.drv-piclb img { max-width: calc(100vw - 96px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); object-fit: contain; }
+.drv-piclb img { max-width: calc(100vw - 96px); max-height: calc(100vh - 64px - var(--sat)); max-height: calc(100dvh - 64px - var(--sat)); object-fit: contain; }
 .drv-piclb .nav {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 44px; height: 44px; border: 0; border-radius: 50%; cursor: pointer;
@@ -1113,10 +1117,13 @@
   .drv-view.pic .drv-view-head {
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
+    /* Kept at the very top so the fade starts at the edge; the buttons step down inside it.
+       仍贴着最顶端,好让渐变从边缘开始;按钮在它里面往下退。 */
+    padding-top: calc(10px + var(--sat));
     position: absolute; top: 0; left: 0; right: 0; z-index: 3;
     background: linear-gradient(rgba(0, 0, 0, .55), rgba(0, 0, 0, 0));
   }
-  .drv-view.pic .drv-verpick { position: absolute; top: 52px; left: 0; right: 0; z-index: 3; }
+  .drv-view.pic .drv-verpick { position: absolute; top: calc(52px + var(--sat)); left: 0; right: 0; z-index: 3; }
   /* All gestures belong to the deck while it is up: pan-y would chain the vertical component
      to the listing underneath, which then scrolls behind a full-screen photograph.
      台立着时手势全归它:pan-y 会把竖向分量链给底下的列表,于是整屏照片背后列表在滚。 */
@@ -1141,11 +1148,11 @@
      关上就不在,打开就以全宽压在列表**上面**,图标重新穿上它们的字,
      新建按钮重新穿上它的字,配额回到它脚下。上面那块把它缩小;这里的每一条都是把那块解开,再加上浮。 */
   .drv-nav {
-    position: fixed; left: env(safe-area-inset-left, 0px); top: 60px; bottom: 0; z-index: 150;
+    position: fixed; left: env(safe-area-inset-left, 0px); top: calc(60px + var(--sat)); bottom: 0; z-index: 150;
     width: 256px; padding: 0 8px 16px 8px;
     background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
   }
-  body.impersonating .drv-nav { top: 94px; }
+  body.impersonating .drv-nav { top: calc(94px + var(--sat)); }
   .drv-nav-item .lbl, .drv-quota { display: block; }
   .drv-new span { display: inline; }
   .drv-nav-item { justify-content: flex-start; padding: 0 12px 0 14px; border-radius: 0 999px 999px 0; }
@@ -1527,7 +1534,7 @@
    ---------- PDF 编辑器自己的那扇窗(#/pdf/<id>) ----------
    页面与其图层沿用预览的类名,上面的一切规则直接适用;下面只有围着它们的那扇窗:
    带文件名的头部、滚动的中段,以及被按在滚动区顶上的编辑器工具条。 */
-.pdft-app { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.pdft-app { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); padding-top: var(--sat); }
 .pdft-head {
   flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
   padding: 10px 16px; border-bottom: 1px solid var(--border);
@@ -1695,9 +1702,9 @@
    而天然的滚动条是"窗口"的那一根。所以在这里,浮层就是页面:
    顶栏钉在窗口顶部,文档按普通布局排下去,页面级滚动条承载它。 */
 body.fv-solo { overflow: auto; }
-body.fv-solo .drv-view { position: static; display: block; background: var(--bg); min-height: 100vh; }
+body.fv-solo .drv-view { position: static; display: block; background: var(--bg); padding-top: 0; min-height: calc(100vh - var(--sat)); min-height: calc(100dvh - var(--sat)); }
 body.fv-solo .drv-view-head {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 12;
+  position: fixed; top: var(--sat); left: 0; right: 0; z-index: 12;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
 body.fv-solo .drv-view-head wa-button::part(base) { color: var(--text); }

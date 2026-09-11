@@ -487,6 +487,24 @@ export function loadCss(href) {
   return p;
 }
 
+/**
+ * A kick after a native fullscreen player closes, so WebKit lays the page out again.
+ *
+ * This does not put anything back. When iOS hands the page back extending under the status bar,
+ * that is the page's new shape, and env(safe-area-inset-top) reports the overlap; every top-anchored
+ * layer steps down by it in the stylesheets (--sat in style.css). What this does is make sure that
+ * new shape is laid out at all -- an exit from fullscreen has been seen to leave the old frame
+ * standing until something disturbs it, so the page is disturbed, twice, at nothing more than a
+ * scroll to the top and a min-height that changes for one frame.
+ *
+ * 原生全屏播放器收起之后踢一脚,让 WebKit 把页面重新排一遍。
+ *
+ * 它不负责把任何东西放回去。iOS 把页面交还成伸到状态栏底下的样子时,那就是页面的新形状,
+ * env(safe-area-inset-top) 会报出重叠的高度;每一个贴着顶边的层都在样式表里按它往下退
+ * (见 style.css 的 --sat)。这里做的只是确保那个新形状真的被排了出来 ——
+ * 退出全屏后见过旧的框架一直站着不动、直到有什么惊动它为止,所以这里惊动它两次,
+ * 用的不过是一次滚到顶和一个只变一帧的 min-height。
+ */
 export function settleAfterFullscreen() {
   const nudge = () => {
     window.scrollTo(0, 0);

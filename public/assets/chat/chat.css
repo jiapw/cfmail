@@ -583,7 +583,7 @@
 @media (max-width: 760px) {
   .chat-side {
     position: fixed;
-    inset: 0 auto 0 0;
+    inset: var(--sat) auto 0 0;
     z-index: 30;
     width: 280px;
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
