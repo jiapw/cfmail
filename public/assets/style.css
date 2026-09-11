@@ -833,17 +833,18 @@ wa-dialog.attprev-dlg.full .attprev-body iframe { border-radius: 0; }
   padding: 20px 24px; margin-bottom: 16px;
 }
 .card h3 { margin: 0 0 14px; font-size: 16px; font-weight: 500; }
-/* A table that is wider than the screen has to scroll inside its own box, or it pushes the whole
-   page sideways and takes the navigation with it. Only narrow, and only horizontally -- a
-   scroll container clips in both directions whatever the stylesheet asks for, and above the
-   breakpoint these tables fit anyway, so there is nothing to buy and a menu to lose.
-   比屏幕宽的表格必须在自己的盒子里滚动,否则它会把整页往旁边推,连导航一起推走。
-   只在窄屏,也只在水平方向 —— 一个滚动容器无论样式表怎么要求都会两个方向一起裁,
-   而在断点以上这些表格本来就放得下,那就没什么可换的,只会丢掉一个菜单。 */
-.tblwrap { min-width: 0; }
-@media (max-width: 900px) {
-  .tblwrap { overflow-x: auto; }
-}
+/* A table wider than the window scrolls inside its own box. Otherwise it pushes the whole page
+   sideways and takes the navigation with it -- the members and audit tables did exactly that on
+   a landscape iPad, where the rule used to stop at 900px on the grounds that above it these
+   tables fit. They do not; a screen being a tablet rather than a phone was never the same thing
+   as being wide enough. The care that kept it narrow-only was for menus, which a scroll
+   container clips in both directions -- and there are none in any of these tables.
+   比窗口宽的表格在自己的盒子里滚动。否则它会把整页往旁边推，连导航一起推走 ——
+   成员与审计两张表在横放的 iPad 上正是如此，而这条规则当时停在 900px，
+   理由是“断点以上这些表格放得下”。放不下；一块屏幕是平板而不是手机，
+   从来就不等于它够宽。当时把它限在窄屏的那份顾虑是为了菜单——
+   滚动容器会两个方向一起裁它 —— 而这些表格里一个菜单也没有。 */
+.tblwrap { min-width: 0; overflow-x: auto; }
 
 .table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .table th { text-align: left; color: var(--text-2); font-weight: 500; font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
