@@ -172,6 +172,14 @@ const PLAYS_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac', 'alac']);
 const AAC_RATE = 48000;
 const AAC_BITS = 160000;
 const AV_CH_STEREO = 3;
+/** H.264, by the number libav gives it. The build exports no constant for it, and the number is
+ *  checked against the name the build gives back before anything is written under it.
+ *  H.264,按 libav 给它的编号。这份构建没有导出这个常量,
+ *  而在把任何东西写到这个编号名下之前,会先拿它换回名字核对一遍。 */
+const AV_CODEC_ID_H264 = 27;
+/** Microseconds: what WebCodecs counts in, and so what the redrawn stream is stated in.
+ *  微秒:WebCodecs 用的单位,因而也是重绘出来的那条流所使用的单位。 */
+const US = 1000000;
 
 /**
  * A count of channels, as the set of speakers they are.
@@ -225,18 +233,31 @@ async function choose(av, streams) {
   const words = named.filter((x) => x.s.codec_type === AV_SUBTITLE && SUB_CODECS.has(x.name));
   const first = (type, ok) => named.find((x) => x.s.codec_type === type && ok.has(x.name));
   const v = first(AV_VIDEO, PLAYS_VIDEO);
+  let redraw = null;
   if (!v) {
-    // Nothing to show. Which codec it was is worth carrying out, because "this needs another
-    // program" is a different sentence from "something went wrong".
-    // 没有可展示的东西。是哪种编码值得带出去,因为"这个需要另一个程序"
-    // 与"出了点问题"不是同一句话。
+    // Not one the browser plays. It may still be one this build decodes, and if the browser will
+    // encode what comes out, the film is redrawn on the way through rather than refused. Whether
+    // it can be is asked of both -- the build for the decoder, the browser for the encoder -- and
+    // only a no from either is the old answer. Which codec it was is still carried out, because
+    // "this needs another program" is a different sentence from "something went wrong".
+    // 不是浏览器会放的那种。它仍可能是这份构建解得了的那种,而如果浏览器肯把解出来的东西编回去,
+    // 片子就在路上被重画一遍,而不是被拒绝。能不能,两边都要问 ——
+    // 解码器问构建,编码器问浏览器 —— 只有两边任一个说不,才是原来那个答案。
+    // 是哪种编码仍然带出去,因为"这个需要另一个程序"与"出了点问题"不是同一句话。
     const any = named.find((x) => x.s.codec_type === AV_VIDEO);
-    const err = new Error('e_drive_video_codec');
-    err.codec = any?.name || '';
-    throw err;
+    const can = any ? await av.avcodec_find_decoder(any.s.codec_id).catch(() => 0) : 0;
+    const w = any ? await av.AVCodecParameters_width(any.s.codecpar).catch(() => 0) : 0;
+    const h = any ? await av.AVCodecParameters_height(any.s.codecpar).catch(() => 0) : 0;
+    if (!can || !w || !h || !(await canRedraw(w, h))) {
+      const err = new Error('e_drive_video_codec');
+      err.codec = any?.name || '';
+      throw err;
+    }
+    redraw = any;
   }
+  const keep = v ? [v] : [];
   const a = first(AV_AUDIO, PLAYS_AUDIO);
-  if (a) return { take: [v, a], convert: null, silent: '', words };
+  if (a) return { take: [...keep, a], convert: null, silent: '', words, redraw };
 
   // Sound the browser will not play. Whether anything can be done about it is asked of the build
   // rather than looked up in a list here: a list would be a second statement of what was compiled
@@ -244,11 +265,11 @@ async function choose(av, streams) {
   // 浏览器不会放的声音。能不能对它做点什么,是去问这份构建,而不是在这里查一份名单 ——
   // 一份名单会成为"编进去了什么"的第二处陈述,而它们会在 build-libav.sh 的片段第一次变动时就吵起来。
   const heard = named.find((x) => x.s.codec_type === AV_AUDIO);
-  if (!heard) return { take: [v], convert: null, silent: '', words };
+  if (!heard) return { take: keep, convert: null, silent: '', words, redraw };
   const canDecode = await av.avcodec_find_decoder(heard.s.codec_id).catch(() => 0);
   const canEncode = await av.avcodec_find_encoder_by_name('aac').catch(() => 0);
-  if (canDecode && canEncode) return { take: [v], convert: heard, silent: '', words };
-  return { take: [v], convert: null, silent: heard.name, words };
+  if (canDecode && canEncode) return { take: keep, convert: heard, silent: '', words, redraw };
+  return { take: keep, convert: null, silent: heard.name, words, redraw };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -288,7 +309,16 @@ function bytesOf(source) {
     : async (at, len) => {
       const r = await fetch(source.url, { headers: { Range: `bytes=${at}-${at + len - 1}` } });
       if (!r.ok && r.status !== 206) throw new Error('e_drive_not_found');
-      return new Uint8Array(await r.arrayBuffer());
+      const body = new Uint8Array(await r.arrayBuffer());
+      // A server that does not do ranges answers with the whole file and a 200, and the whole
+      // file starts at byte zero -- whereas the window being filled starts at `at`. Kept as it
+      // arrived, that window would hold the opening of the film under the address of its middle.
+      // The development server is such a server; the drive's own is not.
+      // 一个不做区间的服务器,会用整个文件和一个 200 来作答,而整个文件是从第零字节开始的 ——
+      // 可正在填的那个窗口是从 `at` 开始的。原样收下,那个窗口就会把片子的开头记在它中段的地址上。
+      // 开发用的那台服务器正是这样一台;网盘自己的那台不是。
+      if (r.status !== 206 && body.length > len && at + len <= body.length) return body.subarray(at, at + len);
+      return body;
     };
   let span = FIRST;
   return {
@@ -693,6 +723,198 @@ function showtime() {
  *  攥着的量,又远远不到任何人愿意坐着听完的程度。 */
 const SLIP = AAC_RATE / 2;
 
+/**
+ * The H.264 profile and level to ask the browser for, by the size of the picture.
+ *
+ * Baseline on purpose: it forbids B-frames, so what comes out is in the order it went in and every
+ * picture's decode time is its display time. The level is the smallest that admits the frame size
+ * at thirty pictures a second; asking for a bigger one than needed is refused by some encoders.
+ *
+ * 向浏览器要哪种 H.264 档次与级别,按画面大小定。
+ *
+ * 特意用 Baseline:它禁止 B 帧,于是出来的顺序就是进去的顺序,每一帧的解码时间就是它的显示时间。
+ * 级别取能容下这个画幅每秒三十帧的最小那一档;要一个比需要更高的级别,某些编码器会拒绝。
+ */
+function avcFor(w, h) {
+  const mbs = Math.ceil(w / 16) * Math.ceil(h / 16);
+  const level = mbs <= 1620 ? '1E' : mbs <= 3600 ? '1F' : mbs <= 8192 ? '28' : '32';
+  return `avc1.42E0${level}`;
+}
+
+/**
+ * Whether the browser will encode a picture this size to H.264. Asked, not assumed: the answer
+ * differs between browsers, versions and machines, and a wrong guess here is a film that says it
+ * will play and then does not.
+ * 浏览器肯不肯把这么大的画面编成 H.264。问出来的,不是假定的:答案随浏览器、版本和机器而不同,
+ * 而这里猜错一次,就是一部说自己能放、然后不放的片子。
+ */
+async function canRedraw(w, h) {
+  if (typeof VideoEncoder === 'undefined') return false;
+  try {
+    const r = await VideoEncoder.isConfigSupported({
+      codec: avcFor(w, h), width: w, height: h, bitrate: 2000000, framerate: 30, avc: { format: 'avc' },
+    });
+    return !!r?.supported;
+  } catch { return false; }
+}
+
+/**
+ * The browser's own H.264 encoder, behind the four calls a picture needs of it.
+ *
+ * Kept behind a face so the half of this that runs in WebAssembly can be exercised where there is
+ * no browser -- the frames go to whatever is handed in, and what is handed in here is the real
+ * thing. Bitrate follows the size: enough that a second generation is not visible over a source
+ * that was a tenth of it, and no more, because every bit of it goes through the player's buffer.
+ *
+ * 浏览器自己的 H.264 编码器,藏在一张画面需要它做的那四件事后面。
+ *
+ * 藏在一层门面后面,是为了让在 WebAssembly 里跑的那一半能在没有浏览器的地方被练到 ——
+ * 帧交给递进来的任何东西,而这里递进来的是真货。码率随画幅走:
+ * 足够让第二代压缩在一个只有它十分之一码率的源上看不出来,再多就不要了,因为每一个比特都要过播放器的缓冲。
+ */
+function webcodecsEncoder(w, h, fps, onChunk) {
+  let description = null;
+  const enc = new VideoEncoder({
+    output: (chunk, meta) => {
+      const d = meta?.decoderConfig?.description;
+      if (d && !description) {
+        description = new Uint8Array(d instanceof ArrayBuffer ? d.slice(0) : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+      }
+      const data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      onChunk({ key: chunk.type === 'key', at: chunk.timestamp, data });
+    },
+    error: () => { /* surfaces as no output, which take() turns into a failure / 表现为没有产出,take() 会把它变成失败 */ },
+  });
+  enc.configure({
+    codec: avcFor(w, h), width: w, height: h,
+    bitrate: Math.round(Math.min(12e6, Math.max(1.5e6, w * h * fps * 0.2))),
+    framerate: fps, avc: { format: 'avc' }, latencyMode: 'quality', hardwareAcceleration: 'no-preference',
+  });
+  return {
+    get description() { return description; },
+    push(planes, key) {
+      const [y, u, v] = planes.data;
+      const buf = new Uint8Array(y.length + u.length + v.length);
+      buf.set(y, 0); buf.set(u, y.length); buf.set(v, y.length + u.length);
+      const frame = new VideoFrame(buf, {
+        format: 'I420', codedWidth: planes.w, codedHeight: planes.h, timestamp: planes.at,
+        layout: [
+          { offset: 0, stride: planes.stride[0] },
+          { offset: y.length, stride: planes.stride[1] },
+          { offset: y.length + u.length, stride: planes.stride[2] },
+        ],
+      });
+      try { enc.encode(frame, { keyFrame: key }); } finally { frame.close(); }
+    },
+    flush: () => enc.flush(),
+    close() { try { enc.close(); } catch { /* already closed / 已经关了 */ } },
+  };
+}
+
+/**
+ * A picture the browser cannot decode, taken apart here and handed to the browser's encoder, so
+ * that what reaches the player is something it can. The twin of sound(): packets in, packets out,
+ * and the parameters of the new stream once there are any.
+ *
+ * DivX and Xvid are what this exists for -- a decade of films in a box no browser has ever opened.
+ * Decoding them in WebAssembly runs at forty times the speed anybody watches; the expensive half,
+ * making H.264, is the browser's own, and on most machines it is the graphics card doing it.
+ *
+ * Times are stated in microseconds throughout, because that is what the encoder counts in, and
+ * they are the file's own display times carried across -- not counted, so a picture the decoder
+ * dropped is a gap and not a shift.
+ *
+ * 一张浏览器解不了的画面,在这里拆开,交给浏览器自己的编码器,好让到达播放器的是它认得的东西。
+ * sound() 的孪生:包进、包出,以及新流一旦成形就有的那份参数。
+ *
+ * 它为 DivX 和 Xvid 而存在 —— 整整十年的片子,装在一个没有浏览器打开过的盒子里。
+ * 在 WebAssembly 里解它们,速度是任何人观看速度的四十倍;贵的那一半 —— 编成 H.264 ——
+ * 是浏览器自己的活,而在多数机器上干这活的是显卡。
+ *
+ * 时间从头到尾以微秒计,因为编码器就按那个数;而且是文件自己的显示时间被搬过来 ——
+ * 不是数出来的,于是解码器丢掉的一帧是一个空档,而不是一次错位。
+ */
+function picture(av, track, fps, make = webcodecsEncoder) {
+  let dc = 0; let dpkt = 0; let dframe = 0;
+  let enc = null;
+  let par = 0;
+  let w = 0; let h = 0;
+  let count = 0;
+  let came = [];
+  const tbn = track.s.time_base_num || 1;
+  const tbd = track.s.time_base_den || 1;
+  const perTick = (US * tbn) / tbd;
+  // A keyframe every piece, so every piece can start on one.
+  // 每一块一个关键帧,好让每一块都能从一个关键帧开始。
+  const every = Math.max(1, Math.round((fps * PIECE) / 1000));
+  const hi = typeof av.AVFrame_best_effort_timestamphi === 'function';
+
+  return {
+    get par() { return par; },
+    async take(packets, last) {
+      if (!dc) [, dc, dpkt, dframe] = await av.ff_init_decoder(track.s.codec_id, track.s.codecpar);
+      const frames = await av.ff_decode_multi(dc, dpkt, dframe, packets,
+        { fin: !!last, ignoreErrors: true, copyoutFrame: 'ptr' });
+      for (const f of frames) {
+        try {
+          if (!w) { w = await av.AVFrame_width(f); h = await av.AVFrame_height(f); }
+          if (await av.AVFrame_format(f) !== av.AV_PIX_FMT_YUV420P) throw new Error('e_drive_video_codec');
+          const lo = await av.AVFrame_best_effort_timestamp(f);
+          const up = hi ? await av.AVFrame_best_effort_timestamphi(f) : 0;
+          const at = told(up) ? Math.round(av.i64tof64(lo, up) * perTick) : Math.round(count * (US / fps));
+          const data = [];
+          const stride = [];
+          for (let i = 0; i < 3; i++) {
+            const ls = await av.AVFrame_linesize_a(f, i);
+            const rows = i ? h >> 1 : h;
+            data.push(await av.copyout_u8(await av.AVFrame_data_a(f, i), ls * rows));
+            stride.push(ls);
+          }
+          if (!enc) enc = make(w, h, fps, (c) => came.push(c));
+          enc.push({ data, stride, w, h, at }, count % every === 0);
+          count++;
+        } finally {
+          await av.av_frame_free_js(f).catch(() => {});
+        }
+      }
+      if (!enc) return [];
+      await enc.flush();
+      if (!par && enc.description) {
+        // The new stream, described by hand: there is no encoder context on this side to copy
+        // from, only what the browser said about what it made. The number for H.264 is checked
+        // against the name before it is trusted.
+        // 新的那条流,手工描述:这一侧没有编码器上下文可抄,只有浏览器对它做出来的东西的说法。
+        // H.264 的编号在被信任之前先换回名字核对。
+        if (await av.avcodec_get_name(AV_CODEC_ID_H264) !== 'h264') throw new Error('e_drive_remux_failed');
+        const extra = enc.description;
+        const mem = await av.malloc(extra.length);
+        await av.copyin_u8(mem, extra);
+        par = await av.avcodec_parameters_alloc();
+        await av.AVCodecParameters_codec_type_s(par, AV_VIDEO);
+        await av.AVCodecParameters_codec_id_s(par, AV_CODEC_ID_H264);
+        await av.AVCodecParameters_width_s(par, w);
+        await av.AVCodecParameters_height_s(par, h);
+        await av.AVCodecParameters_format_s(par, av.AV_PIX_FMT_YUV420P);
+        await av.AVCodecParameters_extradata_s(par, mem);
+        await av.AVCodecParameters_extradata_size_s(par, extra.length);
+      }
+      const out = came;
+      came = [];
+      return out.map((c) => {
+        const [lo, up] = av.f64toi64(c.at);
+        return { data: c.data, pts: lo, ptshi: up, dts: lo, dtshi: up, flags: c.key ? 1 : 0 };
+      });
+    },
+    async close() {
+      if (enc) enc.close();
+      enc = null;
+      if (dc) await av.ff_free_decoder(dc, dpkt, dframe).catch(() => {});
+      dc = 0;
+    },
+  };
+}
+
 function sound(av, track) {
   let dc = 0; let dpkt = 0; let dframe = 0;
   let ec = 0; let eframe = 0; let epkt = 0;
@@ -1081,7 +1303,8 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     const kept = await choose(av, streams);
     let silent = kept.silent;
 
-    const seen = kept.take.find((k) => k.s.codec_type === AV_VIDEO);
+    const redraw = kept.redraw || null;
+    const seen = redraw || kept.take.find((k) => k.s.codec_type === AV_VIDEO);
     const vid = seen.s;
     // Only H.264 has its display order read out of the pictures further down. The two bits that
     // say so sit somewhere else in every other encoding, and "a container carrying no presentation
@@ -1089,10 +1312,23 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
     // 只有 H.264 会走下面那条"从画面里把显示顺序读出来"的路。那两个比特在其余每一种编码里
     // 都在别的位置上;而"不带呈现时间的容器,里面装的又不是 H.264",
     // 是这里从未遇到过的组合。
-    const readable = seen.name === 'h264';
+    const readable = !redraw && seen.name === 'h264';
     const tb = vid.time_base_den / (vid.time_base_num || 1);
-    const renumber = new Map(kept.take.map((k, i) => [k.s.index, i]));
-    const madeAt = kept.convert ? kept.take.length : -1;
+    // A redrawn picture is the first stream out, so everything copied is numbered from one.
+    // 重画出来的画面是第一条出去的流,于是所有原样复制的从一开始编号。
+    const shift = redraw ? 1 : 0;
+    const renumber = new Map(kept.take.map((k, i) => [k.s.index, i + shift]));
+    const madeAt = kept.convert ? kept.take.length + shift : -1;
+    // The stream object carries no frame rate. What it carries is a time base, and in an AVI that
+    // base is one tick per picture -- 100/2997 is 29.97 a second, said the other way round. A base
+    // that is not per-picture gives a number no film has, and thirty stands in.
+    // 流对象上没有帧率。它带的是一个时间基,而在 AVI 里那个基就是每帧一拍 ——
+    // 100/2997 就是每秒 29.97,只是反过来说。一个不按帧计的时间基会给出一个没有片子会有的数,那就用三十顶上。
+    const fps = (() => {
+      const f = (vid.time_base_den || 0) / (vid.time_base_num || 1);
+      return f >= 5 && f <= 240 ? f : 30;
+    })();
+    let pic = null;
     const stop = seconds > 0 ? seconds * tb : 0;
 
     // ---- the words, which go around the box rather than into it ----
@@ -1201,17 +1437,23 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
       if (order) reached = Math.max(reached, order.reach);
       if (oc) await av.ff_free_muxer(oc, pb).catch(() => {});
       if (snd) await snd.close().catch(() => {});
-      oc = 0; pb = 0; snd = null;
+      if (pic) await pic.close().catch(() => {});
+      oc = 0; pb = 0; snd = null; pic = null;
       out.reset();
       lastDts = null;
       done = false;
     };
 
-    const write = async (raw, made, last) => {
+    const write = async (raw, made, last, drawn) => {
       let extra = made;
       if (!extra && snd) {
         const heard = raw.filter((p) => p.stream_index === kept.convert.s.index);
         extra = (heard.length || last) ? await snd.take(heard, last).catch(() => []) : [];
+      }
+      let painted = drawn;
+      if (!painted && pic) {
+        const looked = raw.filter((p) => p.stream_index === vid.index);
+        painted = (looked.length || last) ? await pic.take(looked, last).catch(() => []) : [];
       }
       const list = [];
       const add = (p, dts) => {
@@ -1270,6 +1512,7 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
           picture({ ...r.p, pts: lo, ptshi: hi }, r.at);
         }
       }
+      for (const p of painted || []) list.push({ ...p, stream_index: 0 });
       for (const p of extra || []) list.push({ ...p, stream_index: madeAt });
       // Interleaved, so the muxer orders the picture and the sound against each other. A fragment
       // is cut at a keyframe and has to carry the sound that belongs with it; handed the two
@@ -1341,10 +1584,11 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
      */
     const arm = async () => {
       if (kept.convert) snd = sound(av, kept.convert);
+      if (redraw) pic = picture(av, redraw, fps);
       const opening = [];
       const early = [];
       let seen = 0;
-      while (!eof && (seen < OPENING || (snd && !snd.par))) {
+      while (!eof && (seen < OPENING || (snd && !snd.par) || (pic && !pic.par))) {
         const raw = trim(await round());
         if (!raw.length) break;
         for (const p of raw) if (p.stream_index === vid.index) { seen++; early.push(p); }
@@ -1353,7 +1597,12 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
           const heard = raw.filter((p) => p.stream_index === kept.convert.s.index);
           made = heard.length ? await snd.take(heard, false).catch(() => []) : [];
         }
-        opening.push({ raw, made });
+        let drawn = null;
+        if (pic) {
+          const looked = raw.filter((p) => p.stream_index === vid.index);
+          drawn = looked.length ? await pic.take(looked, false) : [];
+        }
+        opening.push({ raw, made, drawn });
       }
       if (snd && !snd.par) {
         // It could not be remade. The film is still the film, and naming the codec that was left
@@ -1363,6 +1612,15 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
         await snd.close().catch(() => {});
         snd = null;
         silent = kept.convert.name;
+      }
+      // A picture that could not be redrawn is not one that can be handed over half done: the
+      // browser has nothing else to show, so this is where the film stops being playable.
+      // 一张没能重画出来的画面,不是能半途交出去的东西:浏览器没有别的可显示,
+      // 所以片子就在这里不再可播。
+      if (pic && !pic.par) {
+        const err = new Error('e_drive_video_codec');
+        err.codec = redraw.name;
+        throw err;
       }
 
       // Where this stretch belongs in the film. A muxer states a fragment's time relative to the
@@ -1398,6 +1656,7 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
       [oc, , pb] = await av.ff_init_muxer(
         { filename: outName, format_name: 'mp4', open: true, codecpars: true },
         [
+          ...(pic ? [[pic.par, 1, US]] : []),
           ...kept.take.map((k) => [k.s.codecpar, k.s.time_base_num, k.s.time_base_den]),
           ...(snd ? [[snd.par, 1, AAC_RATE]] : []),
         ]);
@@ -1441,7 +1700,7 @@ export async function stream(source, { seconds = 0, limit = 0 } = {}) {
       // 这部片子会在它整个长度上与自己不同步。等到第一块封口再写,头就能说出每条轨真正从哪里开始,
       // 两者于是一致。代价是开头的一块片子 —— 而那正是已经花在"量开头"上的那段等待。
       queue = [];
-      for (const { raw, made } of opening) await write(raw, made, false);
+      for (const { raw, made, drawn } of opening) await write(raw, made, false, drawn);
       while (!eof && !codecsOf(join(queue)).length) await write(trim(await round()), null, false);
       let head = join(queue);
       if (!codecsOf(head).length) {
