@@ -222,8 +222,11 @@ export async function renderFullView(token, id, present) {
     document.body.classList.toggle('fv-fs', on);
     if (!on) {
       document.body.classList.remove('fv-peek');
-      // An iPad hands the page back a status bar too high after this; put it where it belongs.
-      // iPad 在这之后会把页面交还得高出一个状态栏;把它放回原位。
+      // An iPad may hand the page back extending under the status bar after this. The layers
+      // step down by themselves (--sat in style.css); this only makes sure the page is laid out
+      // again so that they do.
+      // iPad 在这之后可能把页面交还成伸到状态栏底下的样子。各层会自己往下退
+      // (见 style.css 的 --sat);这里只是确保页面被重新排一遍,好让它们退得成。
       settleAfterFullscreen();
     }
     // Slides fit the screen by their own ratio; it is read off the first slide and handed to the

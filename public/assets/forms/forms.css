@@ -57,11 +57,11 @@
 }
 @media (max-width: 640px), ((hover: none) and (max-height: 500px)) {
   .fm-nav {
-    position: fixed; left: env(safe-area-inset-left, 0px); top: 60px; bottom: 0; z-index: 150;
+    position: fixed; left: env(safe-area-inset-left, 0px); top: calc(60px + var(--sat)); bottom: 0; z-index: 150;
     width: 256px; padding: 0 8px 16px 8px;
     background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
   }
-  body.impersonating .fm-nav { top: 94px; }
+  body.impersonating .fm-nav { top: calc(94px + var(--sat)); }
   .fm-nav-item .lbl { display: block; }
   .fm-new span { display: inline; }
   .fm-nav-item { justify-content: flex-start; padding: 0 12px 0 14px; border-radius: 0 999px 999px 0; }

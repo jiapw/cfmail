@@ -215,6 +215,7 @@ body.pw-open { overflow: hidden; }
 
 .pw {
   position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+  padding-top: var(--sat);
   background: var(--bg); color: var(--text);
 }
 
