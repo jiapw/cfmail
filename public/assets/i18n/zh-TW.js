@@ -412,6 +412,7 @@ export default {
   drv_up_canceled: "已取消",
   drv_up_done: "已完成 {0} 項上傳",
   drv_up_failed: "上傳失敗",
+  drv_up_partial: "{0} 項上傳失敗",
   drv_up_locate: "在資料夾中定位",
   drv_up_preparing: "正在整理要上傳的檔案",
   drv_up_same: "內容相同",

@@ -412,6 +412,7 @@ export default {
   drv_up_canceled: "Отменено",
   drv_up_done: "Загрузок завершено: {0}",
   drv_up_failed: "Ошибка загрузки",
+  drv_up_partial: "Не загружено: {0}",
   drv_up_locate: "Показать в папке",
   drv_up_preparing: "Подготовка загрузки",
   drv_up_same: "Без изменений",

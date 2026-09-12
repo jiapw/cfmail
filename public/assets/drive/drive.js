@@ -4949,11 +4949,14 @@ function xhrSend(method, url, blob, onProgress, task) {
     x.onload = () => {
       if (task) task.xhr = null;
       if (x.status >= 200 && x.status < 300) resolve(x.response || {});
-      else reject(new Error(tErr(x.response?.error, x.response?.args || [])));
+      // The status and the code ride along, because whoever catches this has to decide whether
+      // to try again, and a full quota is not a thing that clears up if you wait a moment.
+      // 状态码和错误码随行带上,因为接住它的一方要决定该不该再试 —— 配额满了不是等一会儿就会好的事。
+      else reject(Object.assign(new Error(tErr(x.response?.error, x.response?.args || [])), { status: x.status, code: x.response?.error }));
     };
     x.onerror = () => {
       if (task) task.xhr = null;
-      reject(new Error(tErr('e_request_failed', [x.status || 0])));
+      reject(Object.assign(new Error(tErr('e_request_failed', [x.status || 0])), { status: 0, code: 'e_request_failed' }));
     };
     x.onabort = () => {
       if (task) task.xhr = null;
@@ -5032,6 +5035,51 @@ const PART_TRIES = 3;
 
 const naptime = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** How many goes one file gets, counting the first. / 一个文件有几次机会,连头一次在内。 */
+const FILE_TRIES = 3;
+
+/**
+ * Whether an upload error is the kind that a second attempt can answer.
+ *
+ * The wire dropping, a gateway timing out, a server that hiccupped -- yes. A quota that is full,
+ * a file too big for its lane, a body whose digest did not match -- no; those will be refused
+ * again in exactly the same words, and sending the bytes twice to be told twice is the one
+ * thing worse than being told once.
+ *
+ * 一次上传错误是不是"再试一次就能回答"的那种。
+ *
+ * 断线、网关超时、服务端打了个嗝 —— 是。配额满了、文件超出这条通道的上限、
+ * 请求体的摘要对不上 —— 不是;这些会被用一模一样的话再拒绝一遍,
+ * 而把字节发两遍去挨两遍拒绝,是比挨一遍更糟的唯一一件事。
+ */
+const retryable = (e) => e?.message !== 'cancelled' && (!e?.status || e.status >= 500 || e.status === 429 || e.status === 408);
+
+/**
+ * The file this upload was for, if it is already on the server.
+ *
+ * Asked only after an upload has failed, and asked before the failure is believed. A folder of
+ * nine hundred files takes days to go up, and somewhere in those days a connection drops. When
+ * what drops is the answer rather than the bytes, the server has the file and the browser has
+ * an error, and the only way to find out which it was is to look: same name in the same place,
+ * same size, and the same digest wherever one was taken. That is a file that arrived.
+ *
+ * 这次上传要传的那个文件 —— 如果它已经在服务端了的话。
+ *
+ * 只在一次上传失败之后才问,而且在相信那次失败之前先问。九百个文件的目录要传好几天,
+ * 那几天里总会断一次线。断掉的若是回答而不是字节,那服务端手里有文件、浏览器手里有一个错误,
+ * 而弄清楚到底是哪一种,只有去看一眼:同一个地方、同一个名字、同样的大小,
+ * 以及凡是取过摘要的地方摘要也相同。那就是一个到了的文件。
+ */
+async function alreadyThere(f, parent, hash) {
+  try {
+    const r = await api('GET', `/api/drive/list?parent=${encodeURIComponent(parent)}`);
+    return (r?.nodes || []).find((n) => n.kind === 'file' && n.name === f.name && n.size === f.size
+      && (!hash || !n.ver_hash || n.ver_hash === hash)) || null;
+  } catch {
+    return null;                                   // a list we cannot get is not evidence of anything
+  }
+}
+
 /**
  * One part of a multipart upload, with another go or two if the wire drops it.
  *
@@ -5070,7 +5118,50 @@ async function sendPart(id, n, chunk, task, onProgress) {
   }
 }
 
+/**
+ * One file, with another go or two, and a look at the server between goes.
+ *
+ * The parts of a multipart upload already had their retries; the single POST, the init and the
+ * complete had none, and any one of them failing once put a whole folder into the failed column
+ * with every file of it on the server. So each failure is met the same way: first ask whether
+ * the file is already there -- an answer lost on the way back is the commonest failure of all,
+ * and re-sending would only mint a second version of it -- and only then, and only for the
+ * kind of error that can come out differently, send again.
+ *
+ * 一个文件,外加一两次重来,以及两次之间向服务端看一眼。
+ *
+ * 分片上传的各片本来就有重试;单发的 POST、init 与 complete 一次都没有,
+ * 其中任何一个失败一次,就把一整个目录送进失败那一栏 —— 而它的每个文件其实都在服务端。
+ * 所以每一次失败都用同一套办法对付:先问文件是不是已经在了 ——
+ * 回答在半路丢掉是最常见的失败,再发一遍只会给它多铸一个版本 ——
+ * 然后才、而且只对"再来一次可能不一样"的那类错误,再发一遍。
+ */
 async function uploadOne(f, parent, task, base) {
+  for (let attempt = 1; ; attempt++) {
+    if (task.cancelled) throw new Error('cancelled');
+    try {
+      return await uploadOnce(f, parent, task, base);
+    } catch (e) {
+      if (task.cancelled || e?.message === 'cancelled') throw e;
+      const hash = f.size <= HASH_MAX ? await sha256Hex(f) : '';
+      const there = await alreadyThere(f, parent, hash);
+      if (there) {
+        task.sent = base + f.size;
+        paintTask(task);
+        return there;
+      }
+      if (!retryable(e) || attempt >= FILE_TRIES) throw e;
+      // A multipart upload left half-done is let go of before another is begun.
+      // 一次做到一半的分片上传,先放手,再开始另一次。
+      if (task.srvId) { api('POST', `/api/drive/upload/${task.srvId}/abort`).catch(() => {}); task.srvId = null; }
+      task.sent = base;
+      paintTask(task);
+      await naptime(1000 * attempt);
+    }
+  }
+}
+
+async function uploadOnce(f, parent, task, base) {
   const st = dst.state || { single_max: 90 * 1024 * 1024, part_size: 32 * 1024 * 1024 };
   const prog = (extra) => (loaded) => {
     task.sent = base + extra + loaded;
@@ -5119,7 +5210,9 @@ async function uploadOne(f, parent, task, base) {
     paintTask(task);
   }
   if (task.cancelled) throw new Error('cancelled');
-  return api('POST', `/api/drive/upload/${init.id}/complete`, { parts });
+  const done = await api('POST', `/api/drive/upload/${init.id}/complete`, { parts });
+  task.srvId = null;                               // finished: nothing left to abort / 已完成:没有什么可中止的了
+  return done;
 }
 
 // ---------- Thumbnails (generated client-side, see thumb.js) ----------
@@ -5237,7 +5330,14 @@ function renderUpPanel() {
     // 说清楚是哪一种,正是"早就存好了"与那种让人怀疑"到底成没成"的沉默之间的差别。
     if (x.status === 'ok' && x.same) return `<span class="st st-ok" title="${esc(t('drv_up_same_tip'))}">${esc(t('drv_up_same'))}</span>`;
     if (x.status === 'ok') return `<span class="st st-ok">${icon('check', 18)}</span>`;
-    if (x.status === 'err') return `<span class="st st-err" title="${esc(x.err || '')}">${esc(t('drv_up_failed'))}</span>`;
+    if (x.status === 'err') {
+      // A folder of nine hundred files with one missing is not a folder that failed. The count
+      // says what is missing; the flat word said the opposite of what happened.
+      // 九百个文件的目录少了一个,不是一个失败了的目录。数字说的是少了多少;
+      // 那个笼统的词说的是与事实相反的事。
+      const label = x.failed && x.total > 1 ? t('drv_up_partial', x.failed) : t('drv_up_failed');
+      return `<span class="st st-err" title="${esc(x.err || '')}">${esc(label)}</span>`;
+    }
     if (x.status === 'cancel') return `<span class="st st-cancel">${esc(t('drv_up_canceled'))}</span>`;
     if (x.status === 'prep') return '<span class="st"><span class="upspin"></span></span>';
     // Progress as a closing ring (dashoffset shrinks to 0); paintTask updates it in place

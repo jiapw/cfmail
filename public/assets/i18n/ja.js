@@ -412,6 +412,7 @@ export default {
   drv_up_canceled: "キャンセルしました",
   drv_up_done: "{0} 件のアップロードが完了",
   drv_up_failed: "アップロード失敗",
+  drv_up_partial: "{0} 件のアップロードに失敗",
   drv_up_locate: "フォルダー内で表示",
   drv_up_preparing: "アップロードの準備中",
   drv_up_same: "変更なし",

@@ -412,6 +412,7 @@ export default {
   drv_up_canceled: "Annulé",
   drv_up_done: "{0} import(s) terminé(s)",
   drv_up_failed: "Échec de l'import",
+  drv_up_partial: "{0} fichier(s) non importé(s)",
   drv_up_locate: "Afficher dans le dossier",
   drv_up_preparing: "Préparation de l'envoi",
   drv_up_same: "Inchangé",

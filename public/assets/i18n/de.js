@@ -412,6 +412,7 @@ export default {
   drv_up_canceled: "Abgebrochen",
   drv_up_done: "{0} Upload(s) abgeschlossen",
   drv_up_failed: "Upload fehlgeschlagen",
+  drv_up_partial: "{0} nicht hochgeladen",
   drv_up_locate: "Im Ordner anzeigen",
   drv_up_preparing: "Upload wird vorbereitet",
   drv_up_same: "Unverändert",
