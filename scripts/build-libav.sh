@@ -55,6 +55,11 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   ape, tta, wavpack    the lossless formats a Chinese-language music collection is kept in.
 #                        Each needs its demuxer as well as its decoder: these are their own
 #                        containers, not codecs inside somebody else's.
+#   decoder-wmv1/2/3, -vc1  the picture inside a .wmv: WMV7, WMV8 and WMV9, the last of which is
+#                        VC-1 under its Windows name. The sound of these files was already
+#                        decodable here and the box already openable, and the film still would
+#                        not play, because the one thing nothing could read was the picture.
+#                        Redrawn like DivX: decoded here, encoded by the browser.
 #   parser-mpegaudio     an AVI from the DivX years stores its mp3 as a byte stream cut into
 #                        chunks wherever the muxer felt like it -- one chunk in forty begins on
 #                        a frame -- and the decoder takes whole frames only. The parser is what
@@ -82,6 +87,9 @@ WORK="${LIBAV_WORK:-$HERE/.libav-build}"
 #   decoder-alac         .m4a 里的 Apple Lossless,给那些不肯收它的浏览器。
 #   ape, tta, wavpack    一个中文音乐收藏所使用的那几种无损格式。每一种都既要解码器也要解复用器:
 #                        它们是自己的容器,不是别人容器里的编码。
+#   decoder-wmv1/2/3, -vc1  .wmv 里的画面:WMV7、WMV8 和 WMV9,最后那个就是顶着 Windows 名字的 VC-1。
+#                        这些文件的声音在这里早就解得了、盒子也早就打得开,片子却仍然放不了 ——
+#                        因为唯一没人读得懂的,恰恰是画面。与 DivX 同样重画:这里解码,浏览器编码。
 #   parser-mpegaudio     DivX 年代的 AVI 把 mp3 当字节流存,在 muxer 随手落刀的地方切成块 ——
 #                        四十块里只有一块从帧头开始 —— 而解码器只收整帧。把字节流重新拼回帧的,
 #                        就是这个解析器。ffmpeg 内建了它,所以 ffmpeg 放得了这样的文件,
@@ -98,6 +106,7 @@ FRAGMENTS='[
   "parser-ac3","decoder-ac3","parser-dca","decoder-dca",
   "encoder-aac","audio-filters",
   "decoder-mpeg4","decoder-msmpeg4v3",
+  "decoder-wmv1","decoder-wmv2","decoder-wmv3","decoder-vc1",
   "decoder-wmav1","decoder-wmav2","decoder-wmapro","decoder-wmalossless",
   "decoder-mp3","parser-mpegaudio","decoder-alac",
   "demuxer-ape","decoder-ape",
