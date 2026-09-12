@@ -412,6 +412,7 @@ export default {
   drv_up_canceled: "Cancelado",
   drv_up_done: "{0} subida(s) completada(s)",
   drv_up_failed: "Error al subir",
+  drv_up_partial: "{0} archivo(s) sin subir",
   drv_up_locate: "Mostrar en la carpeta",
   drv_up_preparing: "Preparando la subida",
   drv_up_same: "Sin cambios",
