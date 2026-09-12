@@ -38,6 +38,10 @@
     "audio-filters",
     "decoder-mpeg4",
     "decoder-msmpeg4v3",
+    "decoder-wmv1",
+    "decoder-wmv2",
+    "decoder-wmv3",
+    "decoder-vc1",
     "decoder-wmav1",
     "decoder-wmav2",
     "decoder-wmapro",
@@ -52,6 +56,6 @@
     "demuxer-wavpack",
     "decoder-wavpack"
   ],
-  "fingerprint": "7c12c19de2ce8b26",
-  "built_at": "2026-09-11T17:29:36.207Z"
+  "fingerprint": "88c2c73715621ed7",
+  "built_at": "2026-09-12T04:39:19.477Z"
 }
