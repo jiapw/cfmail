@@ -413,6 +413,8 @@ export default {
   drv_up_done: "已完成 {0} 项上传",
   drv_up_failed: "上传失败",
   drv_up_partial: "{0} 项上传失败",
+  drv_up_fails: "查看失败的文件",
+  drv_up_retry: "重试",
   drv_up_locate: "在文件夹中定位",
   drv_up_preparing: "正在整理要上传的文件",
   drv_up_same: "内容相同",
