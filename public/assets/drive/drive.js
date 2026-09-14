@@ -1810,8 +1810,9 @@ async function runDownload(task) {
     if (task.cancelled) throw new Error('cancelled');
     await dirFor(rel);
   }
-  let base = 0;
-  for (const f of task.files) {
+  const list = task.pending || task.files;
+  let base = task.pending ? task.sent : 0;
+  for (const f of list) {
     if (task.cancelled) throw new Error('cancelled');
     try {
       await saveOne(f, dirFor, task, base);
@@ -1823,12 +1824,14 @@ async function runDownload(task) {
       // 和一次目录上传的做法一样。
       task.failed++;
       task.err = e?.message || String(e);
+      (task.fails ||= []).push({ m: f, err: task.err });
     }
     base += f.node.size || 0;
     task.sent = base;
     task.done++;
     paintTask(task);
   }
+  task.pending = null;
   if (task.failed) throw new Error(task.err || 'failed');
   return null;
 }
@@ -4822,7 +4825,7 @@ async function buildUploads(items) {
       if (!groups.has(top)) {
         const g = {
           id: ++up.seq, group: true, name: top, files: [], size: 0, sent: 0,
-          done: 0, total: 0, failed: 0, parent: base,
+          done: 0, total: 0, failed: 0, fails: [], parent: base,
           status: 'wait', xhr: null, srvId: null, cancelled: false,
         };
         groups.set(top, g);
@@ -4841,7 +4844,7 @@ async function buildUploads(items) {
       const parent = await ensureDir(dir);
       if (dir) {
         const g = groupOf(dir.split('/')[0]);
-        g.files.push({ file: it.file, parent });
+        g.files.push({ file: it.file, parent, rel });
         g.size += it.file.size;
         g.total++;
       } else {
@@ -4973,8 +4976,12 @@ async function runTask(task) {
   // Thumbnails queue per member here (pump only handles the single-file case).
   // 组任务:成员顺序上传。sent 跨成员累计,done 驱动 x/n 角标。
   // 缩略图在这里逐成员入队(pump 只处理单文件的情况)。
-  let base = 0;
-  for (const m of task.files) {
+  // A retry runs over the members that failed, from where the progress already stood; a
+  // first run is the same loop over everything, from nothing.
+  // 一次重试只走失败过的那些成员,从进度已经站到的地方接着走;头一次跑是同一个循环走全部,从零开始。
+  const list = task.pending || task.files;
+  let base = task.pending ? task.sent : 0;
+  for (const m of list) {
     if (task.cancelled) throw new Error('cancelled');
     try {
       const node = await uploadOne(m.file, m.parent, task, base);
@@ -4984,12 +4991,18 @@ async function runTask(task) {
       if (task.cancelled) throw e;
       task.failed++;
       task.err = e?.message || String(e);
+      // Which one, and why: the count alone told a reader something was missing and nothing
+      // about what, and left them dropping the whole folder again to get seven files up.
+      // 是哪一个、为什么:光一个数字只告诉读者少了东西、没说少的是什么,
+      // 逼得人为了七个文件把整个目录再拖一遍。
+      (task.fails ||= []).push({ m, err: task.err });
     }
     base += m.file.size;
     task.sent = base;
     task.done++;
     paintTask(task);
   }
+  task.pending = null;
   if (task.failed) throw new Error(task.err || 'failed');
   return null;
 }
@@ -5269,6 +5282,43 @@ function bindThumbBackfill(box) {
   });
 }
 
+/**
+ * Send again what did not arrive.
+ *
+ * A folder keeps its numbers: 3573 of 3580 are in place, and the retry is the seven, run
+ * through the same loop from where the progress already stood. A single file simply goes back
+ * to the queue. Either way the row is the same row, because the reader's question is "did my
+ * folder go up", and a second row for the seven would answer a question nobody asked.
+ *
+ * 把没到的再发一遍。
+ *
+ * 目录保留它的数字:3580 个里 3573 个已在,重试的是那七个,从进度已经站到的地方走同一个循环。
+ * 单个文件就直接回到队列里。两种情况都还是原来那一行,因为读者问的是"我的目录传上去了没",
+ * 为那七个另起一行,答的是一个没人问的问题。
+ */
+function retryTask(task) {
+  if (task.status !== 'err') return;
+  if (task.fails?.length) {
+    const members = task.fails.map((x) => x.m);
+    const left = members.reduce((n, m) => n + (task.down ? (m.node?.size || 0) : m.file.size), 0);
+    task.pending = members;
+    task.done = task.total - members.length;
+    task.sent = Math.max(0, task.size - left);
+  } else {
+    task.sent = 0;
+  }
+  task.failed = 0;
+  task.fails = [];
+  task.err = '';
+  task.showFails = false;
+  task.cancelled = false;
+  task.xhr = null;
+  task.srvId = null;
+  task.status = 'wait';
+  renderUpPanel();
+  pump();
+}
+
 function cancelTask(task) {
   if (task.status === 'wait') {
     task.status = 'cancel';
@@ -5362,7 +5412,16 @@ function renderUpPanel() {
         ${x.prep ? `<span class="gcnt">${x.found || ''}</span>` : x.group ? `<span class="gcnt">${x.done}/${x.total}</span>` : ''}
         ${status(x)}
         ${x.status === 'wait' || x.status === 'up' ? `<wa-button class="icon" appearance="plain" data-cancel="${x.id}" aria-label="${esc(t('cancel'))}">${icon('close', 14)}</wa-button>` : ''}
-      </div>`).join('')}
+        ${x.status === 'err' && x.fails?.length ? `<wa-button class="icon${x.showFails ? ' on' : ''}" appearance="plain" data-fails="${x.id}" title="${esc(t('drv_up_fails'))}" aria-label="${esc(t('drv_up_fails'))}">${icon('info', 15)}</wa-button>` : ''}
+        ${x.status === 'err' ? `<wa-button class="icon" appearance="plain" data-retry="${x.id}" title="${esc(t('drv_up_retry'))}" aria-label="${esc(t('drv_up_retry'))}">${icon('replay', 15)}</wa-button>` : ''}
+      </div>${x.status === 'err' && x.showFails && x.fails?.length ? `
+      <div class="drv-up-fails">${x.fails.map((f) => {
+        // The path inside the folder, since the folder's own name is the row above.
+        // 目录内部的路径 —— 目录自己的名字就在上面那一行。
+        const full = f.m.rel || f.m.file?.name || f.m.node?.name || '';
+        const inside = full.startsWith(x.name + '/') ? full.slice(x.name.length + 1) : full;
+        return `<div class="f"><span class="p" title="${esc(full)}">${esc(inside)}</span><span class="why" title="${esc(f.err)}">${esc(f.err)}</span></div>`;
+      }).join('')}</div>` : ''}`).join('')}
     </div>`;
   // Keep the in-flight tasks in view: after each completion re-render, park the first
   // still-uploading item at the top of the list viewport so the active tail shows.
@@ -5376,6 +5435,18 @@ function renderUpPanel() {
     }
   }
   up.panel.onclick = (e) => {
+    const f = e.target.closest('[data-fails]');
+    if (f) {
+      const task = up.tasks.find((x) => x.id === +f.dataset.fails);
+      if (task) { task.showFails = !task.showFails; renderUpPanel(); }
+      return;
+    }
+    const r = e.target.closest('[data-retry]');
+    if (r) {
+      const task = up.tasks.find((x) => x.id === +r.dataset.retry);
+      if (task) retryTask(task);
+      return;
+    }
     const c = e.target.closest('[data-cancel]');
     if (c) {
       const task = up.tasks.find((x) => x.id === +c.dataset.cancel);

@@ -413,6 +413,8 @@ export default {
   drv_up_done: "업로드 {0}건 완료",
   drv_up_failed: "업로드 실패",
   drv_up_partial: "{0}개 업로드 실패",
+  drv_up_fails: "실패한 파일 보기",
+  drv_up_retry: "다시 시도",
   drv_up_locate: "폴더에서 보기",
   drv_up_preparing: "업로드 준비 중",
   drv_up_same: "변경 없음",

@@ -439,6 +439,15 @@
 .drv-up-item .gcnt { flex: none; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
 .drv-up-item .st-ok { color: #12a150; }
 .drv-up-item .st-err { color: #e5484d; }
+/* The files a folder is missing, opened under its row by the (i): the path inside the folder,
+   and what went wrong with it. Indented to the name column so it reads as part of that row.
+   目录少了的那些文件,由 (i) 在它那一行底下展开:目录内的路径,以及它出了什么事。
+   缩进到名字那一列,读起来就是那一行的一部分。 */
+.drv-up-fails { padding: 0 14px 8px 48px; font-size: 12px; color: var(--text-2); }
+.drv-up-fails .f { display: flex; gap: 10px; align-items: baseline; min-width: 0; padding: 2px 0; }
+.drv-up-fails .p { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.drv-up-fails .why { flex: 0 1 46%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e5484d; }
+.drv-up-item wa-button.icon.on::part(base) { color: var(--primary); }
 .drv-up-item .st-cancel { color: var(--text-3); }
 /* The ring starts at 12 o'clock (rotate) and closes clockwise as dashoffset approaches 0 */
 /* 圆环从 12 点方向起笔。dashoffset 趋近 0 时顺时针闭合 */
