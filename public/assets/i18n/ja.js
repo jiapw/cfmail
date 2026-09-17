@@ -1381,4 +1381,5 @@ export default {
   t_moved: "{0} 件を移動しました",
   t_moved_partial: "{0} 件を移動、{1} 件は失敗しました (原文が保存されていません)",
   e_unrouted_mixed: "選択したメールが同じドメインではありません",
+  un_pick_mailbox: "移動先のメールボックスを選択",
 };

@@ -1381,4 +1381,5 @@ export default {
   t_moved: "{0} verschoben",
   t_moved_partial: "{0} verschoben, {1} fehlgeschlagen (Original nicht mehr gespeichert)",
   e_unrouted_mixed: "Die ausgewählten Nachrichten gehören nicht alle zu einer Domain",
+  un_pick_mailbox: "Zielpostfach wählen",
 };

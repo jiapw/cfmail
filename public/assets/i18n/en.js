@@ -1381,4 +1381,5 @@ export default {
   t_moved: "{0} moved",
   t_moved_partial: "{0} moved, {1} failed (original no longer stored)",
   e_unrouted_mixed: "The selected messages do not all belong to one domain",
+  un_pick_mailbox: "Choose the target mailbox",
 };

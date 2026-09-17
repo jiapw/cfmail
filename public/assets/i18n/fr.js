@@ -1381,4 +1381,5 @@ export default {
   t_moved: "{0} déplacé(s)",
   t_moved_partial: "{0} déplacé(s), {1} échec(s) (original plus disponible)",
   e_unrouted_mixed: "Les messages sélectionnés n’appartiennent pas tous au même domaine",
+  un_pick_mailbox: "Choisir la boîte de destination",
 };

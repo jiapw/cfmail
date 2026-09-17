@@ -1381,4 +1381,5 @@ export default {
   t_moved: "{0} movidos",
   t_moved_partial: "{0} movidos, {1} fallidos (el original ya no está)",
   e_unrouted_mixed: "Los mensajes seleccionados no pertenecen todos al mismo dominio",
+  un_pick_mailbox: "Elija el buzón de destino",
 };

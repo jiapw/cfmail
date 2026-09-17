@@ -1057,7 +1057,7 @@ async function tabUnrouted(body) {
         <tbody>${rows || `<tr><td colspan="7" class="dim">${esc(t('unrouted_empty'))}</td></tr>`}</tbody>
       </table></div>
       <div class="form-row" style="margin-top:14px;padding-left:10px">
-        <select id="un-target" disabled style="width:260px"></select>
+        <wa-select id="un-target" placeholder="${esc(t('un_pick_mailbox'))}" disabled style="width:260px"></wa-select>
         <wa-button variant="brand" id="un-move" disabled>${esc(t('un_move'))}</wa-button>
         <span class="dim" id="un-picked">${esc(t('un_hint'))}</span>
       </div>
@@ -1074,9 +1074,12 @@ async function tabUnrouted(body) {
   qs('#un-next')?.addEventListener('click', () => { unroutedPage += 1; renderAdmin('unrouted'); });
 
   // The move controls follow the selection: one domain lights the mailbox list for that domain,
-  // a selection across domains says so and offers nothing.
+  // a selection across domains says so and offers nothing. With several mailboxes to choose
+  // from, none is chosen in advance -- the button waits for the administrator to say which --
+  // and with exactly one there is no choice to make, so it is simply filled in.
   // 移动控件跟着勾选走:只有一个域名时亮出该域名的邮箱;跨了域名就说明原因、什么也不给。
-  const sync = () => {
+  // 有多个邮箱可选时不预先替人选 —— 按钮等管理员说清是哪一个 —— 只有一个时无可选择,直接填上。
+  const sync = async () => {
     const all = qsa('.un-pick', card);
     const picked = all.filter((x) => x.checked);
     const head = qs('#un-all', card);
@@ -1086,28 +1089,34 @@ async function tabUnrouted(body) {
     const btn = qs('#un-move', card);
     const info = qs('#un-picked', card);
     const domains = [...new Set(picked.map((x) => x.dataset.domain))];
-    const off = (msg) => { sel.innerHTML = ''; sel.dataset.domain = ''; sel.disabled = true; btn.disabled = true; info.textContent = msg; };
+    const off = (msg) => { sel.innerHTML = ''; sel.value = ''; sel.dataset.domain = ''; sel.disabled = true; btn.disabled = true; info.textContent = msg; };
     if (!picked.length) return off(t('un_hint'));
     if (domains.length > 1) return off(t('un_mixed'));
     const boxes = boxesOf(domains[0]);
     if (!boxes.length) return off(t('un_no_mailbox'));
     if (sel.dataset.domain !== domains[0]) {
-      sel.innerHTML = boxes.map((m) => `<option value="${esc(m.id)}">${esc(m.address)}</option>`).join('');
+      sel.innerHTML = boxes.map((m) => `<wa-option value="${esc(m.id)}">${esc(m.address)}</wa-option>`).join('');
       sel.dataset.domain = domains[0];
+      // The options are slotted in; the component takes them up on its next update, and a value
+      // set before that names an option it does not yet know.
+      // 选项是插槽塞进去的,组件要到下一次更新才认得;在那之前设的值指向一个它还不认识的选项。
+      await sel.updateComplete;
+      sel.value = boxes.length === 1 ? boxes[0].id : '';
     }
     sel.disabled = false;
-    btn.disabled = false;
+    btn.disabled = !sel.value;
     info.textContent = t('selected_n', picked.length);
   };
   card.addEventListener('change', (e) => {
     if (e.target.id === 'un-all') qsa('.un-pick', card).forEach((x) => { x.checked = e.target.checked; });
     if (e.target.matches('.un-pick, #un-all')) sync();
   });
+  qs('#un-target', card).addEventListener('change', () => sync());
 
   qs('#un-move', card).addEventListener('click', async () => {
     const ids = qsa('.un-pick:checked', card).map((x) => x.dataset.id);
     const sel = qs('#un-target', card);
-    const addr = sel.selectedOptions[0]?.textContent || '';
+    const addr = [...sel.querySelectorAll('wa-option')].find((o) => o.value === sel.value)?.textContent || '';
     if (!ids.length || !sel.value) return;
     if (!(await confirmDialog(t('un_move_confirm', ids.length, addr), t('un_move')))) return;
     try {

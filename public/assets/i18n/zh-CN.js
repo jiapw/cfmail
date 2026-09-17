@@ -1381,4 +1381,5 @@ export default {
   t_moved: "已移动 {0} 封",
   t_moved_partial: "已移动 {0} 封,{1} 封失败(原件已不在)",
   e_unrouted_mixed: "所选来信不属于同一个域名",
+  un_pick_mailbox: "选择目标邮箱",
 };

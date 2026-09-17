@@ -1381,4 +1381,5 @@ export default {
   t_moved: "{0}건을 이동했습니다",
   t_moved_partial: "{0}건 이동, {1}건 실패 (원본이 남아 있지 않음)",
   e_unrouted_mixed: "선택한 메일이 같은 도메인이 아닙니다",
+  un_pick_mailbox: "대상 사서함 선택",
 };
