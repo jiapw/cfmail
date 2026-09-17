@@ -122,7 +122,17 @@ export async function renderAdmin(tab) {
   if (standing) {
     qsa('.page-head .tab', standing).forEach((a) =>
       a.classList.toggle('active', a.getAttribute('href') === `#/admin/${tab}`));
-    qs('#admin-body', standing).innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
+    // The body is replaced, not emptied. Tabs hang their click handlers on it, and a body that
+    // survived the last visit still carries that visit's handlers -- a third look at Members
+    // would ask three times before deleting somebody. A clone keeps the element and drops the
+    // listeners, which is exactly the half of it that should not carry over.
+    // 主体是换掉、不是清空。各页把点击处理挂在它身上,而一个从上次访问活下来的主体,
+    // 仍带着上次的那些处理 —— 第三次看「成员」页,删一个人会问三遍。
+    // 克隆保留元素、丢掉监听,而那正是不该带过来的那一半。
+    const old = qs('#admin-body', standing);
+    const fresh = old.cloneNode(false);
+    fresh.innerHTML = `<div class="loading">${esc(t('loading'))}</div>`;
+    old.replaceWith(fresh);
   } else {
     show(`
   <div class="page" data-kind="admin">
@@ -1013,12 +1023,20 @@ let bkTimer = null;
 let unroutedPage = 0;
 
 async function tabUnrouted(body) {
-  const data = await api('GET', `/api/admin/unrouted?page=${unroutedPage}`);
+  const [data, opt] = await Promise.all([
+    api('GET', `/api/admin/unrouted?page=${unroutedPage}`),
+    api('GET', '/api/admin/mailbox-options'),
+  ]);
   const items = data.items || [];
+  // Where a record may be moved: the mailboxes of its own domain. One whose domain could not
+  // be resolved has nowhere to go, and gets no checkbox rather than a choice that fails.
+  // 一条记录能移去哪里:它自己域名下的邮箱。域名对不上的没地方可去 —— 不给勾选框,而不是给一个注定失败的选择。
+  const boxesOf = (domainId) => (opt.mailboxes || []).filter((m) => m.domain_id === domainId);
   const rows = items
     .map(
       (u) => `
     <tr>
+      <td>${u.domain_id && boxesOf(u.domain_id).length ? `<input type="checkbox" class="un-pick" data-id="${esc(u.id)}" data-domain="${esc(u.domain_id)}">` : ''}</td>
       <td><b>${esc(u.to_addr)}</b></td>
       <td>${esc(u.from_addr || '—')}</td>
       <td class="ellip-cell">${esc(u.subject || t('no_subject'))}</td>
@@ -1032,12 +1050,17 @@ async function tabUnrouted(body) {
     )
     .join('');
   body.innerHTML = `
-    <section class="card">
+    <section class="card" id="un-card">
       <h3>${esc(t('a_unrouted'))}<span class="dim" style="font-weight:400;margin-left:8px">${esc(t('unrouted_note'))}</span></h3>
       <div class="tblwrap"><table class="table">
-        <thead><tr><th>${esc(t('th_rcpt'))}</th><th>${esc(t('fwd_from'))}</th><th>${esc(t('fwd_subject'))}</th><th>${esc(t('th_created'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="6" class="dim">${esc(t('unrouted_empty'))}</td></tr>`}</tbody>
+        <thead><tr><th style="width:36px"><input type="checkbox" id="un-all"></th><th>${esc(t('th_rcpt'))}</th><th>${esc(t('fwd_from'))}</th><th>${esc(t('fwd_subject'))}</th><th>${esc(t('th_created'))}</th><th>${esc(t('th_storage'))}</th><th>${esc(t('th_ops'))}</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="7" class="dim">${esc(t('unrouted_empty'))}</td></tr>`}</tbody>
       </table></div>
+      <div class="form-row" style="margin-top:14px;padding-left:10px">
+        <select id="un-target" disabled style="width:260px"></select>
+        <wa-button variant="brand" id="un-move" disabled>${esc(t('un_move'))}</wa-button>
+        <span class="dim" id="un-picked">${esc(t('un_hint'))}</span>
+      </div>
       <div class="row-flex" style="margin-top:12px">
         <wa-button appearance="outlined" size="small" id="un-prev" ${unroutedPage === 0 ? 'disabled' : ''}>${esc(t('prev_page'))}</wa-button>
         <span class="dim">${esc(t('page_n', unroutedPage + 1, data.has_more ? `${unroutedPage + 2}+` : unroutedPage + 1))}</span>
@@ -1046,10 +1069,57 @@ async function tabUnrouted(body) {
       <p class="dim" style="margin:10px 0 0">${esc(t('unrouted_retention'))}</p>
     </section>`;
 
+  const card = qs('#un-card');
   qs('#un-prev')?.addEventListener('click', () => { unroutedPage = Math.max(0, unroutedPage - 1); renderAdmin('unrouted'); });
   qs('#un-next')?.addEventListener('click', () => { unroutedPage += 1; renderAdmin('unrouted'); });
 
-  body.addEventListener('click', async (e) => {
+  // The move controls follow the selection: one domain lights the mailbox list for that domain,
+  // a selection across domains says so and offers nothing.
+  // 移动控件跟着勾选走:只有一个域名时亮出该域名的邮箱;跨了域名就说明原因、什么也不给。
+  const sync = () => {
+    const all = qsa('.un-pick', card);
+    const picked = all.filter((x) => x.checked);
+    const head = qs('#un-all', card);
+    head.checked = all.length > 0 && picked.length === all.length;
+    head.indeterminate = picked.length > 0 && picked.length < all.length;
+    const sel = qs('#un-target', card);
+    const btn = qs('#un-move', card);
+    const info = qs('#un-picked', card);
+    const domains = [...new Set(picked.map((x) => x.dataset.domain))];
+    const off = (msg) => { sel.innerHTML = ''; sel.dataset.domain = ''; sel.disabled = true; btn.disabled = true; info.textContent = msg; };
+    if (!picked.length) return off(t('un_hint'));
+    if (domains.length > 1) return off(t('un_mixed'));
+    const boxes = boxesOf(domains[0]);
+    if (!boxes.length) return off(t('un_no_mailbox'));
+    if (sel.dataset.domain !== domains[0]) {
+      sel.innerHTML = boxes.map((m) => `<option value="${esc(m.id)}">${esc(m.address)}</option>`).join('');
+      sel.dataset.domain = domains[0];
+    }
+    sel.disabled = false;
+    btn.disabled = false;
+    info.textContent = t('selected_n', picked.length);
+  };
+  card.addEventListener('change', (e) => {
+    if (e.target.id === 'un-all') qsa('.un-pick', card).forEach((x) => { x.checked = e.target.checked; });
+    if (e.target.matches('.un-pick, #un-all')) sync();
+  });
+
+  qs('#un-move', card).addEventListener('click', async () => {
+    const ids = qsa('.un-pick:checked', card).map((x) => x.dataset.id);
+    const sel = qs('#un-target', card);
+    const addr = sel.selectedOptions[0]?.textContent || '';
+    if (!ids.length || !sel.value) return;
+    if (!(await confirmDialog(t('un_move_confirm', ids.length, addr), t('un_move')))) return;
+    try {
+      const r = await api('POST', '/api/admin/unrouted/move', { ids, mailbox_id: sel.value });
+      toast(r.failed ? t('t_moved_partial', r.moved, r.failed) : t('t_moved', r.moved), !!r.failed);
+      renderAdmin('unrouted');
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+
+  card.addEventListener('click', async (e) => {
     const v = e.target.closest('[data-view]');
     if (v) return viewUnrouted(v.dataset.view);
     const dpt = e.target.closest('[data-drop]');

@@ -1373,4 +1373,12 @@ export default {
   fm_size_xl: "特大",
   fm_look_note: "填寫頁對每位訪客都按這裡的樣子呈現，訪客只能選擇語言。",
   fm_from_last: "已套用「{0}」的設定",
+  un_move: "移動到信箱",
+  un_hint: "勾選同一網域的來信,可移入該網域已有的信箱",
+  un_mixed: "所選來信分屬不同網域,一次只能移動同一網域的",
+  un_no_mailbox: "該網域下還沒有信箱",
+  un_move_confirm: "把 {0} 封來信移到 {1}?移動後它們不再出現在這裡。",
+  t_moved: "已移動 {0} 封",
+  t_moved_partial: "已移動 {0} 封,{1} 封失敗(原件已不在)",
+  e_unrouted_mixed: "所選來信不屬於同一個網域",
 };

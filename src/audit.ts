@@ -19,7 +19,7 @@ export type AuditAction =
   | 'drive.settings' | 'drive.quota' | 'drive.versioning'
   | 'mail.import' | 'mail.export'
   | 'backup.settings' | 'backup.run'
-  | 'unrouted.view' | 'unrouted.delete';
+  | 'unrouted.view' | 'unrouted.delete' | 'unrouted.move';
 
 export async function audit(
   env: Env,

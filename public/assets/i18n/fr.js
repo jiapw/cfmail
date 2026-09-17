@@ -1373,4 +1373,12 @@ export default {
   fm_size_xl: "Très grande",
   fm_look_note: "La page de saisie s’affiche exactement ainsi pour chaque visiteur. Les visiteurs ne choisissent que leur langue.",
   fm_from_last: "Réglages repris de « {0} »",
+  un_move: "Déplacer vers la boîte",
+  un_hint: "Cochez les messages d’un domaine pour les déplacer dans l’une de ses boîtes",
+  un_mixed: "La sélection couvre plusieurs domaines ; déplacez un domaine à la fois",
+  un_no_mailbox: "Ce domaine n’a pas encore de boîte",
+  un_move_confirm: "Déplacer {0} messages vers {1} ? Ils n’apparaîtront plus ici.",
+  t_moved: "{0} déplacé(s)",
+  t_moved_partial: "{0} déplacé(s), {1} échec(s) (original plus disponible)",
+  e_unrouted_mixed: "Les messages sélectionnés n’appartiennent pas tous au même domaine",
 };

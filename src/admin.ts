@@ -389,7 +389,7 @@ adminApp.get('/mailbox-options', async (c) => {
   ).all<any>();
   let list = rows.results || [];
   if (scope) list = list.filter((m: any) => scope.has(m.domain_id));
-  return c.json({ mailboxes: list.map((m: any) => ({ id: m.id, address: `${m.local_part}@${m.domain_name}` })) });
+  return c.json({ mailboxes: list.map((m: any) => ({ id: m.id, address: `${m.local_part}@${m.domain_name}`, domain_id: m.domain_id })) });
 });
 
 /**
@@ -958,6 +958,65 @@ adminApp.delete('/unrouted/:id', async (c) => {
   await c.env.DB.prepare('DELETE FROM unrouted WHERE id=?1').bind(row.id).run();
   await audit(c.env, c.get('user'), 'unrouted.delete', row.to_addr, undefined, row.domain_id);
   return c.json({ ok: true });
+});
+
+/**
+ * Move unrouted mail into a mailbox of the same domain. The original was refused with a 550 and
+ * kept only for review; when the administrator can see where it belonged, this files it there
+ * as ordinary inbound mail -- unread, on the date it carries -- and the record here goes away.
+ * The Date header is trusted the way an import trusts it: the message was written then, and
+ * a spam verdict is not wanted on something the administrator has chosen by hand.
+ *
+ * One domain at a time. A selection that straddles domains is refused outright rather than
+ * partly honoured -- the administrator would otherwise have to work out which half went where.
+ *
+ * 把未匹配来信移进同一域名下的某个邮箱。原件当初以 550 拒收、只为备查留着;
+ * 管理员看得出它该去哪儿时,这里就把它当普通来信归档 —— 未读、按信上的日期 —— 这条记录随之消失。
+ * Date 头的信任方式与导入一致:信就是那时写的;管理员亲手挑出来的东西,不需要再做垃圾判定。
+ *
+ * 一次只做一个域名。横跨多个域名的选择整个拒绝,而不是做一半 ——
+ * 否则管理员还得自己弄清哪一半去了哪里。
+ */
+adminApp.post('/unrouted/move', async (c) => {
+  const scope = await adminScope(c);
+  const body = await c.req.json<any>();
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(String))].filter(Boolean).slice(0, 50);
+  const mailboxId = String(body.mailbox_id || '');
+  if (!ids.length || !mailboxId) throw new HttpError(400, 'e_bad_request');
+  const mb = await c.env.DB.prepare('SELECT * FROM mailboxes WHERE id=?1').bind(mailboxId).first<any>();
+  if (!mb || mb.disabled) throw new HttpError(400, 'e_target_mailbox_bad');
+  if (scope && !scope.has(mb.domain_id)) throw new HttpError(403, 'e_no_perm_action');
+  const rows = await c.env.DB.prepare(
+    `SELECT * FROM unrouted WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`
+  ).bind(...ids).all<any>();
+  const list = rows.results || [];
+  if (list.some((r: any) => r.domain_id !== mb.domain_id)) throw new HttpError(400, 'e_unrouted_mixed');
+
+  let moved = 0;
+  let failed = 0;
+  for (const row of list) {
+    try {
+      const obj = await c.env.RAW.get(row.r2_key);
+      if (!obj) { failed++; continue; }
+      const buf = await obj.arrayBuffer();
+      const id = uid();
+      const key = `raw/${id}.eml`;
+      await c.env.RAW.put(key, buf);
+      await ingestEml(c.env, {
+        mailboxId: mb.id, buf, r2Key: key, size: buf.byteLength,
+        folderRole: 'inbox', direction: 'in', envelopeFrom: row.from_addr, keepDate: true,
+      });
+      await c.env.DB.prepare('DELETE FROM unrouted WHERE id=?1').bind(row.id).run();
+      await c.env.RAW.delete(row.r2_key).catch(() => {});
+      moved++;
+    } catch (e) {
+      console.log('unrouted move failed', row.id, e);
+      failed++;
+    }
+  }
+  await audit(c.env, c.get('user'), 'unrouted.move', await addrOf(c.env, mb),
+    { moved, failed, from: [...new Set(list.map((r: any) => r.to_addr))] }, mb.domain_id);
+  return c.json({ moved, failed, gone: ids.length - list.length });
 });
 
 // ---------- Export ----------

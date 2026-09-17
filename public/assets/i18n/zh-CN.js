@@ -1373,4 +1373,12 @@ export default {
   fm_size_xl: "特大",
   fm_look_note: "填写页对每位访问者都按这里的样子呈现，访问者只能选择语言。",
   fm_from_last: "已套用「{0}」的配置",
+  un_move: "移动到邮箱",
+  un_hint: "勾选同一域名的来信,可移入该域名已有的邮箱",
+  un_mixed: "所选来信分属不同域名,一次只能移动同一域名的",
+  un_no_mailbox: "该域名下还没有邮箱",
+  un_move_confirm: "把 {0} 封来信移到 {1}?移动后它们不再出现在这里。",
+  t_moved: "已移动 {0} 封",
+  t_moved_partial: "已移动 {0} 封,{1} 封失败(原件已不在)",
+  e_unrouted_mixed: "所选来信不属于同一个域名",
 };

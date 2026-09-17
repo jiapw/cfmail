@@ -1373,4 +1373,12 @@ export default {
   fm_size_xl: "Muy grande",
   fm_look_note: "La página de respuesta se muestra exactamente así a cada visitante. Los visitantes solo eligen su idioma.",
   fm_from_last: "Ajustes copiados de «{0}»",
+  un_move: "Mover al buzón",
+  un_hint: "Marque mensajes de un dominio para moverlos a uno de sus buzones",
+  un_mixed: "La selección abarca varios dominios; mueva un dominio a la vez",
+  un_no_mailbox: "Este dominio aún no tiene buzón",
+  un_move_confirm: "¿Mover {0} mensajes a {1}? Dejarán de aparecer aquí.",
+  t_moved: "{0} movidos",
+  t_moved_partial: "{0} movidos, {1} fallidos (el original ya no está)",
+  e_unrouted_mixed: "Los mensajes seleccionados no pertenecen todos al mismo dominio",
 };

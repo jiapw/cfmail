@@ -1373,4 +1373,12 @@ export default {
   fm_size_xl: "Sehr groß",
   fm_look_note: "Die Ausfüllseite wird jedem Besucher genau so angezeigt. Besucher wählen nur ihre Sprache.",
   fm_from_last: "Einstellungen von „{0}“ übernommen",
+  un_move: "In Postfach verschieben",
+  un_hint: "Nachrichten einer Domain markieren, um sie in eines ihrer Postfächer zu verschieben",
+  un_mixed: "Die Auswahl umfasst mehrere Domains; bitte jeweils nur eine Domain verschieben",
+  un_no_mailbox: "Diese Domain hat noch kein Postfach",
+  un_move_confirm: "{0} Nachrichten nach {1} verschieben? Sie erscheinen danach nicht mehr hier.",
+  t_moved: "{0} verschoben",
+  t_moved_partial: "{0} verschoben, {1} fehlgeschlagen (Original nicht mehr gespeichert)",
+  e_unrouted_mixed: "Die ausgewählten Nachrichten gehören nicht alle zu einer Domain",
 };

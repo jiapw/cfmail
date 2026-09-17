@@ -1373,4 +1373,12 @@ export default {
   fm_size_xl: "Extra large",
   fm_look_note: "The fill page is shown exactly this way to every visitor. Visitors choose only their language.",
   fm_from_last: "Settings copied from “{0}”",
+  un_move: "Move to mailbox",
+  un_hint: "Tick messages of one domain to move them into one of its mailboxes",
+  un_mixed: "The selection spans several domains; move one domain at a time",
+  un_no_mailbox: "This domain has no mailbox yet",
+  un_move_confirm: "Move {0} messages to {1}? They will no longer appear here.",
+  t_moved: "{0} moved",
+  t_moved_partial: "{0} moved, {1} failed (original no longer stored)",
+  e_unrouted_mixed: "The selected messages do not all belong to one domain",
 };
