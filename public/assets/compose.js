@@ -546,14 +546,7 @@ function showImgBar(img) {
   clearTimeout(hideBarTimer);
   hoverImg = img;
   const cur = curScale(img);
-  // Each step says what it would be written as, since for a PNG that is usually not PNG
-  // 每一档都标出会写成什么格式,因为对 PNG 来说通常不是 PNG
-  const fmt = shrunkFormat(img);
-  bar.querySelectorAll('[data-s]').forEach((b) => {
-    const s = parseFloat(b.dataset.s);
-    b.classList.toggle('on', Math.abs(s - cur) < 0.02);
-    b.title = `${Math.round(s * 100)}%${s < 1 && fmt ? ' \u00b7 ' + fmt : ''}`;
-  });
+  bar.querySelectorAll('[data-s]').forEach((b) => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.s) - cur) < 0.02));
   const i = img.getBoundingClientRect(), w = wrap.getBoundingClientRect();
   bar.hidden = false;
   // Centre it horizontally against the image and clamp it inside the editor, so narrow images or ones near the edge do not overflow
@@ -562,16 +555,6 @@ function showImgBar(img) {
   const left = i.left - w.left + (i.width - bw) / 2;
   bar.style.left = Math.round(Math.min(Math.max(0, left), Math.max(0, w.width - bw))) + 'px';
   bar.style.top = Math.max(0, Math.round(i.top - w.top + 6)) + 'px';
-}
-
-/** What a shrunk copy of this image is written as / 这张图缩小后会写成的格式 */
-function shrunkFormat(img) {
-  const it = state?.inline.find((x) => x.url === img.getAttribute('src'));
-  const mime = it ? it.mime : '';
-  if (mime === 'image/png') return alphaOf.get(it.upload_id) ? 'PNG' : 'JPG';
-  if (mime === 'image/jpeg' || mime === 'image/jpg') return 'JPG';
-  if (mime === 'image/webp') return 'WebP';
-  return mime ? 'PNG' : '';
 }
 
 /** The current displayed width as a ratio of the original
