@@ -143,6 +143,20 @@ export function withVar(text, name, value) {
 }
 
 /**
+ * Set a var to a value, adding it when it is absent -- unlike withVar, which never changes one
+ * that is already there. Comments and layout are kept. Returns the new text, or null when the
+ * file has no "vars" to add it to.
+ *
+ * 把一个 var 设成某个值,没有就加上 —— 不同于 withVar,后者从不改动已有的值。注释与排版保留。
+ * 返回新文本;文件里没有 "vars" 可加时返回 null。
+ */
+export function setVar(text, name, value) {
+  const re = new RegExp('("' + name + '"\\s*:\\s*)"[^"]*"');
+  if (re.test(text)) return text.replace(re, (_, head) => `${head}"${value}"`);
+  return withVar(text, name, value);
+}
+
+/**
  * The span of the array that opens at `open`, found by counting brackets rather than by matching
  * a lazy regex to the first closing one.
  *
@@ -210,9 +224,14 @@ export function withDevContainersOff(text) {
  * 于是模板里那个占位镜像被读成"已完成":部署不再管它,交给 Cloudflare 的是一个
  * 指向从没有人推送过的镜像的容器。
  */
-export function containerImage(text) {
-  const m = /"containers"\s*:\s*\[[\s\S]*?"image"\s*:\s*"([^"]*)"/.exec(text);
-  const image = m ? m[1] : '';
+export function containerImage(text, className = 'BackupContainer') {
+  // Asked of the parsed configuration, by class: there can be more than one container now, and
+  // "the first image in the array" is only the backup's while the backup happens to come first.
+  // 向解析后的配置按类名去问:现在容器可以不止一个,而"数组里的第一个 image"只有在备份恰好排第一时才是备份的。
+  let cfg;
+  try { cfg = JSON.parse(stripJsonc(text)); } catch { return ''; }
+  const c = (Array.isArray(cfg?.containers) ? cfg.containers : []).find((x) => x?.class_name === className);
+  const image = typeof c?.image === 'string' ? c.image : '';
   return image.includes('<') ? '' : image;
 }
 
@@ -372,7 +391,7 @@ export function withBackupContainer(text, image, instanceType = 'standard-2') {
   // the block is already in the right place, only the image was never filled in.
   // 指向占位符的容器在这里补完,而不是再写一个:块本身位置就对,只是镜像从来没填上。
   if (!hasContainer && hasPlaceholderContainer(text)) {
-    return text.replace(/("containers"\s*:\s*\[[\s\S]*?"image"\s*:\s*")([^"]*)(")/, `$1${image}$3`);
+    return text.replace(/("containers"\s*:\s*\[[\s\S]*?"BackupContainer"[\s\S]*?"image"\s*:\s*")([^"]*)(")/, `$1${image}$3`);
   }
 
   if (!hasBinding) {
@@ -407,6 +426,17 @@ export function withBackupContainer(text, image, instanceType = 'standard-2') {
   if (!needsComma) end += 1;
   if (hasContainer) return out;
 
+  // Another container got here first (the meetings compositor): the backup joins its array
+  // rather than writing a second one, which would be the same key twice.
+  // 已经有别的容器先到了(会议的合成器):备份加入它的数组,而不是再写一个 —— 那会是同一个键出现两次。
+  const existing = /"containers"\s*:\s*\[/.exec(out);
+  if (existing) {
+    const at = existing.index + existing[0].length;
+    return out.slice(0, at)
+      + `\n${indent}  {\n${indent}    "class_name": "BackupContainer",\n${indent}    "image": "${image}",\n${indent}    "instance_type": "${instanceType}",\n${indent}    "max_instances": 1\n${indent}  },`
+      + out.slice(at);
+  }
+
   const block = `
 
 ${indent}// Where the backup runs: 7-Zip, a disk, and as long as it takes. The image is referenced
@@ -420,6 +450,129 @@ ${indent}    "max_instances": 1
 ${indent}  }
 ${indent}],`;
   return out.slice(0, end) + (needsComma ? ',' : '') + block + out.slice(end);
+}
+
+/**
+ * Give the configuration a Durable Object it does not have yet: the binding, and the migration
+ * that creates the class. A feature that arrives after a deployment was first made brings a new
+ * class with it, and an existing wrangler.jsonc knows nothing of classes invented later -- the
+ * template is only ever read on a first install. Without this the Worker deploys, the binding is
+ * simply absent, and the feature reports itself unavailable for a reason nobody can see.
+ *
+ * Each piece is decided on its own, for the reason withBackupContainer gives: a half-written
+ * configuration must not read as finished. The migration is appended with the next free tag; if
+ * the account already has the class, withReconciledMigrations takes the entry back out.
+ *
+ * Returns the new text, the same text when nothing was missing, or null when the file has no
+ * durable_objects / migrations to write into.
+ *
+ * 给配置补上一个它还没有的 Durable Object:绑定,以及创建该类的那条 migration。
+ * 部署建成之后才出现的功能会带来新的类,而已有的 wrangler.jsonc 对后来发明的类一无所知 ——
+ * 模板只在首次安装时才被读。没有这一步,Worker 照样部署、绑定只是不在,
+ * 而那个功能会以一个谁也看不见的理由报告自己不可用。
+ *
+ * 两样各自判定,理由同 withBackupContainer:写了一半的配置不能被读成已完成。
+ * migration 以下一个空闲 tag 追加;若账号上已有这个类,withReconciledMigrations 会把它再拿掉。
+ *
+ * 返回新文本;什么都不缺时返回原文本;文件里没有 durable_objects / migrations 可写时返回 null。
+ */
+/**
+ * Give the configuration the container a broadcast meeting is made in: the entry in `containers`,
+ * the MEET_COMPOSITOR binding, and the migration that creates the class. An entry that is already
+ * there keeps the image it has unless `image` differs and `replace` says so -- an image somebody
+ * chose is not renamed underneath them.
+ *
+ * Like the other editors here it does not trust itself: the result is parsed, and anything other
+ * than "the same configuration plus exactly these pieces" returns null.
+ *
+ * 给配置补上制作直播会议的那个容器:`containers` 里的条目、MEET_COMPOSITOR 绑定、以及创建该类的 migration。
+ * 已有的条目保留它现有的镜像,除非 `image` 不同且 `replace` 为真 —— 别人选定的镜像,不在他脚下改名。
+ *
+ * 和这里的其他编辑函数一样,它不信任自己:结果要解析,凡不是"原配置加上恰好这几样"的,一律返回 null。
+ */
+export function withMeetContainer(text, image, { instanceType = 'standard-3', maxInstances = 4, replace = false } = {}) {
+  let before;
+  try { before = JSON.parse(stripJsonc(text)); } catch { return null; }
+  let out = withDurableObject(text, 'MEET_COMPOSITOR', 'MeetCompositor');
+  if (out === null) return null;
+
+  const have = containerImage(out, 'MeetCompositor');
+  const listed = (Array.isArray(before.containers) ? before.containers : []).some((c) => c?.class_name === 'MeetCompositor');
+  if (listed) {
+    if (have !== image && (replace || !have)) {
+      // Inside the containers array only: the class is also named by its binding, further up,
+      // and "the first image after that" is some other container's.
+      // 只在 containers 数组内部替换:上面的绑定里也写着这个类名,而"它之后的第一个 image"是别的容器的。
+      const arr = /"containers"\s*:\s*\[/.exec(out);
+      const span = arr && arraySpan(out, arr.index + arr[0].length - 1);
+      if (!span) return null;
+      const inner = out.slice(span.start, span.end + 1)
+        .replace(/("class_name"\s*:\s*"MeetCompositor"[^{}]*?"image"\s*:\s*")([^"]*)(")/, `$1${image}$3`);
+      out = out.slice(0, span.start) + inner + out.slice(span.end + 1);
+    }
+  } else {
+    const indent = '  ';
+    const entry = `${indent}  {\n${indent}    "class_name": "MeetCompositor",\n${indent}    "image": "${image}",\n${indent}    "instance_type": "${instanceType}",\n${indent}    "max_instances": ${maxInstances}\n${indent}  }`;
+    const arr = /"containers"\s*:\s*\[/.exec(out);
+    if (arr) {
+      const span = arraySpan(out, arr.index + arr[0].length - 1);
+      if (!span) return null;
+      const body = out.slice(span.start + 1, span.end).replace(/\s*$/, '');
+      out = out.slice(0, span.start + 1) + (body.trim() ? (body.trim().endsWith(',') ? body : body + ',') : '') + '\n' + entry + `\n${indent}` + out.slice(span.end);
+    } else {
+      // After the migrations array, where the backup's block would go too.
+      // 写在 migrations 数组之后,备份的那一块也是写在这里。
+      const mig = /"migrations"\s*:\s*\[/.exec(out);
+      if (!mig) return null;
+      const span = arraySpan(out, mig.index + mig[0].length - 1);
+      if (!span) return null;
+      let end = span.end + 1;
+      const needsComma = out[end] !== ',';
+      if (!needsComma) end += 1;
+      const block = `\n\n${indent}// Where a broadcast meeting's picture is made: GStreamer, one instance per meeting on air.\n${indent}// 直播会议的画面在这里合成:GStreamer,每场在播的会议一个实例。\n${indent}"containers": [\n${entry}\n${indent}],`;
+      out = out.slice(0, end) + (needsComma ? ',' : '') + block + out.slice(end);
+    }
+  }
+
+  let after;
+  try { after = JSON.parse(stripJsonc(out)); } catch { return null; }
+  const others = (c) => JSON.stringify((c.containers || []).filter((x) => x?.class_name !== 'MeetCompositor'));
+  const mine = (after.containers || []).filter((x) => x?.class_name === 'MeetCompositor');
+  const ok = mine.length === 1 && !!mine[0].image && !String(mine[0].image).includes('<')
+    && others(after) === others(before)
+    && (after.durable_objects?.bindings || []).some((b) => b.name === 'MEET_COMPOSITOR' && b.class_name === 'MeetCompositor')
+    && (after.durable_objects?.bindings || []).length === (before.durable_objects?.bindings || []).length + ((before.durable_objects?.bindings || []).some((b) => b.name === 'MEET_COMPOSITOR') ? 0 : 1)
+    && JSON.stringify(after.vars || {}) === JSON.stringify(before.vars || {})
+    && JSON.stringify(after.routes || []) === JSON.stringify(before.routes || []);
+  return ok ? out : null;
+}
+
+export function withDurableObject(text, binding, className) {
+  let out = text;
+  if (!new RegExp(`"name"\\s*:\\s*"${binding}"`).test(out)) {
+    const dob = /("durable_objects"\s*:\s*\{\s*"bindings"\s*:\s*\[)/.exec(out);
+    if (!dob) return null;
+    const at = dob.index + dob[0].length;
+    out = out.slice(0, at) + `\n      { "name": "${binding}", "class_name": "${className}" },` + out.slice(at);
+  }
+  const migAt = /"migrations"\s*:\s*\[/.exec(out);
+  if (!migAt) return null;
+  const span = arraySpan(out, migAt.index + migAt[0].length - 1);
+  if (!span) return null;
+  const inner = out.slice(span.start + 1, span.end);
+  if (!new RegExp(`"${className}"`).test(inner)) {
+    const tags = [...inner.matchAll(/"tag"\s*:\s*"v(\d+)"/g)].map((m) => parseInt(m[1], 10));
+    const next = 'v' + ((tags.length ? Math.max(...tags) : 0) + 1);
+    const body = inner.replace(/\s*$/, '');
+    const indent = (out.slice(0, span.start).match(/\n([ \t]*)[^\n]*$/) || [, '  '])[1];
+    out = out.slice(0, span.start + 1)
+        + (body.trim() ? (body.trim().endsWith(',') ? body : body + ',') : '')
+        + `\n${indent}  { "tag": "${next}", "new_sqlite_classes": ["${className}"] }\n${indent}`
+        + out.slice(span.end);
+  }
+  if (out === text) return text;
+  try { JSON.parse(stripJsonc(out)); } catch { return null; }
+  return out;
 }
 
 /**

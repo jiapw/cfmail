@@ -106,6 +106,8 @@ function routeTitle(seg) {
     case 'admin': return t('admin');
     case 'chat': return t('c_title');
     case 'forms': return t('fm_title');
+    // A meeting names itself once its front has been read. / 会议等读到门面后自己起名。
+    case 'meet': return seg[1] ? '' : t('mt_title');
     // A fill page names itself once the form is loaded; nothing to say before that.
     // 填写页等表单加载完自己起名;在那之前无话可说。
     case 'f': return '';
@@ -458,7 +460,7 @@ function mailShellPrint() {
     me.mailboxes.map((m) => [m.id, m.address, m.display_name]),
     allLabels().map((l) => [l.id, l.name, l.color, l.icon]),
     me.user.is_admin, me.impersonated_by, (me.domain_admin_of || []).length,
-    me.send_enabled, me.chat_enabled, me.drive_enabled,
+    me.send_enabled, me.chat_enabled, me.drive_enabled, me.meet_enabled,
   ]);
 }
 
@@ -555,7 +557,7 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
   const brandName = store.brand?.name || 'CFMail';
   // The logo goes to this subsystem's own home, never to the other one
   // 品牌 logo 回本子系统的首页,不会跳到对方那边
-  const home = page === 'drive' ? '#/drive' : page === 'forms' ? '#/forms' : '#/';
+  const home = page === 'drive' ? '#/drive' : page === 'forms' ? '#/forms' : page === 'meet' ? '#/meet' : '#/';
   /**
    * Both subsystems are listed on both pages, so the pair reads as one switcher rather than
    * as "you are here, and there is a way out". A plain click switches in place; because these
@@ -576,7 +578,9 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
   // 表单排在邮件与网盘之间;与网盘不同,它没有开关:每个登录的人都可以设计。
   const cross = entry('mail', '#/', t('mail_title'), 'mail')
     + entry('forms', '#/forms', t('fm_title'), 'fileText')
-    + (me.drive_enabled ? entry('drive', '#/drive', t('drv_title'), 'cloud') : '');
+    + (me.drive_enabled ? entry('drive', '#/drive', t('drv_title'), 'cloud') : '')
+    // Meetings follow the person, the way the drive does. / 会议同网盘一样跟人走。
+    + (me.meet_enabled ? entry('meet', '#/meet', t('mt_title'), 'videocam') : '');
   // On a phone the bar keeps three things: the menu, the search, and the person. The brand and
   // the mail/drive switcher move into the account menu -- the .um-nav/.um-brand rows below,
   // which exist in every build of this dropdown and are shown by the stylesheet only where the
@@ -610,6 +614,7 @@ export function topbarHtml({ page, searchId, searchInputId, searchPh, searchValu
           <wa-dropdown-item class="um-nav" value="mail">${icon('mail', 18)} ${esc(t('mail_title'))}</wa-dropdown-item>
           <wa-dropdown-item class="um-nav" value="forms">${icon('fileText', 18)} ${esc(t('fm_title'))}</wa-dropdown-item>
           ${me.drive_enabled ? `<wa-dropdown-item class="um-nav" value="drive">${icon('cloud', 18)} ${esc(t('drv_title'))}</wa-dropdown-item>` : ''}
+          ${me.meet_enabled ? `<wa-dropdown-item class="um-nav" value="meet">${icon('videocam', 18)} ${esc(t('mt_title'))}</wa-dropdown-item>` : ''}
           <wa-dropdown-item value="settings">${icon('gear', 18)} ${esc(t('settings'))}</wa-dropdown-item>
           ${canAdmin ? `<wa-dropdown-item value="admin">${icon('shield', 18)} ${esc(t('admin'))}</wa-dropdown-item>` : ''}
           <wa-dropdown-item value="logout">${icon('logout', 18)} ${esc(t('logout'))}</wa-dropdown-item>
@@ -648,7 +653,7 @@ export function syncSidebar() {
   const sheet = qs('.sidebar');
   // The forms page's rail is the drive's rail in every respect that matters here.
   // 表单页的导轨,在这里要紧的每一点上都与网盘的导轨相同。
-  const rail = qs('.drv-nav, .fm-nav');
+  const rail = qs('.drv-nav, .fm-nav, .mt-nav');
   // The Drive's rail is two different objects at two widths. On a tablet it is a 68px column of
   // icons that pushes the listing aside and covers nothing -- there it keeps its own state, read
   // back from the DOM, and arriving never closes it. On a phone the stylesheet floats it over
@@ -677,7 +682,7 @@ export function syncSidebar() {
 
 function setSidebar(hidden) {
   store.sidebarHidden = hidden;
-  qs('.drv-nav, .fm-nav')?.classList.toggle('hidden', hidden);
+  qs('.drv-nav, .fm-nav, .mt-nav')?.classList.toggle('hidden', hidden);
   syncSidebar();
 }
 
@@ -751,6 +756,7 @@ export function bindTopbar() {
     if (v === 'mail') navigate('#/');
     else if (v === 'forms') navigate('#/forms');
     else if (v === 'drive') navigate('#/drive');
+    else if (v === 'meet') navigate('#/meet');
     else if (v === 'settings') navigate('#/settings');
     else if (v === 'admin') navigate('#/admin');
     else if (v === 'logout') {
@@ -829,6 +835,23 @@ async function route() {
     return mod.renderFill(seg.slice(1).join('/'));
   }
 
+  // A meeting's door. A guest has no account, so like a share link and a form this resolves
+  // before the sign-in gate. Whether the visitor is signed in is the meeting's front to say (the
+  // server reads the cookie); asking /api/me here would bounce a guest to the sign-in page.
+  // 会议的门。访客没有账号,所以它同分享链接、表单一样在登录门槛之前解析。来访者是否已登录,
+  // 由会议的"门面"来回答(服务端读 cookie);在这里去问 /api/me,会把访客弹到登录页。
+  // Watching a broadcast meeting: the audience may have no account either.
+  // 旁观一场直播会议:旁观者同样可能没有账号。
+  if (seg[0] === 'live' && seg[1]) {
+    const mod = await import('./meet/live.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderLive(decodeURIComponent(seg[1].split('?')[0]));
+  }
+  if (seg[0] === 'meet' && seg[1]) {
+    const [code, query = ''] = location.hash.replace(/^#\/meet\//, '').split('?');
+    const mod = await import('./meet/room.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderMeetRoom(decodeURIComponent(code), query);
+  }
+
   if (!store.me) await refreshMe();
   if (!store.me) {
     // A rejected request is not the only way this comes back without an answer: api() resolves
@@ -866,6 +889,13 @@ async function route() {
     if (!store.me.chat_enabled) return navigate('#/');
     const mod = await import('./chat/chat.js?v=' + encodeURIComponent(store.brand?.version || ''));
     return mod.renderChat(seg[1] || null);
+  }
+  // Meetings: the list and the create dialog. The room itself was handled above, before the gate.
+  // 会议:列表与创建对话框。房间本身在上面、登录门槛之前就处理了。
+  if (seg[0] === 'meet') {
+    if (!store.me.meet_enabled) return navigate('#/');
+    const mod = await import('./meet/meet.js?v=' + encodeURIComponent(store.brand?.version || ''));
+    return mod.renderMeet(seg.slice(1));
   }
   // Forms: the designer's side. No switch to check -- it is open to every signed-in person.
   // 表单:设计者一侧。没有开关可查 —— 对每个登录的人开放。

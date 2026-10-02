@@ -1,0 +1,396 @@
+/* Meetings: the list of them (.mt-page), the door (.mt-pre), and the room (.mt-room).
+   The chrome follows the theme like everything else. The one exception is the scene the pictures
+   sit on, which is dark in every theme: a camera picture on a white ground looks washed out, and
+   a meeting is the one page where what is on screen is somebody's face rather than the product.
+   会议:列表(.mt-page)、门口(.mt-pre)、房间(.mt-room)。
+   外框同其余一切一样跟随主题。唯一的例外是放画面的那块"场景",它在所有主题下都是深色:
+   白底上的摄像头画面显得发灰,而会议恰恰是唯一一张"屏幕上是某个人的脸、而不是这个产品"的页面。 */
+
+.mt-page wa-button:not(.icon)::part(label), .mt-pre wa-button:not(.icon)::part(label), .mt-room wa-button:not(.icon)::part(label) {
+  display: inline-flex; align-items: center; gap: 7px; line-height: 1;
+}
+.mt-page wa-button wa-icon, .mt-room wa-button wa-icon { flex: none; }
+
+/* ---------- The list page ---------- */
+/* ---------- 列表页 ---------- */
+.mt-page { height: calc(100vh - var(--sat, 0px)); height: calc(100dvh - var(--sat, 0px)); }
+.mt-body { display: flex; flex: 1; min-height: 0; }
+.mt-nav {
+  width: 256px; flex: none; padding: 0 8px 16px 8px;
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+.mt-nav.hidden { display: none; }
+.mt-new { width: fit-content; margin: 8px 8px 16px 4px; }
+.mt-nav-item {
+  display: flex; align-items: center; gap: 14px;
+  height: 36px; padding: 0 12px 0 14px; margin-right: 8px;
+  overflow: hidden; white-space: nowrap;
+  border-radius: 0 999px 999px 0; color: var(--text); text-decoration: none;
+  font-size: 14px; cursor: pointer; user-select: none;
+}
+.mt-nav-item:hover { background: var(--hover); }
+.mt-nav-item.active { background: var(--selected); color: var(--accent-text); font-weight: 600; }
+.mt-list { flex: 1; min-width: 0; overflow-y: auto; padding: 0 24px 40px 8px; }
+.mt-list .loading { padding: 40px; }
+.mt-listhead { display: flex; align-items: center; gap: 10px; padding: 10px 8px 12px; flex-wrap: wrap; }
+.mt-listhead h2 { margin: 0; font-size: 20px; font-weight: 500; }
+.mt-listhead .sp, .mt-room .sp, .mt-side-head .sp { flex: 1; }
+.mt-joinbox { display: flex; gap: 6px; align-items: center; --wa-form-control-height: 34px; }
+.mt-joinbox wa-input { width: 190px; }
+
+.mt-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; padding: 0 8px; }
+.mt-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+}
+.mt-card.over { opacity: .62; }
+.mt-card-t { display: flex; align-items: center; gap: 8px; font-size: 15.5px; font-weight: 500; color: var(--text); min-width: 0; }
+.mt-card-t .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #d93025; flex: none; }
+.mt-card-m { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--text-2); }
+.mt-card-m span { display: inline-flex; align-items: center; gap: 4px; }
+.mt-card-a { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.mt-card-a .sp { flex: 1; }
+.mt-code { font-family: var(--mono, ui-monospace, monospace); letter-spacing: .02em; }
+.mt-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 72px 24px; text-align: center; color: var(--text-2);
+}
+.mt-empty wa-icon { font-size: 48px; opacity: .5; }
+.mt-empty-t { font-size: 17px; color: var(--text); }
+
+/* The create / edit dialog */
+.mt-form { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px 14px; align-items: center; width: 100%; box-sizing: border-box; --wa-form-control-height: 34px; }
+.mt-form label { color: var(--text-2); font-size: 13.5px; }
+.mt-form .full { grid-column: 1 / -1; }
+.mt-form .hint { grid-column: 2; margin-top: -8px; }
+.mt-frow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.mt-dt { height: 34px; padding: 0 8px; border: 1px solid var(--border-2, var(--border)); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; }
+.mt-form wa-select, .mt-form wa-input { width: 100%; }
+.mt-form .when { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
+
+@media (max-width: 900px) {
+  .mt-nav { width: 68px; padding-left: 6px; }
+  .mt-nav-item .lbl, .mt-new span { display: none; }
+  .mt-nav-item { justify-content: center; padding: 10px; border-radius: 12px; }
+  .mt-list { padding: 0 12px 40px 8px; }
+}
+@media (max-width: 640px), ((hover: none) and (max-height: 500px)) {
+  .mt-nav {
+    position: fixed; left: env(safe-area-inset-left, 0px); top: calc(60px + var(--sat)); bottom: 0; z-index: 150;
+    width: 256px; padding: 0 8px 16px 8px;
+    background: var(--bg); box-shadow: 4px 0 16px color-mix(in srgb, #000 12%, transparent);
+  }
+  body.impersonating .mt-nav { top: calc(94px + var(--sat)); }
+  .mt-nav-item .lbl { display: block; }
+  .mt-new span { display: inline; }
+  .mt-nav-item { justify-content: flex-start; padding: 0 12px 0 14px; border-radius: 0 999px 999px 0; }
+  .mt-list { padding: 0 8px 40px; }
+  .mt-cards { grid-template-columns: 1fr; padding: 0; }
+  .mt-form { grid-template-columns: minmax(0, 1fr); }
+  .mt-form .hint { grid-column: 1; margin-top: -6px; }
+  .mt-joinbox wa-input { width: 150px; }
+}
+
+/* ---------- Standing notices (not found, ended, waiting at the door) ---------- */
+/* ---------- 独立提示(不存在、已结束、在门口等) ---------- */
+.mt-notice {
+  min-height: calc(100dvh - var(--sat, 0px)); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 24px; text-align: center; color: var(--text-2);
+}
+.mt-notice > wa-icon { font-size: 48px; opacity: .55; }
+.mt-notice-t { font-size: 18px; color: var(--text); max-width: 520px; }
+.mt-notice-a { display: flex; gap: 8px; margin-top: 6px; }
+
+/* ---------- The door ---------- */
+/* ---------- 门口 ---------- */
+.mt-pre { min-height: calc(100dvh - var(--sat, 0px)); display: flex; align-items: center; justify-content: center; padding: 20px 16px; box-sizing: border-box; }
+.mt-pre-card {
+  width: min(520px, 100%); display: flex; flex-direction: column; align-items: stretch; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 22px;
+}
+.mt-pre-title { margin: 0; font-size: 22px; font-weight: 500; color: var(--text); text-align: center; overflow-wrap: anywhere; }
+.mt-pre-sub { text-align: center; color: var(--text-2); font-size: 13px; min-height: 18px; }
+.mt-pre-view { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #15171a; }
+.mt-pre-view.audio { aspect-ratio: 16 / 5; }
+.mt-pre-view video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+.mt-pre-off { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: #9aa0a6; background: #15171a; }
+.mt-pre-off.show, .mt-pre-view.audio .mt-pre-off { display: flex; }
+.mt-pre-level { position: absolute; left: 12px; right: 12px; bottom: 10px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .18); overflow: hidden; }
+.mt-pre-level i { display: block; height: 100%; width: 0; background: #34a853; transition: width .08s linear; }
+.mt-pre-ctl { display: flex; justify-content: center; gap: 12px; }
+.mt-pre-dev { display: flex; flex-direction: column; gap: 8px; --wa-form-control-height: 34px; }
+.mt-pre-cap { min-height: 0; }
+.mt-pre-err { text-align: center; min-height: 18px; color: var(--wa-color-danger-on-quiet, #c5221f); }
+
+/* Round buttons, at the door and on the bar. Off is red the way every meeting product's is: it
+   is the state people most need to be able to see from across the room. / 门口与控制条上的圆按钮。
+   "关着"是红色,与所有会议产品一致:那是人们最需要隔着房间也能一眼看清的状态。 */
+wa-button.mt-round::part(base) { width: 48px; height: 48px; border-radius: 50%; position: relative; }
+wa-button.mt-round wa-icon { font-size: 22px; }
+wa-button.mt-round.off::part(base) { background: #d93025; color: #fff; }
+wa-button.mt-round.active::part(base) { background: var(--primary); color: var(--primary-fg, #fff); }
+.mt-badge {
+  position: absolute; top: -4px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  border-radius: 9px; background: var(--primary); color: var(--primary-fg, #fff); font-size: 11px; line-height: 18px; text-align: center;
+  pointer-events: none;
+}
+
+/* ---------- The room ---------- */
+/* ---------- 房间 ---------- */
+body.mt-in-room { overflow: hidden; }
+.mt-room {
+  height: calc(100vh - var(--sat, 0px)); height: calc(100dvh - var(--sat, 0px));
+  display: flex; flex-direction: column; background: var(--bg); position: relative;
+}
+.mt-top { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px; flex: none; }
+.mt-top-title { font-size: 15px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mt-rec, .mt-lockmark { display: none; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); }
+.mt-rec { color: #d93025; }
+.mt-rec.show, .mt-lockmark.show { display: inline-flex; }
+.mt-clock { font-variant-numeric: tabular-nums; }
+.mt-banner { display: none; padding: 6px 16px; text-align: center; font-size: 13px; background: #f9ab00; color: #1f1f1f; flex: none; }
+.mt-banner.show { display: block; }
+
+.mt-main { flex: 1; min-height: 0; display: flex; gap: 0; padding: 0 12px; }
+.mt-scene {
+  flex: 1; min-width: 0; min-height: 0; position: relative;
+  display: flex; gap: 10px;
+  background: #0e0f11; border-radius: 16px; padding: 10px; box-sizing: border-box;
+}
+/* A shared screen, while there is one: as large as the room allows, everybody beside it.
+   共享的屏幕(有的时候):在房间允许的范围内尽可能大,所有人排在它旁边。 */
+.mt-share { display: none; position: relative; flex: 1; min-width: 0; min-height: 0; border-radius: 12px; overflow: hidden; background: #000; }
+.mt-room.sharing .mt-share { display: block; }
+.mt-share video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.mt-share-note { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; color: #bdc1c6; font-size: 14px; pointer-events: none; padding: 16px; text-align: center; }
+.mt-share-name, .mt-tile-foot {
+  position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); box-sizing: border-box;
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 6px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 12.5px; line-height: 1.3;
+}
+.mt-share-name { z-index: 2; }
+.mt-share-name:empty { display: none; }
+/* Everybody, the same size, as large as fits: fitGallery() works out the width.
+   所有人,一样大,在放得下的前提下尽可能大:宽度由 fitGallery() 算出。 */
+.mt-strip {
+  flex: 1; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  display: flex; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px;
+}
+.mt-strip .mt-tile { flex: none; width: var(--tile-w, 320px); }
+/* While a screen is shared the people are a column beside it. / 有屏幕共享时,人排成它旁边的一列。 */
+.mt-room.sharing .mt-strip { flex: none; width: 240px; flex-direction: column; flex-wrap: nowrap; align-content: stretch; justify-content: flex-start; }
+.mt-room.sharing .mt-strip .mt-tile { width: 100%; }
+.mt-pager { position: absolute; right: 14px; bottom: 12px; display: none; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff; }
+.mt-pager.show { display: inline-flex; }
+.mt-pager .dim { color: #dadce0; }
+.mt-pager wa-button::part(base) { color: #fff; width: 30px; height: 30px; }
+
+
+.mt-tile {
+  position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #1b1d21;
+  outline: 2px solid transparent; outline-offset: -2px; transition: outline-color .15s;
+}
+.mt-tile.speaking { outline-color: #34a853; }
+/* The video is always laid out and the avatar sits on top of it until there is a frame: a video
+   that is display:none is one an iPhone never decodes, so it would never have a frame to show.
+   video 始终参与布局,头像盖在它上面直到有画面为止:display:none 的 video,iPhone 根本不去解码,
+   也就永远等不到"有画面"的那一刻。 */
+.mt-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A phone held upright sends a tall picture; cropping it to a wide tile would cut off the face.
+   竖着拿的手机发来的是竖长的画面;裁成横向的一格会把脸裁掉。 */
+.mt-tile.portrait video { object-fit: contain; background: #000; }
+.mt-tile.me video { transform: scaleX(-1); }
+.mt-tile-av { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #1b1d21; z-index: 1; }
+.mt-tile.has-video .mt-tile-av { display: none; }
+.mt-tile-foot, .mt-tile-hand, .mt-tile-share { z-index: 2; }
+.mt-tile-foot { left: 6px; bottom: 6px; font-size: 12px; padding: 2px 6px; }
+.mt-tile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-tile-mic { display: inline-flex; color: #f28b82; }
+.mt-tile-mic:empty { display: none; }
+.mt-tile-hand, .mt-tile-share {
+  position: absolute; top: 6px; display: none; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; color: #fff;
+}
+.mt-tile-hand { right: 6px; background: #f9ab00; color: #1f1f1f; }
+.mt-tile-share { left: 6px; background: rgba(0, 0, 0, .55); }
+.mt-tile.hand .mt-tile-hand, .mt-tile.presenting .mt-tile-share { display: inline-flex; }
+
+/* The bar */
+.mt-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.mt-bar-g { display: flex; align-items: center; gap: 10px; }
+.mt-bar-g:first-child { flex: 1; justify-content: center; padding-left: 120px; }
+.mt-leave::part(base) { height: 48px; width: 64px; border-radius: 24px; }
+.mt-leave wa-icon { font-size: 24px; }
+
+/* On a narrow screen nine buttons do not fit, and the one that must never scroll out of sight is
+   the way out. Raising a hand and sharing a screen move into the menu; leaving stays put.
+   窄屏上放不下九个按钮,而绝不能被滚出视野的那一个,是离开的路。举手与共享屏幕挪进菜单;离开留在原处。 */
+.mt-narrow-only { display: none; }
+@media (max-width: 520px) {
+  .mt-bar [data-act="hand"], .mt-bar [data-act="screen"] { display: none; }
+  .mt-narrow-only { display: flex; }
+  .mt-bar { overflow-x: visible; justify-content: space-between; }
+  .mt-bar-g:first-child { flex: 0 1 auto; }
+}
+
+/* The side panel */
+.mt-side { width: 0; flex: none; overflow: hidden; display: flex; flex-direction: column; transition: width .16s ease; }
+.mt-side.open { width: 340px; margin-left: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; }
+.mt-side-head { display: flex; align-items: center; padding: 8px 8px 4px 16px; font-size: 15px; font-weight: 500; color: var(--text); flex: none; }
+.mt-side-body { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 10px; }
+.mt-side-body.show { display: flex; flex-direction: column; }
+.mt-sec { padding: 10px 8px 4px; font-size: 12px; color: var(--text-2); text-transform: none; }
+.mt-person { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 10px; min-height: 40px; }
+.mt-person:hover { background: var(--hover); }
+.mt-person .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--text); }
+.mt-person .st { display: inline-flex; gap: 4px; color: var(--text-2); }
+.mt-tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft, var(--selected)); color: var(--accent-text); margin-left: 4px; }
+.mt-tag.dim { background: var(--hover); color: var(--text-2); }
+.mt-chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px; display: flex; flex-direction: column; gap: 10px; }
+.mt-chat-empty { margin: auto; text-align: center; padding: 24px; }
+.mt-msg-h { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; color: var(--text); }
+.mt-msg-b { font-size: 14px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mt-msg-b a { color: var(--link); }
+.mt-chat-form { display: flex; gap: 4px; align-items: center; padding: 8px 4px 0; flex: none; --wa-form-control-height: 38px; }
+.mt-chat-form wa-input { flex: 1; }
+
+@media (max-width: 1000px) {
+  .mt-room.sharing .mt-strip { width: 170px; }
+  .mt-bar-g:first-child { padding-left: 0; }
+}
+@media (max-width: 720px), ((hover: none) and (orientation: portrait)) {
+  .mt-main { padding: 0 6px; flex-direction: column; }
+  .mt-scene { padding: 6px; border-radius: 12px; gap: 6px; }
+  .mt-strip { gap: 6px; }
+  /* Upright: the screen on top, the people below it, two to a row. / 竖屏:屏幕在上,人在下,每行两个。 */
+  .mt-room.sharing .mt-scene { flex-direction: column; }
+  .mt-room.sharing .mt-share { flex: none; aspect-ratio: 16 / 9; }
+  .mt-room.sharing .mt-strip { width: auto; flex: 1; flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
+  .mt-room.sharing .mt-strip .mt-tile { width: calc(50% - 3px); }
+  .mt-side.open {
+    position: absolute; z-index: 30; inset: 44px 6px calc(76px + env(safe-area-inset-bottom, 0px)) 6px; width: auto; margin: 0;
+    box-shadow: 0 8px 28px color-mix(in srgb, #000 30%, transparent);
+  }
+  .mt-bar { padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px)); gap: 6px; overflow-x: auto; }
+  .mt-bar-g { gap: 6px; }
+  wa-button.mt-round::part(base) { width: 44px; height: 44px; }
+  .mt-leave::part(base) { width: 52px; height: 44px; }
+  .mt-pager { bottom: 8px; right: 8px; }
+}
+@media ((hover: none) and (orientation: landscape) and (max-height: 500px)) {
+  .mt-top { height: 32px; }
+  .mt-room.sharing .mt-strip { width: 150px; }
+  .mt-bar { padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
+  wa-button.mt-round::part(base) { width: 40px; height: 40px; }
+}
+
+/* The people already asked, under the invitation form / 邀请表单下方:已经请过的人 */
+.mt-invited { margin-top: 10px; max-height: 180px; overflow-y: auto; }
+.mt-form wa-textarea { width: 100%; }
+
+/* ----- keeping a meeting / 留下一场会议 ----- */
+.mt-recopts { display: grid; gap: 6px; }
+.mt-recopts wa-checkbox { margin-top: 8px; }
+.mt-recopts .hint { margin-left: 28px; font-size: 12.5px; line-height: 1.5; }
+.mt-saving {
+  position: fixed; left: calc(16px + var(--sal, 0px)); bottom: calc(16px + var(--sab, 0px)); z-index: 1200;
+  display: inline-flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 999px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); font-size: 13px;
+  box-shadow: 0 6px 24px color-mix(in srgb, #000 22%, transparent);
+}
+.mt-saving wa-spinner { font-size: 16px; }
+.mt-minutes {
+  margin: 12px 0 0; padding: 12px 14px; max-height: min(52vh, 460px); overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: 13.5px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent); border-radius: 10px;
+}
+.mt-doc {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; margin: 2px 0; border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); text-decoration: none; font-weight: 500;
+}
+.mt-doc:hover { background: color-mix(in srgb, var(--primary) 20%, transparent); }
+
+/* ----- on air / 播出 ----- */
+.mt-onair { display: none; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; background: #d93025; color: #fff; }
+.mt-onair.show { display: inline-flex; }
+.mt-onair.pending { background: color-mix(in srgb, var(--text) 18%, transparent); color: var(--text-2); font-weight: 500; letter-spacing: 0; }
+.mt-live { position: fixed; inset: 0; display: flex; flex-direction: column; background: #0f1115; color: #e8eaee; padding-top: var(--sat, 0px); }
+.mt-live .mt-top { color: #e8eaee; }
+.mt-live .mt-onair { display: none; }
+.mt-live.on .mt-onair { display: inline-flex; }
+.mt-live-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+/* The native styles give every <video> a bottom margin and round corners; in a centred stage the
+   margin pushes the picture up into the header. / 原生样式给每个 <video> 加了下边距和圆角;在居中的舞台里,
+   那点边距会把画面往上顶进标题栏。 */
+.mt-live-stage video { width: 100%; height: 100%; object-fit: contain; background: #000; margin: 0; border-radius: 0; }
+.mt-live-wait { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: #aab; font-size: 15px; background: #0f1115; }
+.mt-live.on .mt-live-wait { display: none; }
+.mt-live-unmute { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); }
+.mt-live .mt-top-title { color: #e8eaee; }
+.mt-live .mt-top .dim { color: #9aa3b2; }
+.mt-diag {
+  position: absolute; left: 8px; right: 8px; top: calc(48px + var(--sat, 0px)); z-index: 50; margin: 0; padding: 8px 10px; max-height: 45%; overflow: auto;
+  font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
+  color: #d7ffd9; background: rgba(0, 0, 0, .78); border-radius: 8px; pointer-events: none;
+}
+.mt-taphint {
+  position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 40;
+  padding: 12px 18px; border: 0; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 500;
+  background: var(--primary); color: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+}
+
+/* ----- end-to-end encryption / 端到端加密 ----- */
+.mt-e2ee {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; border: 0; cursor: pointer;
+  font: inherit; font-size: 12px; background: color-mix(in srgb, #1e8e3e 16%, transparent); color: #1e8e3e;
+}
+.mt-e2ee:hover { background: color-mix(in srgb, #1e8e3e 26%, transparent); }
+.mt-fp { font: 600 22px/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .08em; padding: 8px 0 2px; color: var(--text); }
+.mt-keyform { display: flex; gap: 8px; align-items: center; width: min(460px, 92vw); margin-top: 8px; }
+.mt-keyform wa-input { flex: 1; }
+.mt-e2ee-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; grid-column: 1 / -1; margin-top: 4px; color: var(--text-2); }
+
+/* ----- the audience / 观众席 -----
+   The video is dark whatever the theme; the chat beside it follows the theme like any other panel.
+   视频区无论什么主题都是深色;旁边的聊天与其他面板一样跟随主题。 */
+.mt-watch { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.mt-watch[hidden] { display: none; }
+.mt-live .mt-watch { color: #9aa3b2; }
+.mt-live-host { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30%; }
+.mt-live-main { flex: 1; min-height: 0; display: flex; }
+.mt-live-side {
+  width: 340px; flex: none; min-height: 0; display: flex; flex-direction: column;
+  background: var(--panel); color: var(--text); border-left: 1px solid var(--border);
+}
+.mt-live-side-head { display: flex; align-items: center; gap: 6px; padding: 10px 14px 6px; font-size: 14px; font-weight: 500; color: var(--text); flex: none; }
+.mt-live-side .mt-chat-log { padding: 4px 12px; }
+.mt-live-foot { flex: none; padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.mt-live-foot .mt-chat-form { padding: 0; }
+.mt-live-join { width: 100%; }
+.mt-live-note { text-align: center; padding: 8px; font-size: 13px; }
+.mt-msg.staff .mt-msg-h b, .mt-msg.mine .mt-msg-h b { color: var(--primary); }
+.mt-msg-tools { margin-left: auto; display: inline-flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.mt-msg:hover .mt-msg-tools, .mt-msg:focus-within .mt-msg-tools { opacity: 1; }
+@media (hover: none) { .mt-msg-tools { opacity: .75; } }
+.mt-msg-tools button { display: inline-flex; border: 0; background: none; padding: 2px 4px; border-radius: 6px; cursor: pointer; color: var(--text-2); }
+.mt-msg-tools button:hover { background: var(--hover); color: var(--text); }
+.mt-chat-tabs { display: flex; gap: 4px; padding: 0 8px 6px; flex: none; }
+.mt-chat-tabs[hidden] { display: none; }
+.mt-chat-tabs button {
+  flex: 1; border: 1px solid var(--border); background: none; color: var(--text-2); font: inherit; font-size: 13px;
+  padding: 5px 8px; border-radius: 8px; cursor: pointer;
+}
+.mt-chat-tabs button.on { background: var(--selected, var(--hover)); color: var(--text); border-color: transparent; font-weight: 500; }
+.mt-tab-n { color: var(--primary); font-weight: 600; }
+.mt-ask-state { font-size: 12px; white-space: nowrap; }
+.mt-pre-ticket { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13.5px; color: var(--primary); }
+/* Upright phones: the picture on top at its own shape, the chat filling what is left.
+   竖着的手机:画面在上、按自己的比例,聊天占满余下的部分。 */
+@media (max-width: 720px), ((hover: none) and (orientation: portrait)) {
+  .mt-live-main { flex-direction: column; }
+  .mt-live.with-chat .mt-live-stage { flex: none; aspect-ratio: 16 / 9; max-height: 45vh; }
+  .mt-live-side { width: auto; flex: 1; border-left: 0; border-top: 1px solid var(--border); }
+  .mt-live-host { display: none; }
+  .mt-live .mt-top { gap: 8px; padding: 0 10px; }
+}

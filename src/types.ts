@@ -26,6 +26,45 @@ export interface Env {
    *  每份正在被演示的文档一个房间。可选,因为早于这个功能的部署没有这个绑定 ——
    *  而"没有房间"该意味着"这里没开演示",不该意味着一个起不来的 Worker。 */
   PRESENT_ROOM?: DurableObjectNamespace<import('./present').PresentRoom>;
+  /** One room per meeting in progress. Optional for the same reason PRESENT_ROOM is: a deployment
+   *  made before meetings existed has no such binding, and that should read as "no meetings here".
+   *  每场进行中的会议一个房间。可选,理由同 PRESENT_ROOM:早于会议功能的部署没有这个绑定,
+   *  而那该读作"这里没有会议"。 */
+  MEET_ROOM?: DurableObjectNamespace<import('./meet').MeetRoom>;
+  /** The container a live meeting is composited in (phase 3). / 直播会议的合成容器(阶段 3)。 */
+  MEET_COMPOSITOR?: DurableObjectNamespace;
+  /** Meetings on this deployment, as the person deploying chose: "on" (or absent), "no-live"
+   *  (meetings without broadcasts), "off". / 部署的人为本部署选定的会议状态:"on"(或缺省)、
+   *  "no-live"(有会议、无直播)、"off"。 */
+  MEETINGS?: string;
+  /** A broadcast's audience: one hall and three shards per meeting (meetaudience.ts). Optional:
+   *  without it viewers only watch. / 一场直播的观众:每场会议一个总台加三个分片(meetaudience.ts)。
+   *  可选:没有它,观众只能看。 */
+  MEET_AUDIENCE?: DurableObjectNamespace<import('./meetaudience').MeetAudience>;
+  /** Cloudflare Realtime: the SFU app every meeting on this deployment shares, and the TURN key
+   *  for networks that block UDP. The secret and the token are wrangler secrets.
+   *  Cloudflare Realtime:这套部署上所有会议共用的 SFU app,以及给封了 UDP 的网络用的 TURN key。
+   *  secret 与 token 是 wrangler secret。 */
+  REALTIME_APP_ID?: string;
+  REALTIME_APP_SECRET?: string;
+  TURN_KEY_ID?: string;
+  TURN_KEY_TOKEN?: string;
+  /** Tests only: point the room at a stand-in for the SFU's HTTPS API. / 仅测试用:让房间去找一个替身 SFU API。 */
+  REALTIME_API_BASE?: string;
+  /** Live meetings (phase 3): Stream, and the key the compositor's ticket is signed with.
+   *  直播会议(阶段 3):Stream,以及给合成器入场券签名的密钥。 */
+  STREAM_API_TOKEN?: string;
+  /** The "customer-<code>" part of this account's Stream playback host. / 本账号 Stream 播放主机名里 "customer-<code>" 的那一段。 */
+  STREAM_CUSTOMER_CODE?: string;
+  /** The key playback tokens are signed with, as Stream's /keys endpoint gave it (id + base64 JWK).
+   *  给播放令牌签名的钥匙,即 Stream 的 /keys 接口给出的样子(id + base64 的 JWK)。 */
+  STREAM_SIGNING_KEY_ID?: string;
+  STREAM_SIGNING_JWK?: string;
+  /** Local development only: any RTMP-in, HLS-out server standing in for Stream.
+   *  仅本地开发:任意一个"RTMP 进、HLS 出"的服务器,顶替 Stream。 */
+  MEET_DEV_RTMP?: string;
+  MEET_DEV_HLS?: string;
+  MEET_BOT_KEY?: string;
   EMAIL?: { send(message: unknown): Promise<unknown> }; // Cloudflare Email Sending binding
   MAIL_PROVIDER: string; // dev | cf | ses | resend
   APP_ORIGIN: string;

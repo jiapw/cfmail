@@ -71,12 +71,26 @@
       // 每份正在被演示的文档一个房间。它什么都不存,最后一个人离开就销毁自己。
       // One room per document being presented. It stores nothing, and destroys itself
       // the moment the last person leaves.
-      { "name": "PRESENT_ROOM", "class_name": "PresentRoom" }
+      { "name": "PRESENT_ROOM", "class_name": "PresentRoom" },
+      // 每场进行中的会议一个房间:谁在场、谁在门口、谁的屏幕挂着。同样不落盘,人走光即销毁。
+      // 会议还需要 Realtime 的 SFU app 与 TURN key —— 由 `npm run deploy` 创建并写入;
+      // 没有它们时这个绑定留着也无害,功能只是报告自己不可用。
+      // One room per meeting in progress: who is here, who is at the door, whose screen is up.
+      // Stores nothing, gone when the last person leaves. Meetings also need a Realtime SFU app
+      // and a TURN key, which `npm run deploy` creates; without them the binding is harmless and
+      // the feature reports itself unavailable.
+      { "name": "MEET_ROOM", "class_name": "MeetRoom" },
+      // 直播的观众:每场会议一个总台加三个分片 —— 聊天、申请发言、在看人数。
+      // A broadcast's audience: one hall and three shards per meeting -- the chat, the queue to
+      // speak, the head count.
+      { "name": "MEET_AUDIENCE", "class_name": "MeetAudience" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ChatAgent"] },
-    { "tag": "v2", "new_sqlite_classes": ["PresentRoom"] }
+    { "tag": "v2", "new_sqlite_classes": ["PresentRoom"] },
+    { "tag": "v3", "new_sqlite_classes": ["MeetRoom"] },
+    { "tag": "v4", "new_sqlite_classes": ["MeetAudience"] }
   ],
 
   // 备份跑在容器里:那儿有 7-Zip、有磁盘、想跑多久跑多久,而 Worker 三样都没有。
@@ -84,12 +98,17 @@
   // 公开镜像,把三样东西一起补进来 —— containers 块、durable_objects 里的
   // BACKUP_CONTAINER 绑定、以及对应的 migrations 条目。镜像由 Cloudflare 自己去拉,
   // 你这边既不需要 Docker,也不需要镜像仓库账号。
+  // 直播会议的合成器同理:部署读 container-meet/published.json,补上它的那一项 containers 条目、
+  // MEET_COMPOSITOR 绑定与 migration(本部署关了直播时不加)。
   //
   // Where the backup runs: 7-Zip, a disk, and as long as it takes, none of which a Worker has.
   // There is no "containers" block here because the deploy writes one: it reads the public image
   // named in container/published.json and adds all three pieces at once -- the containers block,
   // the BACKUP_CONTAINER binding under durable_objects, and the matching migrations entry.
   // Cloudflare pulls the image itself; you need neither Docker nor a registry account.
+  // The broadcast compositor is the same: the deploy reads container-meet/published.json and adds
+  // its containers entry, the MEET_COMPOSITOR binding and its migration (not where this
+  // deployment has broadcasts switched off).
   //
   // 本地开发不碰容器:否则 wrangler dev 会去拉镜像,那要求 Docker 跑着。
   // Local development leaves the container alone; pulling the image wants Docker.
@@ -124,6 +143,15 @@
     // 用户访问的入口地址,邀请链接和密码重置链接都由它拼出来。
     // 与下面 routes 的第一条保持一致。
     "APP_ORIGIN": "https://<entry-subdomain>.<your-domain>",
+
+    // Meetings on this deployment: "on" (meetings, and broadcasts as far as the account allows),
+    // "no-live" (meetings without broadcasts) or "off". `npm run deploy -- --meetings <m>` writes
+    // it, and so does the deploy's own question when its token cannot set meetings up. Which
+    // domains may use them is chosen in the admin console.
+    // 本部署的会议:"on"(会议,以及账号条件允许的直播)、"no-live"(只有会议,没有直播)、"off"。
+    // 由 `npm run deploy -- --meetings <m>` 写入;部署令牌建不了会议所需的东西时,部署脚本问过之后也会写。
+    // 哪些域名能用,在管理后台里选。
+    "MEETINGS": "on",
 
     "DEV_MODE": "0"
 

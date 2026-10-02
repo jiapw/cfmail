@@ -18,6 +18,7 @@ import {
 import { createSystemFolders, deleteMessageDerived, findMailboxByAddress, getFolder, allocUid, ingestEml, insertFailedPlaceholder, logUnrouted, type MailboxRow } from './parse';
 import { queueSend, sendSystemMail, MAX_CONTENT_BYTES } from './send';
 import { HttpError, E } from './errors';
+import { turnstileEnabled, verifyTurnstile } from './turnstile';
 import { audit } from './audit';
 import { adminApp, LOCAL_PART_RE } from './admin';
 import { verifyMail, resetMail } from './mailtpl';
@@ -26,6 +27,8 @@ import { chatApp } from './chat/routes';
 import { chatDomainForHost } from './chat/settings';
 import { driveAgentApp, driveApp, drivePubApp } from './drive';
 import { presentApp } from './present';
+import { meetApp, meetFlagsFor, meetPubApp } from './meet';
+import { meetKeepApp } from './meetminutes';
 import { fillApp, formsApp } from './forms';
 import { VERSION } from './version';
 import { domainFromHost, ftsQuery, hasCJK, isEmail, jsonTry, normalizeAddr, now, parseAddrList, randomToken, sha256Hex, uid } from './util';
@@ -94,39 +97,6 @@ app.get('/api/brand', async (c) => {
     turnstile: turnstileEnabled(c.env) ? c.env.TURNSTILE_SITEKEY : null,
   });
 });
-
-// ---------- Turnstile human verification ----------
-// ---------- Turnstile 人机验证 ----------
-
-/** Active only when the sitekey and the secret are both configured; missing either turns it off entirely (the frontend renders nothing, the backend lets requests through)
- *  sitekey 和 secret 都配置了才启用;少任何一个都整体关闭(前端不渲染、后端放行) */
-function turnstileEnabled(env: Env): boolean {
-  return !!(env.TURNSTILE_SITEKEY && env.TURNSTILE_SECRET);
-}
-
-/**
- * Validate the turnstile token supplied by the frontend. When the feature is off, everything
- * passes. When it is on, a missing token, a failed siteverify, or an unreachable siteverify all
- * count as a failure (fail-closed).
- * Tokens are single-use and valid for 5 minutes; after a 403 the frontend must reset the widget and fetch a new one.
- * 校验前端带来的 turnstile token。未启用直接放行;启用时无 token、
- * siteverify 不通过、或 siteverify 不可达,一律算不过(fail-closed)。
- * token 一次性,5 分钟内有效;前端在收到 403 后需 reset widget 重新取。
- */
-async function verifyTurnstile(env: Env, token: unknown, ip?: string): Promise<boolean> {
-  if (!turnstileEnabled(env)) return true;
-  const t = String(token || '');
-  if (!t || t.length > 2048) return false;
-  const form = new URLSearchParams({ secret: env.TURNSTILE_SECRET!, response: t });
-  if (ip) form.set('remoteip', ip);
-  try {
-    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form });
-    const j: any = await res.json();
-    return !!j?.success;
-  } catch {
-    return false;
-  }
-}
 
 const CAPTCHA_FAIL = { error: 'e_captcha' };
 
@@ -715,6 +685,9 @@ app.get('/api/me', async (c) => {
     max_content_bytes: MAX_CONTENT_BYTES, // 前端实时估算用,和发送校验同一个数
     chat_enabled: !!chatDom?.enabled, // 当前访问域名是否开启 AI 助手
     drive_enabled: !!driveDom,
+    // Meetings follow the person the way Drive does, and only exist where the deployment has them
+    // 会议同网盘一样跟人走,而且只在这套部署具备条件时才存在
+    ...(await meetFlagsFor(c, user)),
   });
 });
 
@@ -1698,6 +1671,14 @@ app.route('/api/pub', drivePubApp);
 // 演示一份文档。同样不挂在 requireAuth 之后:持有带会议笔的链接的人同样没有账号,
 // 而"他能做什么"这个问题在里面按访问者逐一提问,对着他真正持有的那条链接。
 app.route('/api/present', presentApp);
+
+// Meetings: the signed-in side behind the session; the door open, because a guest has no account.
+// What somebody at the door may do is enumerated and rate-limited inside (see meet.ts).
+// 会议:登录后的一侧在会话之后;门则开着,因为访客没有账号。
+// 门口的人能做什么,在里面逐一列明并各自限速(见 meet.ts)。
+app.route('/api/meet', meetApp);
+app.route('/api/meet', meetKeepApp);
+app.route('/api/meet-pub', meetPubApp);
 
 // Web forms: the designer's side behind the session, the fill page's side open -- a public form
 // is filled by people with no account here, and what they may do is enumerated and rate-limited

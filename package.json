@@ -43,6 +43,7 @@
     "dompurify": "^3.4.14",
     "esbuild": "^0.28.2",
     "fontkit": "^2.0.4",
+    "hls.js": "^1.7.3",
     "hono": "^4.6.0",
     "marked": "^18.0.10",
     "marked-footnote": "^1.4.0",

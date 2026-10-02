@@ -17,6 +17,7 @@ export type AuditAction =
   | 'chat.settings'
   | 'llm.settings'
   | 'drive.settings' | 'drive.quota' | 'drive.versioning'
+  | 'meet.settings' | 'meet.create' | 'meet.end' | 'meet.delete' | 'meet.record' | 'meet.minutes'
   | 'mail.import' | 'mail.export'
   | 'backup.settings' | 'backup.run'
   | 'unrouted.view' | 'unrouted.delete' | 'unrouted.move';

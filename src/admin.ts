@@ -13,6 +13,7 @@ import { chatAdminApp } from './chat/routes';
 // Circular on purpose (drive.ts imports adminScope back); both sides only use hoisted function declarations
 // 有意的循环引用(drive.ts 反向引 adminScope);两边用到的都是提升的函数声明,安全
 import { driveAdminApp } from './drive';
+import { meetAdminApp } from './meet';
 import { audit } from './audit';
 import { pickColor, pickIcon } from './labels';
 
@@ -59,6 +60,8 @@ adminApp.route('/chat', chatAdminApp);
 // Drive settings (domain admins manage their own domains; scoping inside)
 // 网盘设置(域管理员可管自己的域,内部自查权限范围)
 adminApp.route('/drive', driveAdminApp);
+
+adminApp.route('/meet', meetAdminApp);
 
 // Large-model settings for the one-off uses (form translation); global admins only, checked inside
 // 一次性用途(表单翻译)的大模型设置;仅全局管理员,内部自查

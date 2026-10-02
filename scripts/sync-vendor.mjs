@@ -62,6 +62,19 @@ const SPECS = [
     exts: null,
   },
   {
+    // Plays a broadcast meeting for its audience (assets/meet/live.js) in every browser that
+    // cannot play HLS by itself, which is every one but Safari. The light build leaves out
+    // subtitles, alternate audio and DRM, none of which a meeting has. Apache-2.0, so its licence
+    // travels with it -- the minified file carries no banner of its own.
+    // 为旁观页播放直播。light 构建去掉了字幕、多音轨和 DRM,会议都用不着。Apache-2.0,
+    // 所以许可文本随它一起走 —— 压缩后的文件本身不带版权横幅。
+    name: 'hls.js',
+    from: 'hls.js',
+    to: 'hls',
+    roots: ['dist/hls.light.min.mjs', 'LICENSE'],
+    exts: null,
+  },
+  {
     name: 'postal-mime',
     from: 'postal-mime/src',
     to: 'postal-mime',

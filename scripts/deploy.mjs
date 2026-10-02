@@ -29,7 +29,8 @@ import readline from 'node:readline/promises';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { containerImage, hasPlaceholderContainer, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withEntryRoute, withReconciledMigrations, withVar, withoutBackupContainer } from './wrangler-config.mjs';
+import { grantSelf, grantedNames, mintToken, ownToken } from './cf-token.mjs';
+import { containerImage, hasPlaceholderContainer, setVar, stripJsonc, withBackupContainer, withBucket, withDevContainersOff, withDurableObject, withEntryRoute, withMeetContainer, withReconciledMigrations, withVar, withoutBackupContainer } from './wrangler-config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN_CONFIG = path.join(ROOT, 'wrangler.jsonc');
@@ -103,6 +104,9 @@ if (domain && !DOMAIN_RE.test(domain)) {
 if (entryArg && !LABEL_RE.test(entryArg)) {
   die(`--entry "${entryArg}" is not a valid DNS label`);
 }
+if (args.meetings !== undefined && !['on', 'no-live', 'off'].includes(String(args.meetings))) {
+  die('--meetings takes one of: on, no-live, off');
+}
 
 function usage(code) {
   console.log(`
@@ -139,6 +143,21 @@ Usage:
                   one that Cloudflare pulls. Nothing is built here either way.
                   Once a container is in the configuration, wrangler dev wants an API
                   token in the environment even when you are not working on the backup.
+  --meet-token <t>
+                  A second token, just for meetings and broadcasts, for when --token may not
+                  create tokens (Account API Tokens Edit) and so cannot make one itself. Give it
+                  Account Calls Edit (meetings: creates the Realtime app, used once) and Account
+                  Stream Edit (broadcasts: kept in the Worker as a secret), and nothing else.
+                  Stream has to be enabled on the account. --stream-token is its older name.
+  --meetings <m>  on | no-live | off: meetings and broadcasts on this deployment. Remembered
+                  in the configuration, and read by the Worker; "off" and "no-live" also stop
+                  the deploy from asking about them. A terminal run whose token cannot set them
+                  up asks instead -- this flag is that answer, given in advance.
+  --meet-image <ref>
+                  The image broadcast meetings are composited in (container-meet/). Until a
+                  public one is published there is no default: build it and push it to a
+                  registry Cloudflare can pull from, then name it here once -- the
+                  configuration remembers it.
   --prune-domains Let this deploy detach custom domains that are live but absent from the
                   configuration. Without it they are kept.
   --dry-run       Report what would happen and change nothing.
@@ -147,7 +166,10 @@ Usage:
 Permissions: the token needs Account (Workers Scripts / D1 / Workers R2 Storage - Edit) and
       Zone (Zone - Read, DNS / Email Routing Rules / Email Sending / Workers Routes - Edit).
       Every one of them is checked before anything is created, and a missing one is named.
-      See "API token permissions" in the README.
+      Optional: meetings and broadcasts. A token with Account (Account API Tokens - Edit) sets
+      them up by itself; without it a terminal run asks how to go on -- a second token for
+      them (--meet-token), switching them off (--meetings off), or adding that one permission.
+      Everything else installs either way. See "API token permissions" in the README.
 `);
   process.exit(code);
 }
@@ -263,9 +285,15 @@ function stopped(msg) {
 }
 
 async function cf(method, p, body) {
+  return cfAs(TOKEN, method, p, body);
+}
+
+/** The same call, made with another token -- the second one meetings may be given.
+ *  同样的调用,换一个令牌来做 —— 会议可能被交给的那第二个令牌。 */
+async function cfAs(token, method, p, body) {
   const res = await fetch(API + p, {
     method,
-    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -455,20 +483,23 @@ async function probe(method, path, body) {
  * is needed. A missing permission is reported by both -- the name to look for, and what stops
  * working without it.
  */
-async function checkPermissions(zoneId) {
+async function checkPermissions(zoneId, quiet = false) {
   const checks = zoneId ? [] : [
     {
       name: 'Account · Workers Scripts · Edit',
+      group: 'Workers Scripts Write',
       why: 'upload the Worker that is the mail system',
       run: () => probe('GET', `/accounts/${accountId}/workers/scripts`),
     },
     {
       name: 'Account · D1 · Edit',
+      group: 'D1 Write',
       why: 'create the database and apply migrations to it',
       run: () => probe('POST', `/accounts/${accountId}/d1/database`, {}),
     },
     {
       name: 'Account · Workers R2 Storage · Edit',
+      group: 'Workers R2 Storage Write',
       why: 'create the buckets that hold message bodies and backups',
       run: () => probe('POST', `/accounts/${accountId}/r2/buckets`, {}),
     },
@@ -478,21 +509,25 @@ async function checkPermissions(zoneId) {
     checks.push(
       {
         name: 'Zone · Zone · Read',
+        group: 'Zone Read',
         why: 'find your domain in this account',
         run: () => probe('GET', `/zones/${zoneId}`),
       },
       {
         name: 'Zone · DNS · Edit',
+        group: 'DNS Write',
         why: 'point the entry host at the Worker and write the mail records',
         run: () => probe('POST', `/zones/${zoneId}/dns_records`, {}),
       },
       {
         name: 'Zone · Workers Routes · Edit',
+        group: 'Workers Routes Write',
         why: 'attach the entry host to the Worker',
         run: () => probe('GET', `/zones/${zoneId}/workers/routes`),
       },
       {
         name: 'Zone · Email Routing Rules · Edit',
+        group: 'Email Routing Rules Write',
         why: 'deliver incoming mail to the Worker',
         run: () => probe('GET', `/zones/${zoneId}/email/routing`),
       },
@@ -502,15 +537,29 @@ async function checkPermissions(zoneId) {
   const missing = [];
   for (const c of checks) {
     const ok = await c.run().catch(() => false);
-    if (ok) skip(c.name);
-    else { missing.push(c); log('✗ ' + c.name); }
+    if (ok) { if (!quiet) skip(c.name); }
+    else { missing.push(c); if (!quiet) log('✗ ' + c.name); }
   }
+  if (quiet) return missing;
 
   // Sending is checked apart from the rest because it is the one that can fail for a reason that
   // is not a permission at all: an account that is not on Workers Paid is refused with the same
   // word, "Unauthorized". Saying so here saves an afternoon of auditing a token that was fine.
   if (zoneId) {
-    const send = await cf('GET', `/zones/${zoneId}/email/sending/subdomains`);
+    let send = await cf('GET', `/zones/${zoneId}/email/sending/subdomains`);
+    // A token that can read its own policy settles which of the two causes it is, and mends the
+    // one that is a permission. / 读得到自己策略的令牌能分清是两种原因里的哪一种,并把"权限"那一种补上。
+    if (AUTH_DENIED(send)) {
+      const own = await ownToken(cf, accountId);
+      if (own && grantedNames(own).has('Email Sending Write')) {
+        log('⚠ Email Sending: this token HAS the permission, so the refusal is the plan -- outward');
+        log('  sending needs Workers Paid. Everything else installs; the "Sending mail" step says more.');
+        return missing;
+      }
+      if (own && await addToToken([{ name: 'Account · Email Sending · Edit', group: 'Email Sending Write', why: 'send mail to the outside world' }])) {
+        send = await cf('GET', `/zones/${zoneId}/email/sending/subdomains`);
+      }
+    }
     if (AUTH_DENIED(send)) {
       log('⚠ Zone · Email Sending · Edit -- absent, or this account is not on Workers Paid.');
       log('  Everything still installs and the domain still receives mail; only sending to the');
@@ -535,17 +584,54 @@ async function checkPermissions(zoneId) {
  * edit the token, and probes again, as many times as it takes. Nothing exists yet at this point,
  * so patience costs nothing.
  */
+/**
+ * Add permissions to the token this run is using, when it is a token that may: one carrying
+ * "Account API Tokens · Edit" can mend itself, and then nobody has to go to the dashboard. Each
+ * addition is named on the screen as it is made. Returns true when something was added (and, not
+ * under --dry-run, has had a moment to take effect); false when the token may not do this or
+ * nothing could be added, which sends the caller back to naming the permission and asking.
+ *
+ * 给本次运行所用的令牌加权限 —— 前提是它有这个资格:带着 "Account API Tokens · Edit" 的令牌可以自己补自己,
+ * 于是不必有人跑一趟 dashboard。每加一项,都在加的那一刻把名字打在屏幕上。
+ * 加上了就返回 true(非 --dry-run 时还会等它生效片刻);令牌没这个资格、或什么都没加上,返回 false ——
+ * 调用方于是退回到"报出权限名、请人去加"。
+ */
+async function addToToken(items, settled = null) {
+  const res = await grantSelf(cf, accountId, items.map((m) => m.group), { dry: DRY });
+  if (res.denied) return false;
+  if (res.why) { log('⚠ this token may edit tokens, but adding to it failed: ' + res.why); return false; }
+  if (res.unknown?.length) log('⚠ Cloudflare lists no permission called ' + res.unknown.join(', ') + '; it has to be added by hand');
+  if (!res.added?.length) return false;
+  for (const m of items) if (res.added.includes(m.group)) plan(`${DRY ? 'would add' : 'added'} to this token: ${m.name} -- needed to ${m.why}`);
+  if (DRY) return true;
+  // A fresh grant takes a little while to be honoured everywhere. / 新加的权限要过一会儿才会处处生效。
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, i ? 8000 : 3000));
+    if (!settled || await settled()) return true;
+  }
+  return true;
+}
+
 async function ensurePermissions(zoneId) {
+  let mended = false;
   for (;;) {
     const missing = await checkPermissions(zoneId);
     if (!missing.length) return;
+    if (!mended) {
+      mended = true;
+      const did = await addToToken(missing, async () => !(await checkPermissions(zoneId, true)).length);
+      if (did) { if (DRY) return; log('probing again'); continue; }
+    }
     const advice = 'This token is missing ' + missing.length + ' permission' + (missing.length > 1 ? 's' : '') + ':\n\n'
       + missing.map((m) => `    ${m.name}\n      needed to ${m.why}`).join('\n\n')
       + '\n\n  Add them at Cloudflare dashboard -> My Profile -> API Tokens -> your token -> Edit'
       + '\n  (an account-owned token lives at Manage Account -> API Tokens instead).'
       + '\n  Account-scope permissions are in the "Account Resources" section, zone-scope ones in'
       + '\n  "Zone Resources"; several exist in both lists and only one of the two counts.'
-      + '\n  Changes take about a minute to take effect. Nothing has been created yet.';
+      + '\n  Changes take about a minute to take effect. Nothing has been created yet.'
+      + '\n\n  Or add just ONE: Account · Account API Tokens · Edit (User · API Tokens · Edit on a'
+      + '\n  user-owned token). A token that has it is given everything else by this script, which'
+      + '\n  names each permission as it adds it -- now and whenever a later version needs another.';
     if (!INTERACTIVE) die(advice);
     console.error('\n  ✗ ' + advice.replace(/\n/g, '\n  '));
     if (!(await fixAndRetry('Edit the token there'))) {
@@ -572,14 +658,19 @@ async function ensurePermissions(zoneId) {
  *
  *
  */
-/** What is in container/, as twelve hex characters -- the same twelve the publisher recorded, so
- *  the two can tell whether the published image still stands for the source in this checkout.
+/** What is in an image's directory (container/ unless told otherwise), as twelve hex characters
+ *  -- the same twelve the publisher recorded, so the two can tell whether the published image
+ *  still stands for the source in this checkout.
+ *  镜像目录(默认 container/)里有什么,压成十二个十六进制字符 —— 与发布者记下的是同样的十二个,
+ *  于是两边分得清"已发布的镜像是否仍代表这份 checkout 里的源码"。
   */
-function containerHash() {
-  const dir = path.join(ROOT, 'container');
+function containerHash(name = 'container') {
+  const dir = path.join(ROOT, name);
   // published.json is a note about this hash, so it cannot be part of it -- writing the note
   // would change the answer it records, and the published image would never match again.
-  const names = fs.readdirSync(dir).filter((n) => n !== 'published.json').sort();
+  // Files only: a cache directory left by running something locally is not source.
+  // 只算文件:在本地跑过点什么留下的缓存目录不是源码。
+  const names = fs.readdirSync(dir).filter((n) => n !== 'published.json' && fs.statSync(path.join(dir, n)).isFile()).sort();
   const h = crypto.createHash('sha256');
   for (const n of names) {
     h.update(n);
@@ -784,6 +875,136 @@ if (INTERACTIVE && !routesKnown.length && domain && !entryArg) {
   log(`the entry host will be ${entryArg}.${domain}`);
 }
 
+// --- 2b. Meetings and broadcasts ------------------------------------------
+// Meetings need a Realtime app, created once by a token that may create one; broadcasts need a
+// token for Stream that lives in the Worker. A deploy token carrying "Account API Tokens · Edit"
+// sees to both by itself once the Worker is published: it adds the Calls permission to itself
+// and makes the Stream token. A token without it cannot, and then the person deploying chooses
+// -- here, before anything is created:
+//   1) hand over a second token, just for meetings and broadcasts;
+//   2) switch them off on this deployment -- remembered in the configuration (and read by the
+//      Worker), so the question is not asked again; --meetings on brings them back;
+//   3) add that one permission to the deploy token, and let this script make the second token.
+// Outside a terminal, and under --yes, nothing is asked: the three ways are printed with their
+// flags, and whatever is missing stays off for this run. (A --dry-run in a terminal does ask:
+// the answer changes nothing, and it is how the choice can be tried out.)
+//
+// 会议需要一个 Realtime app,由有权创建它的令牌建一次;直播需要一个留在 Worker 里的 Stream 令牌。
+// 带 "Account API Tokens · Edit" 的部署令牌会在 Worker 发布之后自己把两样都办好:给自己加上 Calls 权限,
+// 再建那个 Stream 令牌。不带它的令牌办不到,于是由部署的人来选 —— 就在这里、在任何东西被创建之前:
+//   1) 另交一个会议/直播专用的令牌;
+//   2) 在这套部署上关掉它们 —— 记在配置里(Worker 也读它),以后不再问;--meetings on 可以再打开;
+//   3) 给部署令牌加上那一项权限,让本脚本自己建那个专用令牌。
+// 不在终端里、或带 --yes 时什么都不问:把三条路连同参数打印出来,缺的部分这一次保持关闭。
+// (在终端里跑 --dry-run 照样会问:回答什么都不改动,正好用来试一试这个选择。)
+
+const MEET_MODES = ['on', 'no-live', 'off'];
+const savedMeetMode = MEET_MODES.includes(String(existing?.vars?.MEETINGS || '')) ? String(existing.vars.MEETINGS) : '';
+let meetMode = args.meetings !== undefined ? String(args.meetings) : savedMeetMode || 'on';
+// --stream-token is the older name of --meet-token. / --stream-token 是 --meet-token 的旧名字。
+let meetToken = String(args['meet-token'] || args['stream-token'] || '').trim();
+const REALTIME_SECRETS = ['REALTIME_APP_ID', 'REALTIME_APP_SECRET', 'TURN_KEY_ID', 'TURN_KEY_TOKEN'];
+
+/** Whether this run's token may create tokens -- and so add to itself, and make the second one.
+ *  本次运行的令牌能否创建令牌 —— 也就能给自己加权限、能建第二个令牌。 */
+async function tokenMakesTokens() {
+  const own = await ownToken(cf, accountId);
+  return !!own && [...grantedNames(own)].some((n) => /API Tokens Write$/i.test(n));
+}
+
+/** What a token can do for meetings: create the Realtime app, and reach Stream.
+ *  一个令牌在会议上能做什么:建 Realtime app、够得着 Stream。 */
+async function meetReach(token) {
+  const calls = await cfAs(token, 'GET', `/accounts/${accountId}/calls/apps`);
+  const stream = await cfAs(token, 'GET', `/accounts/${accountId}/stream/live_inputs`);
+  return {
+    calls: calls.ok,
+    stream: stream.ok ? 'ok' : AUTH_DENIED(stream) || stream.status === 400 || stream.status === 401 ? 'denied' : 'error',
+    streamWhy: stream.ok ? '' : why(stream),
+  };
+}
+
+step('Meetings and broadcasts');
+if (meetMode === 'off') {
+  skip('switched off on this deployment (npm run deploy -- --meetings on brings them back)');
+} else {
+  const listedEarly = workerExists ? await cf('GET', `/accounts/${accountId}/workers/scripts/${WORKER}/secrets`) : null;
+  const had = new Set((listedEarly?.ok ? listedEarly.data?.result || [] : []).map((s) => s.name));
+  for (;;) {
+    const needMeet = !REALTIME_SECRETS.every((n) => had.has(n));
+    const needLive = meetMode === 'on' && !had.has('STREAM_API_TOKEN');
+    if (!needMeet && !needLive) {
+      skip(meetMode === 'on' ? 'meetings and broadcasts are set up' : 'meetings are set up; broadcasts are switched off on this deployment');
+      break;
+    }
+    if (await tokenMakesTokens()) {
+      skip('this token may create tokens: what meetings still need is made after the Worker is published');
+      break;
+    }
+    const deployCalls = !needMeet || (await cf('GET', `/accounts/${accountId}/calls/apps`)).ok;
+    const given = meetToken ? await meetReach(meetToken) : null;
+    if (given) {
+      // Read-only probes on purpose: a create with an empty body might create something.
+      // 刻意只做只读探测:一次空请求体的"创建"可能真的建出东西来。
+      log('the token given for meetings ' + (given.calls ? 'reaches' : 'does not reach') + ' Realtime (Calls), and '
+        + (given.stream === 'ok' ? 'reaches Stream' : given.stream === 'denied' ? 'has no Stream permission' : `Stream answers it: ${given.streamWhy}`));
+    }
+    const meetOk = !needMeet || deployCalls || !!given?.calls;
+    const liveOk = !needLive || given?.stream === 'ok';
+    if (meetOk && liveOk) {
+      if (given) log('it is used after the Worker is published' + (needLive ? ', and kept in the Worker for Stream' : ''));
+      break;
+    }
+
+    const what = [!meetOk && 'meetings', !liveOk && 'broadcasts'].filter(Boolean).join(' and ');
+    log(`This token cannot create API tokens (it lacks Account · Account API Tokens · Edit), so it`);
+    log(`cannot set up ${what} by itself. What ${what} need:`);
+    if (!meetOk) log('    Account · Calls · Edit       (newer dashboards call it "Realtime"; used once, to create the app)');
+    if (!liveOk) log('    Account · Stream · Edit      (kept in the Worker: broadcasts use it while they run)');
+    log('Three ways on:');
+    log('  1) give a second token, just for meetings and broadcasts, with the permission' + (!meetOk && !liveOk ? 's' : '') + ' above and nothing else');
+    log(`  2) switch ${what} off on this deployment -- remembered, so this is not asked again`);
+    log('     (npm run deploy -- --meetings on brings them back)');
+    log('  3) add ONE permission to this deploy token, and this script makes the rest:');
+    log('       Account · Account API Tokens · Edit      (User · API Tokens · Edit on a user-owned token)');
+    if (!INTERACTIVE || args.yes) {
+      log(`Not asked here (${args.yes ? '--yes' : 'not a terminal'}): ${what} stay off for this run. Next time:`);
+      log(`  1) --meet-token <token>    2) --meetings ${meetOk ? 'no-live' : 'off'}    3) edit the token, then run this again`);
+      break;
+    }
+    const pick = (await ask('Which one? (1, 2 or 3):')).trim();
+    if (pick === '1') {
+      const t = (await ask('Paste the token for meetings and broadcasts (Enter to go back):')).trim();
+      if (!t) continue;
+      if (t === TOKEN) { log('that is the deploy token itself -- the one that cannot do this; give another'); continue; }
+      meetToken = t;
+      continue;
+    }
+    if (pick === '2') {
+      meetMode = meetOk ? 'no-live' : 'off';
+      log(meetMode === 'off' ? 'meetings and broadcasts will be switched off on this deployment' : 'broadcasts will be switched off on this deployment; meetings stay');
+      log('(npm run deploy -- --meetings on brings them back)');
+      break;
+    }
+    if (pick === '3') {
+      log('Cloudflare dashboard -> My Profile -> API Tokens -> this token -> Edit');
+      log('(an account-owned token is under Manage Account -> API Tokens), and add the one permission.');
+      log('A fresh edit takes about a minute to take effect.');
+      let ready = false;
+      while (await fixAndRetry('Add it there')) {
+        if ((ready = await tokenMakesTokens())) break;
+        log('not there yet (a fresh edit can take a minute)');
+      }
+      if (ready) {
+        log('this token may now create tokens: the rest is made after the Worker is published');
+        break;
+      }
+      continue;
+    }
+    log('answer 1, 2 or 3');
+  }
+}
+
 // --- 3. Resources ---------------------------------------------------------
 
 step('Database and buckets');
@@ -955,6 +1176,84 @@ text = text
   if (v2) text = v2;
   const withDev = withDevContainersOff(text);
   if (withDev && withDev !== text) { text = withDev; plan('dev.enable_containers = false (local development will not pull the image)'); }
+}
+
+// --- Meetings: the room ---------------------------------------------------
+// A configuration written before meetings existed has no binding for the room a meeting is held
+// in, and the template is only ever read on a first install. Without this the Worker deploys,
+// the binding is simply absent, and meetings report themselves unavailable for a reason nobody
+// can see. The SFU app that meetings also need is made further down, once the Worker exists.
+{
+  const withMeet = withDurableObject(text, 'MEET_ROOM', 'MeetRoom');
+  if (withMeet === null) log('⚠ no durable_objects / migrations in the configuration; meetings stay off');
+  else if (withMeet !== text) { text = withMeet; plan('durable_objects gains MEET_ROOM (the room a meeting is held in)'); }
+  // A broadcast's audience -- its chat, its queue to speak -- has objects of its own. Without
+  // them viewers can still watch; they just cannot say anything.
+  // 直播的观众 —— 聊天、申请发言 —— 有自己的对象。没有它们,观众照样能看,只是说不了话。
+  const withAud = withMeet === null ? null : withDurableObject(text, 'MEET_AUDIENCE', 'MeetAudience');
+  if (withAud && withAud !== text) { text = withAud; plan('durable_objects gains MEET_AUDIENCE (a broadcast\'s chat and its queue to speak)'); }
+  // What was decided about meetings above, kept for the next run and read by the Worker. A
+  // configuration that never said is left saying nothing: absent means "on".
+  // 上面对会议做的决定,留给下一次运行,也由 Worker 读取。从没写过的配置就继续不写:缺省即 "on"。
+  if (meetMode !== 'on' || savedMeetMode) {
+    const v = setVar(text, 'MEETINGS', meetMode);
+    if (v === null) log('⚠ no "vars" in the configuration; the meetings setting could not be recorded');
+    else if (v !== text) { text = v; plan(`vars.MEETINGS = "${meetMode}"`); }
+  }
+}
+
+// --- Meetings: the compositor ----------------------------------------------
+// A broadcast meeting's audience watches one picture, and that picture is made in a container
+// (container-meet/). Like the backup's, the container names an image rather than building one
+// here: --meet-image points at one, a configuration that already names one keeps it, and
+// container-meet/published.json -- once a public image exists -- is the default for everybody
+// else. With none of the three there is no container, broadcasts report themselves unavailable,
+// and everything else is untouched. A container naming an image that does not exist would fail
+// the whole deploy, so an image is never guessed at.
+//
+// 直播会议的旁观者看的是一路画面,而这路画面是在容器(container-meet/)里做出来的。和备份的容器一样,
+// 它指向一个镜像而不是在这里构建:--meet-image 指定一个;已经写着镜像的配置保留原样;
+// container-meet/published.json —— 等公共镜像有了之后 —— 是其余所有人的默认值。三样都没有就没有容器,
+// 直播会报告自己不可用,其余一切不受影响。指向不存在镜像的容器会让整个部署失败,所以镜像从不靠猜。
+{
+  let published = '';
+  let publishedFrom = '';
+  try {
+    const p = JSON.parse(fs.readFileSync(path.join(ROOT, 'container-meet', 'published.json'), 'utf8'));
+    if (p && typeof p.image === 'string') { published = p.image; publishedFrom = String(p.source || ''); }
+  } catch { /* no public image yet / 还没有公共镜像 */ }
+  const chosen = args['meet-image'] ? String(args['meet-image']) : '';
+  const current = containerImage(text, 'MeetCompositor');
+  // An image this project's own tooling put there gives way to the published one: the published
+  // repository itself, or a cfmail-meet build tagged with a source hash -- what --meet-image was
+  // given before a public image existed. Anything else was chosen by a person and stays chosen.
+  // 本项目自己的工具放进去的镜像,让位给已发布的那个:已发布的仓库本身,或以源码哈希为标签的
+  // cfmail-meet 构建 —— 公共镜像出现之前 --meet-image 指过去的就是这种。其余的都是人选的,保持不动。
+  const pubRepo = published ? published.split(':')[0] : '';
+  const ours = !!current && ((pubRepo && current.startsWith(pubRepo + ':')) || /\/cfmail-meet:[0-9a-f]{12}$/.test(current));
+  const image = chosen || (current && !(ours && published) ? current : '') || published;
+  // The same promise as the backup's image, and the same plain word when the source has moved
+  // on: said to whoever changed it, and no reason to stop an install.
+  // 与备份镜像同一句承诺;源码变了,也同样直说一句:说给改动它的人听,不是让安装停下来的理由。
+  if (image && image === published && publishedFrom && publishedFrom !== containerHash('container-meet')) {
+    log('⚠ container-meet/ differs from what the published compositor image was built from.');
+    log(`  Using ${published} anyway. To ship your own changes, publish them:`);
+    log('    node scripts/publish-image.mjs --image meet --repo <your public repository>');
+    log('  or pass --meet-image <ref> to point at an image you built yourself.');
+  }
+  if (!image) {
+    skip('broadcast compositor: no image (pass --meet-image <ref>); broadcast meetings stay off');
+  } else if (meetMode !== 'on' && !current) {
+    // Broadcasts are switched off here: no compositor is added for them. One already in the
+    // configuration stays, so that switching them back on needs nothing more than the switch.
+    // 这里的直播是关着的:不为它新加合成器。配置里已有的保留,这样重新打开时只需要拨回开关。
+    skip(`broadcast compositor: not added (broadcasts are switched off on this deployment)`);
+  } else {
+    const next = withMeetContainer(text, image, { replace: !!chosen || (ours && image === published) });
+    if (next === null) log('⚠ the broadcast compositor could not be written into the configuration; broadcast meetings stay off');
+    else if (next !== text) { text = next; plan(`broadcast compositor -> ${image}`); }
+    else skip(`broadcast compositor already points at ${current}`);
+  }
 }
 
 // APP_ORIGIN is what invite and password-reset links are built from. It is set from the first
@@ -1187,6 +1486,185 @@ if (args['backup-token']) {
     if (put('BACKUP_TOKEN_ID', tokenId) !== 0) die('could not store BACKUP_TOKEN_ID');
     if (put('BACKUP_TOKEN_VALUE', bt) !== 0) die('could not store BACKUP_TOKEN_VALUE');
     log('both secrets stored; the backup can now be switched on in the admin console');
+  }
+}
+
+// --- Meetings: Cloudflare Realtime ------------------------------------------
+// A meeting's audio and video go through Cloudflare's SFU, and the SFU serves whoever holds an
+// app's secret. So each deployment gets an app of its own -- made here, once, and kept in the
+// Worker as secrets, because the secret is handed over exactly once, when the app is created,
+// and there is no asking for it again. The TURN key beside it is for networks that block UDP;
+// used together with the SFU it costs nothing.
+//
+// Optional in every sense: the permission is one most tokens do not have, and without it the
+// rest of the install is untouched and meetings stay switched off. Nothing here is a reason to
+// stop a deploy that has already published.
+{
+  step('Meetings (Cloudflare Realtime)');
+  const NEED = ['REALTIME_APP_ID', 'REALTIME_APP_SECRET', 'TURN_KEY_ID', 'TURN_KEY_TOKEN'];
+  const listed = await cf('GET', `/accounts/${accountId}/workers/scripts/${WORKER}/secrets`);
+  const have = new Set((listed.data?.result || []).map((s) => s.name));
+  const put = (name, value) => wrangler(['secret', 'put', name, '-c', CONFIG], { input: value });
+  // The Realtime calls go out with whichever token may make them: this run's own, or the one
+  // given for meetings. / Realtime 的调用用哪个令牌能做就用哪个:本次运行自己的,或交给会议的那一个。
+  let callsAs = TOKEN;
+  const callsCf = (method, p, body) => cfAs(callsAs, method, p, body);
+  if (meetMode === 'off') {
+    skip('switched off on this deployment (npm run deploy -- --meetings on brings them back)');
+  } else if (!listed.ok) {
+    log('⚠ could not read the Worker\'s secrets (' + why(listed) + '); leaving meetings as they are');
+  } else if (NEED.every((n) => have.has(n))) {
+    skip('the SFU app and the TURN key are already in the Worker');
+  } else {
+    let probeCalls = await cf('GET', `/accounts/${accountId}/calls/apps`);
+    if (AUTH_DENIED(probeCalls) && await addToToken(
+      [{ name: 'Account · Calls · Edit', group: 'Calls Write', why: 'create the Realtime SFU app and the TURN key meetings run on' }],
+      async () => !AUTH_DENIED(await cf('GET', `/accounts/${accountId}/calls/apps`)))) {
+      probeCalls = DRY ? { status: 200, data: {} } : await cf('GET', `/accounts/${accountId}/calls/apps`);
+    }
+    if (AUTH_DENIED(probeCalls) && meetToken && meetToken !== TOKEN) {
+      const viaMeet = await cfAs(meetToken, 'GET', `/accounts/${accountId}/calls/apps`);
+      if (viaMeet.ok) { probeCalls = viaMeet; callsAs = meetToken; log('using the token given for meetings to create the Realtime app'); }
+    }
+    if (AUTH_DENIED(probeCalls)) {
+      log('· meetings stay off: neither this token nor one given for meetings can create the Realtime app.');
+      log('  Three ways on, next time: run this in a terminal and choose; or pass --meet-token <a token');
+      log('  with Account · Calls · Edit>; or add Account · Account API Tokens · Edit to this token.');
+      log('  To stop being told: --meetings off. Everything else is installed and working.');
+    } else if (DRY) {
+      if (!have.has('REALTIME_APP_SECRET')) plan('create a Realtime SFU app "cfmail" and store REALTIME_APP_ID / REALTIME_APP_SECRET');
+      if (!have.has('TURN_KEY_TOKEN')) plan('create a TURN key "cfmail" and store TURN_KEY_ID / TURN_KEY_TOKEN');
+    } else {
+      // Each secret is written the moment it is received. A run that dies between the two halves
+      // leaves a finished half, and the next run does only the other.
+      if (!have.has('REALTIME_APP_ID') || !have.has('REALTIME_APP_SECRET')) {
+        const app = await callsCf('POST', `/accounts/${accountId}/calls/apps`, { name: 'cfmail' });
+        const r = app.data?.result;
+        if (!app.ok || !r?.uid || !r?.secret) {
+          log('⚠ could not create the Realtime app: ' + why(app) + ' -- meetings stay off; running this again retries');
+        } else if (put('REALTIME_APP_ID', r.uid) !== 0 || put('REALTIME_APP_SECRET', r.secret) !== 0) {
+          log('⚠ the Realtime app was created but its secret could not be stored. The secret cannot be');
+          log(`  read back, so that app (${String(r.uid).slice(0, 8)}…) is of no use: delete it in the dashboard under`);
+          log('  Realtime -> SFU, and run this again to make another.');
+        } else {
+          log(`Realtime SFU app created (${String(r.uid).slice(0, 8)}…) and stored in the Worker`);
+        }
+      }
+      if (!have.has('TURN_KEY_ID') || !have.has('TURN_KEY_TOKEN')) {
+        const key = await callsCf('POST', `/accounts/${accountId}/calls/turn_keys`, { name: 'cfmail' });
+        const r = key.data?.result;
+        // The API has called this field both `key` and `secret`; either is the bearer token.
+        const token = r?.secret || r?.key;
+        if (!key.ok || !r?.uid || !token) {
+          log('⚠ could not create the TURN key: ' + why(key) + ' -- meetings work without it, except on networks that block UDP');
+        } else if (put('TURN_KEY_ID', r.uid) !== 0 || put('TURN_KEY_TOKEN', token) !== 0) {
+          log('⚠ the TURN key was created but could not be stored; delete it under Realtime -> TURN and run this again');
+        } else {
+          log(`TURN key created (${String(r.uid).slice(0, 8)}…) and stored in the Worker`);
+        }
+      }
+      log('meetings are available: switch them on per domain in the admin console -> Meetings');
+    }
+  }
+
+  // --- Broadcast meetings ---------------------------------------------------
+  // Three more things, all on the Stream side. The Worker makes a live input for each broadcast
+  // and deletes recordings nobody asked to keep, so it needs a token of its own for Stream --
+  // and, as with the backup's, deliberately not the token this script was given: that one can
+  // rewrite the whole deployment and lives only in the memory of this run; the Worker's can touch
+  // Stream and nothing else. Playback tokens are signed with a key Stream hands out once. And the
+  // compositor walks into the room on a ticket signed with a key nobody but the Worker holds.
+  //
+  // 直播会议还需要三样东西,都在 Stream 这一侧。Worker 要为每场直播建一个 live input、
+  // 并删除没人要保留的录像,所以它需要一个自己的 Stream 令牌 —— 和备份的那个一样,
+  // 刻意不是交给本脚本的这个:这个能改写整套部署、只活在这次运行的内存里;Worker 的那个只能碰 Stream。
+  // 播放令牌用 Stream 只发一次的钥匙来签。而合成器凭一张入场券走进房间,签它的钥匙只有 Worker 持有。
+  if (listed.ok && meetMode === 'no-live') {
+    step('Broadcast meetings (Cloudflare Stream)');
+    skip('switched off on this deployment (npm run deploy -- --meetings on brings them back)');
+  } else if (listed.ok && meetMode === 'on') {
+    step('Broadcast meetings (Cloudflare Stream)');
+    // The token given for meetings, from --meet-token (or --stream-token) or pasted earlier.
+    // 交给会议的那个令牌:来自 --meet-token(或 --stream-token),或前面粘贴的。
+    const st = meetToken;
+    let streamAuth = '';
+    if (st) {
+      if (st === TOKEN) {
+        log('⚠ the token given for meetings is the same token this script runs with. That token can rewrite');
+        log('  the whole deployment and does not belong inside the Worker: give one with only what meetings need.');
+      } else {
+        const probe = await fetch(`${API}/accounts/${accountId}/stream/live_inputs`, { headers: { Authorization: `Bearer ${st}` } });
+        const pj = await probe.json().catch(() => ({}));
+        if (!probe.ok || !pj?.success) {
+          log('⚠ the token given for meetings cannot reach Stream on this account (' + JSON.stringify(pj?.errors || probe.status).slice(0, 160) + '); not stored');
+        } else if (DRY) {
+          plan('store secret STREAM_API_TOKEN');
+          streamAuth = st;
+        } else if (put('STREAM_API_TOKEN', st) !== 0) {
+          log('⚠ STREAM_API_TOKEN could not be stored');
+        } else {
+          have.add('STREAM_API_TOKEN');
+          streamAuth = st;
+          log('STREAM_API_TOKEN stored in the Worker');
+        }
+      }
+    }
+    // Nobody handed one over: make it. A deploy token that may create tokens is asked for a
+    // second token that can touch Stream and nothing else, and that one -- never this script's
+    // own -- is what goes into the Worker. Nothing to click in the dashboard.
+    // 没人给:那就自己建。部署 token 若有权创建令牌,就让它再建一个只能碰 Stream 的令牌,
+    // 存进 Worker 的是那一个 —— 永远不是本脚本自己的这个。dashboard 里什么都不用点。
+    if (!have.has('STREAM_API_TOKEN') && !streamAuth) {
+      const minted = await mintToken(cf, accountId, 'cfmail stream (kept in the Worker)', ['Stream Write'], { dry: DRY });
+      if (minted.denied) {
+        // said below, with both ways out / 下面会说,两条出路都列上
+      } else if (!minted.value) {
+        log('⚠ could not create a token for Stream: ' + minted.why);
+      } else if (DRY) {
+        plan('create an API token with Stream Edit only, and store it as STREAM_API_TOKEN');
+      } else if (put('STREAM_API_TOKEN', minted.value) !== 0) {
+        log('⚠ a Stream token was created but could not be stored; delete "cfmail stream (kept in the Worker)"');
+        log('  under Manage Account -> API Tokens and run this again');
+      } else {
+        have.add('STREAM_API_TOKEN');
+        streamAuth = minted.value;
+        log(`a token with Stream Edit only was created (${String(minted.id).slice(0, 8)}…) and stored in the Worker`);
+      }
+    }
+    if (!have.has('STREAM_API_TOKEN') && !streamAuth) {
+      log('· broadcast meetings stay off: the Worker has no token for Stream. Three ways on, next time:');
+      log('    run this in a terminal and choose; or pass --meet-token <a token with Account · Stream · Edit>;');
+      log('    or add Account · Account API Tokens · Edit to the deploy token, and this script makes one.');
+      log('  To stop being told: --meetings no-live. Stream itself has to be enabled on the account');
+      log('  (dashboard -> Stream); it is billed by minutes stored and watched.');
+    } else {
+      if (!have.has('MEET_BOT_KEY')) {
+        if (DRY) plan('store secret MEET_BOT_KEY (random)');
+        else if (put('MEET_BOT_KEY', crypto.randomBytes(32).toString('hex')) === 0) log('MEET_BOT_KEY created and stored in the Worker');
+        else log('⚠ MEET_BOT_KEY could not be stored');
+      }
+      if (!have.has('STREAM_SIGNING_KEY_ID') || !have.has('STREAM_SIGNING_JWK')) {
+        if (DRY) plan('create a Stream signing key and store STREAM_SIGNING_KEY_ID / STREAM_SIGNING_JWK');
+        else {
+          // Made with whichever token can: the one just given, or this script's own.
+          // 用哪个令牌能建就用哪个:刚给的那个,或本脚本自己的。
+          const auth = streamAuth || TOKEN;
+          const kr = await fetch(`${API}/accounts/${accountId}/stream/keys`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` } });
+          const kj = await kr.json().catch(() => ({}));
+          const k = kj?.result;
+          if (!kr.ok || !k?.id || !k?.jwk) {
+            log('⚠ could not create a Stream signing key (' + JSON.stringify(kj?.errors || kr.status).slice(0, 160) + '); broadcasts stay off; running this again retries');
+          } else if (put('STREAM_SIGNING_KEY_ID', k.id) !== 0 || put('STREAM_SIGNING_JWK', k.jwk) !== 0) {
+            log('⚠ the signing key was created but could not be stored; delete it (Stream -> keys) and run this again');
+          } else {
+            log(`Stream signing key created (${String(k.id).slice(0, 8)}…) and stored in the Worker`);
+          }
+        }
+      } else {
+        skip('the Stream signing key is already in the Worker');
+      }
+      log('broadcast meetings: switch them on per domain in the admin console -> Meetings');
+    }
   }
 }
 

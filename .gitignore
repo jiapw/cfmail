@@ -27,6 +27,8 @@ wrangler.acct-*.jsonc
 # .wrangler/ 里是 miniflare 的本地 D1 和 R2 —— 开发时导入过的真实邮件都在里面
 .wrangler/
 node_modules/
+# Python 的字节码缓存:在本地跑过 container-meet/ 里的脚本就会出现 / left by running container-meet/ locally
+__pycache__/
 
 # 浏览器直接加载的第三方库,由 npm install / npm run vendor 从 node_modules 同步。
 # 不入库:600 个文件全是拷贝,而且手工维护挡不住它和 node_modules 版本漂移

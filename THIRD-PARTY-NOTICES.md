@@ -4,9 +4,9 @@ CFMail itself is MIT licensed (see [LICENSE](LICENSE)). This file lists the thir
 
 CFMail 本体以 MIT 授权(见 [LICENSE](LICENSE))。本文件列出随本项目分发或在构建时引入的第三方组件及其许可要求。
 
-Most components are permissively licensed (MIT / MIT-0 / BSD-3-Clause / Apache-2.0). **No component carries a strong copyleft licence and none is commercially licensed.** One is weak copyleft: FFmpeg, under **LGPL-2.1**, which reaches this project as libav.js. What that asks for is that its source stay available and that it stay replaceable — both hold here, and the libav.js entry below says how.
+Most components are permissively licensed (MIT / MIT-0 / BSD-3-Clause / Apache-2.0). **No component carries a strong copyleft licence and none is commercially licensed.** Two are weak copyleft, both **LGPL-2.1**: FFmpeg, which reaches this project as libav.js, and GStreamer, inside the container image broadcast meetings are composited in. What LGPL asks for is that the source stay available and that the library stay replaceable — both hold here, and the entries below say how. One build option is GPL — x264, in a compositor image somebody builds for themselves (section 4); no image this project publishes is built that way.
 
-多数组件为宽松许可(MIT / MIT-0 / BSD-3-Clause / Apache-2.0)。**没有任何组件带强 copyleft 许可,也没有任何商业授权组件。** 有一个是弱 copyleft:FFmpeg,**LGPL-2.1**,经由 libav.js 进入本项目。它所要求的是"源码保持可获取"与"它保持可被替换" —— 这两条在这里都成立,下文那个 libav.js 条目说明了是怎么成立的。
+多数组件为宽松许可(MIT / MIT-0 / BSD-3-Clause / Apache-2.0)。**没有任何组件带强 copyleft 许可,也没有任何商业授权组件。** 有两个是弱 copyleft,都是 **LGPL-2.1**:FFmpeg,经由 libav.js 进入本项目;GStreamer,在直播会议的合成容器镜像里。LGPL 所要求的是"源码保持可获取"与"库保持可被替换" —— 这两条在这里都成立,下文对应条目说明了是怎么成立的。有一个构建选项是 GPL —— 自己构建合成镜像时可选的 x264(见第 4 节);本项目发布的镜像从不这样构建。
 
 ---
 
@@ -127,6 +127,20 @@ Built from source rather than copied. CodeMirror 6 is published as several dozen
 
 自源码构建,而非拷贝。CodeMirror 6 以几十个 npm 包发布,彼此用裸名互相引用,而浏览器解析不了裸名,于是 `npm run vendor` 用 esbuild 把它们打进本目录 —— 共 37 个包,每一个都是 MIT,其中包括各种文法(`@lezer/*`)与视图的三个小依赖(`crelt`、`style-mod`、`w3c-keyname`)。由于压缩会丢掉一切不是代码的东西,那些声明被重新收集,写入 `public/vendor/codemirror/LICENSE` —— 名单取自打包器实际够到的那些包,而不是一份手工维护的清单。按语言分块:打开一个 shell 脚本取回的是 shell 文法,而不是另外三十四种。按需加载,且只由源码编辑器(`assets/code/`)加载。本项目未修改其源码。
 
+### hls.js → `public/vendor/hls/`
+
+```
+Apache License 2.0
+Copyright (c) 2017 Dailymotion (http://www.dailymotion.com)
+src/remux/mp4-generator.js and src/demux/exp-golomb.ts are derived from the HLS library for
+video.js (https://github.com/videojs/videojs-contrib-hls), also Apache-2.0:
+Copyright (c) 2013-2015 Brightcove
+```
+
+The light build (`dist/hls.light.min.mjs`) of the npm package `hls.js` v1.7.3, which plays a broadcast meeting on the watching page (`public/assets/meet/live.js`). The package's `LICENSE` is copied beside it, since the minified file carries no notice of its own. The package contains no NOTICE file, and it is not modified.
+
+npm 包 `hls.js` v1.7.3 的 light 构建(`dist/hls.light.min.mjs`),在旁观页(`public/assets/meet/live.js`)播放直播会议。包里的 `LICENSE` 随它一起拷过去,因为压缩后的文件本身不带版权声明。该包没有 NOTICE 文件,本项目也未修改它。
+
 ### libav.js, built here → `public/vendor/libav-full/`
 
 ```
@@ -164,6 +178,8 @@ It contains **no video decoders**. It opens boxes and decodes sound; the picture
 | `@radix-ui/colors` | 3.0.0 | MIT | Copyright (c) 2021 Radix |
 | `quill` | 2.0.3 | BSD-3-Clause | Copyright (c) 2017-2024, Slab |
 | `pdfjs-dist` | 6.2.108 | **Apache-2.0** | Copyright Mozilla Foundation |
+| `hls.js` | 1.7.3 | **Apache-2.0** | Copyright (c) 2017 Dailymotion; parts Copyright (c) 2013-2015 Brightcove |
+| `@cloudflare/containers` | 0.3.7 | MIT OR Apache-2.0 | Cloudflare (<https://github.com/cloudflare/containers>); the package ships no licence text, only the declaration in its `package.json` |
 
 ### Note on the Apache-2.0 component (`ai`) / 关于 Apache-2.0 组件
 
@@ -200,7 +216,54 @@ Interface and body fonts chosen by users are fetched by the Worker from Google F
 
 ---
 
-## 4. The Cloudflare platform / Cloudflare 平台
+## 4. Container images / 容器镜像
+
+Two features run in a container on the operator's own account, each built from a directory of this repository: the automatic backup (`container/`) and the compositor broadcast meetings are made in (`container-meet/`). An installation either pulls a published image of them or builds its own; either way everything inside comes from the base image's distribution, unmodified, and the Dockerfile is the whole recipe.
+
+有两项功能跑在部署方自己账号里的容器中,各由本仓库的一个目录构建:自动备份(`container/`)与直播会议的合成器(`container-meet/`)。一套安装要么拉取已发布的镜像,要么自己构建;无论哪种,里面的东西都原样来自基础镜像所属的发行版,Dockerfile 就是完整的构建配方。
+
+### The broadcast compositor → `container-meet/`
+
+Ubuntu 24.04 packages. The ones the compositor actually uses:
+
+| Component | Licence | What it does here |
+|---|---|---|
+| GStreamer 1.24 (core, plugins-base, -good, -bad), `gstreamer1.0-nice` | LGPL-2.1-or-later | the pipeline: WebRTC (`webrtcbin`), decoding, layout (`compositor`), mixing, FLV, RTMP |
+| libnice | MPL-1.1 or LGPL-2.1 | ICE for `webrtcbin` |
+| libvpx | BSD-3-Clause | VP8 decoding |
+| libopus | BSD-3-Clause | Opus decoding |
+| VisualOn AAC encoder (vo-aacenc, `voaacenc`) | Apache-2.0 | the sound sent to Stream |
+| Python 3, PyGObject | PSF-2.0, LGPL-2.1-or-later | the controller (`compositor.py`, `server.py`) |
+| python3-websockets | BSD-3-Clause | the connection to the meeting's room |
+| Noto Sans CJK (Regular only) | SIL OFL-1.1 | the names under each picture |
+
+**Corresponding source** for every package is in Ubuntu's archive, at the version in the image (`apt-get source <package>`); nothing is patched. That, and the libraries staying ordinary shared objects that can be swapped, is what LGPL asks of whoever distributes the image.
+
+**OpenH264 is not in the image.** When the container starts it downloads Cisco's binary of OpenH264 (2.4.1) from Cisco and checks it against the hash Cisco publishes (`container-meet/openh264.py`): Cisco's patent licence for H.264 covers the binary Cisco distributes, on the condition that it is fetched from Cisco. The attribution Cisco requires wherever licensing information is shown:
+
+> OpenH264 Video Codec provided by Cisco Systems, Inc.
+
+The binary is under the BSD licence; its source is at <https://www.openh264.org/>. Cisco's licence text for the binary — the BSD licence plus a notice of the AVC/H.264 patent portfolio licence — is at <https://www.openh264.org/BINARY_LICENSE.txt>, and Cisco asks that it be shown in the same place as the attribution. It also says that the patent licence passed on covers personal and non-remunerated use, and that content providers and broadcasters may need a separate licence from the patent pool — worth reading before broadcasting for paying viewers.
+
+**The x264 build option** (`docker build --build-arg H264=x264`) adds x264 and FFmpeg's libraries through `gstreamer1.0-plugins-ugly` and `gstreamer1.0-libav`, which are **GPL** and carry no patent licence. An image built that way is its builder's to distribute under the GPL; images this project publishes are never built that way.
+
+Ubuntu 24.04 的软件包。合成器实际用到的有:上表所列(GStreamer 1.24 及 libnice 为 LGPL;libvpx、libopus 为 BSD-3-Clause;vo-aacenc 为 Apache-2.0;Python / PyGObject;python3-websockets;Noto Sans CJK 为 OFL-1.1,只留 Regular 一个字重)。
+
+**相应源码**:每个包都在 Ubuntu 的软件仓库里,与镜像中的版本对应(`apt-get source <包名>`),未打任何补丁。这一点,加上这些库都是可替换的普通共享库,就是 LGPL 对分发镜像者的要求。
+
+**OpenH264 不在镜像里。**容器启动时从 Cisco 下载 OpenH264 的 Cisco 二进制(2.4.1),并用 Cisco 公布的哈希校验(`container-meet/openh264.py`):Cisco 为它自己分发的二进制提供 H.264 专利许可,条件是从 Cisco 那里取得。Cisco 要求在展示许可信息的地方给出上面引用的那一行署名。该二进制以 BSD 授权,源码见 <https://www.openh264.org/>。Cisco 对该二进制的许可原文 —— BSD 许可加一段 AVC/H.264 专利池许可的说明 —— 在 <https://www.openh264.org/BINARY_LICENSE.txt>,Cisco 要求它与署名出现在同一处。原文还指出:它转授的专利许可覆盖个人及不收费的使用,内容提供者与广播者可能需要另向专利池取得许可 —— 面向付费观众直播之前值得一读。
+
+**x264 构建选项**(`docker build --build-arg H264=x264`)会经由 `gstreamer1.0-plugins-ugly` 与 `gstreamer1.0-libav` 加入 x264 与 FFmpeg 的库,它们是 **GPL**,且不附带任何专利许可。这样构建的镜像由构建者按 GPL 自行分发;本项目发布的镜像从不这样构建。
+
+### The backup → `container/`
+
+`node:22-alpine` (Node.js: MIT) and Alpine's `p7zip` (7-Zip: LGPL-2.1-or-later, with the unRAR licence restriction on its RAR code). The same holds as above: Alpine's archive has the corresponding source, and nothing is patched.
+
+`node:22-alpine`(Node.js:MIT)加 Alpine 的 `p7zip`(7-Zip:LGPL-2.1-or-later,其 RAR 部分另受 unRAR 许可限制)。与上面同理:Alpine 的软件仓库里有相应源码,未打任何补丁。
+
+---
+
+## 5. The Cloudflare platform / Cloudflare 平台
 
 This project runs on the operator's **own** Cloudflare account. Use of Workers / D1 / R2 / Email Routing / Email Sending / Workers AI / Turnstile is governed by the agreement between the operator and Cloudflare, and falls outside the scope of this project's licence. Data flows are documented in [PRIVACY.md](PRIVACY.md).
 

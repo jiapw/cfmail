@@ -14,8 +14,8 @@ MIT 授权,数据流与隐私说明见 [PRIVACY.md](PRIVACY.md)。
 
 ## What you get / 功能
 
-Three peer subsystems behind one sign-in and one nav bar: **Mail**, **Forms** and **Drive**.
-一次登录、一条导航栏,后面是三个平级的子系统:**邮件**、**表单**和**网盘**。
+Four peer subsystems behind one sign-in and one nav bar: **Mail**, **Forms**, **Drive** and **Meetings**.
+一次登录、一条导航栏,后面是四个平级的子系统:**邮件**、**表单**、**网盘**和**会议**。
 
 ### Mail / 邮件
 
@@ -63,6 +63,32 @@ Three peer subsystems behind one sign-in and one nav bar: **Mail**, **Forms** an
   勾选要提供的语言,由 Workers AI 模型翻译你的文本(用哪个模型、什么提示词在 后台 → 大模型 里统一设定);填写页按访问者浏览器语言打开、可切换;链接可带参数预填(`#/f/<token>?name=…&q1=…`)。
 - **Versions, on/off, permanent links / 版本、停用、永久链接** — every saved change bumps the version and the answer mail says which one it was written against; a disabled form shows a notice at the same link; deleting is the only thing that ends a link. The fill page is shown in the look the designer chose -- palette, light or dark, typeface, text size -- and visitors pick only their language. A new form starts with the settings of the one made before it.
   每次保存改动都递增版本号,答复邮件写明对应版本;停用后同一链接显示停用提示;只有删除才会让链接失效。填写页默认跟随设计者的明暗模式,访问者可自行切换。
+
+### Meetings / 会议
+
+Off on every domain until an administrator switches it on (admin console → Meetings), and broadcast meetings have a switch of their own there. A deployment that has not been given what meetings need — a Realtime app, see the permissions below — shows no Meetings entry at all.
+每个域名都默认关闭,由管理员在后台 → 会议 里按域名打开;直播会议在那里另有一个开关。部署还没拿到会议所需的东西(Realtime app,见下文权限)时,界面上根本不出现「会议」入口。
+
+- **Voice, optional video, one screen at a time / 语音、可选视频、同一时刻一块屏幕** — a meeting for up to 32 people (the ceiling is set per domain) on Cloudflare's Realtime SFU. Media goes browser to Cloudflare and nowhere else; the Worker only does the signalling, and nothing about who was in a call is stored.
+  最多 32 人的会议(上限按域名设定),跑在 Cloudflare 的 Realtime SFU 上。媒体只在浏览器与 Cloudflare 之间流动;Worker 只做信令,也不记录谁参加了哪一场。
+- **Everybody the same, and as large as fits / 人人等大,尽量大** — no "main speaker" and nothing to ask for: everybody's camera is the same kind of picture, laid out as the largest equal tiles the window allows (two people side by side on a wide screen, one above the other on a phone). The resolution chosen when the meeting is made — 480p, 720p or 1080p — is what a camera is sent at while two people talk; with more on screen it steps down by itself, so the traffic does not grow with the square of the room. One person at a time can share a screen, which then takes the large area with everybody beside it. A meeting can also be made audio-only.
+  没有「主讲人」,也没有什么需要申请:每个人的摄像头都是同一种画面,排成窗口放得下的最大等大格子(宽屏上两人左右并排,手机上上下叠放)。创建会议时选定的画幅(480p / 720p / 1080p)是两人对谈时摄像头的发送清晰度;同屏人数多了会自动降档,流量不会随人数平方增长。同一时刻可以有一个人共享屏幕,屏幕占大区,其余人排在旁边。会议也可以设成纯音频。
+- **End-to-end encryption / 端到端加密** — a switch on a small meeting. The organiser's browser makes a secret and puts it in the meeting's link after the `#`, the part of an address browsers never send to a server; it is kept only on the devices that open that link, and the organiser passes the full link on themselves, by whatever way they trust. Sound and pictures are encrypted frame by frame in each browser (AES-256-GCM, a key per sender derived from the secret), so neither Cloudflare nor this server can read them. Invitation mails go out without the secret. Not available for broadcasts, and there are no minutes of an encrypted meeting.
+  小组会议的一个开关。组织者的浏览器生成一个秘密,放在会议链接 `#` 之后 —— 地址里浏览器从不发给服务器的那一段;它只保存在打开过这条链接的设备上,完整链接由组织者自己用信任的方式转交。声音和画面在每个浏览器里逐帧加密(AES-256-GCM,每个发送者一把由秘密派生的钥匙),Cloudflare 和这台服务器都读不到。邀请邮件不带秘密。直播会议不能加密,加密会议也不能生成纪要。
+- **Guests, by link / 访客凭链接加入** — off by default. Switched on for a meeting, people with no account join by a separate guest link, either straight in or waiting at the door until the host lets them in.
+  默认关闭。为某场会议打开后,没有账号的人凭一条单独的访客链接加入:直接进,或在门口等主持人放行。
+- **The host's tools / 主持人的工具** — let in or turn away, ask people to mute, remove somebody, lock the meeting, stop somebody's screen share, end it for everyone. Chat and raised hands for all; none of it is saved.
+  放行或拒绝、请人静音、移出某人、锁定会议、停止某人的屏幕共享、为所有人结束会议。人人可聊天、举手;这些都不保存。
+- **Broadcast meetings / 直播会议** — up to eight speakers in the room, and any number of people watching one composited picture (the speakers as equal tiles, or a shared screen with the speakers beside it; names under each) through Cloudflare Stream, about ten seconds behind. The organiser chooses who may watch — anybody with the link, or signed-in colleagues only, enforced on the video itself by signed playback addresses — and whether Stream's recording is kept. Off until the deployment is given a Stream token and a compositor image; see the permissions table below.
+  房间里最多八位发言人,不限人数的旁观者经 Cloudflare Stream 观看一路合成画面(发言人等大宫格,或共享屏幕加旁边一列发言人;每格压名字),延迟约十秒。谁可以旁观由组织者选定 —— 任何持有链接的人,或仅已登录的同事,靠签名播放地址落实到视频本身 —— 是否保留 Stream 的录像也由组织者选。在部署拿到 Stream 令牌与合成器镜像之前保持关闭,见下文权限表。
+- **The audience can talk and ask to speak / 旁观者聊天与申请发言** — beside the picture, a chat among the viewers and with the stage (hosts and speakers read and answer it in an "Audience" tab of the room's chat), a head count, and a button to ask to speak. A host who says yes sends that one viewer a ticket; it walks them into the room as a speaker — past the guest switch, the waiting room and a locked door, though not past the speaker limit — and back to watching when they leave. Viewers who are not signed in give a name and pass Turnstile once before they can say anything, and their names are marked as a guest's. Hosts can take a line down or silence whoever wrote it. The chat can be switched off per meeting; asking to speak stays.
+  画面旁边是观众之间、观众与台上的聊天(主持人和发言人在房间聊天的「观众」页签里看和回)、在看人数,以及「申请发言」按钮。主持人点「允许」,就给这一位观众发一张入场券:凭它以发言人身份走进会场 —— 不看访客开关、不进等候室、不受锁定限制,但受发言人上限 —— 离开会场就回到观看。未登录的观众要先留名并过一次 Turnstile 才能说话,名字旁标「访客」。主持人可以撤下一句,或禁言说这句的人。聊天可按会议关掉;申请发言照常。
+- **Invitations that are mail / 邀请就是邮件** — sent from the organiser's own mailbox: straight into the inbox of anybody with an account here, out through the sending channel for anybody else, with a calendar file (`.ics`) when the meeting has a time. A meeting can be scheduled, or be a permanent room whose link never stops working.
+  邀请从组织者自己的邮箱发出:在这里有账号的人直投收件箱,其余人走发信通道;定了时间的会议附带日历文件(`.ics`)。会议可以预约,也可以是一间链接长期有效的常驻会议室。
+- **Recording into the host's Drive / 录制进主持人的网盘** — off unless the organiser allows it. The host's browser records the gallery (or the shared screen, while there is one) with everybody's sound, at the meeting's resolution, as an MP4 that is uploaded *while* it is being made — a laptop closed on the way out costs the last few seconds, not the meeting. Everybody sees a "Recording" mark while it runs.
+  默认关闭,须由组织者允许。主持人的浏览器按会议的画幅录下画廊(有人共享屏幕时录屏幕)和所有人的声音,录成 MP4,并且**边录边传** —— 散会时合上笔记本,丢的是最后几秒,而不是整场会。录制期间所有人都能看到「正在录制」标记。
+- **Transcript and minutes / 文字稿与纪要** — a separate tick when starting a recording. The sound is put into words by the speech model on Workers AI (silence is filtered out first, so nothing is invented for it), summed up by the domain's chat model into summary, points, decisions and action items, and saved as Markdown next to the recording. The host reads the minutes first, and mails them to the invitees with one click if they are fit to send.
+  开始录制时单独勾选。声音由 Workers AI 的语音模型转成文字(先滤掉静音,所以不会为沉默编造内容),再由该域名的对话模型写成摘要、要点、决定与待办,以 Markdown 存在录像旁边。主持人先过目,觉得可以发,再一键寄给受邀人。
 
 ### Both / 两边共用
 
@@ -189,6 +215,7 @@ that nobody reads, and to do the heavy work in the browser that is already looki
 | Receiving mail (Email Routing) / 收信 | ✅ Free, unlimited / 免费无限 | |
 | Web client, API, D1, R2 / 网页端、API、D1、R2 | ✅ Generous free tier / 免费额度很宽 | D1 5 GB, R2 10 GB |
 | Drive / 网盘 | ✅ Runs on the free tier / 免费额度即可跑 | Shares the same R2 bucket, so the 10 GB is shared with mail storage / 与邮件共用同一个 R2 桶,10 GB 是两边合计 |
+| Meetings / 会议 | ✅ Runs on the free tier / 免费额度即可跑 | Realtime gives each account 1,000 GB of outgoing media a month, then $0.05/GB. Six people at 720p use about 6 GB an hour; thirty-two use about 60 / Realtime 每账号每月 1000 GB 出向流量免费,之后 $0.05/GB。6 人 720p 约 6 GB/小时;32 人约 60 GB/小时 |
 | **Sending to outside recipients / 发信给外部收件人** | ❌ **Needs Workers Paid / 需要付费版** | [Email Sending requires the paid plan](https://developers.cloudflare.com/email-service/platform/pricing/) for arbitrary recipients / 发给任意收件人要求付费版 |
 
 Internal mail and receiving work on the free plan. To send to the outside world you need **Workers Paid ($5/mo, 3,000 emails included)** — or plug in SES / Resend and stay free. **If you already pay for Cloudflare Workers, this adds no new subscription** — CFMail runs inside the plan you have. Rough cost for a small team starting fresh: **$5/month** plus R2 overage beyond 10 GB ($0.015/GB·month). Mail between mailboxes in the same deployment never touches a sending provider and is not billed.
@@ -227,6 +254,8 @@ That is the whole installation. The third command creates the database and the s
   **重复运行是安全的。** 每一步都先查账号:已有的数据库和存储桶直接复用,绝不重建;迁移只做加法。升级也是这么做 —— `git pull` 之后跑同一条命令。
 - **Adding a domain** is the same command with a different `--domain`; `--entry` is remembered, so you only pass it the first time.
   **加域名**就是换个 `--domain` 再跑一次;`--entry` 会被记住,只需在第一次给。
+- **Meetings and broadcasts** are set up by the same command, as far as the token allows: with **Account API Tokens · Edit** completely, without it after asking you how (see "When the deploy token cannot create tokens"). They are off on every domain until an administrator switches them on.
+  **会议与直播**也由这同一条命令办好,办到 token 允许的程度:有 **Account API Tokens · Edit** 就全部办好,没有就先问你怎么办(见「部署令牌不能建令牌时」)。每个域名都默认关闭,由管理员打开。
 - **`--dry-run`** reports exactly what it would do and changes nothing.
   **`--dry-run`** 会把打算做的事完整报一遍,不做任何改动。
 - **In a terminal, the arguments are optional.** Plain `npm run deploy` asks for whatever is missing — the token, the domain and entry host on a first install — pauses for a yes before migrations and before publishing (`--yes` skips the pauses), and when something has to be fixed in the Cloudflare dashboard (a token permission, a domain not added yet, the Workers Paid plan for outward sending) it says exactly which switch, waits, and re-checks after you flip it. Outside a terminal it behaves exactly as before: arguments required, no pauses.
@@ -278,6 +307,16 @@ There is **one** source of truth: the `routes` array in `wrangler.jsonc`. Everyt
 Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom token**. An account-owned token from **Manage Account → API Tokens** works too.
 Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom token**;**Manage Account → API Tokens** 下创建的账号级 token 同样可用。
 
+### The short way: one permission / 省事的办法:只勾一项
+
+Ticking a dozen boxes by hand is the most tedious part of an install, and it comes back every time a new feature needs another. So there is a shortcut: give the token **Account · Account API Tokens · Edit** (on a user-owned token: **User · API Tokens · Edit**) and nothing else has to be ticked. `npm run deploy` reads the token's own policy, **adds to the token whatever it finds missing** — naming each permission on the screen as it adds it — and carries on; when a later version needs one more, the next deploy adds that too. The same ability lets it make the narrow second token that broadcast meetings keep inside the Worker, so that one never has to be made by hand either.
+
+手工勾十几项权限是安装里最烦人的一步,而且每当新功能多要一项,就得再来一次。所以有一条捷径:给 token 加上 **Account · Account API Tokens · Edit**(用户级 token 则是 **User · API Tokens · Edit**),其余一项都不用勾。`npm run deploy` 会读这个 token 自己的策略,**发现缺什么就往 token 上加什么** —— 每加一项都在屏幕上报出名字 —— 然后继续;以后的版本多要一项,下一次部署也会自己补上。靠同一项能力,它还会自己建好直播会议留在 Worker 里的那个窄权限 token,那个也不必手工去建。
+
+> What this costs: a token that may edit tokens can give itself anything its owner could, so it is the key to the whole account and wants keeping like one — in `.env.deploy` on your own machine, never in CI logs or chat. Nothing it does is quiet: every permission it adds is printed, and the token's policy in the dashboard always shows the result. Prefer to grant each permission yourself? Leave this one off: the deploy then only *names* what is missing, waits while you add it, and checks again — the tables below are the full list.
+>
+> 代价是什么:有权编辑 token 的 token 能给自己它的主人能给的一切,所以它就是整个账号的钥匙,要按钥匙来保管 —— 放在你自己机器的 `.env.deploy` 里,绝不进 CI 日志或聊天记录。它做的事没有一件是悄悄的:每加一项权限都会打印出来,dashboard 里这个 token 的策略也始终如实显示结果。更愿意每项权限都自己给?那就别加这一项:部署脚本只会**报出**缺什么、等你加好、再查一遍 —— 下面几张表就是完整清单。
+
 ### Required / 必需
 
 | Scope | Permission | Access | Used for / 用来做什么 |
@@ -300,6 +339,35 @@ Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Custom
 |---|---|---|---|
 | Account | **Turnstile Sites** | Edit | Running `scripts/setup-turnstile.mjs`. The dashboard calls it "Turnstile Sites" / Dashboard 里就叫这个名字 |
 | Zone | **Zone WAF** | Edit | Running `scripts/push-ratelimit.mjs` |
+| Account | **Calls** | Edit | Meetings. `npm run deploy` creates the Realtime SFU app and the TURN key that meetings need and stores them in the Worker. Newer dashboards list this permission as **Realtime** / 会议功能。`npm run deploy` 会创建会议所需的 Realtime SFU app 与 TURN key 并存入 Worker。新版面板把这项权限列为 **Realtime** |
+
+**When the deploy token cannot create tokens.** With **Account API Tokens · Edit** (see "The short way" above) the deploy sets meetings and broadcasts up by itself. Without it, and with something they need still missing, a deploy run in a terminal asks how to go on — before anything is created:
+
+1. **A second token, just for meetings and broadcasts** — with **Account · Calls · Edit** (meetings: creates the Realtime app, used once) and **Account · Stream · Edit** (broadcasts: kept in the Worker), and nothing else; only the ones still missing are asked for. The deploy checks what the token can do and says so. In advance: `--meet-token <token>`.
+2. **Switch them off on this deployment** — recorded in the configuration (`vars.MEETINGS`: `off`, or `no-live` to keep meetings without broadcasts) and read by the Worker, so the question is not asked again. In advance: `--meetings off` / `--meetings no-live`; `--meetings on` brings them back.
+3. **Add Account API Tokens · Edit to the deploy token** — the deploy waits while you do it in the dashboard, checks, and then makes everything itself.
+
+Outside a terminal nothing is asked: the three ways are printed with their flags, and whatever is missing stays off for that run. Mail, Drive and everything else install either way.
+
+**部署令牌不能建令牌时。**有 **Account API Tokens · Edit**(见上文「省事的办法」)时,部署会自己把会议和直播办好。没有它、而会议所需的东西还缺着时,在终端里运行的部署会先问你怎么走 —— 在创建任何东西之前:
+
+1. **另交一个会议/直播专用的令牌** —— 给它 **Account · Calls · Edit**(会议:用来建 Realtime app,只用一次)和 **Account · Stream · Edit**(直播:留在 Worker 里),别的都不要;只会要还缺的那几项。部署会查明这个令牌能做什么并说出来。事先指定:`--meet-token <令牌>`。
+2. **在这套部署上关掉它们** —— 记在配置里(`vars.MEETINGS`:`off`;或 `no-live`,保留会议、不要直播),Worker 也读它,以后不再问。事先指定:`--meetings off` / `--meetings no-live`;`--meetings on` 可以再打开。
+3. **给部署令牌加上 Account API Tokens · Edit** —— 部署会等你在 dashboard 里改好,查一遍,然后自己把一切建好。
+
+不在终端里时什么都不问:把三条路连同参数打印出来,缺的部分这一次保持关闭。邮件、网盘和其余一切照常安装。
+
+**Broadcast meetings** (a few speakers, any number of people watching) need two more things, and like the backup they are asked for separately because they end up *inside* the Worker:
+
+**直播会议**(少数发言人 + 不限人数的旁观者)还需要两样东西;和备份一样,它们是单独要的,因为它们最终会留在 Worker **里面**:
+
+| What / 是什么 | How / 怎么给 | Why / 为什么 |
+|---|---|---|
+| A second API token for meetings and broadcasts: **Account · Stream · Edit**, plus **Account · Calls · Edit** only if it also has to create the meetings' Realtime app / 会议/直播专用的第二个 API token:**Account · Stream · Edit**;只有在还要由它来建会议的 Realtime app 时,才再加 **Account · Calls · Edit** | Nothing, if the deploy token may edit tokens (see "The short way" above): the deploy makes it. Otherwise the deploy asks (see "When the deploy token cannot create tokens" above), or give it in advance with `npm run deploy -- --meet-token <token>` (formerly `--stream-token`), once / 部署 token 有权编辑 token 时什么都不用做(见上文「省事的办法」),部署会自己建;否则部署会问你(见上文「部署令牌不能建令牌时」),或者事先用 `npm run deploy -- --meet-token <token>`(旧名 `--stream-token`)给一次即可 | The Worker makes a Stream live input for each broadcast, signs the playback addresses, and deletes recordings nobody asked to keep. It is stored as a Worker secret, so it is deliberately **not** the deploy token, which can rewrite the whole deployment. The same run creates the Stream signing key and the key the compositor's entry ticket is signed with / Worker 要为每场直播建一个 Stream live input、给播放地址签名、删除没人要保留的录像。它作为 Worker secret 存放,所以刻意**不是**部署 token —— 后者能改写整套部署。同一次运行还会创建 Stream 签名钥匙和给合成器入场券签名的钥匙 |
+| The compositor image / 合成器镜像 | Nothing, once `container-meet/published.json` exists: the published image is used by default, and a deployment still on an image the deploy itself put there moves to it. `npm run deploy -- --meet-image <ref>` points at another one (once; the configuration remembers it) / `container-meet/published.json` 存在之后什么都不用做:默认用已发布的镜像,仍在用部署脚本自己放进去的镜像的部署也会换过去。`npm run deploy -- --meet-image <引用>` 可指向别的镜像(一次即可,配置会记住) | The audience watches one picture, composited in a container from `container-meet/` (GStreamer; no browser in it; the H.264 encoder is Cisco's OpenH264 binary, downloaded by the container when it starts). Without a published image there is no default: build it and push it somewhere Cloudflare can pull from — `npx wrangler containers build container-meet -t cfmail-meet:<tag> -p` puts it in your own account's registry. Licences: [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES.md#4-container-images--容器镜像) / 旁观者看的是一路画面,由 `container-meet/` 构建的容器合成(GStreamer;里面没有浏览器;H.264 编码器是 Cisco 的 OpenH264 二进制,由容器启动时下载)。没有已发布的镜像时就没有默认值:自行构建并推到 Cloudflare 拉得到的地方 —— `npx wrangler containers build container-meet -t cfmail-meet:<tag> -p` 会把它放进你自己账号的镜像仓库。许可见 THIRD-PARTY-NOTICES 第 4 节 |
+
+> Stream has to be enabled on the account (dashboard → Stream) and is billed by minutes stored and minutes watched. **Stream records every broadcast it lets people watch** — a live input with recording off serves no video at all — so a broadcast counts against the account's stored minutes while it runs; afterwards the recording is kept or deleted as the organiser chose. The container runs only while a meeting is on air.
+> Stream 需要先在账号上开通(dashboard → Stream),按存储分钟与观看分钟计费。**凡是允许人观看的直播,Stream 都会录像** —— 关闭录制的 live input 根本不出视频 —— 所以直播进行期间会计入账号的存储分钟;结束后录像按组织者的选择保留或删除。容器只在会议开播期间运行。
 
 > A brand-new Cloudflare account has never taken its `<name>.workers.dev` subdomain, and
 > Cloudflare accepts no Worker at all until it does — the deploy would stop with *"You need a
@@ -329,11 +397,13 @@ In order, checking the account's current state before each step so that running 
 |---|---|
 | Verify the token and resolve the account / 校验 token、确定账号 | Read-only. Refuses to guess when the token can see several accounts — pass `--account` / 只读。token 能看到多个账号时拒绝猜,要你用 `--account` 指定 |
 | Look for a Worker, database and bucket already named `cfmail` / 查有没有同名的 Worker、数据库、存储桶 | Read-only. If they exist but this checkout has no `wrangler.jsonc`, it stops rather than publish over somebody else's deployment — `--adopt` says you mean it / 只读。若它们存在而本地没有 `wrangler.jsonc`,脚本停下来,不会覆盖别人的部署 —— 确实是你的,用 `--adopt` |
+| Meetings and broadcasts: how they will be set up / 会议与直播:打算怎么办 | Read-only unless you answer. A token with Account API Tokens · Edit is asked nothing; one without it, when something they need is missing, is asked to choose — a second token for them, switching them off (`vars.MEETINGS`), or adding that permission (see "When the deploy token cannot create tokens") / 不回答就只读。带 Account API Tokens · Edit 的 token 什么都不问;不带的,在会议所需的东西还缺着时让你三选一 —— 另交一个专用 token、关掉它们(`vars.MEETINGS`)、或加上那项权限(见「部署令牌不能建令牌时」) |
 | Create the D1 database and the R2 bucket / 建 D1 与 R2 | Only when missing; an existing one is reused, with its data / 只在缺失时建;已有的直接复用,数据不动 |
-| Write `wrangler.jsonc` / 写配置文件 | Generated from the template and your arguments. Fills `account_id`, `database_id`, `APP_ORIGIN`, appends the route / 由模板加你的参数生成:填好 `account_id`、`database_id`、`APP_ORIGIN`,追加 route |
+| Write `wrangler.jsonc` / 写配置文件 | Generated from the template and your arguments. Fills `account_id`, `database_id`, `APP_ORIGIN`, appends the route, and adds the two containers — the backup and the broadcast compositor — pointing at their published public images (`container/published.json`, `container-meet/published.json`), so nothing is built / 由模板加你的参数生成:填好 `account_id`、`database_id`、`APP_ORIGIN`,追加 route,并加上两个容器 —— 备份与直播合成器 —— 指向它们已发布的公共镜像(`container/published.json`、`container-meet/published.json`),所以什么都不用构建 |
 | Keep live custom domains / 保住线上已有的入口域 | Anything bound on the account but missing from `routes` is added back, so a fresh clone cannot detach domains it never knew about / 线上绑了但配置里没有的,补回数组 —— 新 clone 不会把它没见过的域名摘掉 |
 | Apply migrations / 跑迁移 | Migrations only add; `wrangler` runs just the ones not yet applied, and the script re-checks afterwards that none are left / 迁移只做加法;wrangler 只跑没跑过的,脚本事后再查一遍确认没有遗留 |
 | Publish the Worker / 发布 Worker | Same code, same result / 同样的代码,同样的结果 |
+| Meetings: the Realtime app and TURN key; broadcasts: the Stream token, its signing key, the compositor's ticket key / 会议:Realtime app 与 TURN key;直播:Stream token、签名钥匙、合成器入场券钥匙 | Each is made only when the Worker does not already hold it, and stored the moment it is received — they are handed out once. Skipped where meetings or broadcasts are switched off / 只在 Worker 里还没有时才建,一拿到就存 —— 它们只发一次。会议或直播已关闭的部署跳过 |
 | Enable Email Routing, point catch-all at the Worker / 启用 Email Routing、catch-all 指向 Worker | Enabling is skipped when already on; the catch-all rule is a `PUT` / 已开启就跳过;catch-all 本身是 `PUT` |
 
 `wrangler.jsonc` is **not** in the repository — it holds your account id, database id and domains, and `npm run deploy` generates it. Losing it costs nothing: the next run rebuilds it from the account.
@@ -383,6 +453,7 @@ Open `https://<entry-subdomain>.<your-domain>/#/admin`.
 | **Users / 用户** | All registered users, revoke sessions everywhere, delete accounts / 全部用户、撤销所有设备登录、注销账号 |
 | **Invites / 邀请** | Generate signup links. Pick the kind first — one person once, or a link a whole team registers through until it expires — then, for a single-use link, whether the mailbox name is pinned and who may use it / 生成注册链接。先选类型:单人一次性,或整队人共用直到过期;单人链接再选限不限定邮箱名、限不限定使用者 |
 | **Drive / 网盘** | Turn the Drive on per domain, set the default quota, override it for one user / 按域名开启网盘、设默认配额、单独调整某个用户 |
+| **Meetings / 会议** | Turn meetings on per domain; set how many people one may hold and the highest video resolution / 按域名开启会议;设定一场会议的人数上限与视频画幅上限 |
 | **Unrouted / 未匹配来信** | Mail sent to addresses that don't exist. Remote images stripped before display / 发给不存在地址的邮件,展示前剥掉远程图片 |
 | **Import / 导入工具** | Bring in `.eml` archives from an old provider / 把旧服务商导出的 `.eml` 搬进来 |
 | **Export / 导出工具** | Write mailboxes back out to a local folder as `.eml` / 把邮箱写回本地目录 |
@@ -511,6 +582,16 @@ Publishing that image is a maintainer's job, done when `container/` changes:
 
 ```sh
 node scripts/publish-image.mjs --repo docker.io/<namespace>/cfmail-backup
+```
+
+The broadcast compositor (`container-meet/`) is published the same way, when it changes; the
+command writes `container-meet/published.json`, and from then on a deploy uses that image unless
+told otherwise (`--meet-image`):
+直播合成器(`container-meet/`)也照此发布,在它变动时做;命令会写下 `container-meet/published.json`,
+此后部署默认用那个镜像,除非另行指定(`--meet-image`):
+
+```sh
+node scripts/publish-image.mjs --image meet --repo docker.io/<namespace>/cfmail-meet
 ```
 
 `--backup-token` is separate from `--token` on purpose: the deploy token lives only in the memory

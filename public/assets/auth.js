@@ -87,10 +87,12 @@ export function renderLogin() {
       // 免得一条过期的记录把之后某次无关的登录也带偏。
       let back = '';
       try { back = sessionStorage.getItem('cf_after_login') || ''; sessionStorage.removeItem('cf_after_login'); } catch {}
-      // Two kinds of page send people here: a form's fill page, and the link in an answer's
-      // mail to a kept answer. Anything else goes to the inbox.
-      // 两种页面会把人送来登录:表单的填写页,以及答复邮件里指向保留答复的链接。其余都回收件箱。
-      navigate(/^#\/(f|forms\/sub)\//.test(back) ? back : '#/');
+      // A few kinds of page send people here: a form's fill page, the link in an answer's mail
+      // to a kept answer, a meeting's door, and a broadcast that only colleagues may watch.
+      // Anything else goes to the inbox.
+      // 有几种页面会把人送来登录:表单的填写页、答复邮件里指向保留答复的链接、会议的门、
+      // 以及只有同事可看的直播。其余都回收件箱。
+      navigate(/^#\/(f|forms\/sub|meet|live)\//.test(back) ? back : '#/');
     } catch (err) {
       cap?.reset();
       qs('#login-err').textContent = err.message;

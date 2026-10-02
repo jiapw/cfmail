@@ -9,8 +9,16 @@ export { BackupContainer } from './backup';
 // The room a document is presented in, likewise.
 // 一份文档被演示时所在的那个房间,同理。
 export { PresentRoom } from './present';
+// The room a meeting is held in, likewise.
+// 一场会议所在的那个房间,同理。
+export { MeetRoom } from './meet';
+export { MeetCompositor } from './meetlive';
+// A broadcast's audience: its chat, its queue to speak, its head count.
+// 一场直播的观众:聊天、申请发言的队列、在看人数。
+export { MeetAudience } from './meetaudience';
 import { backfillContacts, backfillSubjectNorm, findMailboxByAddress, ingestEml, insertFailedPlaceholder, logUnrouted, purgeOldUnrouted, retryFailedParses, deleteMessageDerived } from './parse';
 import { driveCronDaily, driveCronHourly } from './drive';
+import { meetCronHourly } from './meet';
 import { processOutbox } from './send';
 import { now, uid } from './util';
 
@@ -79,6 +87,9 @@ async function runCron(env: Env): Promise<void> {
     // Drive: abort multipart uploads that never completed
     // 网盘:中止一直没完成的分片上传
     await driveCronHourly(env);
+    // Meetings: end the ones long past, close sittings whose room vanished
+    // 会议:替早已过期的结束,替房间不辞而别的那一场关门
+    await meetCronHourly(env).catch(() => {});
 
     // Daily at 19:00 UTC: empty trash and spam older than 30 days
     // 每天(UTC 19 点 = 北京时间凌晨 3 点):清空 30 天前的垃圾箱/垃圾邮件

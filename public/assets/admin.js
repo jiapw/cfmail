@@ -78,6 +78,7 @@ const TABS = () => [
   { sep: true },
   { key: 'mailboxes', name: t('a_mailboxes') },
   { key: 'drive', name: t('a_drive') },
+  { key: 'meet', name: t('mt_title') },
   { sep: true },
   { key: 'unrouted', name: t('a_unrouted') },
   { key: 'backup', name: t('a_backup'), globalOnly: true },
@@ -158,6 +159,7 @@ export async function renderAdmin(tab) {
     else if (tab === 'audit') await tabAudit(body);
     else if (tab === 'ai') await tabAI(body);
     else if (tab === 'drive') await tabDrive(body);
+    else if (tab === 'meet') await tabMeet(body);
     else if (tab === 'backup') await tabBackup(body);
     else if (tab === 'llm') await tabLlm(body);
   } catch (e) {
@@ -1636,6 +1638,93 @@ async function tabAudit(body) {
 
 // ---------- Drive (per-domain switch, default quota, per-user quota) ----------
 // ---------- 网盘。按域名开关与默认配额。可单独调整用户配额 ----------
+
+// ---------- Meetings ----------
+// ---------- 会议 ----------
+
+/** One domain at a time, the way the Drive tab does it: the switch, the second switch for the
+ *  part that costs money, and the three ceilings a meeting's creator cannot go above.
+ *  同网盘页签一样,一次一个域名:总开关、给"要花钱的那部分"的第二个开关,
+ *  以及会议创建者不能超过的三个上限。 */
+async function tabMeet(body) {
+  const data = await api('GET', '/api/admin/meet/domains');
+  const domains = data.domains || [];
+  if (!domains.length) {
+    body.innerHTML = `<div class="empty">${esc(t('no_domains'))}</div>`;
+    return;
+  }
+  const sel = currentDomainId(domains);
+  body.innerHTML = `
+  <section class="card">
+    <h3>${esc(t('mt_title'))}</h3>
+    <p class="dim" style="margin:0 0 10px">${esc(t('mt_a_intro'))}</p>
+    ${data.ready ? '' : `<p class="chip chip-warn" style="display:block;white-space:normal;line-height:1.5;padding:8px 12px">${esc(t('mt_a_not_ready'))}</p>`}
+    <div class="form-row">
+      <label>${esc(t('domain_label'))}</label>
+      <select id="mt-dom" style="width:260px">${domains.map((d) => `<option value="${esc(d.id)}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>
+    </div>
+  </section>
+  <div id="mt-dom-body"></div>`;
+
+  const paint = () => {
+    const d = domains.find((x) => x.id === qs('#mt-dom').value) || domains[0];
+    const resOpt = (r) => `<option value="${r}" ${d.meet_max_resolution === r ? 'selected' : ''}>${r}p</option>`;
+    qs('#mt-dom-body').innerHTML = `
+    <section class="card">
+      <div class="form-row">
+        <label>${esc(t('mt_a_enabled'))}</label>
+        <wa-switch id="mt-enabled" ${d.meet_enabled ? 'checked' : ''}></wa-switch>
+        <span class="dim">${esc(d.name)}</span>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('mt_a_max_group'))}</label>
+        <input id="mt-max-group" type="number" min="2" max="${data.hard_cap_group}" value="${d.meet_max_group}" style="width:100px">
+        <span class="dim">2 – ${data.hard_cap_group}</span>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('mt_a_max_res'))}</label>
+        <select id="mt-max-res" style="width:120px">${[480, 720, 1080].map(resOpt).join('')}</select>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('mt_a_live'))}</label>
+        <wa-switch id="mt-live" ${d.meet_live_enabled ? 'checked' : ''} ${data.live_ready ? '' : 'disabled'}></wa-switch>
+        <span class="dim">${esc(t('mt_a_live_hint'))}</span>
+      </div>
+      <div class="form-row">
+        <label>${esc(t('mt_a_max_speakers'))}</label>
+        <input id="mt-max-speakers" type="number" min="2" max="${data.hard_cap_speakers}" value="${d.meet_max_speakers}" style="width:100px">
+        <span class="dim">2 – ${data.hard_cap_speakers}</span>
+      </div>
+      <div class="form-row"><label></label><wa-button id="mt-save" size="small" variant="brand">${esc(t('save'))}</wa-button></div>
+    </section>`;
+    const post = async (patch, apply) => {
+      try {
+        await api('POST', `/api/admin/meet/domains/${d.id}`, patch);
+        apply();
+        toast(t('t_saved'));
+        // The top-bar entry appears at once only when the domain edited is one of the editor's own.
+        // 只有改的是编辑者自己所在的域名时,顶栏入口才会即时出现。
+        await refreshMe();
+      } catch (err) {
+        toast(err.message, true);
+        paint();
+      }
+    };
+    // wa-switch dispatches a plain 'change'; see the Drive tab. / wa-switch 派发的是普通的 'change',见网盘页签。
+    qs('#mt-enabled').addEventListener('change', (e) => post({ enabled: !!e.target.checked }, () => { d.meet_enabled = e.target.checked ? 1 : 0; }));
+    qs('#mt-live').addEventListener('change', (e) => post({ live_enabled: !!e.target.checked }, () => { d.meet_live_enabled = e.target.checked ? 1 : 0; }));
+    qs('#mt-save').addEventListener('click', () => {
+      const patch = {
+        max_group: Number(qs('#mt-max-group').value),
+        max_speakers: Number(qs('#mt-max-speakers').value),
+        max_resolution: Number(qs('#mt-max-res').value),
+      };
+      post(patch, () => { d.meet_max_group = patch.max_group; d.meet_max_speakers = patch.max_speakers; d.meet_max_resolution = patch.max_resolution; });
+    });
+  };
+  qs('#mt-dom').addEventListener('change', paint);
+  paint();
+}
 
 async function tabDrive(body) {
   const data = await api('GET', '/api/admin/drive/domains');
