@@ -147,11 +147,17 @@ export function deltaToEmailHtml(delta, resolveImage = (s) => s) {
     let inner = line.parts
       .map((p) => {
         if (p.image) {
-          const src = resolveImage(p.image, p.attr);
-          if (!src) return '';
+          // The resolver may answer {src, width} and so choose the displayed width itself: an image
+          // is encoded at one size and shown at another, which leaves a Retina reader pixels to
+          // spare and keeps a wide screenshot from running off the page.
+          // 解析器可以回 {src, width},自己定显示宽度:一张图按一个尺寸编码、按另一个尺寸显示,
+          // Retina 阅读端就有多余的像素可用,宽截图也不会撑出页面。
+          const r = resolveImage(p.image, p.attr);
+          if (!r) return '';
+          const src = typeof r === 'string' ? r : r.src;
           // width goes in as an HTML attribute because that is all Outlook honours; the style repeats the proportional scaling as a backup
           // width 用 HTML 属性给,Outlook 只认这个;style 里再兜一遍等比缩放
-          const w = parseInt(p.attr?.width, 10);
+          const w = typeof r === 'string' ? parseInt(p.attr?.width, 10) : r.width;
           const wAttr = w > 0 ? ` width="${w}"` : '';
           return `<img src="${esc(src)}"${wAttr} style="max-width:100%;height:auto" alt="">`;
         }
@@ -282,18 +288,63 @@ export function sanitizeQuoteHtml(html) {
   return doc.body.innerHTML;
 }
 
-/** Downsample large images in the browser first, so base64 inflation cannot push the message past the send limit
- *  大图先在客户端降采样,避免 base64 膨胀后超出发信上限 */
+/**
+ * Resample an image to a width with the best filter the browser has. createImageBitmap's own
+ * resize is the first choice: one pass, high quality, off the main thread where supported. Where
+ * it is not honoured, the fallback halves the image step by step with high-quality smoothing --
+ * a single drawImage from three thousand pixels to four hundred drops most of the source on the
+ * floor, and the text in a screenshot comes out ragged.
+ * Returns something drawImage accepts: an ImageBitmap, or the fallback's canvas.
+ * 把一张图重采样到给定宽度,用浏览器手头最好的滤波。首选 createImageBitmap 自带的缩放:一步到位、
+ * 高质量、支持的地方还不占主线程。它不认账时,退路是逐次减半、每次都开高质量平滑 ——
+ * 一次 drawImage 从三千像素画到四百,会把大部分源像素直接扔掉,截图里的文字就毛了。
+ * 返回 drawImage 认的东西:ImageBitmap,或退路里的 canvas。
+ */
+export async function resampleToWidth(blob, width) {
+  const w = Math.max(1, Math.round(width));
+  try {
+    const bmp = await createImageBitmap(blob, { resizeWidth: w, resizeQuality: 'high' });
+    if (bmp.width === w) return bmp;
+    bmp.close?.();
+  } catch {}
+  const full = await createImageBitmap(blob);
+  const h = Math.max(1, Math.round(full.height * (w / full.width)));
+  let src = full, cw = full.width, ch = full.height;
+  while (cw / 2 > w) {
+    cw = Math.round(cw / 2); ch = Math.round(ch / 2);
+    const step = document.createElement('canvas');
+    step.width = cw; step.height = ch;
+    const sctx = step.getContext('2d');
+    sctx.imageSmoothingQuality = 'high';
+    sctx.drawImage(src, 0, 0, cw, ch);
+    src = step;
+  }
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, w, h);
+  full.close?.();
+  return cv;
+}
+
+/** Downsample large images in the browser first, so base64 inflation cannot push the message past the send limit.
+ *  PNG does not come through here any more on the ordinary path (compose keeps it whole); see PNG_BUDGET there.
+ *  大图先在客户端降采样,避免 base64 膨胀后超出发信上限。
+ *  PNG 平时不再走这里(撰写那边整张保留),见那边的 PNG_BUDGET。 */
 export async function downscaleImage(file, maxEdge = 1600, quality = 0.85) {
   if (!/^image\//.test(file.type) || file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
   try {
-    const bmp = await createImageBitmap(file);
-    if (bmp.width <= maxEdge && bmp.height <= maxEdge && file.size < 400 * 1024) return file;
-    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
-    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const probe = await createImageBitmap(file);
+    const { width, height } = probe;
+    probe.close?.();
+    if (width <= maxEdge && height <= maxEdge && file.size < 400 * 1024) return file;
+    const scale = Math.min(1, maxEdge / Math.max(width, height));
+    const pic = await resampleToWidth(file, Math.round(width * scale));
     const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    cv.width = pic.width; cv.height = pic.height;
+    cv.getContext('2d').drawImage(pic, 0, 0);
+    pic.close?.();
     const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
     const blob = await new Promise((res) => cv.toBlob(res, type, quality));
     if (!blob || blob.size >= file.size) return file;

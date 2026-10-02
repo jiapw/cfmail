@@ -3,7 +3,7 @@ import { esc, icon, qs, toast, fmtSize, debounce } from './ui.js';
 import { t } from './i18n.js';
 import { store, refreshMe } from './app.js';
 import { sendToastText, bindDropZone } from './mail.js';
-import { loadQuill, applyEditorLabels, deltaToEmailHtml, deltaToPlainText, buildQuoteHtml, downscaleImage } from './richtext.js';
+import { loadQuill, applyEditorLabels, deltaToEmailHtml, deltaToPlainText, buildQuoteHtml, downscaleImage, resampleToWidth } from './richtext.js';
 
 // Single-instance compose window
 // 单实例撰写窗口
@@ -33,6 +33,35 @@ const IMG_SCALES = [1, 0.75, 0.5, 0.25];
 // Automatic step on insert: get the resampled pixel count as close to this as possible
 // 插入时自动选档:让重采样后的像素总数最接近这个值
 const TARGET_PIXELS = 200000;
+// PNG is the exception to all of that, because PNG is what a screenshot is, and a screenshot is
+// mostly text: resampled to a fifth of its size it cannot be read, and shown on a Retina screen
+// at its own pixel count it is blurred as well. So a PNG goes out whole -- no pre-shrink on
+// insert, 100% by default, never re-encoded -- as long as it fits this budget. One that does not,
+// or one the writer chooses to shrink, is resampled with the best filter available and written as
+// JPEG at a quality that keeps text edges; unless it has transparency, which JPEG cannot carry.
+// PNG 是上面这一切的例外,因为截图就是 PNG,而截图里多半是文字:缩到五分之一就没法读,
+// 在 Retina 屏上按它自己的像素数显示又会糊。所以 PNG 整张发出去 —— 插入时不预缩、默认 100%、
+// 从不重编码 —— 只要它放得进这个预算。放不进的,或者写信人主动缩的,用手头最好的滤波重采样,
+// 写成 JPEG,质量取在保得住文字边缘的点上;带透明的除外,JPEG 装不下透明。
+const PNG_BUDGET = 2 * 1024 * 1024;
+const JPEG_Q = 0.9; // re-encoding what was JPEG to begin with / 本来就是 JPEG 的重编码
+const JPEG_Q_FROM_PNG = 0.95; // a PNG written as JPEG keeps its text edges at this / PNG 写成 JPEG 时,这个质量保得住文字边缘
+const UPLOAD_MAX = 10 * 1024 * 1024;
+// The width the message declares an image is displayed at, whatever size it is encoded at.
+// Readers lay it out at this width and have the extra pixels for a Retina screen; Outlook, which
+// ignores max-width, gets a width it honours instead of a screenshot three thousand pixels across.
+// 信里声明的显示宽度,与编码尺寸无关。阅读端按它排版,多出来的像素留给 Retina 屏;
+// 不认 max-width 的 Outlook 拿到的是它认的一个宽度,而不是一张三千像素宽的截图。
+const DISPLAY_MAX = 700;
+
+/** The width declared for an image encoded at `encoded` px (0 = the original as it is): the
+ *  step's own width, capped at DISPLAY_MAX. Below the cap nothing is declared that was not before.
+ *  为一张以 encoded 像素编码(0 = 原图原样)的图声明的宽度:档位自己的宽度,封顶 DISPLAY_MAX。
+ *  不到封顶的,不声明以前没声明过的东西。 */
+function displayWidth(entry, encoded) {
+  const w = encoded || entry.w || 0;
+  return w > DISPLAY_MAX ? DISPLAY_MAX : encoded;
+}
 
 /** Pick the step from the table whose w*h*s^2 lands nearest TARGET_PIXELS
  *  从档位表里挑一个,使 w*h*s² 最接近 TARGET_PIXELS */
@@ -47,11 +76,32 @@ function bestScale(w, h) {
   return best;
 }
 const SCALE_ICON = { 1: 'scale100', 0.75: 'scale75', 0.5: 'scale50', 0.25: 'scale25' };
+
+/** The encoded width at a step -- written once, so the bar, the bake and the budget probe share a key
+ *  某一档的编码宽度 —— 只写一遍,好让档位条、重采样和预算试探用的是同一个键 */
+const stepWidth = (entry, s) => Math.max(16, Math.round(entry.w * s));
+
+/** A PNG's default step: 100% when the original fits the budget, otherwise the largest step that
+ *  does -- found by actually encoding, since a screenshot's bytes have little to do with its pixel
+ *  count. The encodings are cached, so the step chosen is not made a second time at send.
+ *  PNG 的默认档:原图放得进预算就 100%,否则是放得进的最大一档 —— 真正编码一遍来找,
+ *  因为截图的字节数和像素数没多大关系。编码结果有缓存,选中的那档发送时不会做第二遍。 */
+async function fitPng(entry) {
+  if (entry.size <= PNG_BUDGET) return 1;
+  for (const s of IMG_SCALES.filter((x) => x < 1)) {
+    const r = await renderStep(entry, stepWidth(entry, s));
+    if (r.blob.size <= PNG_BUDGET) return s;
+  }
+  return Math.min(...IMG_SCALES);
+}
 const MIN_RESIZABLE = 256; // 长宽都不超过这个尺寸的图不给缩放档位
 
 export function openCompose(opts = {}) {
   bakeCache.clear(); // 上一封的重采样产物已随发送清理,别带进这一封
   bakedUploads.clear();
+  renderCache.clear();
+  srcBlobs.clear();
+  alphaOf.clear();
   state = {
     mbId: opts.mbId || store.mbId || store.me?.mailboxes[0]?.id,
     draftId: opts.draftId || null,
@@ -341,22 +391,30 @@ function fallbackTextarea() {
 /** Inline images: after upload the src is /api/uploads/<id>, which is swapped for cid: when sending
  *  内联图片:上传后用 /api/uploads/<id> 作 src,发送时再换成 cid: */
 async function uploadInline(file) {
-  const f = await downscaleImage(file);
-  if (f.size > 10 * 1024 * 1024) {
+  // A PNG is kept whole (see PNG_BUDGET); only one too large to upload at all is shrunk here
+  // PNG 整张保留(见 PNG_BUDGET);只有大到根本传不上去的才在这里缩
+  const f = file.type === 'image/png' && file.size <= UPLOAD_MAX ? file : await downscaleImage(file);
+  if (f.size > UPLOAD_MAX) {
     toast(t('t_too_big', f.name), true);
     return null;
   }
   // Read the dimensions locally, so the scale step can be chosen automatically on insert
   // 尺寸在本地读出来,插入时据此自动选缩放档
   let dim = { w: 0, h: 0 };
+  let alpha = false;
   try {
     const bmp = await createImageBitmap(f);
     dim = { w: bmp.width, h: bmp.height };
+    // Whether a PNG has anything transparent decides what a shrunk copy of it may be written as
+    // 一张 PNG 有没有透明的地方,决定它缩小后的那份能写成什么格式
+    if (f.type === 'image/png') alpha = hasTransparency(bmp);
     bmp.close?.();
   } catch {}
   const fd = new FormData();
   fd.append('file', f);
   const r = await api('POST', '/api/uploads', fd);
+  srcBlobs.set(r.id, f);
+  alphaOf.set(r.id, alpha);
   const entry = {
     upload_id: r.id,
     cid: `img${r.id.replace(/[^a-zA-Z0-9]/g, '')}@cfmail`,
@@ -379,10 +437,11 @@ async function insertInline(files, at) {
       const entry = await uploadInline(f);
       if (!entry || !quill) continue;
       quill.insertEmbed(index, 'image', entry.url, 'user');
-      // Land on the step whose pixel count is nearest 200k; GIFs are never resampled and keep their size
-      // 自动落到像素数最接近 20 万的那一档;GIF 不重采样,保持原尺寸
-      const s = entry.mime === 'image/gif' ? 1 : bestScale(entry.w, entry.h);
-      if (s < 1) quill.formatText(index, 1, 'width', String(Math.max(16, Math.round(entry.w * s))), 'user');
+      // GIFs are never resampled and keep their size; a PNG stays whole while it fits the budget;
+      // anything else lands on the step whose pixel count is nearest 200k
+      // GIF 不重采样,保持原尺寸;PNG 放得进预算就整张保留;其余落到像素数最接近 20 万的那一档
+      const s = entry.mime === 'image/gif' ? 1 : entry.mime === 'image/png' ? await fitPng(entry) : bestScale(entry.w, entry.h);
+      if (s < 1) quill.formatText(index, 1, 'width', String(stepWidth(entry, s)), 'user');
       index += 1;
       quill.setSelection(index, 0, 'silent');
     } catch (e) {
@@ -487,7 +546,14 @@ function showImgBar(img) {
   clearTimeout(hideBarTimer);
   hoverImg = img;
   const cur = curScale(img);
-  bar.querySelectorAll('[data-s]').forEach((b) => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.s) - cur) < 0.02));
+  // Each step says what it would be written as, since for a PNG that is usually not PNG
+  // 每一档都标出会写成什么格式,因为对 PNG 来说通常不是 PNG
+  const fmt = shrunkFormat(img);
+  bar.querySelectorAll('[data-s]').forEach((b) => {
+    const s = parseFloat(b.dataset.s);
+    b.classList.toggle('on', Math.abs(s - cur) < 0.02);
+    b.title = `${Math.round(s * 100)}%${s < 1 && fmt ? ' \u00b7 ' + fmt : ''}`;
+  });
   const i = img.getBoundingClientRect(), w = wrap.getBoundingClientRect();
   bar.hidden = false;
   // Centre it horizontally against the image and clamp it inside the editor, so narrow images or ones near the edge do not overflow
@@ -496,6 +562,16 @@ function showImgBar(img) {
   const left = i.left - w.left + (i.width - bw) / 2;
   bar.style.left = Math.round(Math.min(Math.max(0, left), Math.max(0, w.width - bw))) + 'px';
   bar.style.top = Math.max(0, Math.round(i.top - w.top + 6)) + 'px';
+}
+
+/** What a shrunk copy of this image is written as / 这张图缩小后会写成的格式 */
+function shrunkFormat(img) {
+  const it = state?.inline.find((x) => x.url === img.getAttribute('src'));
+  const mime = it ? it.mime : '';
+  if (mime === 'image/png') return alphaOf.get(it.upload_id) ? 'PNG' : 'JPG';
+  if (mime === 'image/jpeg' || mime === 'image/jpg') return 'JPG';
+  if (mime === 'image/webp') return 'WebP';
+  return mime ? 'PNG' : '';
 }
 
 /** The current displayed width as a ratio of the original
@@ -792,46 +868,99 @@ function quoteAsText(q) {
 
 const bakeCache = new Map();
 const bakedUploads = new Set(); // 重采样过程中新建的上传,最终只有一份会被发出去
+const renderCache = new Map(); // upload_id@width -> the encoded copy / 编码好的那一份
+const srcBlobs = new Map(); // upload_id -> the file as uploaded, kept while this compose is open / 上传时的那个文件,写这封信期间留着
+const alphaOf = new Map(); // upload_id -> whether the PNG has any transparent pixel / 这张 PNG 有没有透明像素
 
-function encodeAt(bmp, w, type, quality = 0.9) {
-  const h = Math.max(1, Math.round(bmp.height * (w / bmp.width)));
+/** Any pixel not fully opaque / 有没有任何一个不完全不透明的像素 */
+function alphaIn(ctx, w, h) {
+  const d = ctx.getImageData(0, 0, w, h).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] < 255) return true;
+  return false;
+}
+function hasTransparency(bmp) {
   const cv = document.createElement('canvas');
-  cv.width = w;
-  cv.height = h;
-  const ctx = cv.getContext('2d');
-  if (type === 'image/jpeg') {
-    ctx.fillStyle = '#fff'; // JPEG 没有透明通道,不铺白底透明区会变黑
-    ctx.fillRect(0, 0, w, h);
-  }
-  ctx.drawImage(bmp, 0, 0, w, h);
-  return new Promise((r) => cv.toBlob(r, type, quality));
+  cv.width = bmp.width; cv.height = bmp.height;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0);
+  return alphaIn(ctx, cv.width, cv.height);
+}
+
+/** The source of an image: the file still in hand, or fetched back when a draft was reopened
+ *  一张图的源:还在手上的文件,或者重开草稿时从服务端取回的 */
+async function sourceBlob(entry) {
+  return srcBlobs.get(entry.upload_id) || (await fetch(entry.url)).blob();
 }
 
 /**
- * Before sending, genuinely resample the inline images at the chosen step, keeping the format unchanged
- * (png stays png, jpg stays jpg).
- * Choosing 1:1 sends the original with no re-encoding at all; GIFs are always sent as-is, because
- * re-encoding kills the animation.
- * 发送前按选定档位真正重采样内联图,格式保持不变(png 还是 png,jpg 还是 jpg)。
- * 选 1:1 就原样发,不做任何重编码;GIF 一律原样发,重编会把动画拍死。
+ * Encode an image at a width. Nothing is touched unless that is actually narrower than the
+ * source: the original bytes go out as they are, which for a PNG at 100% is the whole point.
+ * A shrunk copy is resampled with the best filter available and written in its own format --
+ * except a PNG without transparency, which becomes JPEG at a quality that keeps text edges: a
+ * shrunk screenshot has no use for lossless and every use for a tenth of the bytes.
+ * 按某个宽度编码一张图。只有确实比源图窄时才动它:原始字节原样发出,对 100% 的 PNG 来说这正是重点。
+ * 缩小的那份用手头最好的滤波重采样,按自己的格式写 —— 没有透明的 PNG 除外,它写成 JPEG,
+ * 质量取在保得住文字边缘的点上:缩过的截图用不着无损,用得着的是省下九成字节。
+ */
+function renderStep(entry, width) {
+  const key = `${entry.upload_id}@${width || 0}`;
+  if (renderCache.has(key)) return renderCache.get(key);
+  const p = (async () => {
+    const blob = await sourceBlob(entry);
+    const asIs = { blob, type: blob.type, resampled: false };
+    if (blob.type === 'image/gif') return asIs;
+    let srcW = entry.w;
+    if (!srcW) {
+      const probe = await createImageBitmap(blob);
+      srcW = probe.width;
+      probe.close?.();
+    }
+    if (!width || width >= srcW) return asIs;
+    const pic = await resampleToWidth(blob, width);
+    const cv = document.createElement('canvas');
+    cv.width = pic.width; cv.height = pic.height;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(pic, 0, 0);
+    pic.close?.();
+    let type = /^image\/(png|jpeg|webp)$/.test(blob.type) ? blob.type : 'image/png';
+    let quality = JPEG_Q;
+    if (blob.type === 'image/png') {
+      // Known since insert; worked out here only for an image that came back from a draft
+      // 插入时就知道了;只有从草稿回来的图才在这里现算
+      if (!alphaOf.has(entry.upload_id)) alphaOf.set(entry.upload_id, alphaIn(ctx, cv.width, cv.height));
+      if (!alphaOf.get(entry.upload_id)) { type = 'image/jpeg'; quality = JPEG_Q_FROM_PNG; }
+    }
+    if (type === 'image/jpeg') {
+      // JPEG has no alpha: paint white behind whatever is there, or the empty parts come out black
+      // JPEG 没有透明通道:在已有内容后面铺白,否则空的地方会变黑
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+    }
+    const out = await new Promise((r) => cv.toBlob(r, type, quality));
+    return out ? { blob: out, type, resampled: true } : asIs;
+  })();
+  renderCache.set(key, p);
+  return p;
+}
+
+/**
+ * Before sending, genuinely produce the inline image at the chosen step and upload that copy.
+ * 1:1 sends the original untouched; GIFs always go as they are, because re-encoding kills the animation.
+ * 发送前按选定档位真正做出内联图并上传那一份。1:1 原样发;GIF 一律原样发,重编会把动画拍死。
  */
 function bakeInlineImage(entry, targetWidth) {
   const key = `${entry.upload_id}@${targetWidth || 0}`;
   if (bakeCache.has(key)) return bakeCache.get(key);
   const p = (async () => {
-    const blob = await (await fetch(entry.url)).blob();
-    if (blob.type === 'image/gif') return { ...entry, bytes: blob.size };
-    const bmp = await createImageBitmap(blob);
-    if (!targetWidth || targetWidth >= bmp.width) return { ...entry, bytes: blob.size }; // 没要求缩小
-    const type = /^image\/(png|jpeg|webp)$/.test(blob.type) ? blob.type : 'image/png';
-    const out = await encodeAt(bmp, targetWidth, type);
-    if (!out) return { ...entry, bytes: blob.size }; // 编码失败才退回原图
-    const ext = type === 'image/png' ? '.png' : type === 'image/webp' ? '.webp' : '.jpg';
+    const r = await renderStep(entry, targetWidth);
+    if (!r.resampled) return { ...entry, bytes: r.blob.size };
+    const ext = r.type === 'image/png' ? '.png' : r.type === 'image/webp' ? '.webp' : '.jpg';
     const fd = new FormData();
-    fd.append('file', new File([out], entry.filename.replace(/\.\w+$/, '') + ext, { type }));
-    const r = await api('POST', '/api/uploads', fd);
-    bakedUploads.add(r.id);
-    return { ...entry, upload_id: r.id, bytes: out.size };
+    fd.append('file', new File([r.blob], entry.filename.replace(/\.\w+$/, '') + ext, { type: r.type }));
+    const up = await api('POST', '/api/uploads', fd);
+    bakedUploads.add(up.id);
+    return { ...entry, upload_id: up.id, bytes: r.blob.size };
   })().catch(() => entry);
   bakeCache.set(key, p);
   return p;
@@ -855,8 +984,9 @@ const recalcSize = debounce(async () => {
   const html = deltaToEmailHtml(delta, (src, attr) => {
     const it = state.inline.find((x) => x.url === src);
     if (it) {
-      if (!used.some((u) => u.entry === it)) used.push({ entry: it, width: parseInt(attr?.width, 10) || 0 });
-      return 'cid:' + it.cid;
+      const width = parseInt(attr?.width, 10) || 0;
+      if (!used.some((u) => u.entry === it)) used.push({ entry: it, width });
+      return { src: 'cid:' + it.cid, width: displayWidth(it, width) };
     }
     return /^https?:/i.test(src) ? src : null;
   });
@@ -895,8 +1025,9 @@ async function buildBody() {
   const html = deltaToEmailHtml(delta, (src, attr) => {
     const it = state.inline.find((x) => x.url === src);
     if (it) {
-      if (!used.has(it.cid)) used.set(it.cid, { entry: it, width: parseInt(attr?.width, 10) || 0 });
-      return 'cid:' + it.cid;
+      const width = parseInt(attr?.width, 10) || 0;
+      if (!used.has(it.cid)) used.set(it.cid, { entry: it, width });
+      return { src: 'cid:' + it.cid, width: displayWidth(it, width) };
     }
     return /^https?:/i.test(src) ? src : null; // 外链图保留,其余(data:/内部链接)丢弃
   });
