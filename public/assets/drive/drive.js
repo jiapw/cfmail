@@ -2402,6 +2402,13 @@ async function shareDialog(nodes) {
       </div>
     </div>
 
+    <div class="drv-share-line" id="f-gate" hidden>
+      <div class="f">
+        <wa-checkbox id="sh-gate" size="small" ${store.me?.send_enabled ? '' : 'disabled'}>${esc(t('drv_share_email_gate'))}</wa-checkbox>
+        <div class="drv-dim" style="font-size:12px;margin-top:4px">${esc(t(store.me?.send_enabled ? 'drv_share_email_gate_hint' : 'drv_share_email_gate_nosend'))}</div>
+      </div>
+    </div>
+
     <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
 
   // Public links are read-only, full stop: nobody is authenticated on the other end, so there
@@ -2424,6 +2431,7 @@ async function shareDialog(nodes) {
     // 否则会把剩下的控件在用户指针底下重新排一遍。
     qs('#f-dom', d).style.visibility = pub ? 'hidden' : '';
     qs('#sh-hint', d).textContent = t(pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
+    qs('#f-gate', d).hidden = !pub;
   };
   segBind(d, 'sh-aud', sync);
   segBind(d, 'sh-role');
@@ -2441,6 +2449,7 @@ async function shareDialog(nodes) {
       role: audience === 'public' ? 'viewer' : segGet(d, 'sh-role'),
       domain_id: audience === 'internal' ? (qs('#sh-dom', d).value || null) : null,
       expires_days: parseInt(qs('#sh-exp', d).value, 10) || 0,
+      email_gate: audience === 'public' && qs('#sh-gate', d)?.checked ? 1 : 0,
       // Carry the look along with the link. The palette is a company setting the public page can
       // look up for itself, but light/dark is this user's own choice and exists nowhere the
       // recipient can reach -- without recording it, a link made at night opens blindingly light.
@@ -2516,6 +2525,7 @@ function renderLinksView(main, shares) {
         <div class="hd">
           <span class="badge ${s.audience}">${esc(who)}</span>
           <span class="badge role">${esc(t(s.role === 'editor' ? 'drv_role_editor' : 'drv_role_viewer'))}</span>
+          ${s.email_gate ? `<span class="badge gate">${esc(t('drv_share_gate_badge'))}</span>` : ''}
           <span class="st">${esc(stateLbl)}</span>
           <span class="st">${esc(t('drv_share_created', fmtDate(s.created_at)))}${
             (s.members || []).length ? ' · ' + esc(t('drv_share_n_members', String(s.members.length))) : ''}</span>

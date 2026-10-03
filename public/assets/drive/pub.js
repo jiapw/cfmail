@@ -18,6 +18,7 @@
 // 品牌组合、这条分享的条款,以及一个没有选择、没有菜单、无处可写的列表。
 
 import { t, tErr, setLang, dictReady } from '../i18n.js';
+import { mountTurnstile } from '../turnstile.js';
 import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon, toast, loadCss } from '../ui.js';
 import { store, navigate, setTitle, pathTitle } from '../app.js';
 import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './fsrc.js';
@@ -26,6 +27,144 @@ import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './f
  *  样式表就位后兑现;第一次绘制之前先等它(见 ui.js 的 loadCss)。 */
 function ensureCss() {
   return loadCss('/assets/drive/drive.css?v=' + encodeURIComponent(store.brand?.version || ''));
+}
+
+// ---------- The email door ----------
+// ---------- 邮箱验证这道门 ----------
+//
+// What the browser keeps is a proof the server signed: this address, until this date. It lives in
+// localStorage, where it survives the tab, and is mirrored into a cookie scoped to /api/pub so
+// that everything the browser fetches by itself -- pictures, films, downloads, the archive
+// worker -- carries it without any URL having to know. Nothing in it can be altered without the
+// signature failing, which is the whole of why it can be trusted from storage a visitor controls.
+//
+// 浏览器保管的是服务端签过名的一份凭证:这个地址,到这个日期为止。它放在 localStorage 里,
+// 关掉标签页也还在;并镜像进一个只限 /api/pub 路径的 cookie,于是浏览器自己去取的一切 ——
+// 图片、影片、下载、压缩包 worker —— 都自动带着它,不需要任何 URL 知道这回事。
+// 它里面没有一个字节能被改动而不让签名失效,而这正是"存在访客自己控制的地方也能信"的全部理由。
+const PROOF_KEY = 'cf_share_proof';
+const PROOF_COOKIE = 'cfsp';
+
+function storedProof() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PROOF_KEY) || 'null');
+    if (p && typeof p.proof === 'string' && p.exp > Date.now()) return p;
+  } catch { /* storage that cannot be read holds no proof */ }
+  return null;
+}
+
+function installProof(p) {
+  const secs = Math.max(60, Math.floor((p.exp - Date.now()) / 1000));
+  document.cookie = `${PROOF_COOKIE}=${encodeURIComponent(p.proof)}; Path=/api/pub; Max-Age=${secs}; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+}
+
+function keepProof(p) {
+  try { localStorage.setItem(PROOF_KEY, JSON.stringify(p)); } catch { /* then it lasts the session */ }
+  installProof(p);
+}
+
+function forgetProof() {
+  try { localStorage.removeItem(PROOF_KEY); } catch { /* nothing to forget */ }
+  document.cookie = `${PROOF_COOKIE}=; Path=/api/pub; Max-Age=0; SameSite=Lax`;
+}
+
+const post = async (path, body) => {
+  const r = await fetch(path, {
+    method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'e_generic');
+  return j;
+};
+
+/** The door itself: an address, a code, and then the page again.
+ *  那道门本身:一个地址、一个验证码,然后再回到这一页。 */
+async function renderGate(app, token, head, rest) {
+  // A proof we held that the server did not accept has run out; drop it rather than offer it
+  // again on every page.
+  // 手里那份服务端不认的凭证已经到期;丢掉,别再每一页都掏出来一次。
+  const had = storedProof();
+  if (had) forgetProof();
+  setTitle(t('pub_gate_title'));
+  app.innerHTML = frame(head, `
+    <div class="pub-gate">
+      <div class="pub-gate-ic">${icon('mail', 40)}</div>
+      <h3>${esc(t('pub_gate_title'))}</h3>
+      <p class="drv-dim">${esc(t('pub_gate_desc'))}</p>
+      <div class="pub-gate-form" id="pg-one">
+        <input type="email" id="pg-email" autocomplete="email" placeholder="${esc(t('pub_gate_email_ph'))}" value="${esc(had?.email || '')}">
+        <div id="pg-ts"></div>
+        <wa-button id="pg-send" variant="brand">${esc(t('pub_gate_send'))}</wa-button>
+      </div>
+      <div class="pub-gate-form" id="pg-two" hidden>
+        <p class="drv-dim" id="pg-sent"></p>
+        <input id="pg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="${esc(t('pub_gate_code_ph'))}">
+        <wa-button id="pg-verify" variant="brand">${esc(t('pub_gate_verify'))}</wa-button>
+        <div class="pub-gate-links"><a href="#" id="pg-again">${esc(t('pub_gate_resend'))}</a> · <a href="#" id="pg-back">${esc(t('pub_gate_change'))}</a></div>
+      </div>
+      <p class="pub-gate-err" id="pg-err"></p>
+    </div>`);
+  const say = (msg) => { qs('#pg-err').textContent = msg || ''; };
+  let cap = null;
+  if (head.turnstile) {
+    const dark = document.documentElement.classList.contains('wa-dark');
+    cap = await mountTurnstile(qs('#pg-ts'), head.turnstile, { theme: dark ? 'dark' : 'light', lang: head.lang || '' }).catch(() => null);
+  }
+  const base = `/api/pub/${encodeURIComponent(token)}/email`;
+  let email = '';
+  const step = (two) => { qs('#pg-one').hidden = two; qs('#pg-two').hidden = !two; };
+  const send = async () => {
+    say('');
+    const value = qs('#pg-email').value.trim();
+    if (!value) return;
+    const body = { email: value };
+    if (head.turnstile) {
+      const tk = cap ? cap.token() : '';
+      if (!tk) return say(t('captcha_wait'));
+      body.turnstile_token = tk;
+    }
+    const btn = qs('#pg-send');
+    btn.loading = true;
+    try {
+      const j = await post(`${base}/send`, body);
+      email = j.email;
+      qs('#pg-sent').textContent = t('pub_gate_sent', email);
+      step(true);
+      const code = qs('#pg-code');
+      code.value = j.dev_code || '';
+      code.focus();
+    } catch (e) {
+      say(tErr(e.message));
+      cap?.reset();
+    } finally {
+      btn.loading = false;
+    }
+  };
+  const verify = async () => {
+    say('');
+    const code = qs('#pg-code').value.trim();
+    if (!/^\d{6}$/.test(code)) return say(tErr('e_code_wrong'));
+    const btn = qs('#pg-verify');
+    btn.loading = true;
+    try {
+      const j = await post(`${base}/verify`, { email, code });
+      keepProof({ proof: j.proof, email: j.email, exp: j.expires_at });
+      headCache.delete(token);
+      return renderPubShare(token, rest);
+    } catch (e) {
+      say(tErr(e.message));
+    } finally {
+      btn.loading = false;
+    }
+  };
+  qs('#pg-send').addEventListener('click', send);
+  qs('#pg-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  qs('#pg-verify').addEventListener('click', verify);
+  qs('#pg-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') verify(); });
+  // A fresh code wants a fresh Turnstile token: the last one was spent on the last send.
+  // 再要一个验证码就得再过一次 Turnstile:上一个 token 已经花在上一次发送上了。
+  qs('#pg-again').addEventListener('click', (e) => { e.preventDefault(); cap?.reset(); step(false); });
+  qs('#pg-back').addEventListener('click', (e) => { e.preventDefault(); step(false); qs('#pg-email').focus(); });
 }
 
 const api = async (path) => {
@@ -119,6 +258,7 @@ function frame(head, inner) {
     // sends an empty string otherwise, so there is nothing here to leak by accident.
     // 只有管理员开启披露时才有值;由服务端决定,否则回空串,此处不会有可意外泄露的东西。
     head.owner_email ? t('drv_share_by', head.owner_email) : '',
+    head.viewer_email ? t('pub_gate_as', head.viewer_email) : '',
   ].filter(Boolean);
   // Keeping the share is about the whole link, not about whichever folder is on screen, so it
   // belongs beside the brand at the top of the page rather than inside the listing's own bar.
@@ -272,6 +412,10 @@ function errorPage(app, head, e) {
 export async function renderPubShare(token, rest) {
   await ensureCss();
   usePubSource(token);
+  // Whatever proof this browser holds goes on the cookie before the first request is made.
+  // 这个浏览器手里有什么凭证,在发出第一个请求之前就先放到 cookie 上。
+  const held = storedProof();
+  if (held) installProof(held);
   const app = qs('#app');
   const segs = rest || [];
   if (segs[0] === 'arc' && segs[1]) return renderPubArc(token, segs[1], segs.slice(2).join('/'));
@@ -287,6 +431,10 @@ export async function renderPubShare(token, rest) {
   let data;
   try {
     head = await shareHead(token);
+    if (head.gated) {
+      await applyShareLook(head);
+      return renderGate(app, token, head, segs);
+    }
     // The watching view is its own page and does not want a listing behind it, so the share is
     // read first and the listing only if we are staying here.
     // 观看视图是它自己的一页,不需要背后垫着一份列表,
@@ -305,6 +453,14 @@ export async function renderPubShare(token, rest) {
     }
     data = await api(`/api/pub/${encodeURIComponent(token)}/list${parent ? '?parent=' + encodeURIComponent(parent) : ''}`);
   } catch (e) {
+    // The door was put on while this page was open: back to the landing, which now shows it.
+    // 这页开着的时候门被装上了:回到落地页,它现在会把门显示出来。
+    // The proof is not dropped here: the door drops it, and keeps the address to offer back.
+    // 凭证不在这里丢:由那道门来丢,并把地址留着再递给人。
+    if (e && e.message === 'e_share_email_required') {
+      headCache.delete(token);
+      return renderPubShare(token, rest);
+    }
     return errorPage(app, head, e);
   }
   await applyShareLook(head);

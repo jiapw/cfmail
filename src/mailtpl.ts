@@ -90,6 +90,53 @@ const R: Record<string, ResetTpl> = {
   },
 };
 
+// The code for somebody at the door of a shared link. Not the registration wording: that one
+// tells the reader they are creating an account, and this reader is not.
+// 发给站在分享链接门口的人的验证码。不用注册的那套措辞:那套告诉读者"你正在创建账号",而这位读者不是。
+const G: Record<string, Tpl> = {
+  'zh-CN': {
+    subject: '打开分享链接的验证码',
+    body: (c, b, m) => `有人通过 ${b} 分享了文件给你。打开这条分享链接之前,需要先验证这个邮箱。\n\n验证码:${c}\n\n${m} 分钟内有效。如果你没有打开过这样的链接,请忽略本邮件。`,
+  },
+  'zh-TW': {
+    subject: '開啟分享連結的驗證碼',
+    body: (c, b, m) => `有人透過 ${b} 分享了檔案給你。開啟這條分享連結之前,需要先驗證這個信箱。\n\n驗證碼:${c}\n\n${m} 分鐘內有效。如果你沒有開啟過這樣的連結,請忽略本郵件。`,
+  },
+  en: {
+    subject: 'Your code to open a shared link',
+    body: (c, b, m) => `Someone shared files with you through ${b}. To open the link, this address needs to be verified first.\n\nVerification code: ${c}\n\nIt expires in ${m} minutes. If you did not open such a link, please ignore this email.`,
+  },
+  ja: {
+    subject: '共有リンクを開くための確認コード',
+    body: (c, b, m) => `${b} を通じてファイルが共有されました。リンクを開くには、このメールアドレスの認証が必要です。\n\n確認コード: ${c}\n\n${m} 分間有効です。心当たりがない場合はこのメールを無視してください。`,
+  },
+  ko: {
+    subject: '공유 링크 열기 인증 코드',
+    body: (c, b, m) => `누군가 ${b}을(를) 통해 파일을 공유했습니다. 링크를 열려면 먼저 이 이메일 주소를 인증해야 합니다.\n\n인증 코드: ${c}\n\n${m}분간 유효합니다. 이런 링크를 연 적이 없다면 이 메일을 무시하세요.`,
+  },
+  de: {
+    subject: 'Dein Code zum Öffnen eines geteilten Links',
+    body: (c, b, m) => `Jemand hat über ${b} Dateien mit dir geteilt. Um den Link zu öffnen, muss diese Adresse zuerst bestätigt werden.\n\nBestätigungscode: ${c}\n\nGültig für ${m} Minuten. Falls du keinen solchen Link geöffnet hast, ignoriere diese E-Mail.`,
+  },
+  fr: {
+    subject: 'Votre code pour ouvrir un lien partagé',
+    body: (c, b, m) => `Quelqu’un a partagé des fichiers avec vous via ${b}. Pour ouvrir le lien, cette adresse doit d’abord être vérifiée.\n\nCode de vérification : ${c}\n\nValable ${m} minutes. Si vous n’avez pas ouvert un tel lien, ignorez cet e-mail.`,
+  },
+  es: {
+    subject: 'Tu código para abrir un enlace compartido',
+    body: (c, b, m) => `Alguien compartió archivos contigo a través de ${b}. Para abrir el enlace, primero hay que verificar esta dirección.\n\nCódigo de verificación: ${c}\n\nCaduca en ${m} minutos. Si no abriste un enlace así, ignora este correo.`,
+  },
+  ru: {
+    subject: 'Код для открытия ссылки',
+    body: (c, b, m) => `Кто-то поделился с вами файлами через ${b}. Чтобы открыть ссылку, нужно сначала подтвердить этот адрес.\n\nКод подтверждения: ${c}\n\nДействует ${m} минут. Если вы не открывали такую ссылку, проигнорируйте письмо.`,
+  },
+};
+
+export function shareCodeMail(lang: string, code: string, brand: string, mins: number) {
+  const tpl = G[lang] || G.en;
+  return { subject: tpl.subject, text: tpl.body(code, brand, mins) };
+}
+
 export function resetMail(lang: string, url: string, brand: string, mins: number) {
   const tpl = R[lang] || R.en;
   return { subject: tpl.subject, text: tpl.body(url, brand, mins) };

@@ -1796,3 +1796,26 @@ body.fv-fs .drv-canvaspage {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 body.fv-fs .drv-canvaspage canvas { max-width: 100vw; max-height: 92vh; width: auto; height: auto; }
+
+/* ---------- The email door on a public link ----------
+   One column, centred, the width of a form somebody fills in once. The error line keeps its
+   height so the form does not jump when a message appears under it.
+   ---------- 公开链接门口的邮箱验证 ----------
+   一列、居中、一个人只填一次的那种表单的宽度。错误那一行始终占着高度,于是消息出现时表单不会跳。 */
+.pub-gate { max-width: 400px; margin: 28px auto 20px; text-align: center; }
+.pub-gate-ic { color: var(--text-3); margin-bottom: 6px; }
+.pub-gate h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.pub-gate > p { margin: 0; font-size: 13.5px; line-height: 1.5; }
+.pub-gate-form { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; text-align: left; }
+.pub-gate-form > p { margin: 0; font-size: 13px; }
+.pub-gate input {
+  font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text); outline: none;
+}
+.pub-gate input:focus { border-color: var(--primary); }
+.pub-gate #pg-code { letter-spacing: .25em; font-variant-numeric: tabular-nums; }
+.pub-gate-links { font-size: 12.5px; color: var(--text-2); text-align: center; }
+.pub-gate-links a { color: var(--link); text-decoration: none; }
+.pub-gate-err { color: #e5484d; font-size: 12.5px; min-height: 18px; margin: 10px 0 0; }
+.drv-link-card .badge.gate { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+

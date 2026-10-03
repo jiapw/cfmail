@@ -50,7 +50,11 @@ import type { Env, User } from './types';
 import { HttpError } from './errors';
 import { requireAuth } from './auth';
 import { audit } from './audit';
-import { now, randomToken, uid } from './util';
+import { domainFromHost, now, randomToken, sha256Hex, uid } from './util';
+import { getCookie } from 'hono/cookie';
+import { sendSystemMail } from './send';
+import { turnstileEnabled, verifyTurnstile } from './turnstile';
+import { shareCodeMail } from './mailtpl';
 import { adminScope, checkDomainScope } from './admin';
 import { mdImage } from './mdimg';
 
@@ -1670,6 +1674,149 @@ const SHARE_ROLES = ['viewer', 'editor'];
 // 它永不过期,因为没有人守在旁边给它续期。
 const SHARE_AUDIENCES = ['internal', 'public', 'agent'];
 const SHARE_MAX_ITEMS = 100;
+
+// ---------- The email door on a public link ----------
+// ---------- 公开链接门口的邮箱验证 ----------
+//
+// A public link lets in whoever holds it. With the door on, it lets in whoever holds it AND has
+// proved an email address: a code goes to the address, the visitor types it back, and what they
+// get is a proof -- the address and an expiry, signed under a key only this server has. The
+// browser keeps the proof and shows it on every request; the server keeps nothing about the
+// visitor at all. There is no session to look up and nothing to forge, because a proof that was
+// not signed here does not verify here.
+//
+// The key signs nothing else and is minted by this file on first use, into the meta table, so
+// that an instance needs no new secret configured to turn the door on.
+//
+// 公开链接谁拿着谁就能进。开了这道门之后,拿着链接**并且**证明过一个邮箱地址的人才能进:
+// 验证码发到那个地址,访客敲回来,换到的是一份凭证 —— 地址与过期时间,用只有这台服务器
+// 才有的密钥签下。浏览器保管凭证,每次请求都出示;服务端关于访客什么都不存。
+// 没有会话可查,也没有什么可伪造,因为不是在这里签的凭证,在这里就验不过。
+//
+// 这把密钥别的什么都不签,由本文件在第一次用到时铸进 meta 表,
+// 于是一套实例要开这道门,不需要再配置任何新的密钥。
+
+const GATE_CODE_TTL_MIN = 15;
+const GATE_CODE_MAX_ATTEMPTS = 5;
+const GATE_PROOF_DAYS = 30;
+const GATE_SENDS_PER_EMAIL = 5;     // codes to one address in an hour / 一小时内发往同一地址的验证码数
+const GATE_SENDS_PER_IP = 20;       // codes from one source in an hour, any address / 一小时内同一来源发出的,不论地址
+const GATE_PROOF_COOKIE = 'cfsp';
+const PROOF_KEY_META = 'share_proof_key';
+const PROOF_KIND = 'share-email';
+
+const gateEnc = new TextEncoder();
+const gateB64u = (u8: Uint8Array) =>
+  btoa(String.fromCharCode(...u8)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function gateB64uDecode(s: string): Uint8Array {
+  const std = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(std + '='.repeat((4 - (std.length % 4)) % 4));
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+let proofKeyCache: string | null = null;
+
+/** The signing key, made once and kept in the meta table. Two isolates may both find it missing
+ *  and both mint one; the first insert wins and both read that one back, so every proof ever
+ *  issued verifies against the same key.
+ *  签名密钥,造一次、存进 meta 表。两个隔离区可能同时发现它不存在、同时各铸一把;
+ *  先插入的那把算数,两边都把它读回来,于是签出去的每一份凭证验的都是同一把钥匙。 */
+async function proofKey(env: Env): Promise<string> {
+  if (proofKeyCache) return proofKeyCache;
+  const have = await env.DB.prepare('SELECT value FROM meta WHERE key=?1').bind(PROOF_KEY_META).first<any>();
+  if (have?.value) return (proofKeyCache = have.value);
+  await env.DB.prepare('INSERT INTO meta (key, value) VALUES (?1,?2) ON CONFLICT(key) DO NOTHING')
+    .bind(PROOF_KEY_META, randomToken(32)).run();
+  const got = await env.DB.prepare('SELECT value FROM meta WHERE key=?1').bind(PROOF_KEY_META).first<any>();
+  if (!got?.value) throw new HttpError(500, 'e_generic');
+  return (proofKeyCache = got.value);
+}
+
+async function proofMac(env: Env, msg: string): Promise<string> {
+  const k = await crypto.subtle.importKey('raw', gateEnc.encode(await proofKey(env)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return gateB64u(new Uint8Array(await crypto.subtle.sign('HMAC', k, gateEnc.encode(msg))));
+}
+
+/** A proof that this address was verified: payload and signature, the way the meeting papers
+ *  are made, with a kind prefix so no other signed thing can stand in for it.
+ *  "这个地址验证过了"的凭证:载荷加签名,与会议凭证同一个做法,带种类前缀,
+ *  于是别的任何签名物都顶替不了它。 */
+async function signProof(env: Env, email: string): Promise<{ proof: string; exp: number }> {
+  const exp = now() + GATE_PROOF_DAYS * 24 * 3600 * 1000;
+  const payload = gateB64u(gateEnc.encode(JSON.stringify({ m: email, e: exp })));
+  return { proof: `${payload}.${await proofMac(env, `${PROOF_KIND}.${payload}`)}`, exp };
+}
+
+/** The address inside a proof, or null for anything forged, malformed or out of date.
+ *  凭证里的地址;伪造的、畸形的、过期的一律为 null。 */
+async function readProof(env: Env, paper: unknown): Promise<{ m: string; e: number } | null> {
+  const s = String(paper || '');
+  if (!s || s.length > 1024) return null;
+  const dot = s.lastIndexOf('.');
+  if (dot < 1) return null;
+  const payload = s.slice(0, dot);
+  const want = await proofMac(env, `${PROOF_KIND}.${payload}`);
+  const got = s.slice(dot + 1);
+  // Equal lengths, compared to the end whatever they hold. / 等长,不论内容都比到最后一位。
+  if (want.length !== got.length) return null;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  if (diff) return null;
+  try {
+    const body = JSON.parse(new TextDecoder().decode(gateB64uDecode(payload)));
+    return body && typeof body.m === 'string' && body.m && Number(body.e) > now() ? { m: body.m, e: Number(body.e) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where a request carries its proof: a header for scripts, the cookie for everything a browser
+ *  fetches on its own -- pictures, films, downloads, the archive worker -- and a query string as
+ *  the last resort for a URL handed somewhere a cookie does not travel.
+ *  请求把凭证带在哪里:脚本用头部;浏览器自己去取的一切 —— 图片、影片、下载、压缩包 worker ——
+ *  用 cookie;查询串是最后的退路,给那种 cookie 到不了的地方用。 */
+function gateProofFrom(c: any): string {
+  return String(c.req.header('X-Share-Proof') || getCookie(c, GATE_PROOF_COOKIE) || c.req.query('p') || '');
+}
+
+/** A rolling window per key; the key is a hash and the address behind it is never written.
+ *  按键滚动的窗口;键是哈希,它背后的地址从不落库。 */
+async function gateThrottle(env: Env, key: string, max: number, windowMs: number): Promise<boolean> {
+  const t = now();
+  const row = (await env.DB.prepare('SELECT window_at, n FROM drive_throttle WHERE key=?1').bind(key).first()) as any;
+  if (row && row.window_at > t - windowMs) {
+    if (row.n >= max) return false;
+    await env.DB.prepare('UPDATE drive_throttle SET n=n+1 WHERE key=?1').bind(key).run();
+    return true;
+  }
+  await env.DB.prepare(
+    'INSERT INTO drive_throttle (key, window_at, n) VALUES (?1,?2,1) ON CONFLICT(key) DO UPDATE SET window_at=?2, n=1'
+  ).bind(key, t).run();
+  if (Math.random() < 0.05) {
+    await env.DB.prepare('DELETE FROM drive_throttle WHERE window_at < ?1').bind(t - 2 * 3600 * 1000).run().catch(() => {});
+  }
+  return true;
+}
+
+const cleanEmail = (v: unknown): string => {
+  const s = String(v ?? '').trim().toLowerCase();
+  return s.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s : '';
+};
+
+const gateClientIp = (c: any): string =>
+  String(c.req.header('CF-Connecting-IP') || (c.req.header('X-Forwarded-For') || '').split(',')[0] || '').trim();
+
+/** The domain a code is sent from and the name it is sent under: the one the visitor is looking
+ *  at, or the oldest if the host names none.
+ *  验证码从哪个域名发出、以什么名义发:访客正在看的那个;主机名对不上任何域名时取最老的那个。 */
+async function mailHome(env: Env, host: string): Promise<{ domain: string; brand: string }> {
+  const bare = domainFromHost(env, host);
+  let d: any = await env.DB.prepare('SELECT name, brand_name FROM domains WHERE name=?1').bind(bare).first();
+  if (!d) d = await env.DB.prepare('SELECT name, brand_name FROM domains ORDER BY created_at LIMIT 1').first();
+  return { domain: d?.name || '', brand: d?.brand_name || d?.name || 'CFMail' };
+}
 /** The nine the interface actually ships. An allowlist rather than a length cap: this value is
  *  handed straight back to every visitor, and only a code we have a dictionary for is useful.
  *  界面实际提供的九种。用白名单而非长度截断:这个值会原样发给每一位访问者,
@@ -1759,6 +1906,9 @@ driveApp.post('/shares', async (c) => {
   // 而不是在所有者的链接列表里越积越多。它不授予任何东西:
   // 谁能画,是演示者在房间里当场做的决定。
   const meet = body.meet ? 1 : 0;
+  // The door makes sense only on a link that has no account behind it.
+  // 这道门只对背后没有账号的链接才有意义。
+  const emailGate = audience === 'public' && body.email_gate ? 1 : 0;
   let domainId: string | null = null;
   if (audience === 'internal' && body.domain_id) {
     const mine = await myDomains(c.env, user.id);
@@ -1826,10 +1976,10 @@ driveApp.post('/shares', async (c) => {
       WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
   ).bind(user.id).first();
   const stmts = [c.env.DB.prepare(
-    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, meet, created_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`
+    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, meet, email_gate, created_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`
   ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, showOwner ? 1 : 0,
-    audience === 'agent' ? agentMode : null, meet, t)];
+    audience === 'agent' ? agentMode : null, meet, emailGate, t)];
   for (const n of nodes) {
     stmts.push(c.env.DB.prepare('INSERT INTO drive_share_items (share_id, node_id) VALUES (?1,?2)')
       .bind(shareId, n.id));
@@ -1837,7 +1987,7 @@ driveApp.post('/shares', async (c) => {
   await c.env.DB.batch(stmts);
   return c.json({
     id: shareId, token, role, audience, agent_mode: audience === 'agent' ? agentMode : null,
-    domain_id: domainId, expires_at: expires, meet, created_at: t,
+    domain_id: domainId, expires_at: expires, meet, email_gate: emailGate, created_at: t,
   });
 });
 
@@ -1884,6 +2034,7 @@ driveApp.get('/shares', async (c) => {
     out.push({
       id: s.id, token: s.token, role: s.role, audience: s.audience, meet: s.meet ? 1 : 0,
       agent_mode: s.agent_mode || 'http',
+      email_gate: s.email_gate ? 1 : 0,
       domain_id: s.domain_id, domain_name: s.domain_name || null,
       expires_at: s.expires_at, revoked_at: s.revoked_at, note: s.note, created_at: s.created_at,
       state: shareLiveness(s) || 'ok',
@@ -1915,6 +2066,11 @@ driveApp.put('/shares/:id', async (c) => {
   if (body.note !== undefined) {
     sets.push(`note=?${sets.length + 1}`);
     args.push(cleanNote(body.note));
+  }
+  if (body.email_gate !== undefined) {
+    if (s.audience !== 'public') throw new HttpError(400, 'e_bad_request');
+    sets.push(`email_gate=?${sets.length + 1}`);
+    args.push(body.email_gate ? 1 : 0);
   }
   if (!sets.length) throw new HttpError(400, 'e_bad_request');
   await c.env.DB.prepare(`UPDATE drive_shares SET ${sets.join(',')} WHERE id=?${sets.length + 1}`)
@@ -2053,13 +2209,23 @@ drivePubApp.use('*', async (c, next) => {
   c.header('Cache-Control', 'no-store');
 });
 
-async function pubShare(c: any): Promise<any> {
+async function pubShare(c: any, opts: { gatedOk?: boolean } = {}): Promise<any> {
   const token = String(c.req.param('token') || '');
   if (!token) throw new HttpError(404, 'e_drive_share_not_found');
   const s = await c.env.DB.prepare("SELECT * FROM drive_shares WHERE token=?1 AND audience='public'")
     .bind(token).first();
   const bad = shareLiveness(s);
   if (bad) throw new HttpError(bad === 'e_drive_share_not_found' ? 404 : 403, bad);
+  // The door. A share that asks for an address is answered only to a request carrying a proof
+  // of one; the landing alone may answer without, and says only that the door is there.
+  // 那道门。要地址的分享,只回答带着地址凭证的请求;唯有落地页可以在没有凭证时应答,
+  // 而且只说"这里有一道门"。
+  if (s.email_gate) {
+    const who = await readProof(c.env, gateProofFrom(c));
+    if (who) s.viewer_email = who.m;
+    else if (opts.gatedOk) s.gated_out = true;
+    else throw new HttpError(401, 'e_share_email_required');
+  }
   return s;
 }
 
@@ -2080,9 +2246,22 @@ async function pubNode(c: any, share: any, nodeId: string): Promise<{ node: Node
 /** Landing payload: what this link contains, and whether it is still alive.
  *  落地数据:这条链接包含什么,以及它是否仍然有效。 */
 drivePubApp.get('/:token', async (c) => {
-  const s = await pubShare(c);
-  const items = await shareItems(c.env, s.id);
+  const s = await pubShare(c, { gatedOk: true });
   const owner: any = await c.env.DB.prepare('SELECT name, email FROM users WHERE id=?1').bind(s.owner_id).first();
+  // Outside the door the link says only enough to ask: whose it is, how it looks, and that an
+  // address is wanted. The items, the note and the owner's address wait on the other side.
+  // 门外,链接只说够提问的那么多:是谁的、长什么样、要一个地址。
+  // 条目、留言和所有者的地址都在门的另一边等着。
+  if (s.gated_out) {
+    return c.json({
+      role: 'viewer', gated: 1, meet: s.meet ? 1 : 0,
+      owner_name: owner?.name || '',
+      theme: s.theme || null, mode: s.mode || null, lang: s.lang || null,
+      turnstile: turnstileEnabled(c.env) ? c.env.TURNSTILE_SITEKEY : null,
+      items: [],
+    });
+  }
+  const items = await shareItems(c.env, s.id);
   // The answer was settled when the link was created and is read back from the link itself.
   // Nothing an administrator or the sharer changes afterwards moves it -- to stop a link that
   // is already out there from showing the address, revoke the link.
@@ -2090,6 +2269,12 @@ drivePubApp.get('/:token', async (c) => {
   // 管理员或分享者事后改什么都不会动它 —— 想让一条已经发出去的链接不再显示地址,请撤销它。
   return c.json({
     role: 'viewer',
+    // Inside now, whatever the door: the page reads this to decide whether to show the door,
+    // and a visitor who has just come through must not be shown it again.
+    // 既然已经在门里,门就不再是这一页要显示的东西:页面靠这个字段决定要不要画门,
+    // 而一个刚刚进来的访客不该再看见它一次。
+    gated: 0,
+    viewer_email: s.viewer_email || '',
     // Whether this link was minted for a presentation. Purely descriptive: capabilities are
     // decided in the room, not read off the link.
     // 这条链接是否为一场演示而铸。纯描述:能做什么在房间里定,不从链接上读。
@@ -2107,6 +2292,69 @@ drivePubApp.get('/:token', async (c) => {
 
 /** List inside the share. `parent` empty means the virtual root -- the selected items. */
 /** 在共享内部列目录。parent 为空表示虚拟根 —— 即被选中的那些条目。 */
+/** Step one at the door: an address, and a code sent to it. Nothing is granted here.
+ *  门口的第一步:一个地址,和发往它的一个验证码。这里不授予任何东西。 */
+drivePubApp.post('/:token/email/send', async (c) => {
+  const s = await pubShare(c, { gatedOk: true });
+  if (!s.email_gate) throw new HttpError(400, 'e_bad_request');
+  const body = await c.req.json<any>().catch(() => ({}));
+  const email = cleanEmail(body.email);
+  if (!email) throw new HttpError(400, 'e_share_email_bad');
+  const ip = gateClientIp(c);
+  if (!(await verifyTurnstile(c.env, body.turnstile_token, ip))) throw new HttpError(403, 'e_captcha');
+  // Two windows: one address cannot be flooded with codes, and one source cannot flood many.
+  // 两个窗口:一个地址不能被验证码淹没,一个来源也不能去淹没很多个地址。
+  if (!(await gateThrottle(c.env, await sha256Hex(`gate-e:${s.id}:${email}`), GATE_SENDS_PER_EMAIL, 3600 * 1000))
+    || !(await gateThrottle(c.env, await sha256Hex(`gate-ip:${s.id}:${ip}`), GATE_SENDS_PER_IP, 3600 * 1000))) {
+    throw new HttpError(429, 'e_share_email_rate');
+  }
+  const home = await mailHome(c.env, c.req.header('host') || '');
+  if (!home.domain) throw new HttpError(500, 'e_no_send_domain');
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const t = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM drive_share_codes WHERE share_id=?1 AND email=?2').bind(s.id, email),
+    c.env.DB.prepare(
+      'INSERT INTO drive_share_codes (id, share_id, email, code_hash, attempts, created_at, expires_at) VALUES (?1,?2,?3,?4,0,?5,?6)'
+    ).bind(uid(), s.id, email, await sha256Hex(code), t, t + GATE_CODE_TTL_MIN * 60 * 1000),
+  ]);
+  if (Math.random() < 0.05) {
+    await c.env.DB.prepare('DELETE FROM drive_share_codes WHERE expires_at < ?1').bind(t - 24 * 3600 * 1000).run().catch(() => {});
+  }
+  const mail = shareCodeMail(s.lang || 'en', code, home.brand, GATE_CODE_TTL_MIN);
+  const sent = await sendSystemMail(c.env, home.domain, email, mail.subject, mail.text)
+    .catch((e: any) => ({ ok: false, error: String(e?.message || e) }));
+  if (!sent.ok) throw new HttpError(502, 'e_code_send_failed');
+  // In development nothing is delivered, so the code comes back in the answer -- the same
+  // courtesy registration extends, and only where DEV_MODE says so.
+  // 开发环境里什么都不会真的送达,所以验证码随答复返回 —— 与注册流程同样的照顾,
+  // 而且只在 DEV_MODE 说可以的时候。
+  return c.json({ ok: true, email, expires_min: GATE_CODE_TTL_MIN, dev_code: c.env.DEV_MODE === '1' ? code : undefined });
+});
+
+/** Step two: the code typed back, and in return the proof the browser will keep.
+ *  第二步:敲回来的验证码,换一份浏览器将要保管的凭证。 */
+drivePubApp.post('/:token/email/verify', async (c) => {
+  const s = await pubShare(c, { gatedOk: true });
+  if (!s.email_gate) throw new HttpError(400, 'e_bad_request');
+  const body = await c.req.json<any>().catch(() => ({}));
+  const email = cleanEmail(body.email);
+  const code = String(body.code || '').trim();
+  if (!email || !/^\d{6}$/.test(code)) throw new HttpError(400, 'e_code_wrong');
+  const row: any = await c.env.DB.prepare(
+    'SELECT * FROM drive_share_codes WHERE share_id=?1 AND email=?2 ORDER BY created_at DESC LIMIT 1'
+  ).bind(s.id, email).first();
+  if (!row || row.expires_at <= now()) throw new HttpError(400, 'e_code_expired');
+  if (row.attempts >= GATE_CODE_MAX_ATTEMPTS) throw new HttpError(429, 'e_code_attempts');
+  if ((await sha256Hex(code)) !== row.code_hash) {
+    await c.env.DB.prepare('UPDATE drive_share_codes SET attempts=attempts+1 WHERE id=?1').bind(row.id).run();
+    throw new HttpError(400, 'e_code_wrong');
+  }
+  await c.env.DB.prepare('DELETE FROM drive_share_codes WHERE id=?1').bind(row.id).run();
+  const { proof, exp } = await signProof(c.env, email);
+  return c.json({ ok: true, proof, email, expires_at: exp });
+});
+
 drivePubApp.get('/:token/list', async (c) => {
   const s = await pubShare(c);
   const parent = c.req.query('parent') || '';
