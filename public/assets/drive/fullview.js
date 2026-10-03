@@ -38,6 +38,7 @@ import { t, tErr } from '../i18n.js';
 import { esc, icon, qs, settleAfterFullscreen } from '../ui.js';
 import { store, navigate } from '../app.js';
 import { metaUrl, usePubSource, useDriveSource } from './fsrc.js';
+import { track, trackStart } from './track.js';
 import { joinPresentation } from '../edit/present.js';
 import { attachInk } from '../edit/annot.js';
 import { attachPresentBar } from '../edit/prbar.js';
@@ -180,6 +181,10 @@ export async function renderFullView(token, id, present) {
     const meta = await (await fetch(metaUrl(id))).json();
     node = meta.node || meta;
     if (!node || node.kind !== 'file') throw new Error('e_drive_not_found');
+    // A member arriving straight at this page: the share that let them in starts counting here.
+    // The public page started its visit before sending anyone this way.
+    // 直接到达这一页的成员:放他进来的那条分享从这里开始计。公开页在把人送来之前就已经开始了。
+    if (!token && meta.share_id && meta.tracked) await trackStart({ base: `/api/drive/shares/${meta.share_id}`, key: 's:' + meta.share_id });
   } catch (e) {
     app.innerHTML = `<div class="pub-wrap"><p class="md-err">${esc(tErr(e))}</p></div>`;
     return;
@@ -298,6 +303,7 @@ function onHash() {
 }
 
 function close() {
+  track.close();
   document.body.classList.remove('fv-solo', 'fv-fs', 'fv-peek');
   if (fv?.onFs) document.removeEventListener('fullscreenchange', fv.onFs);
   if (fv?.onPage) window.removeEventListener('keydown', fv.onPage);

@@ -733,6 +733,11 @@ driveApp.get('/nodes/:id/meta', async (c) => {
   return c.json({
     node: nodeJson(a.node, a.level === 'owner'),
     access: a.level,
+    // A page reached by its URL alone -- the full-window view, the watching page -- has no
+    // listing behind it to learn the share from, so the answer about one node carries it too.
+    // 只凭 URL 到达的页面 —— 全窗预览、观看页 —— 背后没有一份列表可以得知分享是哪条,
+    // 所以关于单个节点的回答也把它带上。
+    share_id: a.shareId, tracked: a.tracked ? 1 : 0,
     path: path.map((n) => ({ id: n.id, name: n.name })),
   });
 });

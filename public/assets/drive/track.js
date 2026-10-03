@@ -194,10 +194,14 @@ export const track = {
    *  第 p 页(共 total 页)此刻在屏幕上。由知道这件事的人来调:页元素上的观察器、按屏读的滚动条、工作簿的标签。 */
   page(node, p, total, screen = false) {
     if (!cur?.node || cur.node.id !== node.id) return;
-    if (p === cur.page) { cur.total = total; return; }
+    // The count of pages is learned as the document lays itself out, so the latest figure is the
+    // one the page being closed is reported against -- not the figure known when it was opened.
+    // 页数是文档排版的过程中逐步得知的,所以正要结束的那一页按最新的数来报,
+    // 而不是按它刚打开时所知道的那个数。
+    cur.total = total;
+    if (p === cur.page) return;
     flushPage();
     cur.page = p;
-    cur.total = total;
     cur.screen = screen;
     cur.pageAt = Date.now();
   },

@@ -27,6 +27,7 @@ import { t, tErr } from '../i18n.js';
 import { esc, icon, qs } from '../ui.js';
 import { store, navigate } from '../app.js';
 import { dlUrl, metaUrl, useDriveSource, usePubSource } from './fsrc.js';
+import { track, trackStart } from './track.js';
 import { lerp, measure, scanBlocks, tagLines } from '../md/anchor.js';
 import { docClick, ensureCss as ensureMdCss, loadLibs, mdFragment } from '../md/render.js';
 import { joinPresentation } from '../edit/present.js';
@@ -183,6 +184,9 @@ export async function renderWatch(token, id, lead) {
     const meta = await (await fetch(metaUrl(id))).json();
     node = meta.node;
     if (!node || node.kind !== 'file') throw new Error('e_drive_not_found');
+    // A member arriving straight at this page: the share that let them in starts counting here.
+    // 直接到达这一页的成员:放他进来的那条分享从这里开始计。
+    if (!token && meta.share_id && meta.tracked) await trackStart({ base: `/api/drive/shares/${meta.share_id}`, key: 's:' + meta.share_id });
     const r = await fetch(dlUrl(id, 1, node.ver_head || node.updated_at || ''));
     if (!r.ok) throw new Error('e_drive_not_found');
     src = new TextDecoder('utf-8').decode(await r.arrayBuffer());
@@ -212,6 +216,10 @@ export async function renderWatch(token, id, lead) {
   window.addEventListener('resize', onResize);
 
   await paint();
+  // Opened, and read in screenfuls: the prose scrolls inside #pw-view.
+  // 打开了,并按屏来读:散文在 #pw-view 里滚动。
+  track.open(node);
+  track.scrollPages(node, qs('#pw-view'));
   // Everybody who arrives joins: this page exists for the meeting, and a room with nobody
   // presenting yet is still the place the meeting will happen.
   // 到了的人就进房间:这一页为会议而存在,而一间还没人演示的房,也已经是会议将要发生的地方。
@@ -235,6 +243,7 @@ function onHash() {
 }
 
 export function closeWatch() {
+  track.close();
   window.removeEventListener('hashchange', onHash);
   window.removeEventListener('resize', onResize);
   clearTimeout(resizeTimer);
