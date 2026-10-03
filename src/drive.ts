@@ -55,6 +55,7 @@ import { getCookie } from 'hono/cookie';
 import { sendSystemMail } from './send';
 import { turnstileEnabled, verifyTurnstile } from './turnstile';
 import { shareCodeMail } from './mailtpl';
+import { appendEvents, listVisits, startVisit, visitEvents, type Who } from './track';
 import { adminScope, checkDomainScope } from './admin';
 import { mdImage } from './mdimg';
 
@@ -188,6 +189,10 @@ interface Access {
   /** For share members, the highest shared ancestor -- their movements stay inside this subtree.
    *  共享成员可见范围的顶点 —— 他们的一切操作都被圈在这棵子树里。 */
   shareRoot: string | null;
+  /** The share that let a member in, and whether it watches them. Owners have neither.
+   *  放成员进来的那条分享,以及它看不看着他们。所有者两样都没有。 */
+  shareId: string | null;
+  tracked: boolean;
   chain: NodeRow[];
 }
 
@@ -201,7 +206,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   const chain = await chainOf(c.env, nodeId);
   if (!chain.length) throw new HttpError(404, 'e_drive_not_found');
   const node = chain[0];
-  if (node.owner_id === user.id) return { node, level: 'owner', shareRoot: null, chain };
+  if (node.owner_id === user.id) return { node, level: 'owner', shareRoot: null, shareId: null, tracked: false, chain };
   if (need === 'owner') throw new HttpError(404, 'e_drive_not_found');
   if (chain.some((n) => n.trashed)) throw new HttpError(404, 'e_drive_not_found');
   const ids = chain.map((n) => n.id);
@@ -225,7 +230,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   // 并且无论那行怎么写,公开分享一律只读 —— 角色在创建时钉死、更新时被拒,下面再钉一次,
   // 单独一行写错也绝无可能发出写权限。
   const rows = await c.env.DB.prepare(
-    `SELECT si.node_id,
+    `SELECT si.node_id, s.id AS share_id, s.track,
             CASE WHEN s.audience='public' THEN 'viewer' ELSE s.role END AS role
        FROM drive_shares s
        JOIN drive_share_items si ON si.share_id = s.id
@@ -237,7 +242,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
           WHERE g.user_id=?1 AND mb.domain_id = s.domain_id))
        AND si.node_id IN (${ids.map((_, i) => '?' + (i + 3)).join(',')})`
   ).bind(user.id, now(), ...ids).all();
-  const hits = (rows.results || []) as { node_id: string; role: string }[];
+  const hits = (rows.results || []) as { node_id: string; role: string; share_id: string; track: number }[];
   if (!hits.length) throw new HttpError(404, 'e_drive_not_found');
   const level = hits.some((h) => h.role === 'editor') ? 'editor' : 'viewer';
   if (need === 'edit' && level !== 'editor') throw new HttpError(403, 'e_drive_forbidden');
@@ -246,7 +251,7 @@ async function accessNode(c: any, nodeId: string, need: 'view' | 'edit' | 'owner
   const best = hits
     .filter((h) => level === 'viewer' || h.role === 'editor')
     .sort((a, b) => ids.indexOf(b.node_id) - ids.indexOf(a.node_id))[0];
-  return { node, level, shareRoot: best.node_id, chain };
+  return { node, level, shareRoot: best.node_id, shareId: best.share_id, tracked: !!best.track, chain };
 }
 
 function cleanName(v: unknown): string {
@@ -676,7 +681,7 @@ driveApp.get('/list', async (c) => {
   if (parent === 'root') {
     const rows = await c.env.DB.prepare(childrenSql('n.owner_id=?1 AND n.parent_id IS NULL')).bind(user.id).all();
     return c.json({
-      access: 'owner', share_root: null, path: [],
+      access: 'owner', share_root: null, share_id: null, tracked: 0, path: [],
       nodes: (rows.results || []).map((n) => nodeJson(n)),
     });
   }
@@ -694,7 +699,7 @@ driveApp.get('/list', async (c) => {
     const own = a.chain.slice().reverse();
     const cut = a.shareRoot ? own.findIndex((n) => n.id === a.shareRoot) : 0;
     return c.json({
-      access: a.level, share_root: a.shareRoot,
+      access: a.level, share_root: a.shareRoot, share_id: a.shareId, tracked: a.tracked ? 1 : 0,
       in_trash: a.chain.some((n) => n.trashed),
       path: own.slice(cut).map((n) => ({ id: n.id, name: n.name })),
       nodes: [nodeJson(a.node, a.level === 'owner')],
@@ -706,7 +711,7 @@ driveApp.get('/list', async (c) => {
   let path = a.chain.slice().reverse();
   if (a.shareRoot) path = path.slice(path.findIndex((n) => n.id === a.shareRoot));
   return c.json({
-    access: a.level, share_root: a.shareRoot,
+    access: a.level, share_root: a.shareRoot, share_id: a.shareId, tracked: a.tracked ? 1 : 0,
     // Owners may browse folders that sit in the trash; the UI switches to trash-style actions
     // 所有者可以浏览回收站里的文件夹;界面据此切换成回收站式的操作
     in_trash: a.chain.some((n) => n.trashed),
@@ -1909,6 +1914,9 @@ driveApp.post('/shares', async (c) => {
   // The door makes sense only on a link that has no account behind it.
   // 这道门只对背后没有账号的链接才有意义。
   const emailGate = audience === 'public' && body.email_gate ? 1 : 0;
+  // Watching needs somebody to name: a signed-in member, or the address behind the door.
+  // 要看着,得有个叫得出名字的人:登录的成员,或者门后那个地址。
+  const track = body.track && (audience === 'internal' || (audience === 'public' && emailGate)) ? 1 : 0;
   let domainId: string | null = null;
   if (audience === 'internal' && body.domain_id) {
     const mine = await myDomains(c.env, user.id);
@@ -1976,10 +1984,10 @@ driveApp.post('/shares', async (c) => {
       WHERE g.user_id=?1 AND d.drive_share_show_owner=1 LIMIT 1`
   ).bind(user.id).first();
   const stmts = [c.env.DB.prepare(
-    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, meet, email_gate, created_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`
+    `INSERT INTO drive_shares (id, token, owner_id, role, audience, domain_id, expires_at, note, theme, mode, lang, show_owner, agent_mode, meet, email_gate, track, created_at)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`
   ).bind(shareId, token, user.id, role, audience, domainId, expires, cleanNote(body.note), theme, mode, lang, showOwner ? 1 : 0,
-    audience === 'agent' ? agentMode : null, meet, emailGate, t)];
+    audience === 'agent' ? agentMode : null, meet, emailGate, track, t)];
   for (const n of nodes) {
     stmts.push(c.env.DB.prepare('INSERT INTO drive_share_items (share_id, node_id) VALUES (?1,?2)')
       .bind(shareId, n.id));
@@ -1987,7 +1995,7 @@ driveApp.post('/shares', async (c) => {
   await c.env.DB.batch(stmts);
   return c.json({
     id: shareId, token, role, audience, agent_mode: audience === 'agent' ? agentMode : null,
-    domain_id: domainId, expires_at: expires, meet, email_gate: emailGate, created_at: t,
+    domain_id: domainId, expires_at: expires, meet, email_gate: emailGate, track, created_at: t,
   });
 });
 
@@ -2020,7 +2028,9 @@ function cleanNote(v: unknown): string {
  *  调用者分享出去的一切,连同其内容。这就是管理列表。 */
 driveApp.get('/shares', async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT s.*, d.name AS domain_name FROM drive_shares s
+    `SELECT s.*, d.name AS domain_name,
+            (SELECT COUNT(*) FROM drive_share_visits v WHERE v.share_id=s.id) AS visits
+       FROM drive_shares s
        LEFT JOIN domains d ON d.id = s.domain_id
       WHERE s.owner_id = ?1 ORDER BY s.created_at DESC LIMIT 300`
   ).bind(c.get('user').id).all();
@@ -2035,6 +2045,8 @@ driveApp.get('/shares', async (c) => {
       id: s.id, token: s.token, role: s.role, audience: s.audience, meet: s.meet ? 1 : 0,
       agent_mode: s.agent_mode || 'http',
       email_gate: s.email_gate ? 1 : 0,
+      track: s.track ? 1 : 0,
+      visits: s.visits || 0,
       domain_id: s.domain_id, domain_name: s.domain_name || null,
       expires_at: s.expires_at, revoked_at: s.revoked_at, note: s.note, created_at: s.created_at,
       state: shareLiveness(s) || 'ok',
@@ -2071,6 +2083,18 @@ driveApp.put('/shares/:id', async (c) => {
     if (s.audience !== 'public') throw new HttpError(400, 'e_bad_request');
     sets.push(`email_gate=?${sets.length + 1}`);
     args.push(body.email_gate ? 1 : 0);
+  }
+  if (body.track !== undefined) {
+    const gate = body.email_gate !== undefined ? !!body.email_gate : !!s.email_gate;
+    const can = s.audience === 'internal' || (s.audience === 'public' && gate);
+    if (body.track && !can) throw new HttpError(400, 'e_drive_share_track_identity');
+    sets.push(`track=?${sets.length + 1}`);
+    args.push(body.track ? 1 : 0);
+  } else if (body.email_gate !== undefined && !body.email_gate && s.audience === 'public' && s.track) {
+    // The door going away takes the watching with it: there is nobody left to name.
+    // 门一撤,看着也就跟着撤:再没有叫得出名字的人了。
+    sets.push(`track=?${sets.length + 1}`);
+    args.push(0);
   }
   if (!sets.length) throw new HttpError(400, 'e_bad_request');
   await c.env.DB.prepare(`UPDATE drive_shares SET ${sets.join(',')} WHERE id=?${sets.length + 1}`)
@@ -2162,9 +2186,51 @@ driveApp.post('/shares/join', async (c) => {
   });
 });
 
+// ---------- Engagement: who came through a share, and what they did ----------
+// ---------- 互动记录:谁经过了一条分享,做了什么 ----------
+
+/** The visitor behind a watched internal link: a signed-in member. The sharer opening their own
+ *  link is not a visitor and is not recorded.
+ *  一条被看着的内部链接背后的访客:一个登录的成员。分享者打开自己的链接不算访客,不记。 */
+async function memberVisitor(c: any): Promise<{ s: any; who: Who | null }> {
+  const user: User = c.get('user');
+  const s: any = await c.env.DB.prepare('SELECT * FROM drive_shares WHERE id=?1').bind(c.req.param('id')).first();
+  if (!s || shareLiveness(s) || !s.track) throw new HttpError(404, 'e_drive_share_not_found');
+  if (s.owner_id === user.id) return { s, who: null };
+  const m = await c.env.DB.prepare('SELECT 1 AS ok FROM drive_share_members WHERE share_id=?1 AND user_id=?2').bind(s.id, user.id).first();
+  if (!m) throw new HttpError(404, 'e_drive_share_not_found');
+  return { s, who: { kind: 'user', id: user.id, name: `${user.name || ''} <${user.email}>`.trim() } };
+}
+
+driveApp.post('/shares/:id/visit', async (c) => {
+  const { s, who } = await memberVisitor(c);
+  if (!who) return c.json({ id: null });
+  const body = await c.req.json<any>().catch(() => ({}));
+  return c.json(await startVisit(c.env, c.req.raw, s.id, who, body.hints));
+});
+
+driveApp.post('/shares/:id/visit/:vid/events', async (c) => {
+  const { s, who } = await memberVisitor(c);
+  if (!who) return c.json({ ok: true, n: 0 });
+  const body = await c.req.json<any>().catch(() => ({}));
+  return c.json(await appendEvents(c.env, s.id, c.req.param('vid'), body.events));
+});
+
+/** The sharer's side: every visit, then everything that happened in one.
+ *  分享者这一边:每一次到访,然后是某一次里发生的一切。 */
+driveApp.get('/shares/:id/visits', async (c) => {
+  const s = await ownShare(c);
+  return c.json({ visits: await listVisits(c.env, s.id) });
+});
+
+driveApp.get('/shares/:id/visits/:vid', async (c) => {
+  const s = await ownShare(c);
+  return c.json(await visitEvents(c.env, s.id, c.req.param('vid')));
+});
+
 driveApp.get('/shared', async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT s.id AS share_id, s.role, s.expires_at, s.revoked_at, m.joined_at,
+    `SELECT s.id AS share_id, s.role, s.track, s.expires_at, s.revoked_at, m.joined_at,
             u.name AS owner_name, u.email AS owner_email
      FROM drive_share_members m JOIN drive_shares s ON s.id=m.share_id JOIN users u ON u.id=s.owner_id
      WHERE m.user_id=?1 ORDER BY m.joined_at DESC LIMIT 200`
@@ -2182,6 +2248,7 @@ driveApp.get('/shared', async (c) => {
       out.push({
         ...nodeJson(n, false), node_id: n.id, share_id: r.share_id,
         role: r.role, joined_at: r.joined_at, owner_name: r.owner_name, owner_email: r.owner_email,
+        track: r.track ? 1 : 0,
       });
     }
   }
@@ -2275,6 +2342,7 @@ drivePubApp.get('/:token', async (c) => {
     // 而一个刚刚进来的访客不该再看见它一次。
     gated: 0,
     viewer_email: s.viewer_email || '',
+    track: s.track ? 1 : 0,
     // Whether this link was minted for a presentation. Purely descriptive: capabilities are
     // decided in the room, not read off the link.
     // 这条链接是否为一场演示而铸。纯描述:能做什么在房间里定,不从链接上读。
@@ -2353,6 +2421,26 @@ drivePubApp.post('/:token/email/verify', async (c) => {
   await c.env.DB.prepare('DELETE FROM drive_share_codes WHERE id=?1').bind(row.id).run();
   const { proof, exp } = await signProof(c.env, email);
   return c.json({ ok: true, proof, email, expires_at: exp });
+});
+
+/** The visitor behind a watched public link: the verified address, or nobody.
+ *  一条被看着的公开链接背后的访客:那个验证过的地址,否则没有人。 */
+async function pubVisitor(c: any): Promise<{ s: any; who: Who }> {
+  const s = await pubShare(c);
+  if (!s.track || !s.viewer_email) throw new HttpError(404, 'e_drive_share_not_found');
+  return { s, who: { kind: 'email', id: s.viewer_email, name: '' } };
+}
+
+drivePubApp.post('/:token/visit', async (c) => {
+  const { s, who } = await pubVisitor(c);
+  const body = await c.req.json<any>().catch(() => ({}));
+  return c.json(await startVisit(c.env, c.req.raw, s.id, who, body.hints));
+});
+
+drivePubApp.post('/:token/visit/:vid/events', async (c) => {
+  const { s } = await pubVisitor(c);
+  const body = await c.req.json<any>().catch(() => ({}));
+  return c.json(await appendEvents(c.env, s.id, c.req.param('vid'), body.events));
 });
 
 drivePubApp.get('/:token/list', async (c) => {

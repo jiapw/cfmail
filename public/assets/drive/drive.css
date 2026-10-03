@@ -1819,3 +1819,40 @@ body.fv-fs .drv-canvaspage canvas { max-width: 100vw; max-height: 92vh; width: a
 .pub-gate-err { color: #e5484d; font-size: 12.5px; min-height: 18px; margin: 10px 0 0; }
 .drv-link-card .badge.gate { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
 
+/* ---------- Engagement: one link and who came through it ----------
+   The card from the list heads the page; under it, visits as rows of a table, and a row opens
+   into the story of that visit. Tabular numbers so the columns of durations and counts line up.
+   ---------- 互动记录:一条链接,以及谁经过了它 ----------
+   列表里那张卡顶在页面上方;下面是按表格行排的到访,点开一行就是那次到访的经过。
+   数字用等宽变体,时长与计数那几列才对得齐。 */
+.drv-link-card[data-open] { cursor: pointer; }
+.drv-link-card[data-open]:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.drv-engage .drv-link-card[data-open] { cursor: default; }
+.drv-engage .drv-link-card[data-open]:hover { border-color: var(--border); }
+.drv-link-card .badge.track { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); display: inline-flex; align-items: center; gap: 4px; }
+.drv-back { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); text-decoration: none; font-size: 13px; margin-bottom: 4px; }
+.drv-back:hover { color: var(--text); }
+.drv-engage-head { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; }
+.drv-engage-head h3 { margin: 0; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.drv-eng-tbl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.drv-eng-tbl th { text-align: left; font-weight: 500; color: var(--text-2); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.drv-eng-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.drv-eng-tbl th.n, .drv-eng-tbl td.n { text-align: right; }
+.drv-eng-tbl td.who { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drv-eng-tbl td.ip { font-family: var(--font-code); font-size: 12px; }
+.drv-eng-tbl .eng-row { cursor: pointer; }
+.drv-eng-tbl .eng-row:hover, .drv-eng-tbl .eng-row.on { background: var(--hover); }
+.drv-eng-tbl .eng-detail td { padding: 4px 8px 10px 28px; background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.eng-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); margin-right: 6px; vertical-align: 1px; }
+.eng-dot.live { background: #12a150; box-shadow: 0 0 0 3px #12a15033; }
+.eng-story { display: flex; flex-direction: column; gap: 4px; }
+.eng-story .ev { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.eng-story .ev .ic { flex: none; color: var(--text-3); position: relative; top: 2px; }
+.eng-story .ev .nm { font-weight: 500; }
+.eng-story .ev .bits { color: var(--text-2); }
+.eng-story .ev.dim { color: var(--text-3); }
+@media (max-width: 640px) {
+  .drv-eng-tbl { display: block; overflow-x: auto; }
+  .drv-eng-tbl td, .drv-eng-tbl th { white-space: nowrap; }
+}
+

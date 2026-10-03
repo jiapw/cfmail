@@ -6,7 +6,7 @@
 import { api } from '../api.js';
 import { t, tErr, lang } from '../i18n.js';
 import {
-  esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, confirmDialog, showModal, closeModal,
+  esc, icon, qs, qsa, toast, fmtSize, fmtDate, fmtDateTime, fmtDuration, confirmDialog, showModal, closeModal,
   copyText, fileIcon, avatar, debounce, CAP, needsBrowser, isTouch, isPhone, phoneSheet, asSheet, cleanupSheet, loadCss,
 } from '../ui.js';
 import { bindTopbar, bindCollapsingTopbar, store, navigate, show, topbarHtml, setTitle, pathTitle, syncSidebar } from '../app.js';
@@ -16,6 +16,7 @@ import { hearing, verdict } from './remux.js';
 import { codeOf, cuesOf, labelOf, looksBinary, readText, sidecarsFor } from './subs.js';
 import { decodeSpu, readIndex, spuAt } from './vobsub.js';
 import { mountPlayer, pictureOf } from './player.js';
+import { track, trackStart, trackStop } from './track.js';
 
 export { arcSeed };
 
@@ -102,6 +103,7 @@ export async function renderDrive(seg) {
   } else if (['shared', 'recent', 'starred', 'trash', 'links', 'agents'].includes(seg[0])) {
     dst.view = seg[0];
     dst.folderId = null;
+    dst.linkId = seg[0] === 'links' && seg[1] ? seg[1] : null;
   } else if (seg[0] === 'search' && seg[1]) {
     dst.view = 'search';
     dst.q = seg[1];
@@ -328,6 +330,14 @@ async function loadView() {
       dst.path = data.path || [];
       dst.access = data.access || 'owner';
       dst.shareRoot = data.share_root || null;
+      dst.shareId = data.share_id || null;
+      // A share that watches counts the reader in as soon as they are inside it, folder by folder;
+      // stepping out of every share says goodbye.
+      // 看着访客的分享,人一进来就开始计,一个文件夹一笔;走出所有分享就是道别。
+      if (dst.shareId && data.tracked) {
+        trackStart({ base: `/api/drive/shares/${dst.shareId}`, key: 's:' + dst.shareId })
+          .then(() => track.enter({ id: dst.folderId || '', name: (data.path || []).slice(-1)[0]?.name || '' }));
+      } else if (!dst.shareId) trackStop();
       dst.inTrash = !!data.in_trash;
       renderFolderView(main);
     } else if (dst.view === 'shared') {
@@ -362,7 +372,8 @@ async function loadView() {
       // 于是哪一块都不必是两者的折中。
       const all = data.shares || [];
       if (dst.view === 'agents') renderAgentsView(main, all.filter((s) => s.audience === 'agent'));
-      else renderLinksView(main, all);
+      else if (dst.linkId) await renderShareDetail(main, all.find((s) => s.id === dst.linkId));
+      else renderLinksView(main, all.filter((s) => s.audience !== 'agent'));
     } else {
       const ep = { recent: '/api/drive/recent', starred: '/api/drive/starred', trash: '/api/drive/trash', search: `/api/drive/search?q=${encodeURIComponent(dst.q)}` }[dst.view];
       const data = await api('GET', ep);
@@ -1582,6 +1593,7 @@ async function downloadFiles(nodes) {
   const real = nodes.filter((n) => !n.arc);
   const one = !arcs.length && real.length === 1 && real[0].kind === 'file';
   if (!one && real.length && canSaveInto()) {
+    for (const n of real) track.download(n);
     await downloadInto(real);
   } else {
     const folders = real.filter((n) => n.kind === 'folder');
@@ -1652,6 +1664,7 @@ async function shareOut(name, mime, size, getBlob, fallback) {
 }
 
 function downloadFile(n, verId) {
+  track.download(n);
   if (n.arc) return downloadArcEntry(n);
   const url = verId ? verUrl(n.id, verId) : dlUrl(n.id, false, verTag(n));
   const legacy = () => {
@@ -2408,6 +2421,12 @@ async function shareDialog(nodes) {
         <div class="drv-dim" style="font-size:12px;margin-top:4px">${esc(t(store.me?.send_enabled ? 'drv_share_email_gate_hint' : 'drv_share_email_gate_nosend'))}</div>
       </div>
     </div>
+    <div class="drv-share-line" id="f-track">
+      <div class="f">
+        <wa-checkbox id="sh-track" size="small">${esc(t('drv_share_track'))}</wa-checkbox>
+        <div class="drv-dim" style="font-size:12px;margin-top:4px" id="sh-track-hint"></div>
+      </div>
+    </div>
 
     <p class="drv-dim" id="sh-hint" style="margin:12px 0 0;font-size:12.5px"></p>`;
 
@@ -2432,8 +2451,16 @@ async function shareDialog(nodes) {
     qs('#f-dom', d).style.visibility = pub ? 'hidden' : '';
     qs('#sh-hint', d).textContent = t(pub ? 'drv_share_hint_public' : 'drv_share_hint_internal');
     qs('#f-gate', d).hidden = !pub;
+    // Watching needs somebody to name: a member, or the address behind the door.
+    // 要看着,得有个叫得出名字的人:成员,或者门后那个地址。
+    const canTrack = !pub || !!qs('#sh-gate', d).checked;
+    const tr = qs('#sh-track', d);
+    tr.disabled = !canTrack;
+    if (!canTrack) tr.checked = false;
+    qs('#sh-track-hint', d).textContent = t(canTrack ? 'drv_share_track_hint' : 'drv_share_track_need');
   };
   segBind(d, 'sh-aud', sync);
+  qs('#sh-gate', d).addEventListener('change', sync);
   segBind(d, 'sh-role');
   sync();
 
@@ -2450,6 +2477,7 @@ async function shareDialog(nodes) {
       domain_id: audience === 'internal' ? (qs('#sh-dom', d).value || null) : null,
       expires_days: parseInt(qs('#sh-exp', d).value, 10) || 0,
       email_gate: audience === 'public' && qs('#sh-gate', d)?.checked ? 1 : 0,
+      track: qs('#sh-track', d)?.checked ? 1 : 0,
       // Carry the look along with the link. The palette is a company setting the public page can
       // look up for itself, but light/dark is this user's own choice and exists nowhere the
       // recipient can reach -- without recording it, a link made at night opens blindingly light.
@@ -2507,52 +2535,201 @@ function shareUrl(s) {
  *  behind as a tombstone so it is clear the link was killed rather than silently forgotten.
  *  管理列表:本账号发出的每条链接、里面装了什么、给谁、以及是否仍然有效。撤销一键完成、
  *  立刻生效 —— 该行会以墓碑形式留下,让人看清链接是被停掉了,而不是不声不响消失了。 */
-function renderLinksView(main, shares) {
-  const bots = shares.filter((s) => s.audience === 'agent');
-  const rows = shares.filter((s) => s.audience !== 'agent').map((s) => {
-    const dead = s.state !== 'ok';
-    const url = shareUrl(s);
-    const who = s.audience === 'public'
-      ? t('drv_share_aud_public')
-      : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
-    const items = (s.items || []).map((n) =>
-      `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
-    const stateLbl = s.state === 'ok'
-      ? (s.expires_at ? t('drv_share_until', fmtDate(s.expires_at)) : t('drv_share_exp_never'))
-      : t(s.state === 'e_drive_share_revoked' ? 'drv_share_revoked' : 'drv_share_expired');
-    return `
-      <div class="drv-link-card ${dead ? 'dead' : ''}">
-        <div class="hd">
-          <span class="badge ${s.audience}">${esc(who)}</span>
-          <span class="badge role">${esc(t(s.role === 'editor' ? 'drv_role_editor' : 'drv_role_viewer'))}</span>
-          ${s.email_gate ? `<span class="badge gate">${esc(t('drv_share_gate_badge'))}</span>` : ''}
-          <span class="st">${esc(stateLbl)}</span>
-          <span class="st">${esc(t('drv_share_created', fmtDate(s.created_at)))}${
-            (s.members || []).length ? ' · ' + esc(t('drv_share_n_members', String(s.members.length))) : ''}</span>
-          <span style="flex:1"></span>
-          ${dead
-            ? `<wa-button size="small" appearance="plain" data-forget="${esc(s.id)}">${esc(t('drv_share_forget'))}</wa-button>`
-            : `<wa-button size="small" appearance="plain" data-copy="${esc(url)}">${icon('copy', 14)} ${esc(t('drv_copy_link'))}</wa-button>
-               <wa-button size="small" appearance="plain" class="danger" data-stop="${esc(s.id)}">${esc(t('drv_share_stop'))}</wa-button>`}
-        </div>
-        <div class="items">${items || `<span class="drv-dim">${esc(t('drv_share_items_gone'))}</span>`}</div>
-      </div>`;
-  }).join('');
+/** One link, as a card: who it is for, what it holds, how it stands. The same card heads the
+ *  engagement page of that link.
+ *  一条链接,画成一张卡:给谁的、装着什么、现在怎样。那条链接的互动记录页顶上也是这张卡。 */
+function linkCardHtml(s, url) {
+  const dead = s.state !== 'ok';
+  const who = s.audience === 'public'
+    ? t('drv_share_aud_public')
+    : (s.domain_name ? t('drv_share_dom_only', s.domain_name) : t('drv_share_aud_internal'));
+  const items = (s.items || []).map((n) =>
+    `<span class="it">${icon(n.kind === 'folder' ? 'folder' : 'file', 14)}${esc(n.name)}</span>`).join('');
+  const stateLbl = s.state === 'ok'
+    ? (s.expires_at ? t('drv_share_until', fmtDate(s.expires_at)) : t('drv_share_exp_never'))
+    : t(s.state === 'e_drive_share_revoked' ? 'drv_share_revoked' : 'drv_share_expired');
+  return `
+    <div class="drv-link-card ${dead ? 'dead' : ''}" data-open="${esc(s.id)}">
+      <div class="hd">
+        <span class="badge ${s.audience}">${esc(who)}</span>
+        <span class="badge role">${esc(t(s.role === 'editor' ? 'drv_role_editor' : 'drv_role_viewer'))}</span>
+        ${s.email_gate ? `<span class="badge gate">${esc(t('drv_share_gate_badge'))}</span>` : ''}
+        ${s.track ? `<span class="badge track">${icon('eye', 13)} ${esc(t('drv_engage_n', String(s.visits || 0)))}</span>` : ''}
+        <span class="st">${esc(stateLbl)}</span>
+        <span class="st">${esc(t('drv_share_created', fmtDate(s.created_at)))}${
+          (s.members || []).length ? ' · ' + esc(t('drv_share_n_members', String(s.members.length))) : ''}</span>
+        <span style="flex:1"></span>
+        ${dead
+          ? `<wa-button size="small" appearance="plain" data-forget="${esc(s.id)}">${esc(t('drv_share_forget'))}</wa-button>`
+          : `<wa-button size="small" appearance="plain" data-copy="${esc(url)}">${icon('copy', 14)} ${esc(t('drv_copy_link'))}</wa-button>
+             <wa-button size="small" appearance="plain" class="danger" data-stop="${esc(s.id)}">${esc(t('drv_share_stop'))}</wa-button>`}
+      </div>
+      <div class="items">${items || `<span class="drv-dim">${esc(t('drv_share_items_gone'))}</span>`}</div>
+    </div>`;
+}
 
+/** Every link made for people. Links made for programs have their own page; mixing the two here
+ *  would put an address next to a door, and only the door has visitors.
+ *  每一条给人的链接。给程序的链接有它们自己的页面;混在这里等于把一个地址摆在一道门旁边,
+ *  而只有门才有访客。 */
+function renderLinksView(main, shares) {
+  const rows = shares.map((s) => linkCardHtml(s, shareUrl(s))).join('');
   main.innerHTML = `
     <div id="drv-bar">${barHtml()}</div>
     <div class="drv-scroll drv-links">
-      ${rows}
-      ${bots.length ? `
-        <div class="drv-links-group">${icon('robot', 16)}<span>${esc(t('drv_agents'))}</span>
-          <span class="sp"></span>
-          <a class="more" href="#/drive/agents">${esc(t('drv_agent_manage'))}</a>
-        </div>
-        ${bots.map(agentCardHtml).join('')}` : ''}
-      ${rows || bots.length ? '' : `<div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_share_none_yet'))}</div></div>`}
+      ${rows || `<div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_links_none'))}</div></div>`}
     </div>`;
-  bindBar(main);
   bindLinkActions(main);
+}
+
+/**
+ * One link and who came through it.
+ *
+ * A visit is a row: when, who, how long, on what, from where, and what became of it. Opening a
+ * row tells the story of that visit in the order it happened -- each file by name, with the time
+ * it stayed open, the pages that were on screen and for how long, how much of a film was played,
+ * what was downloaded -- and where the visitor was when they left.
+ *
+ * 一条链接,以及谁经过了它。
+ *
+ * 一次到访是一行:何时、是谁、多久、用什么、从哪儿来、后来怎样。点开一行,
+ * 按发生的顺序讲那次到访的经过 —— 每个文件按名字,开了多久、哪几页在屏幕上停了多久、
+ * 一部片子放了多少、下载了什么 —— 以及访客离开时停在哪里。
+ */
+async function renderShareDetail(main, s) {
+  if (!s) {
+    main.innerHTML = `<div id="drv-bar">${barHtml()}</div>
+      <div class="drv-scroll drv-links"><div class="drv-empty">${icon('link', 48)}<div>${esc(t('drv_share_items_gone'))}</div></div></div>`;
+    return;
+  }
+  main.innerHTML = `
+    <div id="drv-bar">${barHtml()}</div>
+    <div class="drv-scroll drv-links drv-engage">
+      <a class="drv-back" href="#/drive/links">${icon('back', 16)}<span>${esc(t('drv_links'))}</span></a>
+      ${linkCardHtml(s, shareUrl(s))}
+      <div class="drv-engage-head"><h3>${icon('eye', 18)} ${esc(t('drv_engage'))}</h3><span class="drv-dim" id="eng-sum"></span></div>
+      <div id="eng-list"><div class="drv-loading"><div class="drv-spin"></div></div></div>
+    </div>`;
+  bindLinkActions(main);
+  const list = qs('#eng-list', main);
+  if (!s.track) {
+    list.innerHTML = `<div class="drv-empty">${icon('eye', 40)}<div>${esc(t('drv_engage_off'))}</div></div>`;
+    return;
+  }
+  let visits = [];
+  try {
+    visits = (await api('GET', `/api/drive/shares/${s.id}/visits`)).visits || [];
+  } catch (e) {
+    list.innerHTML = `<div class="drv-empty">${icon('eye', 40)}<div>${esc(tErr(e && e.message))}</div></div>`;
+    return;
+  }
+  if (!list.isConnected) return;
+  qs('#eng-sum', main).textContent = t('drv_engage_n', String(visits.length));
+  if (!visits.length) {
+    list.innerHTML = `<div class="drv-empty">${icon('eye', 40)}<div>${esc(t('drv_engage_none'))}</div></div>`;
+    return;
+  }
+  const place = (v) => [v.city, v.region, v.country].filter(Boolean).join(', ');
+  const device = (v) => [v.os, v.device, v.browser].filter(Boolean).join(' · ');
+  const state = (v) => (v.live ? `<span class="eng-dot live"></span>${esc(t('drv_eng_live'))}`
+    : v.ended_at ? esc(t('drv_eng_left')) : esc(t('drv_eng_idle')));
+  const exitOf = (v) => {
+    const w = v.exit_where?.where || v.exit_where;
+    if (!w || !w.name) return '';
+    const page = w.page ? ' · ' + t(w.screen ? 'drv_ev_screen' : 'drv_ev_page', String(w.page), String(w.total || '?')) : '';
+    return esc(w.name + page);
+  };
+  list.innerHTML = `
+    <table class="drv-eng-tbl">
+      <thead><tr>
+        <th>${esc(t('drv_eng_when'))}</th><th>${esc(t('drv_eng_who'))}</th><th>${esc(t('drv_eng_dur'))}</th>
+        <th>${esc(t('drv_eng_dev'))}</th><th>${esc(t('drv_eng_where'))}</th><th>IP</th>
+        <th class="n">${esc(t('drv_eng_opened'))}</th><th class="n">${esc(t('drv_eng_dl'))}</th><th>${esc(t('drv_eng_exit'))}</th>
+      </tr></thead>
+      <tbody>${visits.map((v) => `
+        <tr class="eng-row" data-vid="${esc(v.id)}">
+          <td>${esc(fmtDateTime(v.started_at))}</td>
+          <td class="who" title="${esc(v.viewer)}">${esc(v.viewer_name || v.viewer)}</td>
+          <td>${esc(fmtDuration(Math.max(0, v.last_at - v.started_at)))}</td>
+          <td>${esc(device(v))}</td>
+          <td>${esc(place(v))}</td>
+          <td class="ip">${esc(v.ip)}</td>
+          <td class="n">${v.opens}</td><td class="n">${v.downloads}</td>
+          <td>${state(v)}${exitOf(v) ? ` · ${exitOf(v)}` : ''}</td>
+        </tr>
+        <tr class="eng-detail" data-for="${esc(v.id)}" hidden><td colspan="9"></td></tr>`).join('')}
+      </tbody>
+    </table>`;
+  list.addEventListener('click', async (e) => {
+    const row = e.target.closest('.eng-row');
+    if (!row) return;
+    const vid = row.dataset.vid;
+    const det = list.querySelector(`.eng-detail[data-for="${vid}"]`);
+    if (!det) return;
+    if (!det.hidden) { det.hidden = true; row.classList.remove('on'); return; }
+    det.hidden = false;
+    row.classList.add('on');
+    if (det.dataset.loaded) return;
+    const cell = det.firstElementChild;
+    cell.innerHTML = `<div class="drv-loading"><div class="drv-spin"></div></div>`;
+    try {
+      const got = await api('GET', `/api/drive/shares/${s.id}/visits/${vid}`);
+      cell.innerHTML = storyHtml(got.visit, got.events || []);
+      det.dataset.loaded = '1';
+    } catch (err) {
+      cell.innerHTML = `<div class="drv-dim">${esc(tErr(err && err.message))}</div>`;
+    }
+  });
+}
+
+/** The events of one visit, folded into what a person would say about it: this file for so long,
+ *  these pages, this much of that film, those downloads, left here.
+ *  一次到访的事件,叠成一个人会怎么讲它:这个文件看了这么久,这几页,那部片子放了这么多,
+ *  下载了这些,最后停在这里。 */
+function storyHtml(visit, events) {
+  const items = new Map();
+  const order = [];
+  let exit = null;
+  for (const e of events) {
+    if (e.kind === 'enter') { order.push({ enter: true, name: e.name }); continue; }
+    if (e.kind === 'leave') { exit = e.detail?.where || null; continue; }
+    if (e.kind === 'resume') { order.push({ resume: true }); continue; }
+    if (!e.node) continue;
+    let it = items.get(e.node);
+    if (!it) {
+      it = { name: e.name, ms: 0, pages: new Map(), total: 0, screen: false, media: null, downloads: 0 };
+      items.set(e.node, it);
+      order.push(it);
+    }
+    const d = e.detail || {};
+    if (e.kind === 'close') it.ms += d.ms || 0;
+    else if (e.kind === 'page') { it.pages.set(d.page, (it.pages.get(d.page) || 0) + (d.ms || 0)); it.total = d.total || it.total; if (d.screen) it.screen = true; }
+    else if (e.kind === 'media') it.media = d;
+    else if (e.kind === 'download') it.downloads++;
+  }
+  const lines = order.map((o) => {
+    if (o.enter) return `<div class="ev"><span class="ic">${icon('folder', 14)}</span>${esc(t('drv_ev_enter', o.name || t('drv_ev_root')))}</div>`;
+    if (o.resume) return `<div class="ev dim"><span class="ic">${icon('replay', 14)}</span>${esc(t('drv_ev_resume'))}</div>`;
+    const bits = [];
+    if (o.ms) bits.push(t('drv_ev_stay', fmtDuration(o.ms)));
+    if (o.pages.size) {
+      const key = o.screen ? 'drv_ev_screen' : 'drv_ev_page';
+      bits.push([...o.pages.entries()].sort((a, b) => a[0] - b[0])
+        .map(([p, ms]) => `${t(key, String(p), String(o.total || '?'))} ${fmtDuration(ms)}`).join(' · '));
+    }
+    if (o.media) {
+      const m = o.media;
+      const pct = m.dur ? Math.min(100, Math.round((m.played / m.dur) * 100)) : 0;
+      bits.push(t('drv_ev_media', fmtDuration((m.played || 0) * 1000), fmtDuration((m.dur || 0) * 1000), String(pct)) + (m.ended ? ' · ' + t('drv_ev_done') : ''));
+    }
+    if (o.downloads) bits.push(t('drv_ev_download', String(o.downloads)));
+    return `<div class="ev"><span class="ic">${icon('file', 14)}</span><span class="nm">${esc(o.name)}</span>${bits.length ? `<span class="bits">${esc(bits.join(' — '))}</span>` : ''}</div>`;
+  });
+  if (exit && exit.name) {
+    const page = exit.page ? ' · ' + t(exit.screen ? 'drv_ev_screen' : 'drv_ev_page', String(exit.page), String(exit.total || '?')) : '';
+    lines.push(`<div class="ev dim"><span class="ic">${icon('logout', 14)}</span>${esc(t('drv_ev_leave', exit.name + page))}</div>`);
+  }
+  return `<div class="eng-story">${lines.join('') || `<div class="drv-dim">${esc(t('drv_engage_quiet'))}</div>`}</div>`;
 }
 
 /** Copy, revoke, forget. The same three gestures on a share card and on an agent card -- the
@@ -2560,6 +2737,13 @@ function renderLinksView(main, shares) {
  *  复制、撤销、移除。分享卡片与 AI 卡片上是同样这三个动作 ——
  *  两种卡片的差别在于它们说了什么,而不在于你能拿它们怎么办。 */
 function bindLinkActions(main) {
+  // The card itself opens the link's visits; its buttons keep doing their own jobs.
+  // 卡片本身打开这条链接的到访记录;上面的按钮各忙各的。
+  qsa('[data-open]', main).forEach((card) => card.addEventListener('click', (e) => {
+    if (e.target.closest('wa-button, button, a, input')) return;
+    if (location.hash.startsWith('#/drive/links/')) return;
+    navigate(`#/drive/links/${encodeURIComponent(card.dataset.open)}`);
+  }));
   qsa('[data-copy]', main).forEach((b) => b.addEventListener('click', async () => {
     await copyText(b.dataset.copy);
     toast(t('drv_link_copied'));
@@ -2744,6 +2928,9 @@ function openPreview(node) {
 /** Same overlay for an arbitrary file list -- arc.js feeds archive entries through here
  *  同一预览层接受任意文件列表 —— arc.js 的压缩包条目走这里 */
 export function openPreviewFor(files, node) {
+  // Opened from "shared with me": the file knows which share it came through.
+  // 从「共享给我」打开的:文件自己知道它是经哪条分享来的。
+  if (node.share_id && node.track) trackStart({ base: `/api/drive/shares/${node.share_id}`, key: 's:' + node.share_id });
   const idx = Math.max(0, files.findIndex((n) => n.id === node.id));
   pv?.el?.remove();
   pv = { list: files.length ? files : [node], idx, el: document.createElement('div'), vers: null, verSel: null };
@@ -2826,6 +3013,7 @@ function killMedia(rootEl) {
 let pvPlayer = null;
 
 function closePreview() {
+  track.close();
   pvPlayer?.destroy();
   pvPlayer = null;
   dropPvBlob();
@@ -2920,6 +3108,15 @@ async function richPreview(n) {
       return;
     }
     pvRich = await mod.renderPreview(vn, box, kind, n.arcUrl || pvSrc(n, true));
+    // Which page is on screen, by the shape each kind draws its pages in: slides and diagram
+    // pages are elements and are watched as such; a workbook turns pages with its tabs; prose
+    // and code are one long scroll, read in screenfuls.
+    // 哪一页在屏幕上,按每种格式把页画成什么样来判断:幻灯片和图表页本身是元素,照元素看;
+    // 工作簿用标签翻页;散文和代码是一条长卷,按屏来读。
+    if (kind === 'pptx') track.pages(n, box, '.drv-slidewrap');
+    else if (kind === 'drawio') track.pages(n, box, '.drv-canvaspage');
+    else if (kind === 'sheet') track.tabs(n, box, '.drv-sheettabs .tab', '.on');
+    else track.scrollPages(n, box.querySelector('.drv-docwin') || box);
   } catch {
     if (box.isConnected) box.innerHTML = noprevHtml(n);
   }
@@ -3129,6 +3326,7 @@ async function renderPdfPreview(node, box) {
     // 独占标签页里,页面随"窗口"滚动;box 已长到整份文档的高度,
     // 拿它量射程会让每一页都"在视野里" —— 懒加载一口气全建,也就是根本不懒了。
     const lazyRoot = document.body.classList.contains('fv-solo') ? null : box;
+    track.pages(node, box, '.drv-pdf-page');
     my.pager = lazyPages({ root: lazyRoot, items: [...box.children], margin: 600, render: renderPage });
   } catch {
     if (pvPdf === my && box.isConnected) {
@@ -4426,6 +4624,7 @@ async function showSub(id) {
 
 async function paintPreview() {
   const n = pv.list[pv.idx];
+  track.open(n);
   destroyPdfPreview();
   pvRich?.destroy?.();
   pvRich = null;
@@ -4534,6 +4733,9 @@ async function paintPreview() {
   } else if (isPdf) body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-pdf drv-docwin">${spinnerHtml()}</div></div></div>`;
   else body = `<div class="drv-doc"><div class="drv-docc"><div class="drv-docwin">${spinnerHtml()}</div></div></div>`;
   paintPvShell(n, body);
+  // A film or a song in the shell is watched from the moment it is there.
+  // 壳里一有片子或歌,就从那一刻开始看着它。
+  for (const m of pv.el.querySelectorAll('.drv-view-body video, .drv-view-body audio')) track.media(n, m);
   bindSwipeDeck();
   loadVersions(n);
   // The controls belong to the film from the moment there is a film element, not from the moment

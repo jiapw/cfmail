@@ -19,6 +19,7 @@
 
 import { t, tErr, setLang, dictReady } from '../i18n.js';
 import { mountTurnstile } from '../turnstile.js';
+import { track, trackStart, trackStop } from './track.js';
 import { esc, icon, qs, qsa, fmtSize, fmtDate, fileIcon, toast, loadCss } from '../ui.js';
 import { store, navigate, setTitle, pathTitle } from '../app.js';
 import { arcHash, arcSeed, dlUrl, folderHash, thumbUrl, usePubSource } from './fsrc.js';
@@ -206,6 +207,7 @@ async function applyShareLook(head) {
     const saved = { theme: h.dataset.theme, dark: h.classList.contains('wa-dark'), lang: null };
     lookGuard = () => {
       if (/^#\/p\//.test(location.hash)) return;
+      trackStop();
       h.dataset.theme = saved.theme || 'blue';
       h.classList.toggle('wa-dark', saved.dark);
       h.classList.toggle('wa-light', !saved.dark);
@@ -259,6 +261,7 @@ function frame(head, inner) {
     // 只有管理员开启披露时才有值;由服务端决定,否则回空串,此处不会有可意外泄露的东西。
     head.owner_email ? t('drv_share_by', head.owner_email) : '',
     head.viewer_email ? t('pub_gate_as', head.viewer_email) : '',
+    head.track ? t('pub_tracked_note') : '',
   ].filter(Boolean);
   // Keeping the share is about the whole link, not about whichever folder is on screen, so it
   // belongs beside the brand at the top of the page rather than inside the listing's own bar.
@@ -435,6 +438,9 @@ export async function renderPubShare(token, rest) {
       await applyShareLook(head);
       return renderGate(app, token, head, segs);
     }
+    // Inside a share that watches, the visit begins before anything is drawn.
+    // 在一条看着访客的分享里,到访在画出任何东西之前就开始了。
+    if (head.track) await trackStart({ base: `/api/pub/${encodeURIComponent(token)}`, key: 'p:' + token });
     // The watching view is its own page and does not want a listing behind it, so the share is
     // read first and the listing only if we are staying here.
     // 观看视图是它自己的一页,不需要背后垫着一份列表,
@@ -488,6 +494,7 @@ export async function renderPubShare(token, rest) {
     </div>
     ${head.note ? `<div class="drv-ctx">${esc(head.note)}</div>` : ''}
     <div id="pub-body">${bodyHtml(nodes)}</div>`);
+  if (head.track) track.enter({ id: parent || '', name: parent ? ((data.path || []).slice(-1)[0]?.name || '') : t('drv_share_root') });
 
   bindKeep(app, token);
 
